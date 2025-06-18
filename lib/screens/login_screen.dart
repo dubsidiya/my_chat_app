@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'register_screen.dart';
 import 'chat_screen.dart';
+import 'register_screen.dart';  // если есть кнопка "Регистрация"
+
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -25,18 +26,22 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    final error = await _authService.loginUser(email, password);
+    final userId = await _authService.loginUser(email, password);
 
     setState(() {
       _isLoading = false;
-      _errorMessage = error;
     });
 
-    if (error == null) {
+    if (userId != null) {
+      // Переходим в чат, передавая userId
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => ChatScreen(email: email)),
+        MaterialPageRoute(builder: (_) => ChatScreen(userId: userId)),
       );
+    } else {
+      setState(() {
+        _errorMessage = 'Неверный email или пароль';
+      });
     }
   }
 
@@ -48,18 +53,32 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(controller: _emailController, decoration: InputDecoration(labelText: 'Email')),
-            TextField(controller: _passwordController, decoration: InputDecoration(labelText: 'Пароль'), obscureText: true),
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Пароль'),
+              obscureText: true,
+            ),
             SizedBox(height: 16),
-            if (_errorMessage != null) Text(_errorMessage!, style: TextStyle(color: Colors.red)),
-            if (_isLoading) CircularProgressIndicator(),
+            if (_errorMessage != null)
+              Text(_errorMessage!, style: TextStyle(color: Colors.red)),
+            if (_isLoading)
+              CircularProgressIndicator(),
             if (!_isLoading)
               ElevatedButton(onPressed: _login, child: Text('Войти')),
+            SizedBox(height: 16),
             TextButton(
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => RegisterScreen()),
+                );
               },
-              child: Text('Регистрация'),
+              child: Text('Нет аккаунта? Зарегистрироваться'),
             ),
           ],
         ),

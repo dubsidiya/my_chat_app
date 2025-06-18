@@ -15,7 +15,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _errorMessage;
   String? _successMessage;
 
-  void _register() async {
+  Future<void> _register() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -25,12 +25,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
+    // Простая валидация
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Пожалуйста, заполните все поля';
+      });
+      return;
+    }
+
     final error = await _authService.registerUser(email, password);
 
     setState(() {
       _isLoading = false;
       if (error == null) {
         _successMessage = 'Регистрация прошла успешно! Теперь можно войти.';
+        _emailController.clear();
+        _passwordController.clear();
       } else {
         _errorMessage = error;
       }
@@ -38,21 +49,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Регистрация')),
       body: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(controller: _emailController, decoration: InputDecoration(labelText: 'Email')),
-            TextField(controller: _passwordController, decoration: InputDecoration(labelText: 'Пароль'), obscureText: true),
-            SizedBox(height: 16),
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Пароль'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
             if (_errorMessage != null) Text(_errorMessage!, style: TextStyle(color: Colors.red)),
             if (_successMessage != null) Text(_successMessage!, style: TextStyle(color: Colors.green)),
-            if (_isLoading) CircularProgressIndicator(),
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(),
+              ),
             if (!_isLoading)
-              ElevatedButton(onPressed: _register, child: Text('Зарегистрироваться')),
+              ElevatedButton(
+                onPressed: _register,
+                child: Text('Зарегистрироваться'),
+              ),
           ],
         ),
       ),
