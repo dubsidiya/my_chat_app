@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
+
 import '../services/messages_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -13,6 +16,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final MessagesService _messagesService = MessagesService();
   final TextEditingController _controller = TextEditingController();
+  late WebSocketChannel _channel;
 
   List<Message> _messages = [];
   bool _isLoading = false;
@@ -20,7 +24,19 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+
+    _channel = WebSocketChannel.connect(
+      Uri.parse('wss://my-server-chat.onrender.com'),
+    );
+
+    _channel.stream.listen((message) {
+      final data = jsonDecode(message);
+      setState(() {
+        _messages.add(Message.fromJson(data));
+      });
+    });
+
+    _loadMessages(); // начальная загрузка истории
   }
 
   Future<void> _loadMessages() async {
@@ -44,12 +60,19 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await _messagesService.sendMessage(widget.userId, text);
       _controller.clear();
-      await _loadMessages();
+      // не нужно вручную обновлять список, так как WebSocket получит новое сообщение
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка отправки сообщения')),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _channel.sink.close(); // закрываем WebSocket
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
