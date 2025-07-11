@@ -1,11 +1,15 @@
 class Message {
-  final int id;
+  final String id;
+  final String chatId;
+  final String userId;
   final String content;
   final String senderEmail;
   final String createdAt;
 
   Message({
     required this.id,
+    required this.chatId,
+    required this.userId,
     required this.content,
     required this.senderEmail,
     required this.createdAt,
@@ -13,9 +17,11 @@ class Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
-      id: json['id'],
+      id: json['id'].toString(),
+      chatId: json['chat_id'].toString(),
+      userId: json['user_id'].toString(),
       content: json['content'],
-      senderEmail: json['sender_email'], // имей в виду ключи чувствительны
+      senderEmail: json['sender_email'] ?? '',
       createdAt: json['created_at'],
     );
   }

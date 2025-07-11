@@ -1,42 +1,30 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
-class Message {
-  final int id;
-  final String content;
-  final DateTime createdAt;
-  final String senderEmail;
-
-  Message({required this.id, required this.content, required this.createdAt, required this.senderEmail});
-
-  factory Message.fromJson(Map<String, dynamic> json) {
-    return Message(
-      id: json['id'],
-      content: json['content'],
-      createdAt: DateTime.parse(json['created_at']),
-      senderEmail: json['sender_email'],
-    );
-  }
-}
+import '../models/message.dart';
 
 class MessagesService {
-  final _baseUrl = 'https://my-server-chat.onrender.com';
+  final String baseUrl = 'https://my-server-chat.onrender.com';
 
-  Future<List<Message>> fetchMessages() async {
-    final response = await http.get(Uri.parse('$_baseUrl/messages'));
+  Future<List<Message>> fetchMessages(String chatId) async {
+    final response = await http.get(Uri.parse('$baseUrl/messages/$chatId'));
+
     if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
+      final List data = jsonDecode(response.body);
       return data.map((json) => Message.fromJson(json)).toList();
     } else {
-      throw Exception('Ошибка при загрузке сообщений');
+      throw Exception('Ошибка при получении сообщений');
     }
   }
 
-  Future<void> sendMessage(String userId, String content) async {
+  Future<void> sendMessage(String userId, String chatId, String content) async {
     final response = await http.post(
-      Uri.parse('$_baseUrl/messages'),
+      Uri.parse('$baseUrl/messages'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'user_id': int.parse(userId), 'content': content}),
+      body: jsonEncode({
+        'user_id': userId,
+        'chat_id': chatId,
+        'content': content,
+      }),
     );
 
     if (response.statusCode != 201) {

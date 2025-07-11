@@ -13,46 +13,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
-  String? _successMessage;
 
-  Future<void> _register() async {
+  void _register() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _successMessage = null;
     });
 
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    // Простая валидация
-    if (email.isEmpty || password.isEmpty) {
+    try {
+      final success = await _authService.register(email, password);
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Пожалуйста, заполните все поля';
       });
-      return;
-    }
-
-    final error = await _authService.registerUser(email, password);
-
-    setState(() {
-      _isLoading = false;
-      if (error == null) {
-        _successMessage = 'Регистрация прошла успешно! Теперь можно войти.';
-        _emailController.clear();
-        _passwordController.clear();
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Регистрация успешна! Войдите в систему.')),
+        );
+        Navigator.pop(context);
       } else {
-        _errorMessage = error;
+        setState(() {
+          _errorMessage = 'Пользователь уже существует';
+        });
       }
-    });
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Ошибка сервера';
+      });
+    }
   }
 
   @override
@@ -60,7 +51,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Регистрация')),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
@@ -73,19 +64,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
               decoration: InputDecoration(labelText: 'Пароль'),
               obscureText: true,
             ),
-            const SizedBox(height: 16),
-            if (_errorMessage != null) Text(_errorMessage!, style: TextStyle(color: Colors.red)),
-            if (_successMessage != null) Text(_successMessage!, style: TextStyle(color: Colors.green)),
+            SizedBox(height: 16),
+            if (_errorMessage != null)
+              Text(_errorMessage!, style: TextStyle(color: Colors.red)),
             if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: CircularProgressIndicator(),
-              ),
+              CircularProgressIndicator(),
             if (!_isLoading)
-              ElevatedButton(
-                onPressed: _register,
-                child: Text('Зарегистрироваться'),
-              ),
+              ElevatedButton(onPressed: _register, child: Text('Зарегистрироваться')),
           ],
         ),
       ),

@@ -1,21 +1,30 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'dart:convert';
 
+import '../models/message.dart';
 import '../services/messages_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
+  final String userEmail;
+  final String chatId;
+  final String chatName;
 
-  ChatScreen({required this.userId});
+  const ChatScreen({
+    required this.userId,
+    required this.userEmail,
+    required this.chatId,
+    required this.chatName,
+  });
 
   @override
-  _ChatScreenState createState() => _ChatScreenState();
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final MessagesService _messagesService = MessagesService();
-  final TextEditingController _controller = TextEditingController();
+  final _controller = TextEditingController();
+  final _messagesService = MessagesService();
   late WebSocketChannel _channel;
 
   List<Message> _messages = [];
@@ -29,20 +38,22 @@ class _ChatScreenState extends State<ChatScreen> {
       Uri.parse('wss://my-server-chat.onrender.com'),
     );
 
-    _channel.stream.listen((message) {
-      final data = jsonDecode(message);
-      setState(() {
-        _messages.add(Message.fromJson(data));
-      });
+    _channel.stream.listen((event) {
+      final data = jsonDecode(event);
+      if (data['chat_id'] == widget.chatId) {
+        setState(() {
+          _messages.add(Message.fromJson(data));
+        });
+      }
     });
 
-    _loadMessages(); // начальная загрузка истории
+    _loadMessages();
   }
 
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
     try {
-      final messages = await _messagesService.fetchMessages();
+      final messages = await _messagesService.fetchMessages(widget.chatId);
       setState(() => _messages = messages);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -58,9 +69,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
 
     try {
-      await _messagesService.sendMessage(widget.userId, text);
+      await _messagesService.sendMessage(widget.userId, widget.chatId, text);
       _controller.clear();
-      // не нужно вручную обновлять список, так как WebSocket получит новое сообщение
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка отправки сообщения')),
@@ -70,7 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _channel.sink.close(); // закрываем WebSocket
+    _channel.sink.close();
     _controller.dispose();
     super.dispose();
   }
@@ -78,7 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Чат')),
+      appBar: AppBar(title: Text(widget.chatName)),
       body: Column(
         children: [
           Expanded(
@@ -88,33 +98,63 @@ class _ChatScreenState extends State<ChatScreen> {
               reverse: true,
               itemCount: _messages.length,
               itemBuilder: (context, index) {
-                final message = _messages[_messages.length - 1 - index];
-                return ListTile(
-                  title: Text(message.content),
-                  subtitle: Text(
-                    'От: ${message.senderEmail} • ${message.createdAt}',
+                final msg = _messages[_messages.length - 1 - index];
+                final isMine = msg.senderEmail == widget.userEmail;
+
+                return Align(
+                  alignment:
+                  isMine ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isMine
+                          ? Colors.blueAccent
+                          : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          msg.content,
+                          style: TextStyle(
+                            color: isMine ? Colors.white : Colors.black87,
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          msg.createdAt,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isMine
+                                ? Colors.white70
+                                : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: EdgeInsets.all(8),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: 'Введите сообщение',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration:
+                    InputDecoration(hintText: 'Введите сообщение...'),
                   ),
                 ),
-                SizedBox(width: 8),
-                ElevatedButton(
+                IconButton(
+                  icon: Icon(Icons.send),
                   onPressed: _sendMessage,
-                  child: Text('Отправить'),
                 ),
               ],
             ),

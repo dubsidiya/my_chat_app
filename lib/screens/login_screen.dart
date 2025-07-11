@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'chat_screen.dart';
-import 'register_screen.dart';  // если есть кнопка "Регистрация"
-
+import 'register_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -26,21 +25,30 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    final userId = await _authService.loginUser(email, password);
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (userId != null) {
-      // Переходим в чат, передавая userId
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => ChatScreen(userId: userId)),
-      );
-    } else {
+    try {
+      final userData = await _authService.login(email, password);
       setState(() {
-        _errorMessage = 'Неверный email или пароль';
+        _isLoading = false;
+      });
+      if (userData != null && userData['userId'] != null && userData['email'] != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(
+              userId: userData['userId'].toString(),
+              userEmail: userData['email'].toString(),
+            ),
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = 'Неверный email или пароль';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Ошибка сервера';
       });
     }
   }
