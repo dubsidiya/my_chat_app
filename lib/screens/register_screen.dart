@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
@@ -24,15 +25,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final password = _passwordController.text.trim();
 
     try {
-      final success = await _authService.register(email, password);
+      final success = await _authService.registerUser(email, password);
+
       setState(() {
         _isLoading = false;
       });
+
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Регистрация успешна! Войдите в систему.')),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
         );
-        Navigator.pop(context);
       } else {
         setState(() {
           _errorMessage = 'Пользователь уже существует';
@@ -41,7 +44,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Ошибка сервера';
+        _errorMessage = 'Ошибка регистрации: $e';
       });
     }
   }
@@ -51,13 +54,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Регистрация')),
       body: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
             ),
             TextField(
               controller: _passwordController,
@@ -67,10 +69,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
             SizedBox(height: 16),
             if (_errorMessage != null)
               Text(_errorMessage!, style: TextStyle(color: Colors.red)),
-            if (_isLoading)
-              CircularProgressIndicator(),
-            if (!_isLoading)
-              ElevatedButton(onPressed: _register, child: Text('Зарегистрироваться')),
+            SizedBox(height: 16),
+            _isLoading
+                ? CircularProgressIndicator()
+                : ElevatedButton(
+              onPressed: _register,
+              child: Text('Зарегистрироваться'),
+            ),
+            SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => LoginScreen()),
+                );
+              },
+              child: Text('Уже есть аккаунт? Войти'),
+            ),
           ],
         ),
       ),

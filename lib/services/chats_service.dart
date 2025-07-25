@@ -15,4 +15,24 @@ class ChatsService {
       throw Exception('Не удалось загрузить чаты');
     }
   }
+
+  Future<Chat> createChat(String name, List<String> userIds) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/chats'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': name,
+        'userIds': userIds,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return Chat.fromJson(jsonDecode(response.body));
+    } else {
+      print('Create chat response status: ${response.statusCode}');
+      print('Create chat response body: ${response.body}');
+      throw Exception('Не удалось создать чат');
+    }
+  }
+
 }

@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'register_screen.dart';
 import 'home_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
 
+
+
 class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-
-  bool _isLoading = false;
   String? _errorMessage;
+  bool _isLoading = false;
 
   void _login() async {
     setState(() {
@@ -25,30 +26,25 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    try {
-      final userData = await _authService.login(email, password);
-      setState(() {
-        _isLoading = false;
-      });
-      if (userData != null && userData['userId'] != null && userData['email'] != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => HomeScreen(
-              userId: userData['userId'].toString(),
-              userEmail: userData['email'].toString(),
-            ),
+    final userData = await _authService.loginUser(email, password);
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (userData != null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(
+            userId: userData['id'].toString(),
+            userEmail: userData['email'].toString(),
           ),
-        );
-      } else {
-        setState(() {
-          _errorMessage = 'Неверный email или пароль';
-        });
-      }
-    } catch (e) {
+        ),
+      );
+    } else {
       setState(() {
-        _isLoading = false;
-        _errorMessage = 'Ошибка сервера';
+        _errorMessage = 'Неверный email или пароль';
       });
     }
   }
@@ -58,13 +54,12 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Вход')),
       body: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
             ),
             TextField(
               controller: _passwordController,
@@ -75,10 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
             if (_errorMessage != null)
               Text(_errorMessage!, style: TextStyle(color: Colors.red)),
             if (_isLoading)
-              CircularProgressIndicator(),
-            if (!_isLoading)
+              CircularProgressIndicator()
+            else
               ElevatedButton(onPressed: _login, child: Text('Войти')),
-            SizedBox(height: 16),
             TextButton(
               onPressed: () {
                 Navigator.push(

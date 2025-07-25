@@ -7,14 +7,14 @@ class HomeScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
 
-  const HomeScreen({required this.userId, required this.userEmail});
+  HomeScreen({required this.userId, required this.userEmail});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  _HomeScreenState createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _chatsService = ChatsService();
+  final ChatsService _chatsService = ChatsService();
   List<Chat> _chats = [];
   bool _isLoading = false;
 
@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _chats = chats);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки чатов')),
+        SnackBar(content: Text('Ошибка при загрузке чатов')),
       );
     } finally {
       setState(() => _isLoading = false);
@@ -52,19 +52,75 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _showCreateChatDialog() async {
+    final TextEditingController _nameController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Создать чат'),
+          content: TextField(
+            controller: _nameController,
+            decoration: InputDecoration(labelText: 'Имя чата'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = _nameController.text.trim();
+                if (name.isEmpty) return;
+
+                // Сейчас для упрощения добавляем только текущего пользователя в чат
+                final success = await _chatsService.createChat(name, [widget.userId]);
+
+                if (success==null) {
+                  Navigator.pop(context);
+                  _loadChats();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Ошибка при создании чата')),
+                  );
+                }
+              },
+              child: Text('Создать'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Ваши чаты')),
+      appBar: AppBar(
+        title: Text('Мои чаты'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadChats,
+          ),
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: _showCreateChatDialog,
+          ),
+        ],
+      ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
+          : _chats.isEmpty
+          ? Center(child: Text('Нет доступных чатов'))
           : ListView.builder(
         itemCount: _chats.length,
         itemBuilder: (context, index) {
           final chat = _chats[index];
           return ListTile(
+            leading: Icon(chat.isGroup ? Icons.group : Icons.person),
             title: Text(chat.name),
-            subtitle: Text(chat.isGroup ? 'Групповой чат' : 'Личный чат'),
             onTap: () => _openChat(chat),
           );
         },
