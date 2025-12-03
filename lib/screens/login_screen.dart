@@ -26,25 +26,32 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    final userData = await _authService.loginUser(email, password);
+    try {
+      final userData = await _authService.loginUser(email, password);
 
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (userData != null) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            userId: userData['id'].toString(),
-            userEmail: userData['email'].toString(),
-          ),
-        ),
-      );
-    } else {
       setState(() {
-        _errorMessage = 'Неверный email или пароль';
+        _isLoading = false;
+      });
+
+      if (userData != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(
+              userId: userData['id'].toString(),
+              userEmail: userData['email'].toString(),
+            ),
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = 'Неверный email или пароль';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
