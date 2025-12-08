@@ -1,0 +1,1 @@
+ /Users/vladkharin/my_chat_app/.dart_tool/flutter_build/4e89e09caf045dd5d5ffdb848b8079bc/native_assets.json: 

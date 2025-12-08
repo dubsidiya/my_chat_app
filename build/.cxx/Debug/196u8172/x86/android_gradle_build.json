@@ -1,0 +1,28 @@
+{
+  "buildFiles": [
+    "/Users/vladkharin/Desktop/development/flutter/packages/flutter_tools/gradle/src/main/scripts/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/vladkharin/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/vladkharin/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {},
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/Users/vladkharin/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/Users/vladkharin/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": []
+}

@@ -1,0 +1,2 @@
+/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/armeabi-v7a/CMakeFiles/rebuild_cache.dir

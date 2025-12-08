@@ -1,0 +1,2 @@
+/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/x86/CMakeFiles/edit_cache.dir
+/Users/vladkharin/my_chat_app/build/.cxx/Debug/196u8172/x86/CMakeFiles/rebuild_cache.dir

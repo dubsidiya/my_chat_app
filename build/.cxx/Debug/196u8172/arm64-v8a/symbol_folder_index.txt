@@ -1,0 +1,1 @@
+/Users/vladkharin/my_chat_app/build/app/intermediates/cxx/Debug/196u8172/obj/arm64-v8a
