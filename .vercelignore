@@ -1,0 +1,20 @@
+# Игнорируем ненужные файлы при деплое
+android/
+ios/
+linux/
+macos/
+windows/
+test/
+my_serve_chat_test/
+*.md
+!README.md
+.git/
+.gitignore
+.vscode/
+.idea/
+*.iml
+*.lock
+pubspec.lock
+build/
+!build/web/
+

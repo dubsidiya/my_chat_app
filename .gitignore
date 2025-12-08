@@ -32,6 +32,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# Разрешаем build/web для Vercel
+!build/web/
 
 # Symbolication related
 app.*.symbols
