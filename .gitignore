@@ -20,3 +20,18 @@ node_modules/
 # Резервные копии
 *.backup
 *.bak
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+
+# Build files - исключаем все, кроме build/web для Vercel
+# Важно: сначала исключаем все, потом разрешаем build/web
+build/*
+!build/web/
+!build/web/**
