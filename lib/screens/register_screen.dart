@@ -16,6 +16,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _errorMessage;
 
   void _register() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -27,25 +28,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final success = await _authService.registerUser(email, password);
 
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
 
       if (success) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => LoginScreen()),
-        );
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => LoginScreen()),
+          );
+        }
       } else {
-        setState(() {
-          _errorMessage = 'Пользователь уже существует';
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'Пользователь уже существует';
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Ошибка регистрации: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Ошибка регистрации: $e';
+        });
+      }
     }
   }
 

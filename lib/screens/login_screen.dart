@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
 
@@ -18,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
 
   void _login() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -29,30 +31,43 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final userData = await _authService.loginUser(email, password);
 
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
 
       if (userData != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => HomeScreen(
-              userId: userData['id'].toString(),
-              userEmail: userData['email'].toString(),
-            ),
-          ),
+        // Сохраняем данные пользователя для автоматического входа
+        await StorageService.saveUserData(
+          userData['id'].toString(),
+          userData['email'].toString(),
         );
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => HomeScreen(
+                userId: userData['id'].toString(),
+                userEmail: userData['email'].toString(),
+              ),
+            ),
+          );
+        }
       } else {
-        setState(() {
-          _errorMessage = 'Неверный email или пароль';
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'Неверный email или пароль';
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
     }
   }
 

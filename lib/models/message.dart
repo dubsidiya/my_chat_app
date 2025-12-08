@@ -16,13 +16,19 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
-    return Message(
-      id: json['id'].toString(),
-      chatId: json['chat_id'].toString(),
-      userId: json['user_id'].toString(),
-      content: json['content'],
-      senderEmail: json['sender_email'] ?? '',
-      createdAt: json['created_at'],
-    );
+    try {
+      return Message(
+        id: (json['id'] ?? '').toString(),
+        chatId: (json['chat_id'] ?? '').toString(),
+        userId: (json['user_id'] ?? '').toString(),
+        content: json['content'] ?? '',
+        senderEmail: json['sender_email'] ?? '',
+        createdAt: json['created_at']?.toString() ?? '',
+      );
+    } catch (e) {
+      print('Error parsing Message from JSON: $e');
+      print('JSON: $json');
+      rethrow;
+    }
   }
 }
