@@ -329,22 +329,71 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Загрузка чатов...',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : _chats.isEmpty
-          ? Center(child: Text('Нет доступных чатов'))
-          : ListView.builder(
-        itemCount: _chats.length,
-        itemBuilder: (context, index) {
-          final chat = _chats[index];
-          return Dismissible(
-            key: Key('chat_${chat.id}'),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: EdgeInsets.only(right: 20),
-              color: Colors.red,
-              child: Icon(Icons.delete, color: Colors.white),
-            ),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 80,
+                        color: Colors.grey.shade300,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Нет доступных чатов',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Создайте новый чат, нажав на кнопку +',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _chats.length,
+                  itemBuilder: (context, index) {
+                    final chat = _chats[index];
+                    return Dismissible(
+                      key: Key('chat_${chat.id}'),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: EdgeInsets.only(right: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: Icon(Icons.delete, color: Colors.white, size: 28),
+                      ),
             confirmDismiss: (direction) async {
               // Показываем диалог подтверждения
               final confirmed = await showDialog<bool>(
@@ -398,17 +447,96 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               }
             },
-            child: ListTile(
-            leading: Icon(chat.isGroup ? Icons.group : Icons.person),
-            title: Text(chat.name),
-            onTap: () => _openChat(chat),
-              trailing: IconButton(
-                icon: Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () => _deleteChat(chat),
-                tooltip: 'Удалить чат',
-              ),
-            ),
-          );
+                      child: Card(
+                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: InkWell(
+                          onTap: () => _openChat(chat),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                // Аватар
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: chat.isGroup
+                                          ? [Colors.purple.shade400, Colors.purple.shade600]
+                                          : [Colors.blue.shade400, Colors.blue.shade600],
+                                    ),
+                                    borderRadius: BorderRadius.circular(28),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: (chat.isGroup ? Colors.purple : Colors.blue)
+                                            .withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    chat.isGroup ? Icons.group : Icons.person,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
+                                SizedBox(width: 16),
+                                // Название чата
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        chat.name,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey.shade900,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            chat.isGroup ? Icons.group : Icons.person,
+                                            size: 14,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            chat.isGroup ? 'Групповой чат' : 'Личный чат',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Кнопка удаления
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline, color: Colors.grey.shade400),
+                                  onPressed: () => _deleteChat(chat),
+                                  tooltip: 'Удалить чат',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
         },
       ),
     );

@@ -472,77 +472,234 @@ class _ChatScreenState extends State<ChatScreen> {
                 final msg = _messages[_messages.length - 1 - index];
                 final isMine = msg.senderEmail == widget.userEmail;
 
-                return Align(
-                  alignment:
-                  isMine ? Alignment.centerRight : Alignment.centerLeft,
-                  child: GestureDetector(
-                    onLongPress: isMine ? () => _showDeleteMessageDialog(msg) : null,
-                    child: Container(
-                      margin: EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                      padding: EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isMine
-                            ? Colors.blueAccent
-                            : Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(12),
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisAlignment:
+                        isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (!isMine) ...[
+                        // Аватар отправителя (только для чужих сообщений)
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.purple.shade400,
+                                Colors.purple.shade600,
+                              ],
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              msg.senderEmail.isNotEmpty
+                                  ? msg.senderEmail[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: GestureDetector(
+                          onLongPress: isMine
+                              ? () => _showDeleteMessageDialog(msg)
+                              : null,
+                          child: Container(
+                            constraints: BoxConstraints(
+                              maxWidth: MediaQuery.of(context).size.width * 0.75,
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: isMine
+                                  ? LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.blue.shade600,
+                                        Colors.blue.shade700,
+                                      ],
+                                    )
+                                  : null,
+                              color: isMine ? null : Colors.white,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
+                                bottomLeft: Radius.circular(isMine ? 20 : 4),
+                                bottomRight: Radius.circular(isMine ? 4 : 20),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isMine
+                                          ? Colors.blue
+                                          : Colors.grey)
+                                      .withOpacity(0.2),
+                                  blurRadius: 8,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                              border: isMine
+                                  ? null
+                                  : Border.all(
+                                      color: Colors.grey.shade200,
+                                      width: 1,
+                                    ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Показываем отправителя только если это не ваше сообщение
+                                if (!isMine) ...[
+                                  Text(
+                                    msg.senderEmail,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                ],
+                                Text(
+                                  msg.content,
+                                  style: TextStyle(
+                                    color: isMine ? Colors.white : Colors.grey.shade900,
+                                    fontSize: 15,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  _formatDate(msg.createdAt),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isMine
+                                        ? Colors.white.withOpacity(0.8)
+                                        : Colors.grey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Показываем ник отправителя
-                          Text(
-                            msg.senderEmail,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: isMine ? Colors.white : Colors.black87,
+                      if (isMine) ...[
+                        SizedBox(width: 8),
+                        // Аватар отправителя (для своих сообщений)
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.blue.shade400,
+                                Colors.blue.shade600,
+                              ],
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              widget.userEmail.isNotEmpty
+                                  ? widget.userEmail[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          SizedBox(height: 4),
-                          // Показываем текст сообщения
-                          Text(
-                            msg.content,
-                            style: TextStyle(
-                              color: isMine ? Colors.white : Colors.black87,
-                              fontSize: 16,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          // Показываем дату (форматируем)
-                          Text(
-                            _formatDate(msg.createdAt),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isMine
-                                  ? Colors.white70
-                                  : Colors.black54,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      ],
+                    ],
                   ),
                 );
               },
             ),
           ),
-          Padding(
-            padding: EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration:
-                    InputDecoration(hintText: 'Введите сообщение...'),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.send),
-                  onPressed: _sendMessage,
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: Offset(0, -2),
                 ),
               ],
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: TextField(
+                          controller: _controller,
+                          decoration: InputDecoration(
+                            hintText: 'Введите сообщение...',
+                            hintStyle: TextStyle(color: Colors.grey.shade500),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                          ),
+                          maxLines: null,
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.blue.shade600,
+                            Colors.blue.shade700,
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.blue.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.send, color: Colors.white),
+                        onPressed: _sendMessage,
+                        tooltip: 'Отправить',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
