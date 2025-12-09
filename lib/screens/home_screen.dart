@@ -156,75 +156,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _deleteAccount() async {
     // Показываем диалог с вводом пароля для подтверждения
-    final passwordController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final password = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Удалить аккаунт?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Это действие необратимо! Все ваши данные будут удалены:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text('• Все ваши сообщения'),
-            Text('• Все чаты, где вы создатель'),
-            Text('• Ваше участие во всех чатах'),
-            SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              decoration: InputDecoration(
-                labelText: 'Введите пароль для подтверждения',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              passwordController.dispose();
-              Navigator.pop(context, false);
-            },
-            child: Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (passwordController.text.trim().isNotEmpty) {
-                Navigator.pop(context, true);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: Text('Удалить аккаунт'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        return _DeleteAccountDialog();
+      },
     );
 
-    if (confirmed != true || !mounted) {
-      passwordController.dispose();
-      return;
-    }
-
-    final password = passwordController.text.trim();
-    passwordController.dispose();
-
-    if (password.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Пароль обязателен для удаления аккаунта'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+    if (password == null || password.isEmpty || !mounted) {
       return;
     }
 
@@ -564,6 +504,81 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text('Создать'),
+        ),
+      ],
+    );
+  }
+}
+
+// Диалог для удаления аккаунта
+class _DeleteAccountDialog extends StatefulWidget {
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  late final TextEditingController _passwordController;
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Удалить аккаунт?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Это действие необратимо! Все ваши данные будут удалены:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text('• Все ваши сообщения'),
+            Text('• Все чаты, где вы создатель'),
+            Text('• Ваше участие во всех чатах'),
+            SizedBox(height: 16),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(
+                labelText: 'Введите пароль для подтверждения',
+                border: OutlineInputBorder(),
+              ),
+              obscureText: true,
+              autofocus: true,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context, null);
+          },
+          child: Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final password = _passwordController.text.trim();
+            if (password.isNotEmpty) {
+              Navigator.pop(context, password);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+          ),
+          child: Text('Удалить аккаунт'),
         ),
       ],
     );
