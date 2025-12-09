@@ -50,4 +50,66 @@ class AuthService {
     return response.statusCode == 201;
   }
 
+  Future<void> deleteAccount(String userId, String password) async {
+    try {
+      final url = Uri.parse('$baseUrl/auth/user/$userId');
+      print('Deleting account: $userId');
+
+      final response = await http.delete(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'password': password}),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Таймаут при удалении аккаунта');
+        },
+      );
+
+      print('Delete account status: ${response.statusCode}');
+      print('Delete account response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        print('Account deleted successfully: $userId');
+        return;
+      } else if (response.statusCode == 401) {
+        String errorMessage = 'Неверный пароль';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      } else if (response.statusCode == 400) {
+        String errorMessage = 'Неверный запрос';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      } else {
+        String errorMessage = 'Не удалось удалить аккаунт';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {
+          errorMessage = 'Ошибка сервера (${response.statusCode})';
+        }
+        print('Delete account error: ${response.statusCode} - ${response.body}');
+        throw Exception('$errorMessage (${response.statusCode})');
+      }
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      print('Unexpected error in deleteAccount: $e');
+      throw Exception('Неожиданная ошибка при удалении аккаунта: $e');
+    }
+  }
+
 }

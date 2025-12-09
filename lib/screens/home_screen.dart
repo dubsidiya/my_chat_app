@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/chat.dart';
 import '../services/chats_service.dart';
+import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
@@ -17,6 +18,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ChatsService _chatsService = ChatsService();
+  final AuthService _authService = AuthService();
   List<Chat> _chats = [];
   bool _isLoading = false;
 
@@ -152,6 +154,164 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _deleteAccount() async {
+    // Показываем диалог с вводом пароля для подтверждения
+    final passwordController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить аккаунт?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Это действие необратимо! Все ваши данные будут удалены:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text('• Все ваши сообщения'),
+            Text('• Все чаты, где вы создатель'),
+            Text('• Ваше участие во всех чатах'),
+            SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              decoration: InputDecoration(
+                labelText: 'Введите пароль для подтверждения',
+                border: OutlineInputBorder(),
+              ),
+              obscureText: true,
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              passwordController.dispose();
+              Navigator.pop(context, false);
+            },
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (passwordController.text.trim().isNotEmpty) {
+                Navigator.pop(context, true);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить аккаунт'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      passwordController.dispose();
+      return;
+    }
+
+    final password = passwordController.text.trim();
+    passwordController.dispose();
+
+    if (password.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Пароль обязателен для удаления аккаунта'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Показываем финальное подтверждение
+    final finalConfirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Последнее предупреждение!'),
+        content: Text(
+          'Вы действительно хотите удалить аккаунт? Это действие нельзя отменить!',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Да, удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (finalConfirmed != true || !mounted) return;
+
+    // Показываем индикатор загрузки
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    try {
+      await _authService.deleteAccount(widget.userId, password);
+      
+      // Закрываем индикатор загрузки
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Очищаем локальные данные
+      await StorageService.clearUserData();
+
+      if (mounted) {
+        // Показываем сообщение об успехе
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Аккаунт успешно удален'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+
+        // Возвращаемся на экран входа
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      // Закрываем индикатор загрузки
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      print('Ошибка удаления аккаунта: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при удалении аккаунта: ${e.toString().replaceFirst('Exception: ', '')}'),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _showCreateChatDialog() async {
     final result = await showDialog<bool>(
       context: context,
@@ -196,9 +356,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert),
-            onSelected: (value) {
+            onSelected: (value) async {
               if (value == 'logout') {
                 _logout();
+              } else if (value == 'delete_account') {
+                await _deleteAccount();
               }
             },
             itemBuilder: (BuildContext context) => [
@@ -206,9 +368,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout, color: Colors.red),
+                    Icon(Icons.logout, color: Colors.blue),
                     SizedBox(width: 8),
                     Text('Выйти'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete_account',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Удалить аккаунт', style: TextStyle(color: Colors.red)),
                   ],
                 ),
               ),
