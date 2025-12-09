@@ -125,6 +125,125 @@ export const sendMessage = async (req, res) => {
   }
 };
 
+// Удаление одного сообщения
+export const deleteMessage = async (req, res) => {
+  const messageId = req.params.messageId;
+  const userId = req.body.userId || req.query.userId;
+
+  if (!messageId) {
+    return res.status(400).json({ message: 'Укажите ID сообщения' });
+  }
+
+  try {
+    // Проверяем, существует ли сообщение и получаем информацию о нем
+    const messageCheck = await pool.query(
+      `SELECT 
+        messages.id,
+        messages.chat_id,
+        messages.user_id,
+        messages.content,
+        messages.created_at
+      FROM messages
+      WHERE messages.id = $1`,
+      [messageId]
+    );
+
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+
+    const message = messageCheck.rows[0];
+    const chatId = message.chat_id;
+
+    // Проверяем, существует ли чат
+    const chatCheck = await pool.query(
+      'SELECT id FROM chats WHERE id = $1',
+      [chatId]
+    );
+
+    if (chatCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+
+    // Проверяем права: только автор сообщения может его удалить
+    if (userId) {
+      const messageUserId = message.user_id.toString();
+      const requestUserId = userId.toString();
+
+      if (messageUserId !== requestUserId) {
+        return res.status(403).json({ 
+          message: 'Вы можете удалять только свои сообщения' 
+        });
+      }
+
+      // Проверяем, является ли пользователь участником чата
+      const memberCheck = await pool.query(
+        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+        [chatId, userId]
+      );
+
+      if (memberCheck.rows.length === 0) {
+        return res.status(403).json({ 
+          message: 'Вы не являетесь участником этого чата' 
+        });
+      }
+    }
+
+    // Удаляем сообщение
+    await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
+
+    // Отправляем уведомление через WebSocket всем участникам чата об удалении
+    try {
+      const clients = getWebSocketClients();
+      const members = await pool.query(
+        'SELECT user_id FROM chat_users WHERE chat_id = $1',
+        [chatId]
+      );
+
+      const wsMessage = {
+        type: 'message_deleted',
+        message_id: messageId.toString(),
+        chat_id: chatId.toString(),
+        user_id: userId,
+      };
+
+      console.log('Sending WebSocket delete notification to chat:', chatId);
+      console.log('Delete notification:', wsMessage);
+
+      const wsMessageString = JSON.stringify(wsMessage);
+      
+      let sentCount = 0;
+      members.rows.forEach(row => {
+        const userIdStr = row.user_id.toString();
+        const client = clients.get(userIdStr);
+        if (client && client.readyState === 1) { // WebSocket.OPEN
+          try {
+            client.send(wsMessageString);
+            sentCount++;
+            console.log(`Delete notification sent to user ${userIdStr}`);
+          } catch (sendError) {
+            console.error(`Error sending delete notification to user ${userIdStr}:`, sendError);
+          }
+        }
+      });
+      
+      console.log(`Delete notification sent to ${sentCount} out of ${members.rows.length} members`);
+    } catch (wsError) {
+      console.error('Ошибка отправки уведомления об удалении через WebSocket:', wsError);
+      // Не прерываем выполнение, сообщение уже удалено из БД
+    }
+
+    res.status(200).json({ 
+      message: 'Сообщение успешно удалено',
+      messageId: messageId
+    });
+
+  } catch (error) {
+    console.error('Ошибка удаления сообщения:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // Очистка всех сообщений из чата
 export const clearChat = async (req, res) => {
   const chatId = req.params.chatId;

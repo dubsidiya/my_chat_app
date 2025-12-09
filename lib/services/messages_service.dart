@@ -58,6 +58,57 @@ class MessagesService {
     }
   }
 
+  Future<void> deleteMessage(String messageId, String userId) async {
+    try {
+      final url = Uri.parse('$baseUrl/messages/message/$messageId?userId=$userId');
+      print('Deleting message: $messageId');
+      
+      final response = await http.delete(url).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Таймаут при удалении сообщения');
+        },
+      );
+
+      print('Delete message status: ${response.statusCode}');
+      print('Delete message response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        print('Message deleted successfully: $messageId');
+        return;
+      } else if (response.statusCode == 403) {
+        String errorMessage = 'Недостаточно прав для удаления сообщения';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      } else if (response.statusCode == 404) {
+        throw Exception('Сообщение не найдено');
+      } else {
+        String errorMessage = 'Не удалось удалить сообщение';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {
+          errorMessage = 'Ошибка сервера (${response.statusCode})';
+        }
+        print('Delete message error: ${response.statusCode} - ${response.body}');
+        throw Exception('$errorMessage (${response.statusCode})');
+      }
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      print('Unexpected error in deleteMessage: $e');
+      throw Exception('Неожиданная ошибка при удалении сообщения: $e');
+    }
+  }
+
   Future<void> clearChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');

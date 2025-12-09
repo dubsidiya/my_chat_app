@@ -54,6 +54,27 @@ class _ChatScreenState extends State<ChatScreen> {
           final data = jsonDecode(event);
           print('Parsed WebSocket data: $data');
           
+          // Проверяем тип сообщения
+          final messageType = data['type'];
+          
+          if (messageType == 'message_deleted') {
+            // Обработка уведомления об удалении сообщения
+            final deletedMessageId = data['message_id']?.toString();
+            final chatId = data['chat_id']?.toString();
+            final currentChatId = widget.chatId.toString();
+            
+            if (chatId == currentChatId && deletedMessageId != null) {
+              print('Message deleted notification: $deletedMessageId');
+              if (mounted) {
+                setState(() {
+                  _messages.removeWhere((m) => m.id.toString() == deletedMessageId);
+                  print('Message removed from list. Remaining messages: ${_messages.length}');
+                });
+              }
+            }
+            return;
+          }
+          
           // Проверяем, что это сообщение для текущего чата
           // Преобразуем chat_id в строку для сравнения
           final chatId = data['chat_id']?.toString() ?? data['chatId']?.toString();
@@ -181,6 +202,60 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка отправки сообщения: $e')),
       );
+      }
+    }
+  }
+
+  Future<void> _showDeleteMessageDialog(Message message) async {
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить сообщение?'),
+        content: Text('Вы уверены, что хотите удалить это сообщение?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _messagesService.deleteMessage(message.id.toString(), widget.userId);
+      
+      if (mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m.id == message.id);
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Сообщение удалено'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Ошибка удаления сообщения: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при удалении сообщения: ${e.toString().replaceFirst('Exception: ', '')}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     }
   }
@@ -400,49 +475,52 @@ class _ChatScreenState extends State<ChatScreen> {
                 return Align(
                   alignment:
                   isMine ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
-                    padding: EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isMine
-                          ? Colors.blueAccent
-                          : Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Показываем ник отправителя
-                        Text(
-                          msg.senderEmail,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: isMine ? Colors.white : Colors.black87,
+                  child: GestureDetector(
+                    onLongPress: isMine ? () => _showDeleteMessageDialog(msg) : null,
+                    child: Container(
+                      margin: EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isMine
+                            ? Colors.blueAccent
+                            : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Показываем ник отправителя
+                          Text(
+                            msg.senderEmail,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isMine ? Colors.white : Colors.black87,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 4),
-                        // Показываем текст сообщения
-                        Text(
-                          msg.content,
-                          style: TextStyle(
-                            color: isMine ? Colors.white : Colors.black87,
-                            fontSize: 16,
+                          SizedBox(height: 4),
+                          // Показываем текст сообщения
+                          Text(
+                            msg.content,
+                            style: TextStyle(
+                              color: isMine ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 4),
-                        // Показываем дату (форматируем)
-                        Text(
-                          _formatDate(msg.createdAt),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isMine
-                                ? Colors.white70
-                                : Colors.black54,
+                          SizedBox(height: 4),
+                          // Показываем дату (форматируем)
+                          Text(
+                            _formatDate(msg.createdAt),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isMine
+                                  ? Colors.white70
+                                  : Colors.black54,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
