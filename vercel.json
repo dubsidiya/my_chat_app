@@ -1,6 +1,7 @@
 {
   "version": 2,
   "outputDirectory": "build/web",
+  "cleanUrls": false,
   "rewrites": [
     {
       "source": "/(.*)",
@@ -8,6 +9,15 @@
     }
   ],
   "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
