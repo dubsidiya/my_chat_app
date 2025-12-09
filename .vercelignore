@@ -15,6 +15,18 @@ my_serve_chat_test/
 *.iml
 *.lock
 pubspec.lock
-build/
-!build/web/
+# Исключаем все из build/, кроме build/web/
+build/app/
+build/macos/
+build/ios/
+build/android/
+build/.cxx/
+build/native_assets/
+build/reports/
+build/shared_preferences_android/
+build/unit_test_assets/
+build/flutter_assets/
+build/b7ae8556e050a13133281db0332bc6ff.cache.dill.track.dill
+build/ea5a136d76f6662fd7d6deae3baa2271/
+build/last_build_run.json
 
