@@ -1,33 +1,114 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/message.dart';
+import 'storage_service.dart';
+
+// Результат пагинации сообщений
+class MessagesPaginationResult {
+  final List<Message> messages;
+  final bool hasMore;
+  final int totalCount;
+  final String? oldestMessageId;
+
+  MessagesPaginationResult({
+    required this.messages,
+    required this.hasMore,
+    required this.totalCount,
+    this.oldestMessageId,
+  });
+}
 
 class MessagesService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final token = await StorageService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<List<Message>> fetchMessages(String chatId) async {
+    return fetchMessagesPaginated(chatId, limit: 50, offset: 0).then((result) => result.messages);
+  }
+
+  Future<MessagesPaginationResult> fetchMessagesPaginated(
+    String chatId, {
+    int limit = 50,
+    int offset = 0,
+    String? beforeMessageId,
+  }) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/messages/$chatId'));
+      final uri = Uri.parse('$baseUrl/messages/$chatId').replace(
+        queryParameters: {
+          'limit': limit.toString(),
+          'offset': offset.toString(),
+          if (beforeMessageId != null) 'before': beforeMessageId,
+        },
+      );
+
+      final headers = await _getAuthHeaders();
+      final response = await http.get(uri, headers: headers);
 
       print('Fetch messages status: ${response.statusCode}');
       print('Fetch messages response: ${response.body}');
 
       if (response.statusCode == 200) {
         try {
-          final List<dynamic> data = jsonDecode(response.body);
+          final dynamic decodedData = jsonDecode(response.body);
           
-          // Безопасный парсинг с обработкой ошибок
-          final List<Message> messages = [];
-          for (var msgJson in data) {
-            try {
-              messages.add(Message.fromJson(msgJson as Map<String, dynamic>));
-            } catch (e) {
-              print('Error parsing message: $e');
-              print('Message JSON: $msgJson');
-              // Пропускаем проблемное сообщение, но продолжаем обработку
+          // Поддержка старого формата (без пагинации) для обратной совместимости
+          if (decodedData is Map<String, dynamic> && decodedData.containsKey('messages')) {
+            // Новый формат с пагинацией
+            final messagesData = decodedData['messages'] as List<dynamic>;
+            final paginationData = decodedData['pagination'] as Map<String, dynamic>;
+            
+            final List<Message> messages = [];
+            for (var msgJson in messagesData) {
+              try {
+                messages.add(Message.fromJson(msgJson as Map<String, dynamic>));
+              } catch (e) {
+                print('Error parsing message: $e');
+                print('Message JSON: $msgJson');
+              }
             }
+            
+            return MessagesPaginationResult(
+              messages: messages,
+              hasMore: paginationData['hasMore'] ?? false,
+              totalCount: paginationData['totalCount'] ?? messages.length,
+              oldestMessageId: paginationData['oldestMessageId']?.toString(),
+            );
+          } else if (decodedData is List<dynamic>) {
+            // Старый формат (массив сообщений)
+            final List<dynamic> messagesData = decodedData;
+            final List<Message> messages = [];
+            for (var msgJson in messagesData) {
+              try {
+                messages.add(Message.fromJson(msgJson as Map<String, dynamic>));
+              } catch (e) {
+                print('Error parsing message: $e');
+                print('Message JSON: $msgJson');
+              }
+            }
+            
+            return MessagesPaginationResult(
+              messages: messages,
+              hasMore: false,
+              totalCount: messages.length,
+              oldestMessageId: null,
+            );
+          } else {
+            // Неожиданный формат
+            print('Unexpected response format: $decodedData');
+            return MessagesPaginationResult(
+              messages: [],
+              hasMore: false,
+              totalCount: 0,
+              oldestMessageId: null,
+            );
           }
-          return messages;
         } catch (e) {
           print('Error decoding messages JSON: $e');
           throw Exception('Ошибка парсинга сообщений: $e');
@@ -37,17 +118,17 @@ class MessagesService {
         throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error in fetchMessages: $e');
+      print('Error in fetchMessagesPaginated: $e');
       rethrow;
     }
   }
 
-  Future<void> sendMessage(String userId, String chatId, String content) async {
+  Future<void> sendMessage(String chatId, String content) async {
+    final headers = await _getAuthHeaders();
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
-      headers: {'Content-Type': 'application/json'},
+      headers: headers,
       body: jsonEncode({
-        'user_id': userId,
         'chat_id': chatId,
         'content': content,
       }),
@@ -63,7 +144,8 @@ class MessagesService {
       final url = Uri.parse('$baseUrl/messages/message/$messageId?userId=$userId');
       print('Deleting message: $messageId');
       
-      final response = await http.delete(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.delete(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при удалении сообщения');
@@ -114,7 +196,8 @@ class MessagesService {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');
       print('Clearing chat: $chatId');
       
-      final response = await http.delete(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.delete(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при очистке чата');

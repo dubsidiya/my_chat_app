@@ -3,7 +3,8 @@ import pool from '../db.js';
 // Получение всех чатов пользователя
 export const getUserChats = async (req, res) => {
   try {
-    const userId = req.params.id;
+    // Используем userId из токена (безопасно)
+    const userId = req.user.userId;
 
     // Используем chat_users (как в схеме БД) вместо chat_members
     const result = await pool.query(
@@ -38,8 +39,13 @@ export const createChat = async (req, res) => {
     // Определяем, групповой ли чат (больше 1 участника)
     const isGroup = userIds.length > 1;
 
-    // Первый пользователь в списке - создатель чата
-    const creatorId = userIds[0];
+    // Создатель чата - текущий пользователь из токена
+    const creatorId = req.user.userId;
+    
+    // Добавляем создателя в список участников, если его там нет
+    if (!userIds.includes(creatorId.toString())) {
+      userIds.unshift(creatorId.toString());
+    }
 
     // Создаём чат с is_group и created_by
     const chatResult = await pool.query(
@@ -74,7 +80,8 @@ export const createChat = async (req, res) => {
 export const deleteChat = async (req, res) => {
   try {
     const chatId = req.params.id;
-    const userId = req.body.userId || req.query.userId; // Получаем userId из body или query
+    // userId берем из токена (безопасно)
+    const userId = req.user.userId;
 
     if (!chatId) {
       return res.status(400).json({ message: "Укажите ID чата" });
@@ -93,31 +100,26 @@ export const deleteChat = async (req, res) => {
     const chat = chatCheck.rows[0];
     const creatorId = chat.created_by;
 
-    // Если указан userId, проверяем, является ли он создателем
-    if (userId) {
-      // Преобразуем в строку для сравнения
-      const userIdStr = userId.toString();
-      const creatorIdStr = creatorId?.toString();
-      
-      if (creatorIdStr && userIdStr !== creatorIdStr) {
-        return res.status(403).json({ 
-          message: "Только создатель чата может его удалить" 
-        });
-      }
+    // Проверяем, является ли пользователь создателем
+    const userIdStr = userId.toString();
+    const creatorIdStr = creatorId?.toString();
+    
+    if (creatorIdStr && userIdStr !== creatorIdStr) {
+      return res.status(403).json({ 
+        message: "Только создатель чата может его удалить" 
+      });
     }
 
-    // Проверяем, является ли пользователь участником чата (если userId указан)
-    if (userId) {
-      const memberCheck = await pool.query(
-        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-        [chatId, userId]
-      );
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
 
-      if (memberCheck.rows.length === 0) {
-        return res.status(403).json({ 
-          message: "Вы не являетесь участником этого чата" 
-        });
-      }
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        message: "Вы не являетесь участником этого чата" 
+      });
     }
 
     // Удаляем все сообщения чата (если CASCADE не работает)

@@ -1,0 +1,17 @@
+# Конфигурация для Render.com (опционально)
+services:
+  - type: web
+    name: my-chat-server
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false  # Настраивается вручную в панели Render
+      - key: JWT_SECRET
+        sync: false  # Настраивается вручную в панели Render
+      - key: ALLOWED_ORIGINS
+        sync: false  # Настраивается вручную в панели Render
+

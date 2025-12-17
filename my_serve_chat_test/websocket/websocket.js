@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import pool from '../db.js';
+import { verifyWebSocketToken } from '../middleware/auth.js';
 
 const clients = new Map(); // userId -> ws
 
@@ -12,24 +13,50 @@ export function setupWebSocket(server) {
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (ws, req) => {
-    const userId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('userId');
-    if (!userId) return ws.close();
+    // Получаем токен из query параметров
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get('token');
+    
+    if (!token) {
+      console.log('WebSocket connection rejected: no token');
+      ws.close(1008, 'Токен отсутствует');
+      return;
+    }
 
+    // Проверяем токен
+    const decoded = verifyWebSocketToken(token);
+    if (!decoded) {
+      console.log('WebSocket connection rejected: invalid token');
+      ws.close(1008, 'Недействительный токен');
+      return;
+    }
+
+    const userId = decoded.userId.toString();
+    const userEmail = decoded.email;
+
+    console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
     clients.set(userId, ws);
 
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
         if (data.type === 'send') {
-          // Приложение может отправлять через WebSocket или через HTTP
-          // Поддерживаем оба варианта
-          const { chatId, chat_id, senderId, user_id, content, senderEmail } = data;
-          
-          // Используем user_id или senderId (для обратной совместимости)
-          const userId = user_id || senderId;
-          const chatIdFinal = chat_id || chatId;
+          // Используем userId из токена (безопасно)
+          const chatIdFinal = data.chat_id || data.chatId;
+          const content = data.content;
 
-          if (!userId || !chatIdFinal || !content) {
+          if (!chatIdFinal || !content) {
+            return;
+          }
+
+          // Проверяем, является ли пользователь участником чата
+          const memberCheck = await pool.query(
+            'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+            [chatIdFinal, userId]
+          );
+
+          if (memberCheck.rows.length === 0) {
+            console.log(`User ${userId} tried to send message to chat ${chatIdFinal} without being a member`);
             return;
           }
 
@@ -40,15 +67,8 @@ export function setupWebSocket(server) {
             RETURNING id, chat_id, user_id, content, created_at
           `, [chatIdFinal, userId, content]);
 
-          // Получаем email пользователя, если не передан
-          let senderEmailFinal = senderEmail;
-          if (!senderEmailFinal) {
-            const userResult = await pool.query(
-              'SELECT email FROM users WHERE id = $1',
-              [userId]
-            );
-            senderEmailFinal = userResult.rows[0]?.email || '';
-          }
+          // Используем email из токена
+          const senderEmailFinal = userEmail;
 
           const fullMessage = {
             id: result.rows[0].id,

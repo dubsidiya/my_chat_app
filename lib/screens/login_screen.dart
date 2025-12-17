@@ -36,11 +36,12 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
 
-      if (userData != null) {
-        // Сохраняем данные пользователя для автоматического входа
+      if (userData != null && userData['token'] != null) {
+        // Сохраняем данные пользователя и токен для автоматического входа
         await StorageService.saveUserData(
           userData['id'].toString(),
           userData['email'].toString(),
+          userData['token'].toString(),
         );
 
         if (mounted) {

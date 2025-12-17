@@ -1,13 +1,26 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
+import 'storage_service.dart';
 
 class ChatsService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final token = await StorageService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<List<Chat>> fetchChats(String userId) async {
     try {
-    final response = await http.get(Uri.parse('$baseUrl/chats/$userId'));
+      final headers = await _getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/chats/$userId'),
+        headers: headers,
+      );
 
       print('Fetch chats status: ${response.statusCode}');
       print('Fetch chats response: ${response.body}');
@@ -49,13 +62,14 @@ class ChatsService {
       print('Creating chat at: $url');
       print('Request body: name=$name, userIds=$userIds');
       
-    final response = await http.post(
+      final headers = await _getAuthHeaders();
+      final response = await http.post(
         url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'name': name,
-        'userIds': userIds,
-      }),
+        headers: headers,
+        body: jsonEncode({
+          'name': name,
+          'userIds': userIds,
+        }),
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
@@ -112,7 +126,8 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/auth/users');
       print('Fetching all users (excluding: $excludeUserId)');
       
-      final response = await http.get(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.get(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при получении списка пользователей');
@@ -158,7 +173,8 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/members');
       print('Fetching chat members for chat: $chatId');
       
-      final response = await http.get(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.get(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при получении участников чата');
@@ -202,9 +218,10 @@ class ChatsService {
       print('Adding members to chat: $chatId');
       print('User IDs: $userIds');
       
+      final headers = await _getAuthHeaders();
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'userIds': userIds,
         }),
@@ -250,7 +267,8 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/members/$userId');
       print('Removing member from chat: $chatId, userId: $userId');
       
-      final response = await http.delete(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.delete(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при удалении участника');
@@ -289,11 +307,11 @@ class ChatsService {
 
   Future<void> deleteChat(String chatId, String userId) async {
     try {
-      // Передаем userId в query параметре
-      final url = Uri.parse('$baseUrl/chats/$chatId?userId=$userId');
+      final url = Uri.parse('$baseUrl/chats/$chatId');
       print('Deleting chat at: $url');
       
-      final response = await http.delete(url).timeout(
+      final headers = await _getAuthHeaders();
+      final response = await http.delete(url, headers: headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('Таймаут при удалении чата');

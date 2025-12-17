@@ -154,6 +154,91 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _changePassword() async {
+    // Показываем диалог смены пароля
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return _ChangePasswordDialog();
+      },
+    );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    final oldPassword = result['oldPassword'];
+    final newPassword = result['newPassword'];
+
+    if (oldPassword == null || newPassword == null || oldPassword.isEmpty || newPassword.isEmpty) {
+      return;
+    }
+
+    // Показываем индикатор загрузки
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    try {
+      await _authService.changePassword(widget.userId, oldPassword, newPassword);
+      
+      // Закрываем индикатор загрузки
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      if (mounted) {
+        // Показываем сообщение об успехе
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Пароль успешно изменен'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // Закрываем индикатор загрузки
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      print('Ошибка смены пароля: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Ошибка при смене пароля: ${e.toString().replaceFirst('Exception: ', '')}',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteAccount() async {
     // Показываем диалог с вводом пароля для подтверждения
     final password = await showDialog<String>(
@@ -299,6 +384,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onSelected: (value) async {
               if (value == 'logout') {
                 _logout();
+              } else if (value == 'change_password') {
+                await _changePassword();
               } else if (value == 'delete_account') {
                 await _deleteAccount();
               }
@@ -311,6 +398,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icon(Icons.logout, color: Colors.blue),
                     SizedBox(width: 8),
                     Text('Выйти'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'change_password',
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('Изменить пароль'),
                   ],
                 ),
               ),
@@ -707,6 +804,188 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             backgroundColor: Colors.red,
           ),
           child: Text('Удалить аккаунт'),
+        ),
+      ],
+    );
+  }
+}
+
+// Диалог для смены пароля
+class _ChangePasswordDialog extends StatefulWidget {
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  late final TextEditingController _oldPasswordController;
+  late final TextEditingController _newPasswordController;
+  late final TextEditingController _confirmPasswordController;
+  bool _obscureOldPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _oldPasswordController = TextEditingController();
+    _newPasswordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _oldPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  bool _validatePasswords() {
+    final newPassword = _newPasswordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+    
+    if (newPassword.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Новый пароль должен содержать минимум 4 символа'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+    
+    if (newPassword != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Пароли не совпадают'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+    
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.lock_outline, color: Colors.blue.shade700),
+          SizedBox(width: 8),
+          Text('Изменить пароль'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Введите текущий пароль и новый пароль',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _oldPasswordController,
+              decoration: InputDecoration(
+                labelText: 'Текущий пароль',
+                prefixIcon: Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureOldPassword ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureOldPassword = !_obscureOldPassword;
+                    });
+                  },
+                ),
+              ),
+              obscureText: _obscureOldPassword,
+              autofocus: true,
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _newPasswordController,
+              decoration: InputDecoration(
+                labelText: 'Новый пароль',
+                prefixIcon: Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureNewPassword ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureNewPassword = !_obscureNewPassword;
+                    });
+                  },
+                ),
+                helperText: 'Минимум 4 символа',
+              ),
+              obscureText: _obscureNewPassword,
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _confirmPasswordController,
+              decoration: InputDecoration(
+                labelText: 'Подтвердите новый пароль',
+                prefixIcon: Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                    });
+                  },
+                ),
+              ),
+              obscureText: _obscureConfirmPassword,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context, null);
+          },
+          child: Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (_oldPasswordController.text.trim().isEmpty ||
+                _newPasswordController.text.trim().isEmpty ||
+                _confirmPasswordController.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Заполните все поля'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            if (!_validatePasswords()) {
+              return;
+            }
+            
+            Navigator.pop(
+              context,
+              {
+                'oldPassword': _oldPasswordController.text.trim(),
+                'newPassword': _newPasswordController.text.trim(),
+              },
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue.shade700,
+            foregroundColor: Colors.white,
+          ),
+          child: Text('Изменить'),
         ),
       ],
     );
