@@ -1,7 +1,11 @@
 import express from 'express';
 import { getMessages, sendMessage, deleteMessage, clearChat } from '../controllers/messagesController.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Все роуты сообщений требуют аутентификации
+router.use(authenticateToken);
 
 router.get('/:chatId', getMessages);
 router.post('/', sendMessage);

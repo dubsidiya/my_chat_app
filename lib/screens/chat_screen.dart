@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/chats_service.dart';
+import '../services/storage_service.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 
@@ -29,24 +30,32 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   final _messagesService = MessagesService();
   final _chatsService = ChatsService();
-  late WebSocketChannel _channel;
+  WebSocketChannel? _channel;
   StreamSubscription? _webSocketSubscription;
 
   List<Message> _messages = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  bool _hasMoreMessages = true;
+  String? _oldestMessageId;
+  static const int _messagesPerPage = 50;
 
   @override
   void initState() {
     super.initState();
 
-    // Подключаемся к WebSocket с userId в query параметре
-    _channel = WebSocketChannel.connect(
-      Uri.parse('wss://my-server-chat.onrender.com?userId=${widget.userId}'),
-    );
+    // Инициализируем WebSocket асинхронно
+    _initWebSocket();
+    
+    _loadMessages();
+  }
 
-    _webSocketSubscription = _channel.stream.listen(
+  void _setupWebSocketListener() {
+    if (_channel == null) return;
+    _webSocketSubscription = _channel!.stream.listen(
       (event) {
         if (!mounted) return;
         try {
@@ -135,27 +144,168 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
 
-    _loadMessages();
+    // Добавляем listener для автоматической подгрузки при скролле вверх
+    _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _initWebSocket() async {
+    try {
+      final token = await StorageService.getToken();
+      if (token == null) {
+        print('WebSocket: No token available');
+        return;
+      }
+
+      // Подключаемся к WebSocket с токеном
+      _channel = WebSocketChannel.connect(
+        Uri.parse('wss://my-server-chat.onrender.com?token=$token'),
+      );
+      
+      // Настраиваем слушатель после подключения
+      if (mounted) {
+        _setupWebSocketListener();
+      }
+    } catch (e) {
+      print('Error initializing WebSocket: $e');
+    }
+  }
+
+  void _onScroll() {
+    // В reverse списке: когда прокрутили почти до верха (к старшим сообщениям)
+    // minScrollExtent = 0 (верх списка, где старые сообщения)
+    // maxScrollExtent = низ списка (где новые сообщения)
+    if (_scrollController.position.pixels <= 300) {
+      if (!_isLoadingMore && _hasMoreMessages && _messages.isNotEmpty) {
+        _loadMoreMessages();
+      }
+    }
   }
 
   Future<void> _loadMessages() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasMoreMessages = true;
+      _oldestMessageId = null;
+    });
+    
     try {
-      final messages = await _messagesService.fetchMessages(widget.chatId);
+      final result = await _messagesService.fetchMessagesPaginated(
+        widget.chatId,
+        limit: _messagesPerPage,
+        offset: 0,
+      );
+      
       if (mounted) {
-      setState(() => _messages = messages);
+        setState(() {
+          _messages = result.messages;
+          _hasMoreMessages = result.hasMore;
+          _oldestMessageId = result.oldestMessageId;
+        });
+        
+        // Прокручиваем вниз после загрузки
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(0);
+          }
+        });
       }
     } catch (e) {
       print('Error loading messages: $e');
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка загрузки сообщений: $e')),
-      );
+        );
       }
     } finally {
       if (mounted) {
-      setState(() => _isLoading = false);
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (!mounted || _isLoadingMore || !_hasMoreMessages) return;
+    
+    setState(() => _isLoadingMore = true);
+    
+    try {
+      // Сохраняем текущую позицию скролла и максимальную высоту контента
+      final currentScrollPosition = _scrollController.position.pixels;
+      final maxScrollExtentBefore = _scrollController.position.maxScrollExtent;
+      
+      // Загружаем старые сообщения
+      final result = await _messagesService.fetchMessagesPaginated(
+        widget.chatId,
+        limit: _messagesPerPage,
+        beforeMessageId: _oldestMessageId,
+      );
+      
+      if (mounted && result.messages.isNotEmpty) {
+        setState(() {
+          // Добавляем новые сообщения в начало списка
+          _messages.insertAll(0, result.messages);
+          // Удаляем дубликаты (на случай если сообщение уже есть)
+          final seen = <String>{};
+          _messages.removeWhere((msg) {
+            final id = msg.id.toString();
+            if (seen.contains(id)) {
+              return true;
+            }
+            seen.add(id);
+            return false;
+          });
+          // Сортируем по времени
+          _messages.sort((a, b) {
+            try {
+              final aTime = DateTime.parse(a.createdAt);
+              final bTime = DateTime.parse(b.createdAt);
+              return aTime.compareTo(bTime);
+            } catch (e) {
+              return 0;
+            }
+          });
+          
+          _hasMoreMessages = result.hasMore;
+          _oldestMessageId = result.oldestMessageId;
+        });
+        
+        // Восстанавливаем позицию скролла после добавления сообщений
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients && mounted) {
+            // Вычисляем разницу в высоте контента
+            final maxScrollExtentAfter = _scrollController.position.maxScrollExtent;
+            final heightDifference = maxScrollExtentAfter - maxScrollExtentBefore;
+            
+            // Новая позиция = старая позиция + разница в высоте
+            // Это сохраняет видимую позицию пользователя
+            final newScrollPosition = currentScrollPosition + heightDifference;
+            
+            // Прокручиваем к новой позиции
+            _scrollController.jumpTo(
+              newScrollPosition.clamp(0.0, _scrollController.position.maxScrollExtent),
+            );
+          }
+        });
+      } else if (mounted) {
+        // Если нет новых сообщений, значит больше загружать нечего
+        setState(() {
+          _hasMoreMessages = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading more messages: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка загрузки сообщений: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
       }
     }
   }
@@ -192,7 +342,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty || !mounted) return;
 
     try {
-      await _messagesService.sendMessage(widget.userId, widget.chatId, text);
+      await _messagesService.sendMessage(widget.chatId, text);
       if (mounted) {
       _controller.clear();
       }
@@ -318,8 +468,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _webSocketSubscription?.cancel();
-    _channel.sink.close();
+    _channel?.sink.close();
     _controller.dispose();
     super.dispose();
   }
@@ -465,12 +617,71 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: _isLoading
                 ? Center(child: CircularProgressIndicator())
-                : ListView.builder(
-              reverse: true,
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[_messages.length - 1 - index];
-                final isMine = msg.senderEmail == widget.userEmail;
+                : Stack(
+              children: [
+                ListView.builder(
+                  controller: _scrollController,
+                  reverse: true,
+                  itemCount: _messages.length + 
+                      (_isLoadingMore ? 1 : 0) + 
+                      (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    final totalItems = _messages.length + 
+                        (_isLoadingMore ? 1 : 0) + 
+                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0);
+                    
+                    // Показываем индикатор загрузки вверху при подгрузке (в reverse списке это последний элемент)
+                    if (_isLoadingMore && index == totalItems - 1) {
+                      return Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 8),
+                              Text(
+                                'Загрузка сообщений...',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    
+                    // Показываем кнопку "Загрузить еще" если есть еще сообщения
+                    if (!_isLoadingMore && _hasMoreMessages && _messages.isNotEmpty && index == totalItems - 1) {
+                      return Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: OutlinedButton.icon(
+                            onPressed: _loadMoreMessages,
+                            icon: Icon(Icons.arrow_upward, size: 18),
+                            label: Text('Загрузить старые сообщения'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blue.shade700,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    
+                    // Индекс сообщения в списке (reverse: true, поэтому инвертируем)
+                    // Учитываем дополнительные элементы (индикатор загрузки или кнопка)
+                    final extraItems = (_isLoadingMore ? 1 : 0) + 
+                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0);
+                    final messageIndex = _messages.length - 1 - (index - extraItems);
+                    
+                    if (messageIndex < 0 || messageIndex >= _messages.length) {
+                      return SizedBox.shrink();
+                    }
+                    
+                    final msg = _messages[messageIndex];
+                    final isMine = msg.senderEmail == widget.userEmail;
 
                 return Padding(
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -631,6 +842,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 );
               },
+                ),
+              ],
             ),
           ),
           Container(

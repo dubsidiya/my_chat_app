@@ -1,64 +1,160 @@
 import pool from '../db.js';
+import bcrypt from 'bcryptjs';
+import { generateToken } from '../middleware/auth.js';
+import { validateRegisterData, validateLoginData } from '../utils/validation.js';
+
 export const register = async (req, res) => {
   const { email, password } = req.body;
 
+  // Проверяем наличие данных
   if (!email || !password) {
     return res.status(400).json({ message: 'Email и пароль обязательны' });
   }
 
+  // Нормализуем email перед валидацией (убираем пробелы, приводим к нижнему регистру)
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Валидация данных
+  const validation = validateRegisterData(normalizedEmail, password);
+  if (!validation.valid) {
+    console.log('Валидация не прошла:', { email: normalizedEmail, error: validation.message });
+    return res.status(400).json({ message: validation.message });
+  }
+
   try {
-    const existing = await pool.query('SELECT 1 FROM users WHERE email = $1', [email]);
+    // Проверяем существование пользователя с нормализованным email
+    // Используем LOWER и TRIM для поиска, чтобы найти даже если есть пробелы или другой регистр
+    const existing = await pool.query(
+      'SELECT id, email FROM users WHERE LOWER(TRIM(email)) = $1',
+      [normalizedEmail]
+    );
+    
     if (existing.rows.length > 0) {
+      console.log('Попытка регистрации существующего пользователя:', {
+        requested: normalizedEmail,
+        existing: existing.rows[0].email
+      });
       return res.status(400).json({ message: 'Пользователь уже существует' });
     }
 
+    // Хешируем пароль
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     const result = await pool.query(
       'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
-      [email, password]
+      [normalizedEmail, hashedPassword]
     );
+
+    // Генерируем JWT токен
+    const token = generateToken(result.rows[0].id, result.rows[0].email);
 
     res.status(201).json({
       userId: result.rows[0].id,
       email: result.rows[0].email,
+      token: token,
     });
   } catch (error) {
     console.error('Ошибка регистрации:', error.message);
-    console.error(error.stack);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
-  console.log('Login attempt:', { email, password });
-
+  
+  // Проверяем наличие данных
   if (!email || !password) {
     return res.status(400).json({ message: 'Email и пароль обязательны' });
   }
+  
+  // Валидация данных
+  try {
+    const validation = validateLoginData(email, password);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.message });
+    }
+  } catch (error) {
+    console.error('Ошибка валидации:', error);
+    // Если validateLoginData не определена, продолжаем без валидации
+    console.warn('validateLoginData не найдена, пропускаем валидацию');
+  }
 
   try {
+    // Нормализуем email
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    // Получаем пользователя по email
     const result = await pool.query(
-      'SELECT id, email FROM users WHERE email = $1 AND password = $2',
-      [email, password]
+      'SELECT id, email, password FROM users WHERE LOWER(TRIM(email)) = $1',
+      [normalizedEmail]
     );
-    console.log('DB query result:', result.rows);
 
     if (result.rows.length === 0) {
+      // Не раскрываем, существует ли пользователь (защита от перечисления)
       return res.status(401).json({ message: 'Неверный email или пароль' });
     }
 
-    res.status(200).json(result.rows[0]);
+    const user = result.rows[0];
+    
+    // Проверяем, хеширован ли пароль (bcrypt хеши начинаются с $2)
+    const isPasswordHashed = user.password && user.password.startsWith('$2');
+    
+    let passwordMatch = false;
+    
+    if (isPasswordHashed) {
+      // Пароль уже хеширован - используем bcrypt.compare
+      passwordMatch = await bcrypt.compare(password, user.password);
+    } else {
+      // Пароль в открытом виде - сравниваем напрямую (миграция на лету)
+      passwordMatch = user.password === password;
+      
+      if (passwordMatch) {
+        // Пароль совпал - перехешируем его
+        console.log(`Миграция пароля для пользователя ${user.id}`);
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await pool.query(
+          'UPDATE users SET password = $1 WHERE id = $2',
+          [hashedPassword, user.id]
+        );
+        console.log(`Пароль пользователя ${user.id} успешно перехеширован`);
+      }
+    }
+    
+    if (!passwordMatch) {
+      return res.status(401).json({ message: 'Неверный email или пароль' });
+    }
+
+    // Генерируем JWT токен
+    const token = generateToken(user.id, user.email);
+
+    // Удаляем пароль из ответа
+    delete user.password;
+
+    res.status(200).json({
+      id: user.id,
+      email: user.email,
+      token: token,
+    });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-// Получение списка всех пользователей
+// Получение списка всех пользователей (требует аутентификации)
 export const getAllUsers = async (req, res) => {
   try {
+    // req.user устанавливается middleware authenticateToken
+    const currentUserId = req.user?.userId;
+    
+    if (!currentUserId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+
     const result = await pool.query(
-      'SELECT id, email FROM users ORDER BY email'
+      'SELECT id, email FROM users WHERE id != $1 ORDER BY email',
+      [currentUserId]
     );
     res.json(result.rows);
   } catch (error) {
@@ -81,14 +177,26 @@ export const deleteAccount = async (req, res) => {
   }
 
   try {
-    // Проверяем, существует ли пользователь и правильный ли пароль
+    // Проверяем права доступа (только владелец может удалить свой аккаунт)
+    const currentUserId = req.user?.userId;
+    if (currentUserId && currentUserId.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Вы можете удалить только свой аккаунт' });
+    }
+
+    // Получаем пользователя
     const userCheck = await pool.query(
-      'SELECT id, email FROM users WHERE id = $1 AND password = $2',
-      [userId, password]
+      'SELECT id, email, password FROM users WHERE id = $1',
+      [userId]
     );
 
     if (userCheck.rows.length === 0) {
-      return res.status(401).json({ message: 'Неверный пароль или пользователь не найден' });
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    // Проверяем пароль
+    const passwordMatch = await bcrypt.compare(password, userCheck.rows[0].password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: 'Неверный пароль' });
     }
 
     // Начинаем транзакцию для безопасного удаления всех связанных данных
@@ -146,6 +254,79 @@ export const deleteAccount = async (req, res) => {
     console.error('Stack:', error.stack);
     res.status(500).json({ 
       message: 'Ошибка удаления аккаунта',
+      error: error.message 
+    });
+  }
+};
+
+// Смена пароля пользователя
+export const changePassword = async (req, res) => {
+  const userId = req.params.userId;
+  const { oldPassword, newPassword } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ message: 'Укажите ID пользователя' });
+  }
+
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ message: 'Требуются старый и новый пароль' });
+  }
+
+  if (oldPassword === newPassword) {
+    return res.status(400).json({ message: 'Новый пароль должен отличаться от старого' });
+  }
+
+
+  try {
+    // Проверяем права доступа (только владелец может изменить пароль)
+    const currentUserId = req.user?.userId;
+    if (currentUserId && currentUserId.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Вы можете изменить только свой пароль' });
+    }
+
+    // Валидация нового пароля
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ message: passwordValidation.message });
+    }
+
+    // Получаем пользователя
+    const userCheck = await pool.query(
+      'SELECT id, email, password FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    // Проверяем старый пароль
+    const passwordMatch = await bcrypt.compare(oldPassword, userCheck.rows[0].password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: 'Неверный текущий пароль' });
+    }
+
+    // Хешируем новый пароль
+    const saltRounds = 10;
+    const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Обновляем пароль
+    await pool.query(
+      'UPDATE users SET password = $1 WHERE id = $2',
+      [hashedNewPassword, userId]
+    );
+
+    console.log(`Пароль изменен для пользователя ${userId}`);
+
+    res.status(200).json({ 
+      message: 'Пароль успешно изменен'
+    });
+
+  } catch (error) {
+    console.error('Ошибка смены пароля:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Ошибка смены пароля',
       error: error.message 
     });
   }

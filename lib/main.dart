@@ -130,8 +130,8 @@ class MyApp extends StatelessWidget {
             );
           }
 
-          // Если есть сохраненные данные - автоматически входим
-          if (snapshot.hasData && snapshot.data != null) {
+          // Если есть сохраненные данные и токен - автоматически входим
+          if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
             final userData = snapshot.data!;
             return HomeScreen(
               userId: userData['id']!,

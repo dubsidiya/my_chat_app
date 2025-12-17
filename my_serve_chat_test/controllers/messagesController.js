@@ -3,22 +3,75 @@ import { getWebSocketClients } from '../websocket/websocket.js';
 
 export const getMessages = async (req, res) => {
   const chatId = req.params.chatId;
+  
+  // Параметры пагинации
+  const limit = parseInt(req.query.limit) || 50; // По умолчанию 50 сообщений
+  const offset = parseInt(req.query.offset) || 0;
+  const beforeMessageId = req.query.before; // ID сообщения, до которого загружать (для cursor-based)
 
   try {
-    // Используем user_id (как в схеме БД) вместо sender_id
-    const result = await pool.query(`
-      SELECT 
-        messages.id,
-        messages.chat_id,
-        messages.user_id,
-        messages.content,
-        messages.created_at,
-        users.email AS sender_email
-      FROM messages
-      JOIN users ON messages.user_id = users.id
-      WHERE messages.chat_id = $1
-      ORDER BY messages.created_at ASC
-    `, [chatId]);
+    let result;
+    let totalCountResult;
+
+    if (beforeMessageId) {
+      // Cursor-based pagination: загружаем сообщения до указанного ID (старые сообщения)
+      // Загружаем на 1 больше, чтобы проверить, есть ли еще сообщения
+      result = await pool.query(`
+        SELECT 
+          messages.id,
+          messages.chat_id,
+          messages.user_id,
+          messages.content,
+          messages.created_at,
+          users.email AS sender_email
+        FROM messages
+        JOIN users ON messages.user_id = users.id
+        WHERE messages.chat_id = $1 AND messages.id < $2
+        ORDER BY messages.id DESC
+        LIMIT $3
+      `, [chatId, beforeMessageId, limit + 1]);
+      
+      // Проверяем, есть ли еще сообщения (если получили больше чем limit)
+      const hasMoreMessages = result.rows.length > limit;
+      
+      // Берем только limit сообщений
+      if (hasMoreMessages) {
+        result.rows = result.rows.slice(0, limit);
+      }
+      
+      // Получаем общее количество для информации
+      totalCountResult = await pool.query(
+        'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
+        [chatId]
+      );
+    } else {
+      // Offset-based pagination: загружаем последние N сообщений
+      // Сначала получаем общее количество сообщений
+      totalCountResult = await pool.query(
+        'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
+        [chatId]
+      );
+      
+      const totalCount = parseInt(totalCountResult.rows[0].total);
+      const actualOffset = Math.max(0, totalCount - limit - offset);
+      
+      result = await pool.query(`
+        SELECT 
+          messages.id,
+          messages.chat_id,
+          messages.user_id,
+          messages.content,
+          messages.created_at,
+          users.email AS sender_email
+        FROM messages
+        JOIN users ON messages.user_id = users.id
+        WHERE messages.chat_id = $1
+        ORDER BY messages.created_at ASC
+        LIMIT $2 OFFSET $3
+      `, [chatId, limit, actualOffset]);
+    }
+    
+    const totalCount = parseInt(totalCountResult.rows[0].total);
 
     // Форматируем в формат, который ожидает приложение
     const formattedMessages = result.rows.map(row => ({
@@ -30,7 +83,41 @@ export const getMessages = async (req, res) => {
       sender_email: row.sender_email
     }));
 
-    res.json(formattedMessages);
+    // Определяем, есть ли еще сообщения для загрузки
+    let hasMore;
+    if (beforeMessageId) {
+      // Для cursor-based: если получили полную страницу, возможно есть еще
+      // Проверяем, есть ли сообщения с ID меньше самого маленького в результате
+      hasMore = formattedMessages.length === limit;
+      if (hasMore && formattedMessages.length > 0) {
+        const minId = Math.min(...formattedMessages.map(m => m.id));
+        const checkResult = await pool.query(
+          'SELECT 1 FROM messages WHERE chat_id = $1 AND id < $2 LIMIT 1',
+          [chatId, minId]
+        );
+        hasMore = checkResult.rows.length > 0;
+      }
+    } else {
+      // Для offset-based: проверяем, есть ли еще сообщения после текущей страницы
+      hasMore = (offset + limit) < totalCount;
+    }
+
+    // Находим ID самого старого сообщения в результате (для cursor-based)
+    // Это будет минимальный ID, так как мы загружаем старые сообщения
+    const oldestMessageId = formattedMessages.length > 0 
+      ? Math.min(...formattedMessages.map(m => m.id))
+      : null;
+
+    res.json({
+      messages: formattedMessages,
+      pagination: {
+        hasMore: hasMore,
+        totalCount: totalCount,
+        limit: limit,
+        offset: offset,
+        oldestMessageId: oldestMessageId, // Для следующего запроса с before
+      }
+    });
   } catch (error) {
     console.error('Ошибка получения сообщений:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -38,28 +125,38 @@ export const getMessages = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  // Приложение отправляет: { user_id, chat_id, content }
-  const { user_id, chat_id, content } = req.body;
+  // Приложение отправляет: { chat_id, content }
+  const { chat_id, content } = req.body;
+  
+  // userId берем из токена (безопасно)
+  const user_id = req.user.userId;
 
-  if (!user_id || !chat_id || !content) {
-    return res.status(400).json({ message: 'Укажите user_id, chat_id и content' });
+  if (!chat_id || !content) {
+    return res.status(400).json({ message: 'Укажите chat_id и content' });
   }
 
   try {
-    // Используем user_id (как в схеме БД) вместо sender_id
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chat_id, user_id]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    // Используем user_id из токена (безопасно)
     const result = await pool.query(`
       INSERT INTO messages (chat_id, user_id, content)
       VALUES ($1, $2, $3)
       RETURNING id, chat_id, user_id, content, created_at
     `, [chat_id, user_id, content]);
 
-    const userResult = await pool.query(
-      'SELECT email FROM users WHERE id = $1',
-      [user_id]
-    );
+    // Используем email из токена
+    const senderEmail = req.user.email;
 
     const message = result.rows[0];
-    const senderEmail = userResult.rows[0]?.email || '';
     
     const response = {
       id: message.id,
@@ -128,7 +225,8 @@ export const sendMessage = async (req, res) => {
 // Удаление одного сообщения
 export const deleteMessage = async (req, res) => {
   const messageId = req.params.messageId;
-  const userId = req.body.userId || req.query.userId;
+  // userId берем из токена (безопасно)
+  const userId = req.user.userId;
 
   if (!messageId) {
     return res.status(400).json({ message: 'Укажите ID сообщения' });
@@ -166,27 +264,25 @@ export const deleteMessage = async (req, res) => {
     }
 
     // Проверяем права: только автор сообщения может его удалить
-    if (userId) {
-      const messageUserId = message.user_id.toString();
-      const requestUserId = userId.toString();
+    const messageUserId = message.user_id.toString();
+    const requestUserId = userId.toString();
 
-      if (messageUserId !== requestUserId) {
-        return res.status(403).json({ 
-          message: 'Вы можете удалять только свои сообщения' 
-        });
-      }
+    if (messageUserId !== requestUserId) {
+      return res.status(403).json({ 
+        message: 'Вы можете удалять только свои сообщения' 
+      });
+    }
 
-      // Проверяем, является ли пользователь участником чата
-      const memberCheck = await pool.query(
-        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-        [chatId, userId]
-      );
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
 
-      if (memberCheck.rows.length === 0) {
-        return res.status(403).json({ 
-          message: 'Вы не являетесь участником этого чата' 
-        });
-      }
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        message: 'Вы не являетесь участником этого чата' 
+      });
     }
 
     // Удаляем сообщение
@@ -204,7 +300,7 @@ export const deleteMessage = async (req, res) => {
         type: 'message_deleted',
         message_id: messageId.toString(),
         chat_id: chatId.toString(),
-        user_id: userId,
+        user_id: userId.toString(),
       };
 
       console.log('Sending WebSocket delete notification to chat:', chatId);
@@ -247,7 +343,8 @@ export const deleteMessage = async (req, res) => {
 // Очистка всех сообщений из чата
 export const clearChat = async (req, res) => {
   const chatId = req.params.chatId;
-  const userId = req.body.userId || req.query.userId;
+  // userId берем из токена (безопасно)
+  const userId = req.user.userId;
 
   if (!chatId) {
     return res.status(400).json({ message: 'Укажите ID чата' });
@@ -264,19 +361,16 @@ export const clearChat = async (req, res) => {
       return res.status(404).json({ message: 'Чат не найден' });
     }
 
-    // Если указан userId, проверяем, является ли он участником чата
-    if (userId) {
-      // Проверяем, является ли пользователь участником чата
-      const memberCheck = await pool.query(
-        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-        [chatId, userId]
-      );
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
 
-      if (memberCheck.rows.length === 0) {
-        return res.status(403).json({ 
-          message: 'Вы не являетесь участником этого чата' 
-        });
-      }
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        message: 'Вы не являетесь участником этого чата' 
+      });
     }
 
     // Удаляем все сообщения из чата
