@@ -32,6 +32,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadChats() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
+    
+    // Проверяем токен перед запросом
+    final token = await StorageService.getToken();
+    print('🔍 HomeScreen: Проверка токена перед загрузкой чатов');
+    print('   userId: ${widget.userId}');
+    print('   token: ${token != null ? token.substring(0, 20) + "..." : "НЕ НАЙДЕН!"}');
+    
     try {
       final chats = await _chatsService.fetchChats(widget.userId);
       print('Loaded ${chats.length} chats');

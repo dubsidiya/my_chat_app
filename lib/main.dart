@@ -135,6 +135,7 @@ class MyApp extends StatelessWidget {
             final userData = snapshot.data!;
             print('✅ Автоматический вход: userId=${userData['id']}, email=${userData['email']}');
             print('✅ Токен найден: ${userData['token']!.substring(0, 20)}...');
+            print('✅ Токен полный: ${userData['token']}');
             return HomeScreen(
               userId: userData['id']!,
               userEmail: userData['email']!,
@@ -144,7 +145,10 @@ class MyApp extends StatelessWidget {
             print('  - hasData: ${snapshot.hasData}');
             print('  - data: ${snapshot.data}');
             if (snapshot.data != null) {
+              print('  - keys: ${snapshot.data!.keys}');
               print('  - token: ${snapshot.data!['token']}');
+            } else {
+              print('  - snapshot.data is null');
             }
           }
 

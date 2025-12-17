@@ -22,7 +22,11 @@ class ChatsService {
 
   Future<List<Chat>> fetchChats(String userId) async {
     try {
+      print('🔍 fetchChats вызван для userId: $userId');
       final headers = await _getAuthHeaders();
+      print('📋 Заголовки запроса: ${headers.keys}');
+      print('   Authorization: ${headers['Authorization'] != null ? headers['Authorization']!.substring(0, 30) + "..." : "ОТСУТСТВУЕТ!"}');
+      
       final response = await http.get(
         Uri.parse('$baseUrl/chats/$userId'),
         headers: headers,
