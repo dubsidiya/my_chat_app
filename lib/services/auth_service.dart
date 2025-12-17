@@ -17,13 +17,18 @@ class AuthService {
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        print('✅ Login успешен, получены данные: ${data.keys}');
         // Сохраняем токен
         if (data['token'] != null) {
+          print('💾 Сохранение токена...');
           await StorageService.saveUserData(
             data['id'].toString(),
             data['email'],
             data['token'],
           );
+          print('✅ Токен сохранен успешно');
+        } else {
+          print('⚠️ Токен не получен в ответе!');
         }
         return data;
       } else if (response.statusCode == 500) {

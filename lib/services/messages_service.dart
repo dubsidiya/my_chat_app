@@ -23,10 +23,16 @@ class MessagesService {
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
-    return {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
     };
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+      print('📤 Отправка запроса с токеном: ${token.substring(0, 20)}...');
+    } else {
+      print('⚠️ Запрос отправляется БЕЗ токена!');
+    }
+    return headers;
   }
 
   Future<List<Message>> fetchMessages(String chatId) async {

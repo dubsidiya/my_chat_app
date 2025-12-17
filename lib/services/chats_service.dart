@@ -8,10 +8,16 @@ class ChatsService {
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
-    return {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
     };
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+      print('📤 Отправка запроса с токеном: ${token.substring(0, 20)}...');
+    } else {
+      print('⚠️ Запрос отправляется БЕЗ токена!');
+    }
+    return headers;
   }
 
   Future<List<Chat>> fetchChats(String userId) async {
@@ -24,6 +30,11 @@ class ChatsService {
 
       print('Fetch chats status: ${response.statusCode}');
       print('Fetch chats response: ${response.body}');
+      
+      if (response.statusCode == 401) {
+        print('❌ 401 Unauthorized - токен недействителен или отсутствует');
+        print('Проверьте, что токен сохранен и отправляется в заголовках');
+      }
 
     if (response.statusCode == 200) {
         try {

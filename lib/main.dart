@@ -133,10 +133,19 @@ class MyApp extends StatelessWidget {
           // Если есть сохраненные данные и токен - автоматически входим
           if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
             final userData = snapshot.data!;
+            print('✅ Автоматический вход: userId=${userData['id']}, email=${userData['email']}');
+            print('✅ Токен найден: ${userData['token']!.substring(0, 20)}...');
             return HomeScreen(
               userId: userData['id']!,
               userEmail: userData['email']!,
             );
+          } else {
+            print('⚠️ Автоматический вход не выполнен:');
+            print('  - hasData: ${snapshot.hasData}');
+            print('  - data: ${snapshot.data}');
+            if (snapshot.data != null) {
+              print('  - token: ${snapshot.data!['token']}');
+            }
           }
 
           // Если данных нет - показываем экран входа
