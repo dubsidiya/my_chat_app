@@ -21,21 +21,47 @@ app.set('trust proxy', true);
 
 // Настройка CORS - ограничиваем только разрешенные домены
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',')
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : ['http://localhost:3000', 'https://my-chat-app.vercel.app'];
+
+// Добавляем стандартные домены для разработки
+const defaultOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:8080',
+  'https://my-chat-app.vercel.app'
+];
+
+const allAllowedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Разрешаем запросы без origin (мобильные приложения, Postman и т.д.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Разрешаем запросы без origin (мобильные приложения, Flutter, Postman и т.д.)
+    if (!origin) {
+      console.log('CORS: Запрос без origin (мобильное приложение) - разрешено');
+      return callback(null, true);
     }
+    
+    // Проверяем точное совпадение
+    if (allAllowedOrigins.indexOf(origin) !== -1) {
+      console.log(`CORS: Разрешен origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Проверяем localhost в любом виде (для разработки)
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      console.log(`CORS: Разрешен localhost origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    console.log(`CORS: Заблокирован origin: ${origin}`);
+    console.log(`CORS: Разрешенные origins: ${allAllowedOrigins.join(', ')}`);
+    callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(bodyParser.json());
