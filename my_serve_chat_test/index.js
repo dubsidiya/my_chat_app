@@ -45,13 +45,25 @@ app.use(cors({
     
     // Проверяем точное совпадение
     if (allAllowedOrigins.indexOf(origin) !== -1) {
-      console.log(`CORS: Разрешен origin: ${origin}`);
+      console.log(`CORS: Разрешен origin (точное совпадение): ${origin}`);
       return callback(null, true);
     }
     
     // Проверяем localhost в любом виде (для разработки)
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
       console.log(`CORS: Разрешен localhost origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Разрешаем все поддомены Vercel (для preview deployments)
+    if (origin.includes('.vercel.app')) {
+      console.log(`CORS: Разрешен Vercel origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Разрешаем все поддомены netlify (если используется)
+    if (origin.includes('.netlify.app')) {
+      console.log(`CORS: Разрешен Netlify origin: ${origin}`);
       return callback(null, true);
     }
     
