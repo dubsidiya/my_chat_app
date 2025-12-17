@@ -1,5 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 
 class StorageService {
   static const String _userIdKey = 'user_id';
@@ -30,18 +30,23 @@ class StorageService {
   // Получение данных пользователя
   static Future<Map<String, String>?> getUserData() async {
     try {
+      print('🔍 getUserData вызван');
       final prefs = await SharedPreferences.getInstance();
+      print('✅ SharedPreferences получен');
+      
       final userId = prefs.getString(_userIdKey);
       final userEmail = prefs.getString(_userEmailKey);
       final token = prefs.getString(_tokenKey);
 
-      print('🔍 getUserData:');
+      print('🔍 getUserData результаты:');
       print('   userId: $userId');
       print('   userEmail: $userEmail');
-      print('   token: ${token != null ? token.substring(0, 20) + "..." : "НЕ НАЙДЕН"}');
+      print('   token: ${token != null ? (token.length > 20 ? token.substring(0, 20) + "..." : token) : "НЕ НАЙДЕН"}');
+      print('   token length: ${token?.length ?? 0}');
 
       if (userId != null && userEmail != null && token != null) {
         print('✅ Все данные найдены, возвращаем Map');
+        print('   Возвращаем: id=$userId, email=$userEmail, token=${token.substring(0, 20)}...');
         return {
           'id': userId,
           'email': userEmail,
@@ -49,13 +54,16 @@ class StorageService {
         };
       } else {
         print('⚠️ Не все данные найдены:');
-        print('   userId: ${userId != null ? "есть" : "НЕТ"}');
-        print('   userEmail: ${userEmail != null ? "есть" : "НЕТ"}');
-        print('   token: ${token != null ? "есть" : "НЕТ"}');
+        print('   userId: ${userId != null ? "есть ($userId)" : "НЕТ"}');
+        print('   userEmail: ${userEmail != null ? "есть ($userEmail)" : "НЕТ"}');
+        print('   token: ${token != null ? "есть (length: ${token.length})" : "НЕТ"}');
       }
       return null;
     } catch (e) {
       print('❌ Ошибка getUserData: $e');
+      if (kDebugMode) {
+        print('   Stack trace: ${StackTrace.current}');
+      }
       return null;
     }
   }

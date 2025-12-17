@@ -28,6 +28,6 @@ Thumbs.db
 dist/
 build/
 
-# Migration script (удалите после использования)
-migrate_passwords.js
+# Migration script (можно оставить для будущего использования)
+# migrate_passwords.js
 

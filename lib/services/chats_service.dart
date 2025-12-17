@@ -7,16 +7,24 @@ class ChatsService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
   Future<Map<String, String>> _getAuthHeaders() async {
+    print('🔍 _getAuthHeaders вызван');
     final token = await StorageService.getToken();
+    print('🔍 getToken вернул: ${token != null ? "токен найден" : "NULL"}');
+    
     final headers = <String, String>{
       'Content-Type': 'application/json',
     };
-    if (token != null) {
+    
+    if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
       print('📤 Отправка запроса с токеном: ${token.substring(0, 20)}...');
+      print('📤 Полный заголовок Authorization: Bearer ${token.substring(0, 30)}...');
     } else {
-      print('⚠️ Запрос отправляется БЕЗ токена!');
+      print('❌ КРИТИЧНО: Запрос отправляется БЕЗ токена!');
+      print('   token is null или пустой');
     }
+    
+    print('📋 Итоговые заголовки: ${headers.keys}');
     return headers;
   }
 
