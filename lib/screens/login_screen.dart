@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
-import 'home_screen.dart';
+import 'main_tabs_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -48,7 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => HomeScreen(
+              builder: (_) => MainTabsScreen(
                 userId: userData['id'].toString(),
                 userEmail: userData['email'].toString(),
               ),

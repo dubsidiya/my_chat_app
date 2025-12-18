@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
 
 void main() {
@@ -136,7 +136,7 @@ class MyApp extends StatelessWidget {
             print('✅ Автоматический вход: userId=${userData['id']}, email=${userData['email']}');
             print('✅ Токен найден: ${userData['token']!.substring(0, 20)}...');
             print('✅ Токен полный: ${userData['token']}');
-            return HomeScreen(
+            return MainTabsScreen(
               userId: userData['id']!,
               userEmail: userData['email']!,
             );

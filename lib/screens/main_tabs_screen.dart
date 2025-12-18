@@ -1,0 +1,57 @@
+import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'students_screen.dart';
+
+class MainTabsScreen extends StatefulWidget {
+  final String userId;
+  final String userEmail;
+
+  MainTabsScreen({required this.userId, required this.userEmail});
+
+  @override
+  _MainTabsScreenState createState() => _MainTabsScreenState();
+}
+
+class _MainTabsScreenState extends State<MainTabsScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _screens.addAll([
+      HomeScreen(userId: widget.userId, userEmail: widget.userEmail),
+      StudentsScreen(userId: widget.userId, userEmail: widget.userEmail),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat),
+            label: 'Чаты',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.school),
+            label: 'Учет занятий',
+          ),
+        ],
+      ),
+    );
+  }
+}
+

@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chats.js';
 import messageRoutes from './routes/messages.js';
+import studentsRoutes from './routes/students.js';
 import { setupWebSocket } from './websocket/websocket.js';
 
 dotenv.config();
@@ -98,6 +99,7 @@ app.use('/auth/register', authLimiter);
 app.use('/auth', authRoutes);
 app.use('/chats', chatRoutes);
 app.use('/messages', messageRoutes);
+app.use('/students', studentsRoutes);
 
 // Подключение WebSocket
 setupWebSocket(server);
