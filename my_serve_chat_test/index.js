@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chats.js';
 import messageRoutes from './routes/messages.js';
 import studentsRoutes from './routes/students.js';
+import reportsRoutes from './routes/reports.js';
 import { setupWebSocket } from './websocket/websocket.js';
 
 dotenv.config();
@@ -100,6 +101,7 @@ app.use('/auth', authRoutes);
 app.use('/chats', chatRoutes);
 app.use('/messages', messageRoutes);
 app.use('/students', studentsRoutes);
+app.use('/reports', reportsRoutes);
 
 // Подключение WebSocket
 setupWebSocket(server);

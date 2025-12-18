@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'students_screen.dart';
+import 'reports_chat_screen.dart';
 
 class MainTabsScreen extends StatefulWidget {
   final String userId;
@@ -23,6 +24,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
     _screens.addAll([
       HomeScreen(userId: widget.userId, userEmail: widget.userEmail),
       StudentsScreen(userId: widget.userId, userEmail: widget.userEmail),
+      ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail),
     ]);
   }
 
@@ -48,6 +50,10 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.school),
             label: 'Учет занятий',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.description),
+            label: 'Отчеты',
           ),
         ],
       ),
