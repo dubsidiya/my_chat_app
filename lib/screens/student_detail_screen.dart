@@ -123,6 +123,57 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  Future<void> _deleteStudent() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить ученика?'),
+        content: Text(
+          'Вы уверены, что хотите удалить "${widget.student.name}"?\n\n'
+          'Это действие удалит все связанные данные:\n'
+          '• Все занятия (${_lessons.length})\n'
+          '• Все транзакции (${_transactions.length})\n'
+          '• Историю баланса\n\n'
+          'Это действие нельзя отменить!',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Удалить', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _studentsService.deleteStudent(widget.student.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ученик "${widget.student.name}" удален'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true); // Возвращаемся назад с результатом
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка удаления: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteLesson(Lesson lesson) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -165,6 +216,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.student.name),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: () => _deleteStudent(),
+            tooltip: 'Удалить ученика',
+          ),
+        ],
       ),
       body: Column(
         children: [

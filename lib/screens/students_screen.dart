@@ -80,6 +80,30 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
+  Future<void> _deleteStudent(Student student) async {
+    try {
+      await _studentsService.deleteStudent(student.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ученик "${student.name}" удален'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadStudents();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка удаления: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -114,52 +138,96 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     padding: EdgeInsets.all(8),
                     itemBuilder: (context, index) {
                       final student = _students[index];
-                      return Card(
-                        margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: student.isDebtor
-                                ? Colors.red
-                                : Colors.blue,
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.white,
-                            ),
+                      return Dismissible(
+                        key: Key('student_${student.id}'),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: EdgeInsets.only(right: 20),
+                          color: Colors.red,
+                          child: Icon(
+                            Icons.delete,
+                            color: Colors.white,
+                            size: 32,
                           ),
-                          title: Text(
-                            student.name,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          subtitle: student.parentName != null
-                              ? Text(student.parentName!)
-                              : null,
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '${student.balance.toStringAsFixed(0)} ₽',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: student.isDebtor
-                                      ? Colors.red
-                                      : Colors.green,
-                                ),
+                        ),
+                        confirmDismiss: (direction) async {
+                          final result = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text('Удалить ученика?'),
+                              content: Text(
+                                'Вы уверены, что хотите удалить "${student.name}"?\n\n'
+                                'Это действие удалит все связанные данные:\n'
+                                '• Все занятия\n'
+                                '• Все транзакции\n'
+                                '• Историю баланса\n\n'
+                                'Это действие нельзя отменить!',
                               ),
-                              if (student.isDebtor)
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: Text('Отмена'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: Text('Удалить', style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (result == true) {
+                            await _deleteStudent(student);
+                          }
+                          return result ?? false;
+                        },
+                        child: Card(
+                          margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: student.isDebtor
+                                  ? Colors.red
+                                  : Colors.blue,
+                              child: Icon(
+                                Icons.person,
+                                color: Colors.white,
+                              ),
+                            ),
+                            title: Text(
+                              student.name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: student.parentName != null
+                                ? Text(student.parentName!)
+                                : null,
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
                                 Text(
-                                  'Долг',
+                                  '${student.balance.toStringAsFixed(0)} ₽',
                                   style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.red,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: student.isDebtor
+                                        ? Colors.red
+                                        : Colors.green,
                                   ),
                                 ),
-                            ],
+                                if (student.isDebtor)
+                                  Text(
+                                    'Долг',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            onTap: () => _openStudentDetail(student),
                           ),
-                          onTap: () => _openStudentDetail(student),
                         ),
                       );
                     },
