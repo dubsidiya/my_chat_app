@@ -14,10 +14,10 @@ export const depositBalance = async (req, res) => {
       return res.status(400).json({ message: 'ID студента и сумма обязательны' });
     }
 
-    // Проверяем, что студент принадлежит пользователю
+    // Проверяем, что студент существует (общий для всех преподавателей)
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [student_id, userId]
+      'SELECT id FROM students WHERE id = $1',
+      [student_id]
     );
 
     if (checkResult.rows.length === 0) {

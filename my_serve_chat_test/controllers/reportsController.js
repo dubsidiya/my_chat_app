@@ -156,14 +156,13 @@ export const createReport = async (req, res) => {
     // Создаем занятия для каждого найденного ученика
     const createdLessons = [];
     for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
-      // Ищем студента по имени (точное совпадение или частичное)
+      // Ищем студента по имени (точное совпадение или частичное) - общий для всех преподавателей
       const studentResult = await pool.query(
         `SELECT id FROM students 
-         WHERE created_by = $1 
-         AND (LOWER(name) = LOWER($2) OR LOWER(name) LIKE LOWER($3))
-         ORDER BY CASE WHEN LOWER(name) = LOWER($2) THEN 1 ELSE 2 END
+         WHERE LOWER(TRIM(name)) = LOWER($1) OR LOWER(TRIM(name)) LIKE LOWER($2)
+         ORDER BY CASE WHEN LOWER(TRIM(name)) = LOWER($1) THEN 1 ELSE 2 END
          LIMIT 1`,
-        [userId, studentName, `%${studentName}%`]
+        [studentName.trim(), `%${studentName.trim()}%`]
       );
 
       if (studentResult.rows.length > 0) {
@@ -278,13 +277,13 @@ export const updateReport = async (req, res) => {
     const createdLessons = [];
 
     for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
+      // Ищем студента по имени (общий для всех преподавателей)
       const studentResult = await pool.query(
         `SELECT id FROM students 
-         WHERE created_by = $1 
-         AND (LOWER(name) = LOWER($2) OR LOWER(name) LIKE LOWER($3))
-         ORDER BY CASE WHEN LOWER(name) = LOWER($2) THEN 1 ELSE 2 END
+         WHERE LOWER(TRIM(name)) = LOWER($1) OR LOWER(TRIM(name)) LIKE LOWER($2)
+         ORDER BY CASE WHEN LOWER(TRIM(name)) = LOWER($1) THEN 1 ELSE 2 END
          LIMIT 1`,
-        [userId, studentName, `%${studentName}%`]
+        [studentName.trim(), `%${studentName.trim()}%`]
       );
 
       if (studentResult.rows.length > 0) {

@@ -6,10 +6,10 @@ export const getStudentLessons = async (req, res) => {
     const userId = req.user.userId;
     const { studentId } = req.params;
 
-    // Проверяем, что студент принадлежит пользователю
+    // Проверяем, что студент существует (общий для всех преподавателей)
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [studentId, userId]
+      'SELECT id FROM students WHERE id = $1',
+      [studentId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -90,12 +90,10 @@ export const deleteLesson = async (req, res) => {
     const userId = req.user.userId;
     const { id } = req.params;
 
-    // Проверяем, что занятие принадлежит пользователю
+    // Проверяем, что занятие существует (любой преподаватель может удалить)
     const checkResult = await pool.query(
-      `SELECT l.id, l.student_id FROM lessons l
-       JOIN students s ON l.student_id = s.id
-       WHERE l.id = $1 AND s.created_by = $2`,
-      [id, userId]
+      `SELECT id, student_id FROM lessons WHERE id = $1`,
+      [id]
     );
 
     if (checkResult.rows.length === 0) {
