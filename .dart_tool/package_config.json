@@ -32,6 +32,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "cross_file",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/cross_file-0.3.5+1",
+      "packageUri": "lib/",
+      "languageVersion": "3.8"
+    },
+    {
       "name": "crypto",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/crypto-3.0.6",
       "packageUri": "lib/",
@@ -63,9 +69,9 @@
     },
     {
       "name": "file_picker",
-      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/file_picker-6.2.1",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/file_picker-8.3.7",
       "packageUri": "lib/",
-      "languageVersion": "2.19"
+      "languageVersion": "3.4"
     },
     {
       "name": "flutter",
