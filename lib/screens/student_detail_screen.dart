@@ -45,6 +45,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     try {
       final lessons = await _studentsService.getStudentLessons(widget.student.id);
       final transactions = await _studentsService.getStudentTransactions(widget.student.id);
+      await _updateBalance();
       if (mounted) {
         setState(() {
           _lessons = lessons;
@@ -60,6 +61,24 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  // Обновление данных без показа индикатора загрузки
+  Future<void> _refreshData() async {
+    if (!mounted) return;
+    try {
+      final lessons = await _studentsService.getStudentLessons(widget.student.id);
+      final transactions = await _studentsService.getStudentTransactions(widget.student.id);
+      await _updateBalance();
+      if (mounted) {
+        setState(() {
+          _lessons = lessons;
+          _transactions = transactions;
+        });
+      }
+    } catch (e) {
+      print('Ошибка обновления данных: $e');
+    }
+  }
+
   void _addLesson() async {
     final result = await Navigator.push(
       context,
@@ -69,8 +88,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     );
 
     if (result == true) {
-      await _loadData();
-      await _updateBalance();
+      // Быстрое обновление данных после добавления занятия
+      await _refreshData();
     }
   }
 
@@ -83,8 +102,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     );
 
     if (result == true) {
-      await _loadData();
-      await _updateBalance();
+      // Быстрое обновление данных после пополнения
+      await _refreshData();
     }
   }
 
@@ -127,8 +146,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
     try {
       await _studentsService.deleteLesson(lesson.id);
-      await _loadData();
-      await _updateBalance();
+      // Быстрое обновление данных после удаления занятия
+      await _refreshData();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -301,10 +320,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     style: TextStyle(color: Colors.grey),
                                   ),
                                 )
-                              : ListView.builder(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  itemCount: _lessons.length,
-                                  itemBuilder: (context, index) {
+                              : RefreshIndicator(
+                                  onRefresh: _refreshData,
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: _lessons.length,
+                                    itemBuilder: (context, index) {
                                     final lesson = _lessons[index];
                                     return Card(
                                       margin: EdgeInsets.only(bottom: 8),
@@ -336,21 +357,33 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                       ),
                                     );
                                   },
+                                  ),
                                 ),
                       // Вкладка транзакций
                       _isLoading
                           ? Center(child: CircularProgressIndicator())
                           : _transactions.isEmpty
-                              ? Center(
-                                  child: Text(
-                                    'Нет транзакций',
-                                    style: TextStyle(color: Colors.grey),
+                              ? RefreshIndicator(
+                                  onRefresh: _refreshData,
+                                  child: SingleChildScrollView(
+                                    physics: AlwaysScrollableScrollPhysics(),
+                                    child: Container(
+                                      height: MediaQuery.of(context).size.height * 0.5,
+                                      child: Center(
+                                        child: Text(
+                                          'Нет транзакций',
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 )
-                              : ListView.builder(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  itemCount: _transactions.length,
-                                  itemBuilder: (context, index) {
+                              : RefreshIndicator(
+                                  onRefresh: _refreshData,
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: _transactions.length,
+                                    itemBuilder: (context, index) {
                                     final transaction = _transactions[index];
                                     final isDeposit = transaction.type == 'deposit';
                                     final isLesson = transaction.type == 'lesson';
@@ -454,6 +487,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                       ),
                                     );
                                   },
+                                  ),
                                 ),
                     ],
                   ),
