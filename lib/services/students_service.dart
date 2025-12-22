@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/lesson.dart';
+import '../models/transaction.dart';
 import 'storage_service.dart';
 
 class StudentsService {
@@ -244,6 +245,22 @@ class StudentsService {
     } else {
       final error = jsonDecode(response.body);
       throw Exception(error['message'] ?? 'Не удалось применить платежи');
+    }
+  }
+
+  // Получение транзакций студента
+  Future<List<Transaction>> getStudentTransactions(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/$studentId/transactions'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Transaction.fromJson(json)).toList();
+    } else {
+      throw Exception('Не удалось загрузить транзакции: ${response.statusCode}');
     }
   }
 }

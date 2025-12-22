@@ -24,12 +24,13 @@ export const depositBalance = async (req, res) => {
       return res.status(404).json({ message: 'Студент не найден' });
     }
 
-    // Создаем транзакцию пополнения
+    // Создаем транзакцию пополнения (ручное пополнение - наличка)
+    const finalDescription = description || 'Пополнение баланса (наличные)';
     const result = await pool.query(
       `INSERT INTO transactions (student_id, amount, type, description, created_by)
        VALUES ($1, $2, 'deposit', $3, $4)
        RETURNING *`,
-      [student_id, amountNum, description || 'Пополнение баланса', userId]
+      [student_id, amountNum, finalDescription, userId]
     );
 
     res.status(201).json(result.rows[0]);

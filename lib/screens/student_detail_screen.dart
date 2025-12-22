@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/lesson.dart';
+import '../models/transaction.dart';
 import '../services/students_service.dart';
 import 'add_lesson_screen.dart';
 import 'deposit_screen.dart';
@@ -15,17 +16,26 @@ class StudentDetailScreen extends StatefulWidget {
   _StudentDetailScreenState createState() => _StudentDetailScreenState();
 }
 
-class _StudentDetailScreenState extends State<StudentDetailScreen> {
+class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTickerProviderStateMixin {
   final StudentsService _studentsService = StudentsService();
   List<Lesson> _lessons = [];
+  List<Transaction> _transactions = [];
   double _balance = 0;
   bool _isLoading = false;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _balance = widget.student.balance;
+    _tabController = TabController(length: 2, vsync: this);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -34,9 +44,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
 
     try {
       final lessons = await _studentsService.getStudentLessons(widget.student.id);
+      final transactions = await _studentsService.getStudentTransactions(widget.student.id);
       if (mounted) {
         setState(() {
           _lessons = lessons;
+          _transactions = transactions;
         });
       }
     } catch (e) {
@@ -57,15 +69,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
     );
 
     if (result == true) {
-      _loadData();
-      // Обновляем баланс
-      final students = await _studentsService.getAllStudents();
-      final updatedStudent = students.firstWhere(
-        (s) => s.id == widget.student.id,
-      );
-      setState(() {
-        _balance = updatedStudent.balance;
-      });
+      await _loadData();
+      await _updateBalance();
     }
   }
 
@@ -78,15 +83,24 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
     );
 
     if (result == true) {
-      _loadData();
-      // Обновляем баланс
+      await _loadData();
+      await _updateBalance();
+    }
+  }
+
+  Future<void> _updateBalance() async {
+    try {
       final students = await _studentsService.getAllStudents();
       final updatedStudent = students.firstWhere(
         (s) => s.id == widget.student.id,
       );
-      setState(() {
-        _balance = updatedStudent.balance;
-      });
+      if (mounted) {
+        setState(() {
+          _balance = updatedStudent.balance;
+        });
+      }
+    } catch (e) {
+      print('Ошибка обновления баланса: $e');
     }
   }
 
@@ -113,15 +127,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
 
     try {
       await _studentsService.deleteLesson(lesson.id);
-      _loadData();
-      // Обновляем баланс
-      final students = await _studentsService.getAllStudents();
-      final updatedStudent = students.firstWhere(
-        (s) => s.id == widget.student.id,
-      );
-      setState(() {
-        _balance = updatedStudent.balance;
-      });
+      await _loadData();
+      await _updateBalance();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -269,53 +276,190 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
 
           SizedBox(height: 16),
 
-          // Список занятий
+          // Табы для занятий и транзакций
           Expanded(
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator())
-                : _lessons.isEmpty
-                    ? Center(
-                        child: Text(
-                          'Нет занятий',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _lessons.length,
-                        itemBuilder: (context, index) {
-                          final lesson = _lessons[index];
-                          return Card(
-                            margin: EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: Icon(Icons.event),
-                              title: Text(
-                                DateFormat('dd.MM.yyyy')
-                                    .format(lesson.lessonDate),
-                              ),
-                              subtitle: lesson.lessonTime != null
-                                  ? Text('Время: ${lesson.lessonTime}')
-                                  : null,
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '${lesson.price.toStringAsFixed(0)} ₽',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _tabController,
+                  tabs: [
+                    Tab(text: 'Занятия (${_lessons.length})'),
+                    Tab(text: 'Транзакции (${_transactions.length})'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Вкладка занятий
+                      _isLoading
+                          ? Center(child: CircularProgressIndicator())
+                          : _lessons.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'Нет занятий',
+                                    style: TextStyle(color: Colors.grey),
                                   ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => _deleteLesson(lesson),
+                                )
+                              : ListView.builder(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  itemCount: _lessons.length,
+                                  itemBuilder: (context, index) {
+                                    final lesson = _lessons[index];
+                                    return Card(
+                                      margin: EdgeInsets.only(bottom: 8),
+                                      child: ListTile(
+                                        leading: Icon(Icons.event),
+                                        title: Text(
+                                          DateFormat('dd.MM.yyyy')
+                                              .format(lesson.lessonDate),
+                                        ),
+                                        subtitle: lesson.lessonTime != null
+                                            ? Text('Время: ${lesson.lessonTime}')
+                                            : null,
+                                        trailing: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              '${lesson.price.toStringAsFixed(0)} ₽',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete, color: Colors.red),
+                                              onPressed: () => _deleteLesson(lesson),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                      // Вкладка транзакций
+                      _isLoading
+                          ? Center(child: CircularProgressIndicator())
+                          : _transactions.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'Нет транзакций',
+                                    style: TextStyle(color: Colors.grey),
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                                )
+                              : ListView.builder(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  itemCount: _transactions.length,
+                                  itemBuilder: (context, index) {
+                                    final transaction = _transactions[index];
+                                    final isDeposit = transaction.type == 'deposit';
+                                    final isLesson = transaction.type == 'lesson';
+                                    
+                                    return Card(
+                                      margin: EdgeInsets.only(bottom: 8),
+                                      child: ListTile(
+                                        leading: Icon(
+                                          isDeposit 
+                                              ? Icons.add_circle 
+                                              : isLesson 
+                                                  ? Icons.event 
+                                                  : Icons.undo,
+                                          color: isDeposit 
+                                              ? Colors.green 
+                                              : isLesson 
+                                                  ? Colors.blue 
+                                                  : Colors.orange,
+                                        ),
+                                        title: Text(
+                                          isDeposit 
+                                              ? 'Пополнение баланса'
+                                              : isLesson 
+                                                  ? 'Занятие'
+                                                  : 'Возврат',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        subtitle: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            if (isDeposit && transaction.depositTypeLabel.isNotEmpty)
+                                              Container(
+                                                margin: EdgeInsets.only(top: 4, bottom: 4),
+                                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: transaction.isBankDeposit 
+                                                      ? Colors.blue.shade50 
+                                                      : Colors.orange.shade50,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: transaction.isBankDeposit 
+                                                        ? Colors.blue.shade200 
+                                                        : Colors.orange.shade200,
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      transaction.isBankDeposit 
+                                                          ? Icons.account_balance 
+                                                          : Icons.money,
+                                                      size: 14,
+                                                      color: transaction.isBankDeposit 
+                                                          ? Colors.blue.shade700 
+                                                          : Colors.orange.shade700,
+                                                    ),
+                                                    SizedBox(width: 4),
+                                                    Text(
+                                                      transaction.depositTypeLabel,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: transaction.isBankDeposit 
+                                                            ? Colors.blue.shade700 
+                                                            : Colors.orange.shade700,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            if (transaction.description != null)
+                                              Text(
+                                                transaction.description!,
+                                                style: TextStyle(fontSize: 12),
+                                              ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                              DateFormat('dd.MM.yyyy HH:mm')
+                                                  .format(transaction.createdAt),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        trailing: Text(
+                                          '${isDeposit ? '+' : '-'}${transaction.amount.toStringAsFixed(0)} ₽',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: isDeposit 
+                                                ? Colors.green 
+                                                : Colors.red,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

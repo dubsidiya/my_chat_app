@@ -324,7 +324,8 @@ export const applyPayments = async (req, res) => {
           continue;
         }
 
-        // Создаем транзакцию пополнения
+        // Создаем транзакцию пополнения (из банковской выписки)
+        const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
         const result = await pool.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
            VALUES ($1, $2, 'deposit', $3, $4, $5)
@@ -332,7 +333,7 @@ export const applyPayments = async (req, res) => {
           [
             studentId,
             amount,
-            description || `Пополнение из выписки${date ? ' от ' + date : ''}`,
+            finalDescription,
             userId,
             date ? new Date(date) : new Date()
           ]
