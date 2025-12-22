@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'package:intl/intl.dart';
 import '../services/students_service.dart';
 
 class BankStatementScreen extends StatefulWidget {
@@ -63,13 +62,11 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
           // Автоматически выбираем все платежи с найденными студентами
           _selectedPayments = (result['processedPayments'] as List?)
               ?.where((p) => p['student'] != null)
-              .map((p) => {
-                return {
-                  'studentId': p['student']['id'],
-                  'amount': p['amount'],
-                  'date': p['date'],
-                  'description': p['description'],
-                };
+              .map((p) => <String, dynamic>{
+                'studentId': p['student']['id'],
+                'amount': p['amount'],
+                'date': p['date'],
+                'description': p['description'],
               })
               .toList()
               .cast<Map<String, dynamic>>() ?? [];
