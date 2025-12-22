@@ -136,7 +136,6 @@ class _EditReportScreenState extends State<EditReportScreen> {
               controller: _contentController,
               decoration: InputDecoration(
                 labelText: 'Содержание отчета *',
-                hintText: '17 декабря\n14-16 Антон Нгуен 2.0 / Алексей курганский 2.0\n16-18 Элина 2.0/ Иван удодов 2.1 ??????',
                 border: OutlineInputBorder(),
                 helperText: 'Формат: дата, затем время и ученики с ценами (2.0 = 2000₽)',
               ),

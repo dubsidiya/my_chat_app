@@ -222,19 +222,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Формат:\n17 декабря\n14-16 Антон Нгуен 2.0 / Алексей курганский 2.0\n16-18 Элина 2.0/ Иван удодов 2.1 ??????',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade700,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                SizedBox(height: 8),
                 TextField(
                   controller: _contentController,
                   decoration: InputDecoration(
-                    hintText: '17 декабря\n14-16 Антон Нгуен 2.0 / Алексей курганский 2.0\n16-18 Элина 2.0/ Иван удодов 2.1 ??????',
+                    labelText: 'Содержание отчета',
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 10,
