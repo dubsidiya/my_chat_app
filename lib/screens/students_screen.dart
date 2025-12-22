@@ -3,6 +3,7 @@ import '../models/student.dart';
 import '../services/students_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
+import 'bank_statement_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String userId;
@@ -164,9 +165,32 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     },
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addStudent,
-        child: Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: "upload",
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BankStatementScreen(onSuccess: _loadStudents),
+                ),
+              );
+              if (result == true) {
+                _loadStudents();
+              }
+            },
+            child: Icon(Icons.upload_file),
+            backgroundColor: Colors.green,
+          ),
+          SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: "add",
+            onPressed: _addStudent,
+            child: Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

@@ -195,5 +195,56 @@ class StudentsService {
       throw Exception(error['message'] ?? 'Не удалось пополнить баланс');
     }
   }
+
+  // Загрузка банковской выписки
+  Future<Map<String, dynamic>> uploadBankStatement(List<int> fileBytes, String fileName) async {
+    final token = await StorageService.getToken();
+    if (token == null) {
+      throw Exception('Токен не найден');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/bank-statement/upload'),
+    );
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileName,
+      ),
+    );
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось обработать выписку');
+    }
+  }
+
+  // Применение платежей из выписки
+  Future<Map<String, dynamic>> applyPayments(List<Map<String, dynamic>> payments) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/bank-statement/apply'),
+      headers: headers,
+      body: jsonEncode({
+        'payments': payments,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось применить платежи');
+    }
+  }
 }
 
