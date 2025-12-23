@@ -11,6 +11,23 @@
 
 # Node modules (если есть)
 node_modules/
+**/node_modules/
+
+# Gradle
+**/.gradle/
+android/.gradle/
+
+# iOS/macOS Pods
+**/Pods/
+macos/Pods/
+ios/Pods/
+
+# Flutter ephemeral files
+**/ephemeral/
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
 
 # Временные файлы
 *.tmp
