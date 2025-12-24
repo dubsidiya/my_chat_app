@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "flutter build web --release",
+  "buildCommand": "bash build.sh",
   "outputDirectory": "build/web",
-  "installCommand": "flutter pub get",
+  "installCommand": "echo 'Dependencies will be installed in build script'",
   "framework": null,
   "git": {
     "deploymentEnabled": {
