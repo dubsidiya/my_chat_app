@@ -24,7 +24,7 @@
 ### 2. Проверьте переменные окружения
 
 Settings → Environment Variables должны быть:
-
+яяяя
 ```env
 DATABASE_URL=your-postgresql-url
 JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=
