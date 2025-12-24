@@ -1,7 +1,14 @@
 {
   "version": 2,
-  "buildCommand": null,
+  "buildCommand": "flutter build web --release",
   "outputDirectory": "build/web",
+  "installCommand": "flutter pub get",
+  "framework": null,
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
