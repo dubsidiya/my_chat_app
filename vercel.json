@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "bash build.sh",
+  "buildCommand": "bash vercel-build.sh",
   "outputDirectory": "build/web",
   "installCommand": "echo 'Dependencies will be installed in build script'",
   "framework": null,
