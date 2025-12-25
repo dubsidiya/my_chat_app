@@ -4,6 +4,8 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chats.js';
@@ -80,6 +82,12 @@ app.use(cors({
 }));
 
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Раздача статических файлов (изображения)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use('/uploads/images', express.static(path.join(__dirname, 'uploads/images')));
 
 // Rate limiting для защиты от брутфорса
 const authLimiter = rateLimit({

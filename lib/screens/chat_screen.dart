@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -42,6 +44,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   static const int _messagesPerPage = 50;
+  String? _selectedImagePath;
+  bool _isUploadingImage = false;
 
   @override
   void initState() {
@@ -337,21 +341,73 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _selectedImagePath = result.files.single.path;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка выбора изображения: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || !mounted) return;
+    if (text.isEmpty && _selectedImagePath == null || !mounted) return;
+
+    String? imageUrl;
+
+    // Загружаем изображение, если выбрано
+    if (_selectedImagePath != null) {
+      setState(() => _isUploadingImage = true);
+      try {
+        final file = File(_selectedImagePath!);
+        final bytes = await file.readAsBytes();
+        final fileName = _selectedImagePath!.split('/').last;
+        imageUrl = await _messagesService.uploadImage(bytes, fileName);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isUploadingImage = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка загрузки изображения: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _isUploadingImage = false);
+    }
 
     try {
-      await _messagesService.sendMessage(widget.chatId, text);
+      await _messagesService.sendMessage(widget.chatId, text, imageUrl: imageUrl);
       if (mounted) {
-      _controller.clear();
+        _controller.clear();
+        setState(() {
+          _selectedImagePath = null;
+        });
       }
     } catch (e) {
       print('Error sending message: $e');
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка отправки сообщения: $e')),
-      );
+        );
       }
     }
   }
@@ -779,19 +835,104 @@ class _ChatScreenState extends State<ChatScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade700,
+                                      color: isMine ? Colors.white70 : Colors.blue.shade700,
                                     ),
                                   ),
                                   SizedBox(height: 4),
                                 ],
-                                Text(
-                                  msg.content,
-                                  style: TextStyle(
-                                    color: isMine ? Colors.white : Colors.grey.shade900,
-                                    fontSize: 15,
-                                    height: 1.4,
+                                // Отображение изображения
+                                if (msg.hasImage) ...[
+                                  GestureDetector(
+                                    onTap: () {
+                                      // Открываем изображение в полноэкранном режиме
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => Dialog(
+                                          backgroundColor: Colors.transparent,
+                                          child: Stack(
+                                            children: [
+                                              Center(
+                                                child: InteractiveViewer(
+                                                  minScale: 0.5,
+                                                  maxScale: 4.0,
+                                                  child: Image.network(
+                                                    msg.imageUrl!,
+                                                    fit: BoxFit.contain,
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                top: 40,
+                                                right: 20,
+                                                child: IconButton(
+                                                  icon: Icon(Icons.close, color: Colors.white),
+                                                  onPressed: () => Navigator.pop(context),
+                                                  style: IconButton.styleFrom(
+                                                    backgroundColor: Colors.black54,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        msg.imageUrl!,
+                                        width: 250,
+                                        fit: BoxFit.cover,
+                                        loadingBuilder: (context, child, loadingProgress) {
+                                          if (loadingProgress == null) return child;
+                                          return Container(
+                                            width: 250,
+                                            height: 200,
+                                            color: Colors.grey.shade200,
+                                            child: Center(
+                                              child: CircularProgressIndicator(
+                                                value: loadingProgress.expectedTotalBytes != null
+                                                    ? loadingProgress.cumulativeBytesLoaded /
+                                                        loadingProgress.expectedTotalBytes!
+                                                    : null,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            width: 250,
+                                            height: 200,
+                                            color: Colors.grey.shade200,
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Icon(Icons.error, color: Colors.red),
+                                                SizedBox(height: 8),
+                                                Text(
+                                                  'Ошибка загрузки',
+                                                  style: TextStyle(fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  if (msg.hasText) SizedBox(height: 8),
+                                ],
+                                // Отображение текста
+                                if (msg.hasText) ...[
+                                  Text(
+                                    msg.content,
+                                    style: TextStyle(
+                                      color: isMine ? Colors.white : Colors.grey.shade900,
+                                      fontSize: 15,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
                                 SizedBox(height: 4),
                                 Text(
                                   _formatDate(msg.createdAt),
@@ -860,55 +1001,114 @@ class _ChatScreenState extends State<ChatScreen> {
             child: SafeArea(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: TextField(
-                          controller: _controller,
-                          decoration: InputDecoration(
-                            hintText: 'Введите сообщение...',
-                            hintStyle: TextStyle(color: Colors.grey.shade500),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
+                    // Превью выбранного изображения
+                    if (_selectedImagePath != null)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        height: 100,
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                File(_selectedImagePath!),
+                                width: 100,
+                                height: 100,
+                                fit: BoxFit.cover,
+                              ),
                             ),
-                          ),
-                          maxLines: null,
-                          textCapitalization: TextCapitalization.sentences,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.blue.shade600,
-                            Colors.blue.shade700,
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: IconButton(
+                                icon: Icon(Icons.close, color: Colors.white),
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedImagePath = null;
+                                  });
+                                },
+                                iconSize: 20,
+                                padding: EdgeInsets.all(4),
+                                constraints: BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.black54,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blue.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
+                      ),
+                    Row(
+                      children: [
+                        // Кнопка выбора изображения
+                        IconButton(
+                          icon: Icon(Icons.image, color: Colors.blue),
+                          onPressed: _pickImage,
+                          tooltip: 'Прикрепить изображение',
+                        ),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: TextField(
+                              controller: _controller,
+                              decoration: InputDecoration(
+                                hintText: 'Введите сообщение...',
+                                hintStyle: TextStyle(color: Colors.grey.shade500),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                              maxLines: null,
+                              textCapitalization: TextCapitalization.sentences,
+                            ),
                           ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: Icon(Icons.send, color: Colors.white),
-                        onPressed: _sendMessage,
-                        tooltip: 'Отправить',
-                      ),
+                        ),
+                        SizedBox(width: 8),
+                        // Кнопка отправки
+                        if (_isUploadingImage)
+                          Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        else
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.blue.shade600,
+                                  Colors.blue.shade700,
+                                ],
+                              ),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.blue.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: IconButton(
+                              icon: Icon(Icons.send, color: Colors.white),
+                              onPressed: _sendMessage,
+                              tooltip: 'Отправить',
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

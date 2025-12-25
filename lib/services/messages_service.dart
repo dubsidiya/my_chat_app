@@ -129,7 +129,7 @@ class MessagesService {
     }
   }
 
-  Future<void> sendMessage(String chatId, String content) async {
+  Future<void> sendMessage(String chatId, String content, {String? imageUrl}) async {
     final headers = await _getAuthHeaders();
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
@@ -137,11 +137,45 @@ class MessagesService {
       body: jsonEncode({
         'chat_id': chatId,
         'content': content,
+        'image_url': imageUrl,
       }),
     );
 
     if (response.statusCode != 201) {
       throw Exception('Ошибка при отправке сообщения');
+    }
+  }
+
+  // Загрузка изображения
+  Future<String> uploadImage(List<int> imageBytes, String fileName) async {
+    final token = await StorageService.getToken();
+    if (token == null) {
+      throw Exception('Токен не найден');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/messages/upload-image'),
+    );
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'image',
+        imageBytes,
+        filename: fileName,
+      ),
+    );
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['image_url'] as String;
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось загрузить изображение');
     }
   }
 

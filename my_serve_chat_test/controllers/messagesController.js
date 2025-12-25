@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
+import { uploadImage as uploadImageMiddleware, getImageUrl } from '../utils/uploadImage.js';
 
 export const getMessages = async (req, res) => {
   const chatId = req.params.chatId;
@@ -22,6 +23,8 @@ export const getMessages = async (req, res) => {
           messages.chat_id,
           messages.user_id,
           messages.content,
+          messages.image_url,
+          messages.message_type,
           messages.created_at,
           users.email AS sender_email
         FROM messages
@@ -61,6 +64,8 @@ export const getMessages = async (req, res) => {
           messages.chat_id,
           messages.user_id,
           messages.content,
+          messages.image_url,
+          messages.message_type,
           messages.created_at,
           users.email AS sender_email
         FROM messages
@@ -79,6 +84,8 @@ export const getMessages = async (req, res) => {
       chat_id: row.chat_id,
       user_id: row.user_id,
       content: row.content,
+      image_url: row.image_url,
+      message_type: row.message_type || 'text',
       created_at: row.created_at,
       sender_email: row.sender_email
     }));
@@ -125,14 +132,14 @@ export const getMessages = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  // Приложение отправляет: { chat_id, content }
-  const { chat_id, content } = req.body;
+  // Приложение отправляет: { chat_id, content, image_url }
+  const { chat_id, content, image_url } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
 
-  if (!chat_id || !content) {
-    return res.status(400).json({ message: 'Укажите chat_id и content' });
+  if (!chat_id || (!content && !image_url)) {
+    return res.status(400).json({ message: 'Укажите chat_id и content или image_url' });
   }
 
   try {
@@ -146,12 +153,20 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
+    // Определяем тип сообщения
+    let message_type = 'text';
+    if (image_url && content) {
+      message_type = 'text_image';
+    } else if (image_url) {
+      message_type = 'image';
+    }
+
     // Используем user_id из токена (безопасно)
     const result = await pool.query(`
-      INSERT INTO messages (chat_id, user_id, content)
-      VALUES ($1, $2, $3)
-      RETURNING id, chat_id, user_id, content, created_at
-    `, [chat_id, user_id, content]);
+      INSERT INTO messages (chat_id, user_id, content, image_url, message_type)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at
+    `, [chat_id, user_id, content || '', image_url || null, message_type]);
 
     // Используем email из токена
     const senderEmail = req.user.email;
@@ -163,6 +178,8 @@ export const sendMessage = async (req, res) => {
       chat_id: message.chat_id,
       user_id: message.user_id,
       content: message.content,
+      image_url: message.image_url,
+      message_type: message.message_type,
       created_at: message.created_at,
       sender_email: senderEmail
     };
@@ -180,6 +197,8 @@ export const sendMessage = async (req, res) => {
         chat_id: message.chat_id.toString(), // Убеждаемся, что это строка
         user_id: message.user_id,
         content: message.content,
+        image_url: message.image_url,
+        message_type: message.message_type,
         created_at: message.created_at,
         sender_email: senderEmail
       };
@@ -387,5 +406,24 @@ export const clearChat = async (req, res) => {
   } catch (error) {
     console.error('Ошибка очистки чата:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Загрузка изображения
+export const uploadImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Изображение не загружено' });
+    }
+
+    const imageUrl = getImageUrl(req.file.filename);
+    
+    res.status(200).json({
+      image_url: imageUrl,
+      filename: req.file.filename
+    });
+  } catch (error) {
+    console.error('Ошибка загрузки изображения:', error);
+    res.status(500).json({ message: 'Ошибка загрузки изображения' });
   }
 };
