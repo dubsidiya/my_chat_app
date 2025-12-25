@@ -153,29 +153,72 @@ class MessagesService {
       throw Exception('Токен не найден');
     }
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$baseUrl/messages/upload-image'),
-    );
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/messages/upload-image'),
+      );
 
-    request.headers['Authorization'] = 'Bearer $token';
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'image',
-        imageBytes,
-        filename: fileName,
-      ),
-    );
+      // НЕ устанавливаем Content-Type вручную - multer сам установит правильный заголовок
+      request.headers['Authorization'] = 'Bearer $token';
+      
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: fileName,
+        ),
+      );
 
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
+      print('Uploading image: $fileName, size: ${imageBytes.length} bytes');
+      print('URL: $baseUrl/messages/upload-image');
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['image_url'] as String;
-    } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось загрузить изображение');
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('Upload response status: ${response.statusCode}');
+      print('Upload response body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
+
+      if (response.statusCode == 200) {
+        // Проверяем, что ответ действительно JSON
+        if (response.body.trim().startsWith('<')) {
+          throw Exception('Сервер вернул HTML вместо JSON. Возможно, эндпоинт не найден или произошла ошибка на сервере.');
+        }
+        
+        try {
+          final data = jsonDecode(response.body);
+          if (data['image_url'] != null) {
+            return data['image_url'] as String;
+          } else {
+            throw Exception('Сервер не вернул image_url');
+          }
+        } catch (e) {
+          print('JSON decode error: $e');
+          print('Response body: ${response.body}');
+          throw Exception('Ошибка парсинга ответа сервера: $e');
+        }
+      } else {
+        // Пытаемся распарсить ошибку
+        String errorMessage = 'Не удалось загрузить изображение (${response.statusCode})';
+        try {
+          if (response.body.trim().startsWith('{')) {
+            final error = jsonDecode(response.body);
+            errorMessage = error['message'] ?? errorMessage;
+          } else {
+            // Если это HTML, берем первые 200 символов
+            errorMessage = 'Сервер вернул ошибку: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}';
+          }
+        } catch (_) {
+          errorMessage = 'Ошибка сервера: ${response.statusCode}';
+        }
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Неожиданная ошибка при загрузке изображения: $e');
     }
   }
 

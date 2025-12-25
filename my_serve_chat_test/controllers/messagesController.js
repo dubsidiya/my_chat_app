@@ -412,11 +412,23 @@ export const clearChat = async (req, res) => {
 // Загрузка изображения
 export const uploadImage = async (req, res) => {
   try {
+    console.log('Upload image request received');
+    console.log('Request file:', req.file);
+    console.log('Request body:', req.body);
+    
     if (!req.file) {
+      console.error('No file in request');
       return res.status(400).json({ message: 'Изображение не загружено' });
     }
 
     const imageUrl = getImageUrl(req.file.filename);
+    
+    console.log('Image uploaded successfully:', {
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      imageUrl: imageUrl
+    });
     
     res.status(200).json({
       image_url: imageUrl,
@@ -424,6 +436,10 @@ export const uploadImage = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка загрузки изображения:', error);
-    res.status(500).json({ message: 'Ошибка загрузки изображения' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Ошибка загрузки изображения',
+      error: error.message 
+    });
   }
 };

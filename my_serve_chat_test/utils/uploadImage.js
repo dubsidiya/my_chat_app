@@ -8,8 +8,16 @@ const __dirname = path.dirname(__filename);
 
 // Создаем папку для загрузок, если её нет
 const uploadsDir = path.join(__dirname, '../uploads/images');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('Created uploads directory:', uploadsDir);
+  } else {
+    console.log('Uploads directory exists:', uploadsDir);
+  }
+} catch (error) {
+  console.error('Error creating uploads directory:', error);
+  throw error;
 }
 
 // Настройка хранилища для изображений
