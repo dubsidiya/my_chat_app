@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -45,6 +47,8 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _oldestMessageId;
   static const int _messagesPerPage = 50;
   String? _selectedImagePath;
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
   bool _isUploadingImage = false;
 
   @override
@@ -348,10 +352,28 @@ class _ChatScreenState extends State<ChatScreen> {
         allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
-        setState(() {
-          _selectedImagePath = result.files.single.path;
-        });
+      if (result != null && result.files.single.size > 0) {
+        final file = result.files.single;
+        
+        if (kIsWeb) {
+          // На веб используем bytes
+          if (file.bytes != null) {
+            setState(() {
+              _selectedImageBytes = file.bytes;
+              _selectedImageName = file.name;
+              _selectedImagePath = null; // На веб path недоступен
+            });
+          }
+        } else {
+          // На мобильных/десктоп используем path
+          if (file.path != null) {
+            setState(() {
+              _selectedImagePath = file.path;
+              _selectedImageBytes = null;
+              _selectedImageName = file.name;
+            });
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -367,17 +389,37 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty && _selectedImagePath == null || !mounted) return;
+    final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
+    if (text.isEmpty && !hasImage || !mounted) return;
 
     String? imageUrl;
 
     // Загружаем изображение, если выбрано
-    if (_selectedImagePath != null) {
+    if (hasImage) {
       setState(() => _isUploadingImage = true);
       try {
-        final file = File(_selectedImagePath!);
-        final bytes = await file.readAsBytes();
-        final fileName = _selectedImagePath!.split('/').last;
+        Uint8List bytes;
+        String fileName;
+        
+        if (kIsWeb) {
+          // На веб используем bytes напрямую
+          if (_selectedImageBytes != null) {
+            bytes = _selectedImageBytes!;
+            fileName = _selectedImageName ?? 'image.jpg';
+          } else {
+            throw Exception('Изображение не выбрано');
+          }
+        } else {
+          // На мобильных/десктоп читаем из файла
+          if (_selectedImagePath != null) {
+            final file = File(_selectedImagePath!);
+            bytes = await file.readAsBytes();
+            fileName = _selectedImagePath!.split('/').last;
+          } else {
+            throw Exception('Изображение не выбрано');
+          }
+        }
+        
         imageUrl = await _messagesService.uploadImage(bytes, fileName);
       } catch (e) {
         if (mounted) {
@@ -400,6 +442,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _controller.clear();
         setState(() {
           _selectedImagePath = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
         });
       }
     } catch (e) {
@@ -1005,7 +1049,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Превью выбранного изображения
-                    if (_selectedImagePath != null)
+                    if (_selectedImagePath != null || _selectedImageBytes != null)
                       Container(
                         margin: EdgeInsets.only(bottom: 8),
                         height: 100,
@@ -1013,12 +1057,21 @@ class _ChatScreenState extends State<ChatScreen> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: Image.file(
-                                File(_selectedImagePath!),
-                                width: 100,
-                                height: 100,
-                                fit: BoxFit.cover,
-                              ),
+                              child: kIsWeb && _selectedImageBytes != null
+                                  ? Image.memory(
+                                      _selectedImageBytes!,
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : _selectedImagePath != null
+                                      ? Image.file(
+                                          File(_selectedImagePath!),
+                                          width: 100,
+                                          height: 100,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : SizedBox.shrink(),
                             ),
                             Positioned(
                               top: 4,
@@ -1028,6 +1081,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 onPressed: () {
                                   setState(() {
                                     _selectedImagePath = null;
+                                    _selectedImageBytes = null;
+                                    _selectedImageName = null;
                                   });
                                 },
                                 iconSize: 20,
