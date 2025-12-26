@@ -350,10 +350,28 @@ class _ChatScreenState extends State<ChatScreen> {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'], // Явно указываем разрешенные расширения
       );
 
       if (result != null && result.files.single.size > 0) {
         final file = result.files.single;
+        
+        // Проверяем расширение файла на клиенте
+        final fileName = file.name.toLowerCase();
+        final allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+        final hasValidExtension = allowedExtensions.any((ext) => fileName.endsWith(ext));
+        
+        if (!hasValidExtension) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Неподдерживаемый формат файла. Используйте: JPEG, JPG, PNG, GIF, WEBP'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
         
         if (kIsWeb) {
           // На веб используем bytes
