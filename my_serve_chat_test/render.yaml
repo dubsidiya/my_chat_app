@@ -3,7 +3,8 @@ services:
   - type: web
     name: my-chat-server
     env: node
-    buildCommand: npm install
+    nodeVersion: 20  # Используем Node.js 20 LTS для стабильности
+    buildCommand: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
     startCommand: npm start
     envVars:
       - key: NODE_ENV
