@@ -962,6 +962,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                           );
                                         },
                                         errorBuilder: (context, error, stackTrace) {
+                                          print('Image load error: $error');
+                                          print('Image URL: ${msg.imageUrl}');
+                                          print('Stack trace: $stackTrace');
                                           return Container(
                                             width: 250,
                                             height: 200,
@@ -974,6 +977,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 Text(
                                                   'Ошибка загрузки',
                                                   style: TextStyle(fontSize: 12),
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  'URL: ${msg.imageUrl?.substring(0, 50)}...',
+                                                  style: TextStyle(fontSize: 10, color: Colors.grey),
+                                                  textAlign: TextAlign.center,
                                                 ),
                                               ],
                                             ),
