@@ -67,7 +67,9 @@ export async function setupCors() {
 }
 
 // Если скрипт запущен напрямую (не импортирован)
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Проверяем через process.argv
+const isMainModule = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+if (isMainModule) {
   setupCors()
     .then(() => {
       console.log('✅ Готово!');

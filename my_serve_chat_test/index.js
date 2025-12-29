@@ -142,6 +142,23 @@ server.listen(PORT, () => {
                           process.env.YANDEX_BUCKET_NAME;
   if (hasYandexConfig) {
     console.log(`☁️  Яндекс Object Storage: настроен (бакет: ${process.env.YANDEX_BUCKET_NAME})`);
+    
+    // Автоматическая настройка CORS при старте (если не настроен)
+    if (process.env.AUTO_SETUP_CORS !== 'false') {
+      setTimeout(async () => {
+        try {
+          const { setupCors } = await import('./utils/setupCors.js');
+          console.log('🔧 Автоматическая настройка CORS для бакета...');
+          await setupCors();
+          console.log('✅ CORS настроен автоматически! Изображения должны отображаться.');
+        } catch (error) {
+          console.warn('⚠️  Не удалось автоматически настроить CORS:', error.message);
+          console.warn('   Это нормально, если CORS уже настроен или нет прав.');
+          console.warn('   Вызовите вручную: POST /setup/cors с токеном авторизации');
+          console.warn('   Или настройте CORS вручную в консоли Яндекс Облака (YANDEX_CLOUD_SETUP.md)');
+        }
+      }, 2000); // Ждем 2 секунды после запуска сервера
+    }
   } else {
     console.log(`⚠️  Яндекс Object Storage: НЕ НАСТРОЕН (загрузка изображений не будет работать)`);
     console.log(`   Установите YANDEX_ACCESS_KEY_ID, YANDEX_SECRET_ACCESS_KEY, YANDEX_BUCKET_NAME`);
