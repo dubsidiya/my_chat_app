@@ -84,10 +84,11 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Раздача статических файлов (изображения)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use('/uploads/images', express.static(path.join(__dirname, 'uploads/images')));
+// Раздача статических файлов (изображения) - больше не нужна, т.к. файлы в Яндекс Облаке
+// Закомментировано, но можно оставить для обратной совместимости
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
+// app.use('/uploads/images', express.static(path.join(__dirname, 'uploads/images')));
 
 // Rate limiting для защиты от брутфорса
 const authLimiter = rateLimit({
@@ -132,6 +133,18 @@ server.listen(PORT, () => {
   console.log(`🔐 JWT_SECRET: ${process.env.JWT_SECRET ? 'установлен' : 'НЕ УСТАНОВЛЕН!'}`);
   console.log(`🌐 ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'по умолчанию'}`);
   console.log(`🗄️  DATABASE_URL: ${process.env.DATABASE_URL ? 'установлен' : 'НЕ УСТАНОВЛЕН!'}`);
+  
+  // Проверка переменных Яндекс Object Storage
+  const hasYandexConfig = process.env.YANDEX_ACCESS_KEY_ID && 
+                          process.env.YANDEX_SECRET_ACCESS_KEY && 
+                          process.env.YANDEX_BUCKET_NAME;
+  if (hasYandexConfig) {
+    console.log(`☁️  Яндекс Object Storage: настроен (бакет: ${process.env.YANDEX_BUCKET_NAME})`);
+  } else {
+    console.log(`⚠️  Яндекс Object Storage: НЕ НАСТРОЕН (загрузка изображений не будет работать)`);
+    console.log(`   Установите YANDEX_ACCESS_KEY_ID, YANDEX_SECRET_ACCESS_KEY, YANDEX_BUCKET_NAME`);
+    console.log(`   См. инструкцию: YANDEX_CLOUD_SETUP.md`);
+  }
 });
 
 // Обработка необработанных ошибок

@@ -114,9 +114,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         (s) => s.id == widget.student.id,
       );
       if (mounted) {
-        setState(() {
-          _balance = updatedStudent.balance;
-        });
+      setState(() {
+        _balance = updatedStudent.balance;
+      });
       }
     } catch (e) {
       print('Ошибка обновления баланса: $e');
@@ -370,51 +370,51 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     children: [
                       // Вкладка занятий
                       _isLoading
-                          ? Center(child: CircularProgressIndicator())
-                          : _lessons.isEmpty
-                              ? Center(
-                                  child: Text(
-                                    'Нет занятий',
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                )
+                ? Center(child: CircularProgressIndicator())
+                : _lessons.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Нет занятий',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
                               : RefreshIndicator(
                                   onRefresh: _refreshData,
                                   child: ListView.builder(
-                                    padding: EdgeInsets.symmetric(horizontal: 16),
-                                    itemCount: _lessons.length,
-                                    itemBuilder: (context, index) {
-                                    final lesson = _lessons[index];
-                                    return Card(
-                                      margin: EdgeInsets.only(bottom: 8),
-                                      child: ListTile(
-                                        leading: Icon(Icons.event),
-                                        title: Text(
-                                          DateFormat('dd.MM.yyyy')
-                                              .format(lesson.lessonDate),
-                                        ),
-                                        subtitle: lesson.lessonTime != null
-                                            ? Text('Время: ${lesson.lessonTime}')
-                                            : null,
-                                        trailing: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              '${lesson.price.toStringAsFixed(0)} ₽',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: Icon(Icons.delete, color: Colors.red),
-                                              onPressed: () => _deleteLesson(lesson),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _lessons.length,
+                        itemBuilder: (context, index) {
+                          final lesson = _lessons[index];
+                          return Card(
+                            margin: EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: Icon(Icons.event),
+                              title: Text(
+                                DateFormat('dd.MM.yyyy')
+                                    .format(lesson.lessonDate),
+                              ),
+                              subtitle: lesson.lessonTime != null
+                                  ? Text('Время: ${lesson.lessonTime}')
+                                  : null,
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${lesson.price.toStringAsFixed(0)} ₽',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () => _deleteLesson(lesson),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                                   ),
                                 ),
                       // Вкладка транзакций
@@ -551,7 +551,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   ),
                 ),
               ],
-            ),
+                      ),
           ),
         ],
       ),

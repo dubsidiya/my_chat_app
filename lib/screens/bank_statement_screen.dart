@@ -63,10 +63,10 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
           _selectedPayments = (result['processedPayments'] as List?)
               ?.where((p) => p['student'] != null)
               .map((p) => <String, dynamic>{
-                'studentId': p['student']['id'],
-                'amount': p['amount'],
-                'date': p['date'],
-                'description': p['description'],
+                  'studentId': p['student']['id'],
+                  'amount': p['amount'],
+                  'date': p['date'],
+                  'description': p['description'],
               })
               .toList()
               .cast<Map<String, dynamic>>() ?? [];

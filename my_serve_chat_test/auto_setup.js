@@ -8,6 +8,7 @@ dotenv.config();
  * Автоматическая настройка всего проекта
  * Запуск: node auto_setup.js
  */
+//
 
 console.log('🚀 Автоматическая настройка проекта...\n');
 
@@ -49,6 +50,13 @@ if (!envContent.includes('DATABASE_URL=')) {
   envContent += `\n# URL базы данных (настройте на сервере Render.com или добавьте здесь для локальной разработки)\n# DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require\n`;
   updated = true;
   console.log('ℹ️  DATABASE_URL - добавлен комментарий (настройте на сервере)');
+}
+
+// Яндекс Object Storage - только комментарий с инструкцией
+if (!envContent.includes('YANDEX_ACCESS_KEY_ID=')) {
+  envContent += `\n# Яндекс Object Storage для хранения изображений\n# Настройте согласно инструкции в YANDEX_CLOUD_SETUP.md\n# YANDEX_ACCESS_KEY_ID=ваш_access_key_id\n# YANDEX_SECRET_ACCESS_KEY=ваш_secret_access_key\n# YANDEX_BUCKET_NAME=my-chat-images\n# YANDEX_STORAGE_URL=https://my-chat-images.storage.yandexcloud.net\n`;
+  updated = true;
+  console.log('ℹ️  Яндекс Object Storage - добавлены комментарии (настройте для работы загрузки изображений)');
 }
 
 if (updated) {

@@ -1,6 +1,6 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
-import { uploadImage as uploadImageMiddleware, getImageUrl } from '../utils/uploadImage.js';
+import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 
 export const getMessages = async (req, res) => {
   const chatId = req.params.chatId;
@@ -252,14 +252,16 @@ export const deleteMessage = async (req, res) => {
   }
 
   try {
-    // Проверяем, существует ли сообщение и получаем информацию о нем
+    // Проверяем, существует ли сообщение и получаем информацию о нем, включая image_url
     const messageCheck = await pool.query(
       `SELECT 
         messages.id,
         messages.chat_id,
         messages.user_id,
         messages.content,
-        messages.created_at
+        messages.created_at,
+        messages.image_url,
+        messages.message_type
       FROM messages
       WHERE messages.id = $1`,
       [messageId]
@@ -302,6 +304,17 @@ export const deleteMessage = async (req, res) => {
       return res.status(403).json({ 
         message: 'Вы не являетесь участником этого чата' 
       });
+    }
+
+    // Удаляем изображение из Яндекс Облака, если оно есть
+    if (message.image_url) {
+      try {
+        await deleteImage(message.image_url);
+        console.log('Image deleted from Yandex Cloud:', message.image_url);
+      } catch (deleteError) {
+        console.error('Ошибка удаления изображения из облака:', deleteError);
+        // Продолжаем удаление сообщения, даже если изображение не удалилось
+      }
     }
 
     // Удаляем сообщение
@@ -413,7 +426,11 @@ export const clearChat = async (req, res) => {
 export const uploadImage = async (req, res) => {
   try {
     console.log('Upload image request received');
-    console.log('Request file:', req.file);
+    console.log('Request file:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : 'No file');
     console.log('Request body:', req.body);
     
     if (!req.file) {
@@ -421,10 +438,11 @@ export const uploadImage = async (req, res) => {
       return res.status(400).json({ message: 'Изображение не загружено' });
     }
 
-    const imageUrl = getImageUrl(req.file.filename);
+    // Загружаем в Яндекс Облако
+    const { imageUrl, fileName } = await uploadToCloud(req.file);
     
-    console.log('Image uploaded successfully:', {
-      filename: req.file.filename,
+    console.log('Image uploaded successfully to Yandex Cloud:', {
+      filename: fileName,
       size: req.file.size,
       mimetype: req.file.mimetype,
       imageUrl: imageUrl
@@ -432,7 +450,7 @@ export const uploadImage = async (req, res) => {
     
     res.status(200).json({
       image_url: imageUrl,
-      filename: req.file.filename
+      filename: fileName
     });
   } catch (error) {
     console.error('Ошибка загрузки изображения:', error);

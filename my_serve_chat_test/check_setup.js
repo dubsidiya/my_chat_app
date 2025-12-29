@@ -38,6 +38,19 @@ if (!databaseUrl) {
   console.log('✅ DATABASE_URL установлен');
 }
 
+// Проверка переменных Яндекс Object Storage
+const yandexAccessKey = process.env.YANDEX_ACCESS_KEY_ID;
+const yandexSecretKey = process.env.YANDEX_SECRET_ACCESS_KEY;
+const yandexBucket = process.env.YANDEX_BUCKET_NAME;
+
+if (!yandexAccessKey || !yandexSecretKey || !yandexBucket) {
+  warnings.push('⚠️  Переменные Яндекс Object Storage не настроены (YANDEX_ACCESS_KEY_ID, YANDEX_SECRET_ACCESS_KEY, YANDEX_BUCKET_NAME)');
+  warnings.push('   Без них загрузка изображений не будет работать. См. YANDEX_CLOUD_SETUP.md');
+} else {
+  console.log('✅ Переменные Яндекс Object Storage настроены');
+  console.log(`   Бакет: ${yandexBucket}`);
+}
+
 // Проверка зависимостей
 try {
   await import('bcryptjs');

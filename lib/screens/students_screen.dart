@@ -182,51 +182,51 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           return result ?? false;
                         },
                         child: Card(
-                          margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: student.isDebtor
-                                  ? Colors.red
-                                  : Colors.blue,
-                              child: Icon(
-                                Icons.person,
-                                color: Colors.white,
-                              ),
+                        margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: student.isDebtor
+                                ? Colors.red
+                                : Colors.blue,
+                            child: Icon(
+                              Icons.person,
+                              color: Colors.white,
                             ),
-                            title: Text(
-                              student.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          ),
+                          title: Text(
+                            student.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
                             ),
-                            subtitle: student.parentName != null
-                                ? Text(student.parentName!)
-                                : null,
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
+                          ),
+                          subtitle: student.parentName != null
+                              ? Text(student.parentName!)
+                              : null,
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${student.balance.toStringAsFixed(0)} ₽',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: student.isDebtor
+                                      ? Colors.red
+                                      : Colors.green,
+                                ),
+                              ),
+                              if (student.isDebtor)
                                 Text(
-                                  '${student.balance.toStringAsFixed(0)} ₽',
+                                  'Долг',
                                   style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: student.isDebtor
-                                        ? Colors.red
-                                        : Colors.green,
+                                    fontSize: 12,
+                                    color: Colors.red,
                                   ),
                                 ),
-                                if (student.isDebtor)
-                                  Text(
-                                    'Долг',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            onTap: () => _openStudentDetail(student),
+                            ],
+                          ),
+                          onTap: () => _openStudentDetail(student),
                           ),
                         ),
                       );

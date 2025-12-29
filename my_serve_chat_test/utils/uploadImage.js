@@ -1,37 +1,10 @@
 import multer from 'multer';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+import { uploadToYandex, deleteFromYandex, getImageUrl as getYandexImageUrl } from './yandexStorage.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Создаем папку для загрузок, если её нет
-const uploadsDir = path.join(__dirname, '../uploads/images');
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('Created uploads directory:', uploadsDir);
-  } else {
-    console.log('Uploads directory exists:', uploadsDir);
-  }
-} catch (error) {
-  console.error('Error creating uploads directory:', error);
-  throw error;
-}
-
-// Настройка хранилища для изображений
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    // Генерируем уникальное имя файла: timestamp-random-originalname
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, `image-${uniqueSuffix}${ext}`);
-  }
-});
+// Используем memory storage вместо disk storage
+// Файл будет храниться в памяти, затем загрузим в Яндекс Облако
+const storage = multer.memoryStorage();
 
 // Фильтр файлов - только изображения
 const fileFilter = (req, file, cb) => {
@@ -88,20 +61,41 @@ export const uploadImage = multer({
   fileFilter: fileFilter
 });
 
-// Функция для получения URL изображения
-export const getImageUrl = (filename) => {
-  if (!filename) return null;
-  // Возвращаем относительный путь или полный URL в зависимости от окружения
-  const baseUrl = process.env.BASE_URL || 'https://my-server-chat.onrender.com';
-  return `${baseUrl}/uploads/images/${filename}`;
+/**
+ * Загрузка файла в Яндекс Облако
+ * @param {Object} file - Объект файла от multer (с buffer, originalname, mimetype)
+ * @returns {Promise<{imageUrl: string, fileName: string}>}
+ */
+export const uploadToCloud = async (file) => {
+  if (!file || !file.buffer) {
+    throw new Error('Файл не предоставлен или отсутствует буфер');
+  }
+
+  // Генерируем уникальное имя файла
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+  const ext = path.extname(file.originalname || '');
+  const fileName = `image-${uniqueSuffix}${ext}`;
+
+  // Загружаем в Яндекс Облако
+  const imageUrl = await uploadToYandex(file.buffer, fileName, file.mimetype);
+  
+  return { imageUrl, fileName };
 };
 
-// Функция для удаления изображения
-export const deleteImage = (filename) => {
-  if (!filename) return;
-  const filePath = path.join(uploadsDir, filename);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
+/**
+ * Получить URL изображения по имени файла
+ * @param {string} filename - Имя файла
+ * @returns {string|null}
+ */
+export const getImageUrl = (filename) => {
+  return getYandexImageUrl(filename);
+};
+
+/**
+ * Удалить изображение из облака
+ * @param {string} imageUrl - Полный URL изображения
+ */
+export const deleteImage = async (imageUrl) => {
+  await deleteFromYandex(imageUrl);
 };
 
