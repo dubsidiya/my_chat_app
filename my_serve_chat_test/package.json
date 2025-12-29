@@ -18,7 +18,9 @@
 
     "auto-setup": "node auto_setup.js",
 
-    "setup": "node auto_setup.js && npm run check-setup"
+    "setup": "node auto_setup.js && npm run check-setup",
+
+    "setup-cors": "node utils/setupCors.js"
 
   },
 

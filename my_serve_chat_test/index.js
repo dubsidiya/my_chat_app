@@ -13,6 +13,7 @@ import messageRoutes from './routes/messages.js';
 import studentsRoutes from './routes/students.js';
 import reportsRoutes from './routes/reports.js';
 import bankStatementRoutes from './routes/bankStatement.js';
+import setupRoutes from './routes/setup.js';
 import { setupWebSocket } from './websocket/websocket.js';
 
 dotenv.config();
@@ -113,6 +114,7 @@ app.use('/messages', messageRoutes);
 app.use('/students', studentsRoutes);
 app.use('/reports', reportsRoutes);
 app.use('/bank-statement', bankStatementRoutes);
+app.use('/setup', setupRoutes);
 
 // Подключение WebSocket
 setupWebSocket(server);
