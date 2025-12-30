@@ -61,6 +61,30 @@ class _ChatScreenState extends State<ChatScreen> {
     _initWebSocket();
     
     _loadMessages();
+    
+    // ✅ Отмечаем все сообщения как прочитанные при открытии чата
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markChatAsRead();
+    });
+  }
+  
+  // ✅ Отметить все сообщения в чате как прочитанные
+  Future<void> _markChatAsRead() async {
+    try {
+      await _messagesService.markChatAsRead(widget.chatId);
+    } catch (e) {
+      print('Ошибка отметки чата как прочитанного: $e');
+      // Не показываем ошибку пользователю, это не критично
+    }
+  }
+  
+  // ✅ Отметить конкретное сообщение как прочитанное
+  Future<void> _markMessageAsRead(String messageId) async {
+    try {
+      await _messagesService.markMessageAsRead(messageId);
+    } catch (e) {
+      print('Ошибка отметки сообщения как прочитанного: $e');
+    }
   }
 
   void _setupWebSocketListener() {
@@ -90,6 +114,101 @@ class _ChatScreenState extends State<ChatScreen> {
                   print('Message removed from list. Remaining messages: ${_messages.length}');
                 });
               }
+            }
+            return;
+          }
+          
+          // ✅ Обработка события прочтения сообщения
+          if (messageType == 'message_read') {
+            final messageId = data['message_id']?.toString();
+            if (messageId != null && mounted) {
+              setState(() {
+                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+                if (index != -1) {
+                  // Обновляем статус сообщения
+                  final msg = _messages[index];
+                  _messages[index] = Message(
+                    id: msg.id,
+                    chatId: msg.chatId,
+                    userId: msg.userId,
+                    content: msg.content,
+                    imageUrl: msg.imageUrl,
+                    originalImageUrl: msg.originalImageUrl,
+                    messageType: msg.messageType,
+                    senderEmail: msg.senderEmail,
+                    createdAt: msg.createdAt,
+                    deliveredAt: msg.deliveredAt,
+                    editedAt: msg.editedAt,
+                    isRead: true,
+                    readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                  );
+                }
+              });
+            }
+            return;
+          }
+          
+          // ✅ Обработка события прочтения нескольких сообщений
+          if (messageType == 'messages_read') {
+            final chatId = data['chat_id']?.toString();
+            final currentChatId = widget.chatId.toString();
+            if (chatId == currentChatId && mounted) {
+              // Обновляем статусы всех сообщений текущего пользователя в этом чате
+              setState(() {
+                for (int i = 0; i < _messages.length; i++) {
+                  final msg = _messages[i];
+                  if (msg.userId == widget.userId) {
+                    _messages[i] = Message(
+                      id: msg.id,
+                      chatId: msg.chatId,
+                      userId: msg.userId,
+                      content: msg.content,
+                      imageUrl: msg.imageUrl,
+                      originalImageUrl: msg.originalImageUrl,
+                      messageType: msg.messageType,
+                      senderEmail: msg.senderEmail,
+                      createdAt: msg.createdAt,
+                      deliveredAt: msg.deliveredAt,
+                      editedAt: msg.editedAt,
+                      isRead: true,
+                      readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                    );
+                  }
+                }
+              });
+            }
+            return;
+          }
+          
+          // ✅ Обработка события редактирования сообщения
+          if (messageType == 'message_edited') {
+            final messageId = data['id']?.toString();
+            final chatId = data['chat_id']?.toString();
+            final currentChatId = widget.chatId.toString();
+            
+            if (chatId == currentChatId && messageId != null && mounted) {
+              setState(() {
+                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+                if (index != -1) {
+                  // Обновляем сообщение
+                  final msg = _messages[index];
+                  _messages[index] = Message(
+                    id: msg.id,
+                    chatId: msg.chatId,
+                    userId: msg.userId,
+                    content: data['content'] ?? msg.content,
+                    imageUrl: data['image_url'] ?? msg.imageUrl,
+                    originalImageUrl: msg.originalImageUrl,
+                    messageType: data['message_type'] ?? msg.messageType,
+                    senderEmail: msg.senderEmail,
+                    createdAt: msg.createdAt,
+                    deliveredAt: msg.deliveredAt,
+                    editedAt: data['edited_at']?.toString(),
+                    isRead: msg.isRead,
+                    readAt: msg.readAt,
+                  );
+                }
+              });
             }
             return;
           }
@@ -318,6 +437,34 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() => _isLoadingMore = false);
       }
     }
+  }
+
+  // ✅ Виджет для отображения статуса сообщения
+  Widget _buildMessageStatus(Message msg) {
+    final status = msg.status;
+    IconData icon;
+    Color color;
+    
+    switch (status) {
+      case MessageStatus.sent:
+        icon = Icons.check;
+        color = Colors.white.withOpacity(0.6);
+        break;
+      case MessageStatus.delivered:
+        icon = Icons.done_all;
+        color = Colors.white.withOpacity(0.6);
+        break;
+      case MessageStatus.read:
+        icon = Icons.done_all;
+        color = Colors.blue.shade300; // Синий цвет для прочитанных
+        break;
+    }
+    
+    return Icon(
+      icon,
+      size: 14,
+      color: color,
+    );
   }
 
   String _formatDate(String dateString) {
@@ -591,6 +738,117 @@ class _ChatScreenState extends State<ChatScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка отправки сообщения: $e')),
         );
+      }
+    }
+  }
+
+  // ✅ Меню действий с сообщением
+  Future<void> _showMessageMenu(Message message) async {
+    if (!mounted) return;
+    
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ✅ Редактировать можно только текстовые сообщения
+            if (message.hasText && !message.hasImage)
+              ListTile(
+                leading: Icon(Icons.edit),
+                title: Text('Редактировать'),
+                onTap: () => Navigator.pop(context, 'edit'),
+              ),
+            ListTile(
+              leading: Icon(Icons.delete, color: Colors.red),
+              title: Text('Удалить', style: TextStyle(color: Colors.red)),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+            ListTile(
+              leading: Icon(Icons.close),
+              title: Text('Отмена'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+    
+    if (action == 'edit') {
+      _showEditMessageDialog(message);
+    } else if (action == 'delete') {
+      _showDeleteMessageDialog(message);
+    }
+  }
+
+  // ✅ Диалог редактирования сообщения
+  Future<void> _showEditMessageDialog(Message message) async {
+    if (!mounted) return;
+    
+    final textController = TextEditingController(text: message.content);
+    
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Редактировать сообщение'),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          maxLines: 5,
+          decoration: InputDecoration(
+            hintText: 'Введите текст сообщения',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newContent = textController.text.trim();
+              if (newContent.isNotEmpty) {
+                Navigator.pop(context, {'content': newContent});
+              }
+            },
+            child: Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    
+    if (result != null && result['content'] != null) {
+      try {
+        await _messagesService.editMessage(message.id, content: result['content']!);
+        if (mounted) {
+          setState(() {
+            final index = _messages.indexWhere((m) => m.id == message.id);
+            if (index != -1) {
+              _messages[index] = Message(
+                id: message.id,
+                chatId: message.chatId,
+                userId: message.userId,
+                content: result['content']!,
+                imageUrl: message.imageUrl,
+                originalImageUrl: message.originalImageUrl,
+                messageType: message.messageType,
+                senderEmail: message.senderEmail,
+                createdAt: message.createdAt,
+                deliveredAt: message.deliveredAt,
+                editedAt: DateTime.now().toIso8601String(),
+                isRead: message.isRead,
+                readAt: message.readAt,
+              );
+            }
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка редактирования сообщения: $e')),
+          );
+        }
       }
     }
   }
@@ -963,7 +1221,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       Flexible(
                         child: GestureDetector(
                           onLongPress: isMine
-                              ? () => _showDeleteMessageDialog(msg)
+                              ? () => _showMessageMenu(msg)
                               : null,
                           child: Container(
                             constraints: BoxConstraints(
@@ -1196,14 +1454,38 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                 ],
                                 SizedBox(height: 4),
-                                Text(
-                                  _formatDate(msg.createdAt),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isMine
-                                        ? Colors.white.withOpacity(0.8)
-                                        : Colors.grey.shade500,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _formatDate(msg.createdAt),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isMine
+                                            ? Colors.white.withOpacity(0.8)
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                    // ✅ Отображаем статус сообщения только для своих сообщений
+                                    if (isMine) ...[
+                                      SizedBox(width: 4),
+                                      _buildMessageStatus(msg),
+                                    ],
+                                    // ✅ Показываем метку "Отредактировано", если сообщение было отредактировано
+                                    if (msg.isEdited) ...[
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'отредактировано',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontStyle: FontStyle.italic,
+                                          color: isMine
+                                              ? Colors.white.withOpacity(0.6)
+                                              : Colors.grey.shade400,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ],
                             ),

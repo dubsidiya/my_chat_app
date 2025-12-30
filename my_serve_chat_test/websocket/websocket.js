@@ -40,6 +40,56 @@ export function setupWebSocket(server) {
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
+        
+        // ✅ Обработка события прочтения сообщения
+        if (data.type === 'mark_read') {
+          const messageId = data.message_id;
+          const chatId = data.chat_id;
+          
+          if (!messageId || !chatId) {
+            return;
+          }
+          
+          // Проверяем, является ли пользователь участником чата
+          const memberCheck = await pool.query(
+            'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+            [chatId, userId]
+          );
+          
+          if (memberCheck.rows.length === 0) {
+            return;
+          }
+          
+          // Отмечаем сообщение как прочитанное
+          await pool.query(`
+            INSERT INTO message_reads (message_id, user_id, read_at)
+            VALUES ($1, $2, CURRENT_TIMESTAMP)
+            ON CONFLICT (message_id, user_id) 
+            DO UPDATE SET read_at = CURRENT_TIMESTAMP
+          `, [messageId, userId]);
+          
+          // Отправляем событие отправителю сообщения
+          const messageOwner = await pool.query(
+            'SELECT user_id FROM messages WHERE id = $1',
+            [messageId]
+          );
+          
+          if (messageOwner.rows.length > 0) {
+            const ownerId = messageOwner.rows[0].user_id.toString();
+            const ownerClient = clients.get(ownerId);
+            if (ownerClient && ownerClient.readyState === 1) {
+              ownerClient.send(JSON.stringify({
+                type: 'message_read',
+                message_id: messageId,
+                read_by: userId,
+                read_at: new Date().toISOString()
+              }));
+            }
+          }
+          
+          return;
+        }
+        
         if (data.type === 'send') {
           // Используем userId из токена (безопасно)
           const chatIdFinal = data.chat_id || data.chatId;

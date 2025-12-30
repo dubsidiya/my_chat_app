@@ -26,6 +26,8 @@ export const getMessages = async (req, res) => {
           messages.image_url,
           messages.message_type,
           messages.created_at,
+          messages.delivered_at,
+          messages.edited_at,
           users.email AS sender_email
         FROM messages
         JOIN users ON messages.user_id = users.id
@@ -67,6 +69,8 @@ export const getMessages = async (req, res) => {
           messages.image_url,
           messages.message_type,
           messages.created_at,
+          messages.delivered_at,
+          messages.edited_at,
           users.email AS sender_email
         FROM messages
         JOIN users ON messages.user_id = users.id
@@ -78,16 +82,34 @@ export const getMessages = async (req, res) => {
     
     const totalCount = parseInt(totalCountResult.rows[0].total);
 
+    // Получаем текущего пользователя для проверки прочтения
+    const currentUserId = req.user.userId;
+    
     // Форматируем в формат, который ожидает приложение
-    const formattedMessages = result.rows.map(row => ({
-      id: row.id,
-      chat_id: row.chat_id,
-      user_id: row.user_id,
-      content: row.content,
-      image_url: row.image_url,
-      message_type: row.message_type || 'text',
-      created_at: row.created_at,
-      sender_email: row.sender_email
+    const formattedMessages = await Promise.all(result.rows.map(async (row) => {
+      // Проверяем, прочитал ли текущий пользователь это сообщение
+      const readCheck = await pool.query(
+        'SELECT read_at FROM message_reads WHERE message_id = $1 AND user_id = $2',
+        [row.id, currentUserId]
+      );
+      
+      const isRead = readCheck.rows.length > 0;
+      const readAt = isRead ? readCheck.rows[0].read_at : null;
+      
+      return {
+        id: row.id,
+        chat_id: row.chat_id,
+        user_id: row.user_id,
+        content: row.content,
+        image_url: row.image_url,
+        message_type: row.message_type || 'text',
+        created_at: row.created_at,
+        delivered_at: row.delivered_at,
+        edited_at: row.edited_at,
+        is_read: isRead,
+        read_at: readAt,
+        sender_email: row.sender_email
+      };
     }));
 
     // Определяем, есть ли еще сообщения для загрузки
@@ -163,9 +185,9 @@ export const sendMessage = async (req, res) => {
 
     // Используем user_id из токена (безопасно)
     const result = await pool.query(`
-      INSERT INTO messages (chat_id, user_id, content, image_url, message_type)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at
+      INSERT INTO messages (chat_id, user_id, content, image_url, message_type, delivered_at)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at, delivered_at
     `, [chat_id, user_id, content || '', image_url || null, message_type]);
 
     // Используем email из токена
@@ -181,6 +203,10 @@ export const sendMessage = async (req, res) => {
       image_url: message.image_url,
       message_type: message.message_type,
       created_at: message.created_at,
+      delivered_at: message.delivered_at,
+      edited_at: null,
+      is_read: false,
+      read_at: null,
       sender_email: senderEmail
     };
 
@@ -200,6 +226,10 @@ export const sendMessage = async (req, res) => {
         image_url: message.image_url,
         message_type: message.message_type,
         created_at: message.created_at,
+        delivered_at: message.delivered_at,
+        edited_at: null,
+        is_read: false,
+        read_at: null,
         sender_email: senderEmail
       };
 
@@ -237,6 +267,125 @@ export const sendMessage = async (req, res) => {
     res.status(201).json(response);
   } catch (error) {
     console.error('Ошибка отправки сообщения:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Редактирование сообщения
+export const editMessage = async (req, res) => {
+  const messageId = req.params.messageId;
+  const userId = req.user.userId;
+  const { content, image_url } = req.body;
+  
+  if (!messageId) {
+    return res.status(400).json({ message: 'Укажите ID сообщения' });
+  }
+  
+  if (!content && !image_url) {
+    return res.status(400).json({ message: 'Укажите content или image_url для редактирования' });
+  }
+  
+  try {
+    // Проверяем, существует ли сообщение и получаем информацию о нем
+    const messageCheck = await pool.query(
+      `SELECT 
+        messages.id,
+        messages.chat_id,
+        messages.user_id,
+        messages.content,
+        messages.image_url,
+        messages.message_type
+      FROM messages
+      WHERE messages.id = $1`,
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    
+    const message = messageCheck.rows[0];
+    
+    // Проверяем права: только автор сообщения может его редактировать
+    if (message.user_id.toString() !== userId.toString()) {
+      return res.status(403).json({ 
+        message: 'Вы можете редактировать только свои сообщения' 
+      });
+    }
+    
+    // Обновляем сообщение
+    const updateFields = [];
+    const updateValues = [];
+    let paramIndex = 1;
+    
+    if (content !== undefined) {
+      updateFields.push(`content = $${paramIndex++}`);
+      updateValues.push(content);
+    }
+    
+    if (image_url !== undefined) {
+      updateFields.push(`image_url = $${paramIndex++}`);
+      updateValues.push(image_url);
+    }
+    
+    // Всегда обновляем edited_at
+    updateFields.push(`edited_at = CURRENT_TIMESTAMP`);
+    updateValues.push(messageId);
+    
+    const updateQuery = `
+      UPDATE messages 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at, edited_at
+    `;
+    
+    const result = await pool.query(updateQuery, updateValues);
+    const updatedMessage = result.rows[0];
+    
+    // Отправляем обновленное сообщение через WebSocket всем участникам чата
+    try {
+      const clients = getWebSocketClients();
+      const members = await pool.query(
+        'SELECT user_id FROM chat_users WHERE chat_id = $1',
+        [updatedMessage.chat_id]
+      );
+      
+      const wsMessage = {
+        type: 'message_edited',
+        id: updatedMessage.id,
+        chat_id: updatedMessage.chat_id.toString(),
+        user_id: updatedMessage.user_id,
+        content: updatedMessage.content,
+        image_url: updatedMessage.image_url,
+        message_type: updatedMessage.message_type,
+        created_at: updatedMessage.created_at,
+        edited_at: updatedMessage.edited_at,
+        sender_email: req.user.email
+      };
+      
+      members.rows.forEach(row => {
+        const client = clients.get(row.user_id.toString());
+        if (client && client.readyState === 1) {
+          client.send(JSON.stringify(wsMessage));
+        }
+      });
+    } catch (wsError) {
+      console.error('Ошибка отправки через WebSocket:', wsError);
+    }
+    
+    res.status(200).json({
+      id: updatedMessage.id,
+      chat_id: updatedMessage.chat_id,
+      user_id: updatedMessage.user_id,
+      content: updatedMessage.content,
+      image_url: updatedMessage.image_url,
+      message_type: updatedMessage.message_type,
+      created_at: updatedMessage.created_at,
+      edited_at: updatedMessage.edited_at,
+      sender_email: req.user.email
+    });
+  } catch (error) {
+    console.error('Ошибка редактирования сообщения:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
@@ -429,6 +578,142 @@ export const clearChat = async (req, res) => {
 
   } catch (error) {
     console.error('Ошибка очистки чата:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Отметить сообщение как прочитанное
+export const markMessageAsRead = async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const userId = req.user.userId;
+    
+    // Проверяем, существует ли сообщение
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    
+    const chatId = messageCheck.rows[0].chat_id;
+    
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+    
+    // Отмечаем сообщение как прочитанное (upsert)
+    await pool.query(`
+      INSERT INTO message_reads (message_id, user_id, read_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP)
+      ON CONFLICT (message_id, user_id) 
+      DO UPDATE SET read_at = CURRENT_TIMESTAMP
+    `, [messageId, userId]);
+    
+    // Отправляем событие через WebSocket отправителю сообщения
+    const messageOwner = await pool.query(
+      'SELECT user_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageOwner.rows.length > 0) {
+      const ownerId = messageOwner.rows[0].user_id.toString();
+      const clients = getWebSocketClients();
+      const client = clients.get(ownerId);
+      
+      if (client && client.readyState === 1) {
+        client.send(JSON.stringify({
+          type: 'message_read',
+          message_id: messageId,
+          read_by: userId,
+          read_at: new Date().toISOString()
+        }));
+      }
+    }
+    
+    res.status(200).json({ 
+      success: true,
+      message: 'Сообщение отмечено как прочитанное'
+    });
+  } catch (error) {
+    console.error('Ошибка отметки сообщения как прочитанного:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Отметить все сообщения в чате как прочитанные
+export const markMessagesAsRead = async (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const userId = req.user.userId;
+    
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+    
+    // Получаем все непрочитанные сообщения в чате
+    const unreadMessages = await pool.query(`
+      SELECT id, user_id 
+      FROM messages 
+      WHERE chat_id = $1 
+      AND id NOT IN (
+        SELECT message_id FROM message_reads WHERE user_id = $2
+      )
+    `, [chatId, userId]);
+    
+    // Отмечаем все сообщения как прочитанные
+    if (unreadMessages.rows.length > 0) {
+      const values = unreadMessages.rows.map((_, index) => 
+        `($${index * 2 + 1}, $${index * 2 + 2}, CURRENT_TIMESTAMP)`
+      ).join(', ');
+      
+      const params = unreadMessages.rows.flatMap(row => [row.id, userId]);
+      
+      await pool.query(`
+        INSERT INTO message_reads (message_id, user_id, read_at)
+        VALUES ${values}
+        ON CONFLICT (message_id, user_id) 
+        DO UPDATE SET read_at = CURRENT_TIMESTAMP
+      `, params);
+      
+      // Отправляем события через WebSocket всем отправителям
+      const clients = getWebSocketClients();
+      const ownerIds = [...new Set(unreadMessages.rows.map(r => r.user_id.toString()))];
+      
+      ownerIds.forEach(ownerId => {
+        const client = clients.get(ownerId);
+        if (client && client.readyState === 1) {
+          client.send(JSON.stringify({
+            type: 'messages_read',
+            chat_id: chatId,
+            read_by: userId,
+            read_count: unreadMessages.rows.filter(r => r.user_id.toString() === ownerId).length
+          }));
+        }
+      });
+    }
+    
+    res.status(200).json({ 
+      success: true,
+      read_count: unreadMessages.rows.length,
+      message: 'Сообщения отмечены как прочитанные'
+    });
+  } catch (error) {
+    console.error('Ошибка отметки сообщений как прочитанных:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

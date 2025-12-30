@@ -294,6 +294,50 @@ class MessagesService {
     }
   }
 
+  // ✅ Отметить сообщение как прочитанное
+  Future<void> markMessageAsRead(String messageId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages/message/$messageId/read'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при отметке сообщения как прочитанного');
+    }
+  }
+
+  // ✅ Отметить все сообщения в чате как прочитанные
+  Future<void> markChatAsRead(String chatId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages/chat/$chatId/read-all'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при отметке сообщений как прочитанных');
+    }
+  }
+
+  // ✅ Редактирование сообщения
+  Future<void> editMessage(String messageId, {String? content, String? imageUrl}) async {
+    final headers = await _getAuthHeaders();
+    final body = <String, dynamic>{};
+    if (content != null) body['content'] = content;
+    if (imageUrl != null) body['image_url'] = imageUrl;
+    
+    final response = await http.put(
+      Uri.parse('$baseUrl/messages/message/$messageId'),
+      headers: headers,
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при редактировании сообщения');
+    }
+  }
+
   Future<void> clearChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');

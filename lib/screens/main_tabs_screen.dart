@@ -6,8 +6,9 @@ import 'reports_chat_screen.dart';
 class MainTabsScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
+  final Function(bool)? onThemeChanged; // ✅ Callback для переключения темы
 
-  MainTabsScreen({required this.userId, required this.userEmail});
+  MainTabsScreen({required this.userId, required this.userEmail, this.onThemeChanged});
 
   @override
   _MainTabsScreenState createState() => _MainTabsScreenState();
@@ -22,7 +23,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
   void initState() {
     super.initState();
     _screens.addAll([
-      HomeScreen(userId: widget.userId, userEmail: widget.userEmail),
+      HomeScreen(userId: widget.userId, userEmail: widget.userEmail, onThemeChanged: widget.onThemeChanged),
       StudentsScreen(userId: widget.userId, userEmail: widget.userEmail),
       ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail),
     ]);

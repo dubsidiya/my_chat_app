@@ -9,8 +9,9 @@ import 'login_screen.dart';
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
+  final Function(bool)? onThemeChanged; // ✅ Callback для переключения темы
 
-  HomeScreen({required this.userId, required this.userEmail});
+  HomeScreen({required this.userId, required this.userEmail, this.onThemeChanged});
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -159,6 +160,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  // ✅ Переключение темы
+  Future<void> _toggleTheme() async {
+    final currentTheme = await StorageService.getThemeMode();
+    final newTheme = !currentTheme;
+    await StorageService.saveThemeMode(newTheme);
+    
+    // Обновляем тему через callback
+    if (widget.onThemeChanged != null) {
+      widget.onThemeChanged!(newTheme);
+    }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newTheme ? 'Темная тема включена' : 'Светлая тема включена'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _changePassword() async {
@@ -389,7 +411,9 @@ class _HomeScreenState extends State<HomeScreen> {
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert),
             onSelected: (value) async {
-              if (value == 'logout') {
+              if (value == 'theme') {
+                _toggleTheme();
+              } else if (value == 'logout') {
                 _logout();
               } else if (value == 'change_password') {
                 await _changePassword();
@@ -398,6 +422,16 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             itemBuilder: (BuildContext context) => [
+              PopupMenuItem<String>(
+                value: 'theme',
+                child: Row(
+                  children: [
+                    Icon(Icons.dark_mode, color: Colors.purple),
+                    SizedBox(width: 8),
+                    Text('Темная тема'),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(

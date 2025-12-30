@@ -5,6 +5,7 @@ class StorageService {
   static const String _userIdKey = 'user_id';
   static const String _userEmailKey = 'user_email';
   static const String _tokenKey = 'auth_token';
+  static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
 
   // Сохранение данных пользователя
   static Future<void> saveUserData(String userId, String userEmail, String token) async {
@@ -101,6 +102,27 @@ class StorageService {
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_tokenKey);
+  }
+  
+  // ✅ Сохранение режима темы
+  static Future<void> saveThemeMode(bool isDark) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_themeModeKey, isDark);
+    } catch (e) {
+      print('❌ Ошибка сохранения темы: $e');
+    }
+  }
+  
+  // ✅ Получение режима темы
+  static Future<bool> getThemeMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_themeModeKey) ?? false; // По умолчанию светлая тема
+    } catch (e) {
+      print('❌ Ошибка получения темы: $e');
+      return false;
+    }
   }
 }
 
