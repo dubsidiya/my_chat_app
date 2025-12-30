@@ -52,11 +52,12 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Настройка multer для загрузки изображений
+// Настройка multer для загрузки изображений (сжатое + оригинал)
 export const uploadImage = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB максимум
+    fileSize: 10 * 1024 * 1024, // 10MB максимум для оригинала
+    files: 2 // Разрешаем до 2 файлов (сжатое + оригинал)
   },
   fileFilter: fileFilter
 });
@@ -64,9 +65,10 @@ export const uploadImage = multer({
 /**
  * Загрузка файла в Яндекс Облако
  * @param {Object} file - Объект файла от multer (с buffer, originalname, mimetype)
+ * @param {string} folder - Папка для сохранения ('images' или 'original')
  * @returns {Promise<{imageUrl: string, fileName: string}>}
  */
-export const uploadToCloud = async (file) => {
+export const uploadToCloud = async (file, folder = 'images') => {
   if (!file || !file.buffer) {
     throw new Error('Файл не предоставлен или отсутствует буфер');
   }
@@ -76,8 +78,8 @@ export const uploadToCloud = async (file) => {
   const ext = path.extname(file.originalname || '');
   const fileName = `image-${uniqueSuffix}${ext}`;
 
-  // Загружаем в Яндекс Облако
-  const imageUrl = await uploadToYandex(file.buffer, fileName, file.mimetype);
+  // Загружаем в Яндекс Облако в указанную папку
+  const imageUrl = await uploadToYandex(file.buffer, fileName, file.mimetype, folder);
   
   return { imageUrl, fileName };
 };

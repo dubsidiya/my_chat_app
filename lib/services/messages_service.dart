@@ -147,7 +147,9 @@ class MessagesService {
   }
 
   // Загрузка изображения
-  Future<String> uploadImage(List<int> imageBytes, String fileName) async {
+  // [imageBytes] - сжатое изображение для отображения
+  // [originalBytes] - оригинальное изображение (опционально, для сохранения оригинала)
+  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes}) async {
     final token = await StorageService.getToken();
     if (token == null) {
       throw Exception('Токен не найден');
@@ -169,8 +171,22 @@ class MessagesService {
           filename: fileName,
         ),
       );
+      
+      // ✅ Если есть оригинал, отправляем его отдельно
+      if (originalBytes != null) {
+        // Генерируем имя для оригинала
+        final originalFileName = 'original-${fileName}';
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'original',
+            originalBytes,
+            filename: originalFileName,
+          ),
+        );
+        print('Uploading original image: $originalFileName, size: ${originalBytes.length} bytes');
+      }
 
-      print('Uploading image: $fileName, size: ${imageBytes.length} bytes');
+      print('Uploading compressed image: $fileName, size: ${imageBytes.length} bytes');
       print('URL: $baseUrl/messages/upload-image');
 
       final streamedResponse = await request.send();
@@ -188,6 +204,10 @@ class MessagesService {
         try {
           final data = jsonDecode(response.body);
           if (data['image_url'] != null) {
+            // Сохраняем original_image_url, если есть (для будущего использования)
+            if (data['original_image_url'] != null) {
+              print('✅ Оригинальное изображение сохранено: ${data['original_image_url']}');
+            }
             return data['image_url'] as String;
           } else {
             throw Exception('Сервер не вернул image_url');

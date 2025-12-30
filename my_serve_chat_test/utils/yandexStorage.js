@@ -39,17 +39,18 @@ const getBaseUrl = () => {
  * @param {Buffer} fileBuffer - Буфер файла
  * @param {string} fileName - Имя файла
  * @param {string} contentType - MIME-тип файла
+ * @param {string} folder - Папка для сохранения ('images' или 'original')
  * @returns {Promise<string>} - Публичный URL изображения
  */
-export const uploadToYandex = async (fileBuffer, fileName, contentType) => {
+export const uploadToYandex = async (fileBuffer, fileName, contentType, folder = 'images') => {
   // Проверяем наличие обязательных переменных
   if (!YANDEX_ACCESS_KEY_ID || !YANDEX_SECRET_ACCESS_KEY || !YANDEX_BUCKET_NAME) {
     throw new Error('Переменные Яндекс Object Storage не настроены. Установите YANDEX_ACCESS_KEY_ID, YANDEX_SECRET_ACCESS_KEY и YANDEX_BUCKET_NAME. См. YANDEX_CLOUD_SETUP.md');
   }
 
   try {
-    // Путь в бакете: images/filename.jpg
-    const key = `images/${fileName}`;
+    // Путь в бакете: images/filename.jpg или original/filename.jpg
+    const key = `${folder}/${fileName}`;
     
     console.log('Uploading to Yandex Cloud:', {
       bucket: BUCKET_NAME,
@@ -101,9 +102,11 @@ export const deleteFromYandex = async (imageUrl) => {
 
     // Извлекаем ключ из URL
     // URL: https://bucket.storage.yandexcloud.net/images/image-xxx.jpg
+    // или: https://bucket.storage.yandexcloud.net/original/original-image-xxx.jpg
     // или: https://storage.yandexcloud.net/bucket/images/image-xxx.jpg
     let key;
     
+    // Проверяем папку images или original
     if (imageUrl.includes('/images/')) {
       // Извлекаем часть после /images/
       const parts = imageUrl.split('/images/');
@@ -120,8 +123,23 @@ export const deleteFromYandex = async (imageUrl) => {
           return;
         }
       }
+    } else if (imageUrl.includes('/original/')) {
+      // Извлекаем часть после /original/
+      const parts = imageUrl.split('/original/');
+      if (parts.length > 1) {
+        key = `original/${parts[1]}`;
+      } else {
+        const urlParts = imageUrl.split('/');
+        const originalIndex = urlParts.findIndex(part => part === 'original');
+        if (originalIndex !== -1 && originalIndex < urlParts.length - 1) {
+          key = `original/${urlParts.slice(originalIndex + 1).join('/')}`;
+        } else {
+          console.log('Could not extract key from URL:', imageUrl);
+          return;
+        }
+      }
     } else {
-      console.log('URL does not contain /images/ path:', imageUrl);
+      console.log('URL does not contain /images/ or /original/ path:', imageUrl);
       return;
     }
 

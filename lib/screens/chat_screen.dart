@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image/image.dart' as img;
+import 'dart:html' as html;
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -405,6 +407,104 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Сжатие изображения для уменьшения размера файла и использования памяти
+  /// 
+  /// [imageBytes] - оригинальные байты изображения
+  /// [maxWidth] - максимальная ширина (по умолчанию 2560px для лучшего качества)
+  /// [quality] - качество JPEG (0-100, по умолчанию 92 для высокого качества)
+  /// 
+  /// Возвращает сжатые байты изображения
+  Future<Uint8List> _compressImage(Uint8List imageBytes, {int maxWidth = 2560, int quality = 92}) async {
+    try {
+      // Декодируем изображение
+      final originalImage = img.decodeImage(imageBytes);
+      if (originalImage == null) {
+        print('⚠️  Не удалось декодировать изображение, возвращаем оригинал');
+        return imageBytes;
+      }
+      
+      // Вычисляем новый размер с сохранением пропорций
+      int newWidth = originalImage.width;
+      int newHeight = originalImage.height;
+      
+      if (originalImage.width > maxWidth) {
+        newHeight = (originalImage.height * maxWidth / originalImage.width).round();
+        newWidth = maxWidth;
+      }
+      
+      // Если изображение уже меньше maxWidth, не изменяем размер
+      if (newWidth == originalImage.width && newHeight == originalImage.height) {
+        // Просто перекодируем с качеством для уменьшения размера
+        final compressedBytes = Uint8List.fromList(
+          img.encodeJpg(originalImage, quality: quality)
+        );
+        
+        final savedBytes = imageBytes.length - compressedBytes.length;
+        if (savedBytes > 0) {
+          print('📦 Сжатие (качество): ${imageBytes.length} → ${compressedBytes.length} байт (${(savedBytes / imageBytes.length * 100).toStringAsFixed(1)}% меньше)');
+        }
+        return compressedBytes;
+      }
+      
+      // Изменяем размер
+      final resizedImage = img.copyResize(
+        originalImage,
+        width: newWidth,
+        height: newHeight,
+      );
+      
+      // Кодируем обратно в JPEG с качеством
+      final compressedBytes = Uint8List.fromList(
+        img.encodeJpg(resizedImage, quality: quality)
+      );
+      
+      final savedBytes = imageBytes.length - compressedBytes.length;
+      final savedPercent = (savedBytes / imageBytes.length * 100).toStringAsFixed(1);
+      print('📦 Сжатие изображения: ${imageBytes.length} → ${compressedBytes.length} байт ($savedPercent% меньше, ${originalImage.width}x${originalImage.height} → ${newWidth}x${newHeight})');
+      
+      return compressedBytes;
+    } catch (e) {
+      print('⚠️  Ошибка сжатия изображения: $e, возвращаем оригинал');
+      return imageBytes; // Возвращаем оригинал при ошибке
+    }
+  }
+
+  /// Скачивание изображения
+  Future<void> _downloadImage(String imageUrl, String fileName) async {
+    try {
+      if (kIsWeb) {
+        // На веб открываем изображение в новой вкладке для скачивания
+        // Используем anchor элемент для скачивания
+        final link = html.AnchorElement(href: imageUrl)
+          ..setAttribute('download', fileName)
+          ..target = '_blank';
+        html.document.body?.append(link);
+        link.click();
+        link.remove();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Изображение скачивается...')),
+          );
+        }
+      } else {
+        // На мобильных используем url_launcher или другой способ
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Скачивание на мобильных устройствах будет добавлено позже'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ошибка скачивания: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
@@ -419,11 +519,16 @@ class _ChatScreenState extends State<ChatScreen> {
         Uint8List bytes;
         String fileName;
         
+        Uint8List? originalBytes;
+        
         if (kIsWeb) {
           // На веб используем bytes напрямую
           if (_selectedImageBytes != null) {
-            bytes = _selectedImageBytes!;
+            originalBytes = _selectedImageBytes!;
+            // ✅ Сжимаем изображение перед загрузкой (для отображения)
+            bytes = await _compressImage(_selectedImageBytes!);
             fileName = _selectedImageName ?? 'image.jpg';
+            // Очищаем оригинальные байты из памяти после загрузки
           } else {
             throw Exception('Изображение не выбрано');
           }
@@ -431,14 +536,26 @@ class _ChatScreenState extends State<ChatScreen> {
           // На мобильных/десктоп читаем из файла
           if (_selectedImagePath != null) {
             final file = File(_selectedImagePath!);
-            bytes = await file.readAsBytes();
+            originalBytes = await file.readAsBytes();
+            // ✅ Сжимаем изображение перед загрузкой (для отображения)
+            bytes = await _compressImage(originalBytes);
             fileName = _selectedImagePath!.split('/').last;
           } else {
             throw Exception('Изображение не выбрано');
           }
         }
         
-        imageUrl = await _messagesService.uploadImage(bytes, fileName);
+        // ✅ Загружаем и оригинал, и сжатое изображение
+        imageUrl = await _messagesService.uploadImage(bytes, fileName, originalBytes: originalBytes);
+        
+        // ✅ Очищаем память после успешной загрузки
+        if (mounted) {
+          setState(() {
+            _selectedImagePath = null;
+            _selectedImageBytes = null;
+            _selectedImageName = null;
+          });
+        }
       } catch (e) {
         if (mounted) {
           setState(() => _isUploadingImage = false);
@@ -458,11 +575,15 @@ class _ChatScreenState extends State<ChatScreen> {
       await _messagesService.sendMessage(widget.chatId, text, imageUrl: imageUrl);
       if (mounted) {
         _controller.clear();
-        setState(() {
-          _selectedImagePath = null;
-          _selectedImageBytes = null;
-          _selectedImageName = null;
-        });
+        // ✅ Память уже очищена выше после загрузки изображения
+        // Дополнительная очистка на случай, если изображения не было
+        if (_selectedImagePath != null || _selectedImageBytes != null) {
+          setState(() {
+            _selectedImagePath = null;
+            _selectedImageBytes = null;
+            _selectedImageName = null;
+          });
+        }
       }
     } catch (e) {
       print('Error sending message: $e');
@@ -920,6 +1041,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   child: Image.network(
                                                     msg.imageUrl!,
                                                     fit: BoxFit.contain,
+                                                    cacheWidth: 1920,  // ✅ Декодируем максимум 1920px ширины для полноэкранного просмотра
+                                                    cacheHeight: 1920, // ✅ Декодируем максимум 1920px высоты для полноэкранного просмотра
                                                     headers: kIsWeb ? {
                                                       'Access-Control-Allow-Origin': '*',
                                                     } : {}, // Для веб добавляем CORS заголовки
@@ -945,12 +1068,30 @@ class _ChatScreenState extends State<ChatScreen> {
                                               Positioned(
                                                 top: 40,
                                                 right: 20,
-                                                child: IconButton(
-                                                  icon: Icon(Icons.close, color: Colors.white),
-                                                  onPressed: () => Navigator.pop(context),
-                                                  style: IconButton.styleFrom(
-                                                    backgroundColor: Colors.black54,
-                                                  ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    // ✅ Кнопка скачивания оригинала (если есть)
+                                                    if (msg.hasOriginalImage || msg.imageUrl != null)
+                                                      IconButton(
+                                                        icon: Icon(Icons.download, color: Colors.white),
+                                                        onPressed: () => _downloadImage(
+                                                          msg.originalImageUrl ?? msg.imageUrl!,
+                                                          msg.imageUrl?.split('/').last ?? 'image.jpg'
+                                                        ),
+                                                        style: IconButton.styleFrom(
+                                                          backgroundColor: Colors.black54,
+                                                        ),
+                                                      ),
+                                                    SizedBox(width: 8),
+                                                    IconButton(
+                                                      icon: Icon(Icons.close, color: Colors.white),
+                                                      onPressed: () => Navigator.pop(context),
+                                                      style: IconButton.styleFrom(
+                                                        backgroundColor: Colors.black54,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
@@ -964,6 +1105,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                         msg.imageUrl!,
                                         width: 250,
                                         fit: BoxFit.cover,
+                                        cacheWidth: 500,  // ✅ Декодируем максимум 500px ширины (экономия памяти)
+                                        cacheHeight: 500, // ✅ Декодируем максимум 500px высоты (экономия памяти)
                                         headers: kIsWeb ? {
                                           'Access-Control-Allow-Origin': '*',
                                         } : {}, // Для веб добавляем CORS заголовки

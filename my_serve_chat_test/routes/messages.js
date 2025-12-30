@@ -10,9 +10,12 @@ router.use(authenticateToken);
 
 router.get('/:chatId', getMessages);
 router.post('/', sendMessage);
-// Обработка ошибок multer
+// Обработка ошибок multer (принимаем до 2 файлов: image и original)
 router.post('/upload-image', (req, res, next) => {
-  uploadImageMiddleware.single('image')(req, res, (err) => {
+  uploadImageMiddleware.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'original', maxCount: 1 }
+  ])(req, res, (err) => {
     if (err) {
       console.error('Multer error:', err);
       return res.status(400).json({ 

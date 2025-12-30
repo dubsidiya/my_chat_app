@@ -306,13 +306,24 @@ export const deleteMessage = async (req, res) => {
       });
     }
 
-    // Удаляем изображение из Яндекс Облака, если оно есть
+    // Удаляем изображения из Яндекс Облака, если они есть
     if (message.image_url) {
       try {
         await deleteImage(message.image_url);
-        console.log('Image deleted from Yandex Cloud:', message.image_url);
+        console.log('Compressed image deleted from Yandex Cloud:', message.image_url);
       } catch (deleteError) {
-        console.error('Ошибка удаления изображения из облака:', deleteError);
+        console.error('Ошибка удаления сжатого изображения из облака:', deleteError);
+        // Продолжаем удаление сообщения, даже если изображение не удалилось
+      }
+    }
+    
+    // ✅ Удаляем оригинальное изображение, если оно есть
+    if (message.original_image_url) {
+      try {
+        await deleteImage(message.original_image_url);
+        console.log('Original image deleted from Yandex Cloud:', message.original_image_url);
+      } catch (deleteError) {
+        console.error('Ошибка удаления оригинального изображения из облака:', deleteError);
         // Продолжаем удаление сообщения, даже если изображение не удалилось
       }
     }
@@ -426,30 +437,62 @@ export const clearChat = async (req, res) => {
 export const uploadImage = async (req, res) => {
   try {
     console.log('Upload image request received');
-    console.log('Request file:', req.file ? {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    } : 'No file');
-    console.log('Request body:', req.body);
+    console.log('Request files:', req.files);
     
-    if (!req.file) {
-      console.error('No file in request');
+    // Получаем сжатое изображение (обязательно)
+    const compressedFile = req.files?.['image']?.[0];
+    if (!compressedFile) {
+      console.error('No compressed image in request');
       return res.status(400).json({ message: 'Изображение не загружено' });
     }
 
-    // Загружаем в Яндекс Облако
-    const { imageUrl, fileName } = await uploadToCloud(req.file);
+    // Получаем оригинальное изображение (опционально)
+    const originalFile = req.files?.['original']?.[0];
+    
+    console.log('Files received:', {
+      compressed: {
+        originalname: compressedFile.originalname,
+        size: compressedFile.size,
+        mimetype: compressedFile.mimetype
+      },
+      original: originalFile ? {
+        originalname: originalFile.originalname,
+        size: originalFile.size,
+        mimetype: originalFile.mimetype
+      } : 'not provided'
+    });
+
+    // Загружаем сжатое изображение в Яндекс Облако
+    const { imageUrl, fileName } = await uploadToCloud(compressedFile, 'images');
+    
+    let originalImageUrl = null;
+    
+    // Если есть оригинал, загружаем его отдельно
+    if (originalFile) {
+      try {
+        // Используем то же имя файла, но в папке original
+        const originalFileName = fileName.replace('image-', 'original-');
+        const { imageUrl: originalUrl } = await uploadToCloud(originalFile, 'original');
+        originalImageUrl = originalUrl;
+        console.log('Original image uploaded successfully:', originalImageUrl);
+      } catch (error) {
+        console.error('Error uploading original image:', error);
+        // Не прерываем загрузку, если оригинал не загрузился
+      }
+    }
     
     console.log('Image uploaded successfully to Yandex Cloud:', {
       filename: fileName,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-      imageUrl: imageUrl
+      compressedSize: compressedFile.size,
+      originalSize: originalFile?.size || 0,
+      mimetype: compressedFile.mimetype,
+      imageUrl: imageUrl,
+      originalImageUrl: originalImageUrl
     });
     
     res.status(200).json({
       image_url: imageUrl,
+      original_image_url: originalImageUrl, // ✅ Возвращаем URL оригинала, если есть
       filename: fileName
     });
   } catch (error) {
