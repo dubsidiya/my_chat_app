@@ -920,7 +920,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   child: Image.network(
                                                     msg.imageUrl!,
                                                     fit: BoxFit.contain,
-                                                    headers: {}, // Пустые заголовки для публичных изображений
+                                                    headers: kIsWeb ? {
+                                                      'Access-Control-Allow-Origin': '*',
+                                                    } : {}, // Для веб добавляем CORS заголовки
                                                     errorBuilder: (context, error, stackTrace) {
                                                       print('Full screen image error: $error');
                                                       print('URL: ${msg.imageUrl}');
@@ -962,7 +964,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                         msg.imageUrl!,
                                         width: 250,
                                         fit: BoxFit.cover,
-                                        headers: {}, // Пустые заголовки для публичных изображений
+                                        headers: kIsWeb ? {
+                                          'Access-Control-Allow-Origin': '*',
+                                        } : {}, // Для веб добавляем CORS заголовки
                                         loadingBuilder: (context, child, loadingProgress) {
                                           if (loadingProgress == null) return child;
                                           return Container(
@@ -982,7 +986,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                         errorBuilder: (context, error, stackTrace) {
                                           print('Image load error: $error');
                                           print('Image URL: ${msg.imageUrl}');
+                                          print('Is Web: $kIsWeb');
                                           print('Stack trace: $stackTrace');
+                                          if (kIsWeb) {
+                                            print('⚠️  ВЕБ: Проверьте CORS настройки в Яндекс Облаке');
+                                            print('   Убедитесь, что бакет публичный и CORS настроен');
+                                          }
                                           return Container(
                                             width: 250,
                                             height: 200,
@@ -993,7 +1002,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 Icon(Icons.error, color: Colors.red),
                                                 SizedBox(height: 8),
                                                 Text(
-                                                  'Ошибка загрузки',
+                                                  kIsWeb ? 'CORS ошибка?' : 'Ошибка загрузки',
                                                   style: TextStyle(fontSize: 12),
                                                 ),
                                                 SizedBox(height: 4),
@@ -1002,6 +1011,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   style: TextStyle(fontSize: 10, color: Colors.grey),
                                                   textAlign: TextAlign.center,
                                                 ),
+                                                if (kIsWeb) ...[
+                                                  SizedBox(height: 4),
+                                                  Text(
+                                                    'Проверьте CORS',
+                                                    style: TextStyle(fontSize: 9, color: Colors.orange),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                           );
