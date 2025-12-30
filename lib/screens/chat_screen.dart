@@ -1101,71 +1101,76 @@ class _ChatScreenState extends State<ChatScreen> {
                                     },
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        msg.imageUrl!,
-                                        width: 250,
-                                        fit: BoxFit.cover,
-                                        cacheWidth: 500,  // ✅ Декодируем максимум 500px ширины (экономия памяти)
-                                        cacheHeight: 500, // ✅ Декодируем максимум 500px высоты (экономия памяти)
-                                        headers: kIsWeb ? {
-                                          'Access-Control-Allow-Origin': '*',
-                                        } : {}, // Для веб добавляем CORS заголовки
-                                        loadingBuilder: (context, child, loadingProgress) {
-                                          if (loadingProgress == null) return child;
-                                          return Container(
-                                            width: 250,
-                                            height: 200,
-                                            color: Colors.grey.shade200,
-                                            child: Center(
-                                              child: CircularProgressIndicator(
-                                                value: loadingProgress.expectedTotalBytes != null
-                                                    ? loadingProgress.cumulativeBytesLoaded /
-                                                        loadingProgress.expectedTotalBytes!
-                                                    : null,
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: 250, // Максимальная ширина
+                                          maxHeight: 400, // Максимальная высота (больше для вертикальных изображений)
+                                        ),
+                                        child: Image.network(
+                                          msg.imageUrl!,
+                                          fit: BoxFit.contain, // ✅ Сохраняем пропорции изображения
+                                          cacheWidth: 500,  // ✅ Декодируем максимум 500px ширины (экономия памяти)
+                                          // cacheHeight не задаем, чтобы сохранить пропорции
+                                          headers: kIsWeb ? {
+                                            'Access-Control-Allow-Origin': '*',
+                                          } : {}, // Для веб добавляем CORS заголовки
+                                          loadingBuilder: (context, child, loadingProgress) {
+                                            if (loadingProgress == null) return child;
+                                            return Container(
+                                              width: 250,
+                                              height: 200,
+                                              color: Colors.grey.shade200,
+                                              child: Center(
+                                                child: CircularProgressIndicator(
+                                                  value: loadingProgress.expectedTotalBytes != null
+                                                      ? loadingProgress.cumulativeBytesLoaded /
+                                                          loadingProgress.expectedTotalBytes!
+                                                      : null,
+                                                ),
                                               ),
-                                            ),
-                                          );
-                                        },
-                                        errorBuilder: (context, error, stackTrace) {
-                                          print('Image load error: $error');
-                                          print('Image URL: ${msg.imageUrl}');
-                                          print('Is Web: $kIsWeb');
-                                          print('Stack trace: $stackTrace');
-                                          if (kIsWeb) {
-                                            print('⚠️  ВЕБ: Проверьте CORS настройки в Яндекс Облаке');
-                                            print('   Убедитесь, что бакет публичный и CORS настроен');
-                                          }
-                                          return Container(
-                                            width: 250,
-                                            height: 200,
-                                            color: Colors.grey.shade200,
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                Icon(Icons.error, color: Colors.red),
-                                                SizedBox(height: 8),
-                                                Text(
-                                                  kIsWeb ? 'CORS ошибка?' : 'Ошибка загрузки',
-                                                  style: TextStyle(fontSize: 12),
-                                                ),
-                                                SizedBox(height: 4),
-                                                Text(
-                                                  'URL: ${msg.imageUrl?.substring(0, 50)}...',
-                                                  style: TextStyle(fontSize: 10, color: Colors.grey),
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                                if (kIsWeb) ...[
+                                            );
+                                          },
+                                          errorBuilder: (context, error, stackTrace) {
+                                            print('Image load error: $error');
+                                            print('Image URL: ${msg.imageUrl}');
+                                            print('Is Web: $kIsWeb');
+                                            print('Stack trace: $stackTrace');
+                                            if (kIsWeb) {
+                                              print('⚠️  ВЕБ: Проверьте CORS настройки в Яндекс Облаке');
+                                              print('   Убедитесь, что бакет публичный и CORS настроен');
+                                            }
+                                            return Container(
+                                              width: 250,
+                                              height: 200,
+                                              color: Colors.grey.shade200,
+                                              child: Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(Icons.error, color: Colors.red),
+                                                  SizedBox(height: 8),
+                                                  Text(
+                                                    kIsWeb ? 'CORS ошибка?' : 'Ошибка загрузки',
+                                                    style: TextStyle(fontSize: 12),
+                                                  ),
                                                   SizedBox(height: 4),
                                                   Text(
-                                                    'Проверьте CORS',
-                                                    style: TextStyle(fontSize: 9, color: Colors.orange),
+                                                    'URL: ${msg.imageUrl?.substring(0, 50)}...',
+                                                    style: TextStyle(fontSize: 10, color: Colors.grey),
                                                     textAlign: TextAlign.center,
                                                   ),
+                                                  if (kIsWeb) ...[
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      'Проверьте CORS',
+                                                      style: TextStyle(fontSize: 9, color: Colors.orange),
+                                                      textAlign: TextAlign.center,
+                                                    ),
+                                                  ],
                                                 ],
-                                              ],
-                                            ),
-                                          );
-                                        },
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ),
