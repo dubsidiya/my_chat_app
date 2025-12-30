@@ -28,14 +28,15 @@ const s3Client = new S3Client({
   forcePathStyle: false,
 });
 
-// Конфигурация CORS
+// Конфигурация CORS для Яндекс Object Storage
+// Важно: формат должен соответствовать спецификации S3
 const corsConfiguration = {
   CORSRules: [
     {
       AllowedHeaders: ['*'],
       AllowedMethods: ['GET', 'HEAD', 'OPTIONS'],
-      AllowedOrigins: ['*'], // Разрешаем все источники
-      ExposeHeaders: ['ETag', 'Content-Length', 'Content-Type'],
+      AllowedOrigins: ['*'],
+      ExposeHeaders: ['ETag', 'Content-Length', 'Content-Type', 'x-amz-request-id'],
       MaxAgeSeconds: 3600,
     },
   ],
@@ -50,20 +51,54 @@ export async function setupCors() {
   console.log('   - Максимальный возраст: 3600 секунд');
   console.log('');
 
-  const command = new PutBucketCorsCommand({
-    Bucket: YANDEX_BUCKET_NAME,
-    CORSConfiguration: corsConfiguration,
-  });
+  try {
+    const command = new PutBucketCorsCommand({
+      Bucket: YANDEX_BUCKET_NAME,
+      CORSConfiguration: corsConfiguration,
+    });
 
-  await s3Client.send(command);
+    await s3Client.send(command);
 
-  console.log('✅ CORS успешно настроен!');
-  console.log('');
-  console.log('📝 Теперь изображения должны отображаться в приложении.');
-  console.log('   Если проблема сохраняется, проверьте:');
-  console.log('   1. Что бакет имеет тип доступа "Публичный"');
-  console.log('   2. Что переменные окружения правильные');
-  console.log('   3. Обновите страницу в браузере (Ctrl+F5)');
+    console.log('✅ CORS успешно настроен!');
+    console.log('');
+    console.log('📝 Теперь изображения должны отображаться в приложении.');
+    console.log('   Если проблема сохраняется, проверьте:');
+    console.log('   1. Что бакет имеет тип доступа "Публичный"');
+    console.log('   2. Что переменные окружения правильные');
+    console.log('   3. Обновите страницу в браузере (Ctrl+F5)');
+  } catch (error) {
+    // Если ошибка XML схемы, пробуем альтернативный формат
+    if (error.message && error.message.includes('XML') || error.message.includes('schema')) {
+      console.log('⚠️  Первая попытка не удалась, пробуем альтернативный формат...');
+      
+      try {
+        // Альтернативный формат - более строгий
+        const altCorsConfig = {
+          CORSRules: [
+            {
+              AllowedHeaders: ['*'],
+              AllowedMethods: ['GET', 'HEAD'],
+              AllowedOrigins: ['*'],
+              ExposeHeaders: ['ETag', 'Content-Length', 'Content-Type'],
+              MaxAgeSeconds: 3000,
+            },
+          ],
+        };
+        
+        const altCommand = new PutBucketCorsCommand({
+          Bucket: YANDEX_BUCKET_NAME,
+          CORSConfiguration: altCorsConfig,
+        });
+        
+        await s3Client.send(altCommand);
+        console.log('✅ CORS настроен с альтернативным форматом!');
+      } catch (altError) {
+        throw new Error(`Не удалось настроить CORS: ${error.message}. Альтернативный формат тоже не сработал: ${altError.message}`);
+      }
+    } else {
+      throw error;
+    }
+  }
 }
 
 // Если скрипт запущен напрямую (не импортирован)
