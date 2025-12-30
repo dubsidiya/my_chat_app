@@ -1038,30 +1038,38 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 child: InteractiveViewer(
                                                   minScale: 0.5,
                                                   maxScale: 4.0,
-                                                  child: Image.network(
-                                                    msg.imageUrl!,
-                                                    fit: BoxFit.contain,
-                                                    cacheWidth: 1920,  // ✅ Декодируем максимум 1920px ширины для полноэкранного просмотра
-                                                    cacheHeight: 1920, // ✅ Декодируем максимум 1920px высоты для полноэкранного просмотра
-                                                    headers: kIsWeb ? {
-                                                      'Access-Control-Allow-Origin': '*',
-                                                    } : {}, // Для веб добавляем CORS заголовки
-                                                    errorBuilder: (context, error, stackTrace) {
-                                                      print('Full screen image error: $error');
-                                                      print('URL: ${msg.imageUrl}');
-                                                      return Center(
-                                                        child: Column(
-                                                          mainAxisAlignment: MainAxisAlignment.center,
-                                                          children: [
-                                                            Icon(Icons.error, color: Colors.white, size: 48),
-                                                            SizedBox(height: 16),
-                                                            Text('Ошибка загрузки изображения', style: TextStyle(color: Colors.white)),
-                                                            SizedBox(height: 8),
-                                                            Text('${msg.imageUrl}', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxWidth: MediaQuery.of(context).size.width,
+                                                      maxHeight: MediaQuery.of(context).size.height,
+                                                    ),
+                                                    child: Image.network(
+                                                      msg.imageUrl!,
+                                                      fit: BoxFit.contain, // ✅ Сохраняем пропорции
+                                                      // Убираем cacheWidth и cacheHeight для полноэкранного просмотра, чтобы сохранить пропорции
+                                                      // Или используем только cacheWidth для экономии памяти
+                                                      cacheWidth: 1920,  // ✅ Декодируем максимум 1920px ширины (пропорции сохранятся)
+                                                      // cacheHeight не задаем, чтобы сохранить пропорции изображения
+                                                      headers: kIsWeb ? {
+                                                        'Access-Control-Allow-Origin': '*',
+                                                      } : {}, // Для веб добавляем CORS заголовки
+                                                      errorBuilder: (context, error, stackTrace) {
+                                                        print('Full screen image error: $error');
+                                                        print('URL: ${msg.imageUrl}');
+                                                        return Center(
+                                                          child: Column(
+                                                            mainAxisAlignment: MainAxisAlignment.center,
+                                                            children: [
+                                                              Icon(Icons.error, color: Colors.white, size: 48),
+                                                              SizedBox(height: 16),
+                                                              Text('Ошибка загрузки изображения', style: TextStyle(color: Colors.white)),
+                                                              SizedBox(height: 8),
+                                                              Text('${msg.imageUrl}', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                                            ],
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
                                                   ),
                                                 ),
                                               ),
