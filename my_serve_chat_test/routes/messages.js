@@ -1,5 +1,5 @@
 import express from 'express';
-import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, markMessageAsRead, markMessagesAsRead, editMessage } from '../controllers/messagesController.js';
+import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages } from '../controllers/messagesController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage as uploadImageMiddleware } from '../utils/uploadImage.js';
 
@@ -33,5 +33,14 @@ router.delete('/:chatId', clearChat); // DELETE /messages/:chatId
 // ✅ Новые endpoints для статусов сообщений
 router.post('/message/:messageId/read', markMessageAsRead); // POST /messages/message/:messageId/read
 router.post('/chat/:chatId/read-all', markMessagesAsRead); // POST /messages/chat/:chatId/read-all
+
+// ✅ Endpoints для закрепления сообщений
+router.post('/message/:messageId/pin', pinMessage); // POST /messages/message/:messageId/pin
+router.delete('/message/:messageId/pin', unpinMessage); // DELETE /messages/message/:messageId/pin
+router.get('/chat/:chatId/pinned', getPinnedMessages); // GET /messages/chat/:chatId/pinned
+
+// ✅ Endpoints для реакций
+router.post('/message/:messageId/reaction', addReaction); // POST /messages/message/:messageId/reaction
+router.delete('/message/:messageId/reaction', removeReaction); // DELETE /messages/message/:messageId/reaction
 
 export default router;

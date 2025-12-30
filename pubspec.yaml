@@ -16,6 +16,9 @@ dependencies:
   intl: ^0.19.0
   shared_preferences: ^2.2.2
   image: ^4.0.17  # Для сжатия изображений перед загрузкой
+  hive: ^2.2.3  # ✅ Локальное хранилище для кэширования сообщений
+  hive_flutter: ^1.1.0  # ✅ Flutter интеграция для Hive
+  connectivity_plus: ^5.0.2  # ✅ Проверка подключения к интернету
 
 dev_dependencies:
   flutter_test:

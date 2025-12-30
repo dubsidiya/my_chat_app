@@ -14,6 +14,7 @@ import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/chats_service.dart';
 import '../services/storage_service.dart';
+import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 
@@ -52,6 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isUploadingImage = false;
+  Message? _replyToMessage; // ✅ Сообщение, на которое отвечаем
+  List<Message> _pinnedMessages = []; // ✅ Закрепленные сообщения
 
   @override
   void initState() {
@@ -61,11 +64,26 @@ class _ChatScreenState extends State<ChatScreen> {
     _initWebSocket();
     
     _loadMessages();
+    _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     
     // ✅ Отмечаем все сообщения как прочитанные при открытии чата
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
     });
+  }
+  
+  // ✅ Загрузить закрепленные сообщения
+  Future<void> _loadPinnedMessages() async {
+    try {
+      final pinned = await _messagesService.getPinnedMessages(widget.chatId);
+      if (mounted) {
+        setState(() {
+          _pinnedMessages = pinned;
+        });
+      }
+    } catch (e) {
+      print('Ошибка загрузки закрепленных сообщений: $e');
+    }
   }
   
   // ✅ Отметить все сообщения в чате как прочитанные
@@ -113,6 +131,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   _messages.removeWhere((m) => m.id.toString() == deletedMessageId);
                   print('Message removed from list. Remaining messages: ${_messages.length}');
                 });
+                
+                // ✅ Удаляем сообщение из кэша
+                LocalMessagesService.removeMessage(widget.chatId, deletedMessageId);
               }
             }
             return;
@@ -127,7 +148,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (index != -1) {
                   // Обновляем статус сообщения
                   final msg = _messages[index];
-                  _messages[index] = Message(
+                  final updatedMessage = Message(
                     id: msg.id,
                     chatId: msg.chatId,
                     userId: msg.userId,
@@ -142,6 +163,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     isRead: true,
                     readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
                   );
+                  _messages[index] = updatedMessage;
+                  
+                  // ✅ Обновляем в кэше
+                  LocalMessagesService.updateMessage(widget.chatId, updatedMessage);
                 }
               });
             }
@@ -192,7 +217,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (index != -1) {
                   // Обновляем сообщение
                   final msg = _messages[index];
-                  _messages[index] = Message(
+                  final updatedMessage = Message(
                     id: msg.id,
                     chatId: msg.chatId,
                     userId: msg.userId,
@@ -206,9 +231,32 @@ class _ChatScreenState extends State<ChatScreen> {
                     editedAt: data['edited_at']?.toString(),
                     isRead: msg.isRead,
                     readAt: msg.readAt,
+                    replyToMessageId: msg.replyToMessageId,
+                    replyToMessage: msg.replyToMessage,
+                    isPinned: msg.isPinned,
+                    reactions: msg.reactions,
+                    isForwarded: msg.isForwarded,
+                    originalChatName: msg.originalChatName,
                   );
+                  _messages[index] = updatedMessage;
+                  
+                  // ✅ Обновляем в кэше
+                  LocalMessagesService.updateMessage(widget.chatId, updatedMessage);
                 }
               });
+            }
+            return;
+          }
+          
+          // ✅ Обработка событий реакций
+          if (messageType == 'reaction_added' || messageType == 'reaction_removed') {
+            final messageId = data['message_id']?.toString();
+            final currentChatId = widget.chatId.toString();
+            
+            if (messageId != null && mounted) {
+              // Перезагружаем сообщения для получения актуальных реакций
+              // Или можно обновить только реакции через API
+              _loadMessages();
             }
             return;
           }
@@ -243,6 +291,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       }
                     });
                     print('Message added to list. Total messages: ${_messages.length}');
+                    
+                    // ✅ Сохраняем новое сообщение в кэш
+                    LocalMessagesService.addMessage(widget.chatId, message);
                   } else {
                     print('Message already exists, skipping');
                   }
@@ -318,11 +369,26 @@ class _ChatScreenState extends State<ChatScreen> {
       _oldestMessageId = null;
     });
     
+    // ✅ Сначала загружаем из кэша для быстрого отображения
+    try {
+      final cachedMessages = await LocalMessagesService.getMessages(widget.chatId);
+      if (cachedMessages.isNotEmpty && mounted) {
+        setState(() {
+          _messages = cachedMessages;
+        });
+        print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
+      }
+    } catch (e) {
+      print('⚠️ Ошибка загрузки из кэша: $e');
+    }
+    
+    // ✅ Затем загружаем с сервера и обновляем
     try {
       final result = await _messagesService.fetchMessagesPaginated(
         widget.chatId,
         limit: _messagesPerPage,
         offset: 0,
+        useCache: true, // ✅ Используем кэш
       );
       
       if (mounted) {
@@ -341,9 +407,24 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       print('Error loading messages: $e');
-      if (mounted) {
+      // ✅ Если ошибка, но есть кэш - не показываем ошибку
+      if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка загрузки сообщений: $e')),
+          SnackBar(
+            content: Text('Ошибка загрузки сообщений: $e'),
+            action: SnackBarAction(
+              label: 'Повторить',
+              onPressed: () => _loadMessages(),
+            ),
+          ),
+        );
+      } else if (mounted) {
+        // Показываем уведомление об офлайн режиме
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Офлайн режим. Показаны сохраненные сообщения.'),
+            duration: Duration(seconds: 3),
+          ),
         );
       }
     } finally {
@@ -752,6 +833,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: Icon(Icons.reply),
+              title: Text('Ответить'),
+              onTap: () => Navigator.pop(context, 'reply'),
+            ),
+            ListTile(
+              leading: Icon(Icons.forward),
+              title: Text('Переслать'),
+              onTap: () => Navigator.pop(context, 'forward'),
+            ),
             // ✅ Редактировать можно только текстовые сообщения
             if (message.hasText && !message.hasImage)
               ListTile(
@@ -759,6 +850,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 title: Text('Редактировать'),
                 onTap: () => Navigator.pop(context, 'edit'),
               ),
+            ListTile(
+              leading: Icon(message.isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+              title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
+              onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
+            ),
+            ListTile(
+              leading: Icon(Icons.emoji_emotions),
+              title: Text('Реакция'),
+              onTap: () => Navigator.pop(context, 'reaction'),
+            ),
             ListTile(
               leading: Icon(Icons.delete, color: Colors.red),
               title: Text('Удалить', style: TextStyle(color: Colors.red)),
@@ -774,11 +875,196 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
     
-    if (action == 'edit') {
+    if (action == 'reply') {
+      setState(() {
+        _replyToMessage = message;
+      });
+    } else if (action == 'forward') {
+      _showForwardDialog(message);
+    } else if (action == 'edit') {
       _showEditMessageDialog(message);
+    } else if (action == 'pin') {
+      _pinMessage(message);
+    } else if (action == 'unpin') {
+      _unpinMessage(message);
+    } else if (action == 'reaction') {
+      _showReactionPicker(message);
     } else if (action == 'delete') {
       _showDeleteMessageDialog(message);
     }
+  }
+  
+  // ✅ Диалог пересылки сообщения
+  Future<void> _showForwardDialog(Message message) async {
+    if (!mounted) return;
+    
+    // Загружаем список чатов пользователя
+    final chats = await _chatsService.fetchChats(widget.userId);
+    final availableChats = chats.where((chat) => chat.id != widget.chatId).toList();
+    
+    if (availableChats.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Нет других чатов для пересылки')),
+      );
+      return;
+    }
+    
+    final selectedChats = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Переслать сообщение'),
+        content: Container(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: availableChats.length,
+            itemBuilder: (context, index) {
+              final chat = availableChats[index];
+              return CheckboxListTile(
+                title: Text(chat.name),
+                value: false, // TODO: Реализовать множественный выбор
+                onChanged: (value) {},
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // TODO: Вернуть выбранные чаты
+              Navigator.pop(context, []);
+            },
+            child: Text('Переслать'),
+          ),
+        ],
+      ),
+    );
+    
+    if (selectedChats != null && selectedChats.isNotEmpty) {
+      try {
+        await _messagesService.forwardMessage(message.id, selectedChats);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Сообщение переслано в ${selectedChats.length} чат(ов)')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка пересылки: $e')),
+          );
+        }
+      }
+    }
+  }
+  
+  // ✅ Закрепить сообщение
+  Future<void> _pinMessage(Message message) async {
+    try {
+      await _messagesService.pinMessage(message.id);
+      if (mounted) {
+        await _loadPinnedMessages();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Сообщение закреплено')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка закрепления: $e')),
+        );
+      }
+    }
+  }
+  
+  // ✅ Открепить сообщение
+  Future<void> _unpinMessage(Message message) async {
+    try {
+      await _messagesService.unpinMessage(message.id);
+      if (mounted) {
+        await _loadPinnedMessages();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Сообщение откреплено')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка открепления: $e')),
+        );
+      }
+    }
+  }
+  
+  // ✅ Показать выбор реакции
+  Future<void> _showReactionPicker(Message message) async {
+    if (!mounted) return;
+    
+    final reaction = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Container(
+          padding: EdgeInsets.all(16),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildReactionButton('👍', context),
+              _buildReactionButton('❤️', context),
+              _buildReactionButton('😂', context),
+              _buildReactionButton('😮', context),
+              _buildReactionButton('😢', context),
+              _buildReactionButton('🙏', context),
+              _buildReactionButton('🔥', context),
+              _buildReactionButton('⭐', context),
+            ],
+          ),
+        ),
+      ),
+    );
+    
+    if (reaction != null) {
+      try {
+        // Проверяем, есть ли уже такая реакция
+        final hasReaction = message.reactions?.any((r) => r.reaction == reaction) ?? false;
+        if (hasReaction) {
+          await _messagesService.removeReaction(message.id, reaction);
+        } else {
+          await _messagesService.addReaction(message.id, reaction);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка: $e')),
+          );
+        }
+      }
+    }
+  }
+  
+  Widget _buildReactionButton(String emoji, BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context, emoji),
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(25),
+        ),
+        child: Center(
+          child: Text(
+            emoji,
+            style: TextStyle(fontSize: 24),
+          ),
+        ),
+      ),
+    );
   }
 
   // ✅ Диалог редактирования сообщения
@@ -1442,6 +1728,68 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                   if (msg.hasText) SizedBox(height: 8),
                                 ],
+                                // ✅ Отображение ответа на сообщение (если есть)
+                                if (msg.replyToMessage != null) ...[
+                                  Container(
+                                    margin: EdgeInsets.only(bottom: 8),
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: isMine 
+                                          ? Colors.white.withOpacity(0.2)
+                                          : Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border(
+                                        left: BorderSide(
+                                          color: isMine ? Colors.white : Colors.blue,
+                                          width: 3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          msg.replyToMessage!.senderEmail,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: isMine 
+                                                ? Colors.white.withOpacity(0.9)
+                                                : Colors.blue.shade700,
+                                          ),
+                                        ),
+                                        SizedBox(height: 4),
+                                        if (msg.replyToMessage!.hasImage)
+                                          Row(
+                                            children: [
+                                              Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Фото',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          Text(
+                                            msg.replyToMessage!.content.length > 50
+                                                ? '${msg.replyToMessage!.content.substring(0, 50)}...'
+                                                : msg.replyToMessage!.content,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isMine ? Colors.white70 : Colors.grey.shade700,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 // Отображение текста
                                 if (msg.hasText) ...[
                                   Text(
@@ -1451,6 +1799,45 @@ class _ChatScreenState extends State<ChatScreen> {
                                       fontSize: 15,
                                       height: 1.4,
                                     ),
+                                  ),
+                                ],
+                                // ✅ Отображение реакций
+                                if (msg.reactions != null && msg.reactions!.isNotEmpty) ...[
+                                  SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: msg.reactions!.map((reaction) {
+                                      return GestureDetector(
+                                        onTap: () => _showReactionPicker(msg),
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isMine 
+                                                ? Colors.white.withOpacity(0.2)
+                                                : Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                reaction.reaction,
+                                                style: TextStyle(fontSize: 14),
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                '1', // TODO: Подсчитывать количество одинаковых реакций
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: isMine ? Colors.white70 : Colors.grey.shade700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
                                   ),
                                 ],
                                 SizedBox(height: 4),
@@ -1548,6 +1935,79 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // ✅ Превью ответа на сообщение
+                    if (_replyToMessage != null)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border(
+                            left: BorderSide(
+                              color: Colors.blue,
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Ответ на сообщение',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  if (_replyToMessage!.hasImage)
+                                    Row(
+                                      children: [
+                                        Icon(Icons.image, size: 14, color: Colors.grey.shade600),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Фото',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Text(
+                                      _replyToMessage!.content.length > 50
+                                          ? '${_replyToMessage!.content.substring(0, 50)}...'
+                                          : _replyToMessage!.content,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _replyToMessage = null;
+                                });
+                              },
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                      ),
                     // Превью выбранного изображения
                     if (_selectedImagePath != null || _selectedImageBytes != null)
                       Container(

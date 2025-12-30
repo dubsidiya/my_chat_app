@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
+import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 
 export const getMessages = async (req, res) => {
@@ -28,9 +29,12 @@ export const getMessages = async (req, res) => {
           messages.created_at,
           messages.delivered_at,
           messages.edited_at,
-          users.email AS sender_email
+          messages.reply_to_message_id,
+          users.email AS sender_email,
+          pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
+        LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1 AND messages.id < $2
         ORDER BY messages.id DESC
         LIMIT $3
@@ -71,9 +75,12 @@ export const getMessages = async (req, res) => {
           messages.created_at,
           messages.delivered_at,
           messages.edited_at,
-          users.email AS sender_email
+          messages.reply_to_message_id,
+          users.email AS sender_email,
+          pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
+        LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1
         ORDER BY messages.created_at ASC
         LIMIT $2 OFFSET $3
@@ -96,6 +103,72 @@ export const getMessages = async (req, res) => {
       const isRead = readCheck.rows.length > 0;
       const readAt = isRead ? readCheck.rows[0].read_at : null;
       
+      // ✅ Получаем сообщение, на которое отвечают (если есть)
+      let replyToMessage = null;
+      if (row.reply_to_message_id) {
+        const replyCheck = await pool.query(`
+          SELECT 
+            messages.id,
+            messages.content,
+            messages.image_url,
+            messages.user_id,
+            users.email AS sender_email
+          FROM messages
+          JOIN users ON messages.user_id = users.id
+          WHERE messages.id = $1
+        `, [row.reply_to_message_id]);
+        if (replyCheck.rows.length > 0) {
+          replyToMessage = {
+            id: replyCheck.rows[0].id,
+            content: replyCheck.rows[0].content,
+            image_url: replyCheck.rows[0].image_url,
+            user_id: replyCheck.rows[0].user_id,
+            sender_email: replyCheck.rows[0].sender_email,
+          };
+        }
+      }
+      
+      // ✅ Получаем реакции на сообщение
+      const reactionsResult = await pool.query(`
+        SELECT 
+          message_reactions.id,
+          message_reactions.message_id,
+          message_reactions.user_id,
+          message_reactions.reaction,
+          message_reactions.created_at,
+          users.email AS user_email
+        FROM message_reactions
+        JOIN users ON message_reactions.user_id = users.id
+        WHERE message_reactions.message_id = $1
+        ORDER BY message_reactions.created_at ASC
+      `, [row.id]);
+      
+      const reactions = reactionsResult.rows.map(r => ({
+        id: r.id,
+        message_id: r.message_id,
+        user_id: r.user_id,
+        reaction: r.reaction,
+        created_at: r.created_at,
+        user_email: r.user_email,
+      }));
+      
+      // ✅ Проверяем, переслано ли сообщение
+      const forwardCheck = await pool.query(
+        'SELECT original_chat_id FROM message_forwards WHERE message_id = $1 LIMIT 1',
+        [row.id]
+      );
+      const isForwarded = forwardCheck.rows.length > 0;
+      let originalChatName = null;
+      if (isForwarded && forwardCheck.rows[0].original_chat_id) {
+        const chatCheck = await pool.query(
+          'SELECT name FROM chats WHERE id = $1',
+          [forwardCheck.rows[0].original_chat_id]
+        );
+        if (chatCheck.rows.length > 0) {
+          originalChatName = chatCheck.rows[0].name;
+        }
+      }
+      
       return {
         id: row.id,
         chat_id: row.chat_id,
@@ -108,6 +181,12 @@ export const getMessages = async (req, res) => {
         edited_at: row.edited_at,
         is_read: isRead,
         read_at: readAt,
+        reply_to_message_id: row.reply_to_message_id,
+        reply_to_message: replyToMessage,
+        is_pinned: row.is_pinned || false,
+        reactions: reactions,
+        is_forwarded: isForwarded,
+        original_chat_name: originalChatName,
         sender_email: row.sender_email
       };
     }));
@@ -154,14 +233,19 @@ export const getMessages = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  // Приложение отправляет: { chat_id, content, image_url }
-  const { chat_id, content, image_url } = req.body;
+  // Приложение отправляет: { chat_id, content, image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids }
+  const { chat_id, content, image_url, original_image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
 
   if (!chat_id || (!content && !image_url)) {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url' });
+  }
+  
+  // ✅ Если пересылка сообщений
+  if (forward_from_message_id && forward_to_chat_ids && Array.isArray(forward_to_chat_ids)) {
+    return await forwardMessages(req, res, forward_from_message_id, forward_to_chat_ids, user_id);
   }
 
   try {
@@ -185,15 +269,40 @@ export const sendMessage = async (req, res) => {
 
     // Используем user_id из токена (безопасно)
     const result = await pool.query(`
-      INSERT INTO messages (chat_id, user_id, content, image_url, message_type, delivered_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at, delivered_at
-    `, [chat_id, user_id, content || '', image_url || null, message_type]);
+      INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at, reply_to_message_id)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
+      RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at, reply_to_message_id
+    `, [chat_id, user_id, content || '', image_url || null, original_image_url || null, message_type, reply_to_message_id || null]);
 
     // Используем email из токена
     const senderEmail = req.user.email;
 
     const message = result.rows[0];
+    
+    // ✅ Получаем сообщение, на которое отвечают (если есть)
+    let replyToMessage = null;
+    if (message.reply_to_message_id) {
+      const replyCheck = await pool.query(`
+        SELECT 
+          messages.id,
+          messages.content,
+          messages.image_url,
+          messages.user_id,
+          users.email AS sender_email
+        FROM messages
+        JOIN users ON messages.user_id = users.id
+        WHERE messages.id = $1
+      `, [message.reply_to_message_id]);
+      if (replyCheck.rows.length > 0) {
+        replyToMessage = {
+          id: replyCheck.rows[0].id,
+          content: replyCheck.rows[0].content,
+          image_url: replyCheck.rows[0].image_url,
+          user_id: replyCheck.rows[0].user_id,
+          sender_email: replyCheck.rows[0].sender_email,
+        };
+      }
+    }
     
     const response = {
       id: message.id,
@@ -207,6 +316,11 @@ export const sendMessage = async (req, res) => {
       edited_at: null,
       is_read: false,
       read_at: null,
+      reply_to_message_id: message.reply_to_message_id,
+      reply_to_message: replyToMessage,
+      is_pinned: false,
+      reactions: [],
+      is_forwarded: false,
       sender_email: senderEmail
     };
 
@@ -714,6 +828,356 @@ export const markMessagesAsRead = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка отметки сообщений как прочитанных:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Пересылка сообщений
+const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
+  try {
+    // Получаем оригинальное сообщение
+    const originalMessage = await pool.query(`
+      SELECT 
+        messages.*,
+        chats.id AS original_chat_id,
+        chats.name AS original_chat_name
+      FROM messages
+      JOIN chats ON messages.chat_id = chats.id
+      WHERE messages.id = $1
+    `, [fromMessageId]);
+    
+    if (originalMessage.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение для пересылки не найдено' });
+    }
+    
+    const original = originalMessage.rows[0];
+    const forwardedMessages = [];
+    
+    // Пересылаем в каждый указанный чат
+    for (const toChatId of toChatIds) {
+      // Проверяем, является ли пользователь участником чата
+      const memberCheck = await pool.query(
+        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+        [toChatId, userId]
+      );
+      
+      if (memberCheck.rows.length === 0) {
+        continue; // Пропускаем чаты, где пользователь не участник
+      }
+      
+      // Создаем новое сообщение в целевом чате
+      const result = await pool.query(`
+        INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+        RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at
+      `, [
+        toChatId,
+        userId,
+        original.content || '',
+        original.image_url,
+        original.original_image_url,
+        original.message_type || 'text'
+      ]);
+      
+      const newMessage = result.rows[0];
+      
+      // Сохраняем информацию о пересылке
+      await pool.query(`
+        INSERT INTO message_forwards (message_id, original_chat_id, original_message_id, forwarded_by)
+        VALUES ($1, $2, $3, $4)
+      `, [newMessage.id, original.original_chat_id, fromMessageId, userId]);
+      
+      // Отправляем через WebSocket
+      const clients = getWebSocketClients();
+      const members = await pool.query(
+        'SELECT user_id FROM chat_users WHERE chat_id = $1',
+        [toChatId]
+      );
+      
+      const wsMessage = {
+        id: newMessage.id,
+        chat_id: newMessage.chat_id.toString(),
+        user_id: newMessage.user_id,
+        content: newMessage.content,
+        image_url: newMessage.image_url,
+        original_image_url: newMessage.original_image_url,
+        message_type: newMessage.message_type,
+        created_at: newMessage.created_at,
+        delivered_at: newMessage.delivered_at,
+        is_forwarded: true,
+        original_chat_name: original.original_chat_name,
+        sender_email: req.user.email
+      };
+      
+      members.rows.forEach(row => {
+        const client = clients.get(row.user_id.toString());
+        if (client && client.readyState === 1) {
+          client.send(JSON.stringify(wsMessage));
+        }
+      });
+      
+      forwardedMessages.push(newMessage);
+    }
+    
+    res.status(201).json({
+      success: true,
+      forwarded_count: forwardedMessages.length,
+      messages: forwardedMessages
+    });
+  } catch (error) {
+    console.error('Ошибка пересылки сообщений:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Закрепить сообщение
+export const pinMessage = async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const userId = req.user.userId;
+    
+    // Проверяем сообщение
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    
+    const chatId = messageCheck.rows[0].chat_id;
+    
+    // Проверяем права (только участник чата может закрепить)
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+    
+    // Проверяем лимит закрепленных сообщений (максимум 5)
+    const pinnedCount = await pool.query(
+      'SELECT COUNT(*) as count FROM pinned_messages WHERE chat_id = $1',
+      [chatId]
+    );
+    
+    if (parseInt(pinnedCount.rows[0].count) >= 5) {
+      return res.status(400).json({ message: 'Максимум 5 закрепленных сообщений в чате' });
+    }
+    
+    // Закрепляем сообщение
+    await pool.query(`
+      INSERT INTO pinned_messages (chat_id, message_id, pinned_by)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (chat_id, message_id) DO NOTHING
+    `, [chatId, messageId, userId]);
+    
+    res.status(200).json({ success: true, message: 'Сообщение закреплено' });
+  } catch (error) {
+    console.error('Ошибка закрепления сообщения:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Открепить сообщение
+export const unpinMessage = async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const userId = req.user.userId;
+    
+    // Проверяем сообщение
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    
+    const chatId = messageCheck.rows[0].chat_id;
+    
+    // Удаляем закрепление
+    await pool.query(
+      'DELETE FROM pinned_messages WHERE chat_id = $1 AND message_id = $2',
+      [chatId, messageId]
+    );
+    
+    res.status(200).json({ success: true, message: 'Сообщение откреплено' });
+  } catch (error) {
+    console.error('Ошибка открепления сообщения:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Добавить реакцию на сообщение
+export const addReaction = async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const { reaction } = req.body; // Эмодзи реакции
+    const userId = req.user.userId;
+    
+    if (!reaction || reaction.length === 0) {
+      return res.status(400).json({ message: 'Укажите реакцию (эмодзи)' });
+    }
+    
+    // Проверяем сообщение
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    
+    const chatId = messageCheck.rows[0].chat_id;
+    
+    // Проверяем права
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+    
+    // Добавляем или обновляем реакцию
+    const result = await pool.query(`
+      INSERT INTO message_reactions (message_id, user_id, reaction)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (message_id, user_id, reaction) DO UPDATE SET created_at = CURRENT_TIMESTAMP
+      RETURNING id, message_id, user_id, reaction, created_at
+    `, [messageId, userId, reaction]);
+    
+    // Отправляем через WebSocket
+    const clients = getWebSocketClients();
+    const members = await pool.query(
+      'SELECT user_id FROM chat_users WHERE chat_id = $1',
+      [chatId]
+    );
+    
+    const wsMessage = {
+      type: 'reaction_added',
+      message_id: messageId,
+      reaction: reaction,
+      user_id: userId,
+      user_email: req.user.email,
+    };
+    
+    members.rows.forEach(row => {
+      const client = clients.get(row.user_id.toString());
+      if (client && client.readyState === 1) {
+        client.send(JSON.stringify(wsMessage));
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      reaction: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Ошибка добавления реакции:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Удалить реакцию
+export const removeReaction = async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const { reaction } = req.body;
+    const userId = req.user.userId;
+    
+    await pool.query(
+      'DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND reaction = $3',
+      [messageId, userId, reaction]
+    );
+    
+    // Отправляем через WebSocket
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (messageCheck.rows.length > 0) {
+      const chatId = messageCheck.rows[0].chat_id;
+      const clients = getWebSocketClients();
+      const members = await pool.query(
+        'SELECT user_id FROM chat_users WHERE chat_id = $1',
+        [chatId]
+      );
+      
+      const wsMessage = {
+        type: 'reaction_removed',
+        message_id: messageId,
+        reaction: reaction,
+        user_id: userId,
+      };
+      
+      members.rows.forEach(row => {
+        const client = clients.get(row.user_id.toString());
+        if (client && client.readyState === 1) {
+          client.send(JSON.stringify(wsMessage));
+        }
+      });
+    }
+    
+    res.status(200).json({ success: true, message: 'Реакция удалена' });
+  } catch (error) {
+    console.error('Ошибка удаления реакции:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// ✅ Получить закрепленные сообщения чата
+export const getPinnedMessages = async (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const userId = req.user.userId;
+    
+    // Проверяем права
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        messages.*,
+        users.email AS sender_email,
+        pinned_messages.pinned_at
+      FROM pinned_messages
+      JOIN messages ON pinned_messages.message_id = messages.id
+      JOIN users ON messages.user_id = users.id
+      WHERE pinned_messages.chat_id = $1
+      ORDER BY pinned_messages.pinned_at DESC
+    `, [chatId]);
+    
+    res.status(200).json({
+      messages: result.rows.map(row => ({
+        id: row.id,
+        chat_id: row.chat_id,
+        user_id: row.user_id,
+        content: row.content,
+        image_url: row.image_url,
+        message_type: row.message_type,
+        created_at: row.created_at,
+        sender_email: row.sender_email,
+        is_pinned: true,
+        pinned_at: row.pinned_at,
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения закрепленных сообщений:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

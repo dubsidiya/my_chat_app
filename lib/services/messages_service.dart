@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/message.dart';
 import 'storage_service.dart';
+import 'local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 
 // Результат пагинации сообщений
 class MessagesPaginationResult {
@@ -44,7 +46,26 @@ class MessagesService {
     int limit = 50,
     int offset = 0,
     String? beforeMessageId,
+    bool useCache = true, // ✅ Использовать кэш по умолчанию
   }) async {
+    // ✅ Проверяем подключение к интернету
+    final connectivityResult = await Connectivity().checkConnectivity();
+    final isOnline = connectivityResult != ConnectivityResult.none;
+    
+    // ✅ Если есть кэш и мы офлайн, возвращаем из кэша
+    if (!isOnline && useCache) {
+      print('⚠️ Нет подключения к интернету, загружаем из кэша');
+      final cachedMessages = await LocalMessagesService.getMessages(chatId);
+      return MessagesPaginationResult(
+        messages: cachedMessages,
+        hasMore: false,
+        totalCount: cachedMessages.length,
+        oldestMessageId: cachedMessages.isNotEmpty 
+            ? cachedMessages.map((m) => int.parse(m.id)).reduce((a, b) => a < b ? a : b).toString()
+            : null,
+      );
+    }
+    
     try {
       final uri = Uri.parse('$baseUrl/messages/$chatId').replace(
         queryParameters: {
@@ -99,13 +120,18 @@ class MessagesService {
               }
             }
             
-            return MessagesPaginationResult(
-              messages: messages,
-              hasMore: false,
-              totalCount: messages.length,
-              oldestMessageId: null,
-            );
-          } else {
+                   // ✅ Сохраняем сообщения в кэш
+                   if (useCache && isOnline) {
+                     await LocalMessagesService.saveMessages(chatId, messages);
+                   }
+                   
+                   return MessagesPaginationResult(
+                     messages: messages,
+                     hasMore: false,
+                     totalCount: messages.length,
+                     oldestMessageId: null,
+                   );
+                 } else {
             // Неожиданный формат
             print('Unexpected response format: $decodedData');
             return MessagesPaginationResult(
@@ -119,17 +145,73 @@ class MessagesService {
           print('Error decoding messages JSON: $e');
           throw Exception('Ошибка парсинга сообщений: $e');
         }
-      } else {
-        print('Error fetching messages: ${response.statusCode} - ${response.body}');
-        throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error in fetchMessagesPaginated: $e');
-      rethrow;
-    }
-  }
+             } else {
+               // ✅ Если ошибка сервера, пытаемся загрузить из кэша
+               if (useCache) {
+                 print('⚠️ Ошибка загрузки с сервера, пробуем кэш');
+                 final cachedMessages = await LocalMessagesService.getMessages(chatId);
+                 if (cachedMessages.isNotEmpty) {
+                   return MessagesPaginationResult(
+                     messages: cachedMessages,
+                     hasMore: false,
+                     totalCount: cachedMessages.length,
+                     oldestMessageId: cachedMessages.isNotEmpty 
+                         ? cachedMessages.map((m) => int.parse(m.id)).reduce((a, b) => a < b ? a : b).toString()
+                         : null,
+                   );
+                 }
+               }
+               print('Error fetching messages: ${response.statusCode} - ${response.body}');
+               throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
+             }
+           } catch (e) {
+             print('Error in fetchMessagesPaginated: $e');
+             // ✅ Если ошибка сети, пытаемся загрузить из кэша
+             if (useCache && e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
+               print('⚠️ Ошибка сети, загружаем из кэша');
+               final cachedMessages = await LocalMessagesService.getMessages(chatId);
+               if (cachedMessages.isNotEmpty) {
+                 return MessagesPaginationResult(
+                   messages: cachedMessages,
+                   hasMore: false,
+                   totalCount: cachedMessages.length,
+                   oldestMessageId: null,
+                 );
+               }
+             }
+             rethrow;
+           }
+         }
 
-  Future<void> sendMessage(String chatId, String content, {String? imageUrl}) async {
+  Future<void> sendMessage(
+    String chatId, 
+    String content, {
+    String? imageUrl, 
+    String? originalImageUrl,
+    String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
+  }) async {
+    // ✅ Проверяем подключение
+    final connectivityResult = await Connectivity().checkConnectivity();
+    final isOnline = connectivityResult != ConnectivityResult.none;
+    
+    if (!isOnline) {
+      // ✅ В офлайн режиме создаем временное сообщение и сохраняем в кэш
+      final tempMessage = Message(
+        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        chatId: chatId,
+        userId: '', // Будет заполнено после синхронизации
+        content: content,
+        imageUrl: imageUrl,
+        originalImageUrl: originalImageUrl,
+        messageType: imageUrl != null ? 'image' : 'text',
+        senderEmail: '',
+        createdAt: DateTime.now().toIso8601String(),
+        isRead: false,
+      );
+      await LocalMessagesService.addMessage(chatId, tempMessage);
+      throw Exception('Нет подключения к интернету. Сообщение сохранено локально и будет отправлено при восстановлении связи.');
+    }
+    
     final headers = await _getAuthHeaders();
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
@@ -138,11 +220,22 @@ class MessagesService {
         'chat_id': chatId,
         'content': content,
         'image_url': imageUrl,
+        'original_image_url': originalImageUrl,
+        'reply_to_message_id': replyToMessageId,
       }),
     );
 
     if (response.statusCode != 201) {
       throw Exception('Ошибка при отправке сообщения');
+    }
+    
+    // ✅ После успешной отправки обновляем кэш
+    try {
+      final responseData = jsonDecode(response.body);
+      final sentMessage = Message.fromJson(responseData);
+      await LocalMessagesService.addMessage(chatId, sentMessage);
+    } catch (e) {
+      print('⚠️ Не удалось обновить кэш после отправки: $e');
     }
   }
 
@@ -335,6 +428,99 @@ class MessagesService {
 
     if (response.statusCode != 200) {
       throw Exception('Ошибка при редактировании сообщения');
+    }
+  }
+
+  // ✅ Переслать сообщение
+  Future<void> forwardMessage(String messageId, List<String> toChatIds) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages'),
+      headers: headers,
+      body: jsonEncode({
+        'forward_from_message_id': messageId,
+        'forward_to_chat_ids': toChatIds,
+        'chat_id': toChatIds.first, // Для совместимости
+      }),
+    );
+
+    if (response.statusCode != 201) {
+      throw Exception('Ошибка при пересылке сообщения');
+    }
+  }
+
+  // ✅ Закрепить сообщение
+  Future<void> pinMessage(String messageId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages/message/$messageId/pin'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при закреплении сообщения');
+    }
+  }
+
+  // ✅ Открепить сообщение
+  Future<void> unpinMessage(String messageId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/messages/message/$messageId/pin'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при откреплении сообщения');
+    }
+  }
+
+  // ✅ Получить закрепленные сообщения
+  Future<List<Message>> getPinnedMessages(String chatId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/messages/chat/$chatId/pinned'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final messagesData = data['messages'] as List<dynamic>;
+      return messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+    } else {
+      throw Exception('Ошибка при получении закрепленных сообщений');
+    }
+  }
+
+  // ✅ Добавить реакцию
+  Future<void> addReaction(String messageId, String reaction) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
+      headers: headers,
+      body: jsonEncode({
+        'reaction': reaction,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при добавлении реакции');
+    }
+  }
+
+  // ✅ Удалить реакцию
+  Future<void> removeReaction(String messageId, String reaction) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
+      headers: headers,
+      body: jsonEncode({
+        'reaction': reaction,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка при удалении реакции');
     }
   }
 

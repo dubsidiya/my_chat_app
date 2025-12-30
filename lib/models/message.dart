@@ -12,6 +12,12 @@ class Message {
   final String? editedAt; // ✅ Время редактирования
   final bool isRead; // ✅ Прочитано ли сообщение текущим пользователем
   final String? readAt; // ✅ Время прочтения
+  final String? replyToMessageId; // ✅ ID сообщения, на которое отвечают
+  final Message? replyToMessage; // ✅ Сообщение, на которое отвечают (для отображения)
+  final bool isPinned; // ✅ Закреплено ли сообщение
+  final List<MessageReaction>? reactions; // ✅ Реакции на сообщение
+  final bool isForwarded; // ✅ Переслано ли сообщение
+  final String? originalChatName; // ✅ Название оригинального чата (для пересланных)
 
   Message({
     required this.id,
@@ -27,6 +33,12 @@ class Message {
     this.editedAt,
     this.isRead = false,
     this.readAt,
+    this.replyToMessageId,
+    this.replyToMessage,
+    this.isPinned = false,
+    this.reactions,
+    this.isForwarded = false,
+    this.originalChatName,
   });
 
   bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
@@ -58,6 +70,16 @@ class Message {
         editedAt: json['edited_at']?.toString(),
         isRead: json['is_read'] == true || json['is_read'] == 1,
         readAt: json['read_at']?.toString(),
+        replyToMessageId: json['reply_to_message_id']?.toString(),
+        replyToMessage: json['reply_to_message'] != null 
+            ? Message.fromJson(json['reply_to_message'] as Map<String, dynamic>)
+            : null,
+        isPinned: json['is_pinned'] == true || json['is_pinned'] == 1,
+        reactions: json['reactions'] != null
+            ? (json['reactions'] as List).map((r) => MessageReaction.fromJson(r)).toList()
+            : null,
+        isForwarded: json['is_forwarded'] == true || json['is_forwarded'] == 1,
+        originalChatName: json['original_chat_name'] as String?,
       );
     } catch (e) {
       print('Error parsing Message from JSON: $e');
@@ -72,4 +94,45 @@ enum MessageStatus {
   sent,      // Отправлено (один чек)
   delivered, // Доставлено (два чека)
   read,      // Прочитано (два синих чека)
+}
+
+// ✅ Модель реакции на сообщение
+class MessageReaction {
+  final String id;
+  final String messageId;
+  final String userId;
+  final String reaction; // Эмодзи
+  final String createdAt;
+  final String? userEmail; // Email пользователя, поставившего реакцию
+
+  MessageReaction({
+    required this.id,
+    required this.messageId,
+    required this.userId,
+    required this.reaction,
+    required this.createdAt,
+    this.userEmail,
+  });
+
+  factory MessageReaction.fromJson(Map<String, dynamic> json) {
+    return MessageReaction(
+      id: (json['id'] ?? '').toString(),
+      messageId: (json['message_id'] ?? '').toString(),
+      userId: (json['user_id'] ?? '').toString(),
+      reaction: json['reaction'] ?? '',
+      createdAt: json['created_at']?.toString() ?? '',
+      userEmail: json['user_email'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'message_id': messageId,
+      'user_id': userId,
+      'reaction': reaction,
+      'created_at': createdAt,
+      'user_email': userEmail,
+    };
+  }
 }

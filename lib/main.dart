@@ -4,6 +4,7 @@ import 'dart:async';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
+import 'services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 
 void main() {
   // Обработка ошибок Flutter
@@ -16,7 +17,10 @@ void main() {
   };
 
   // Обработка асинхронных ошибок
-  runZonedGuarded(() {
+  runZonedGuarded(() async {
+    // ✅ Инициализируем локальное хранилище перед запуском приложения
+    WidgetsFlutterBinding.ensureInitialized();
+    await LocalMessagesService.init();
     runApp(MyApp());
   }, (error, stack) {
     if (kDebugMode) {
