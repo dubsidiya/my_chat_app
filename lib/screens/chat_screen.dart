@@ -920,6 +920,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   child: Image.network(
                                                     msg.imageUrl!,
                                                     fit: BoxFit.contain,
+                                                    headers: {}, // Пустые заголовки для публичных изображений
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      print('Full screen image error: $error');
+                                                      print('URL: ${msg.imageUrl}');
+                                                      return Center(
+                                                        child: Column(
+                                                          mainAxisAlignment: MainAxisAlignment.center,
+                                                          children: [
+                                                            Icon(Icons.error, color: Colors.white, size: 48),
+                                                            SizedBox(height: 16),
+                                                            Text('Ошибка загрузки изображения', style: TextStyle(color: Colors.white)),
+                                                            SizedBox(height: 8),
+                                                            Text('${msg.imageUrl}', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                                          ],
+                                                        ),
+                                                      );
+                                                    },
                                                   ),
                                                 ),
                                               ),
@@ -945,6 +962,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         msg.imageUrl!,
                                         width: 250,
                                         fit: BoxFit.cover,
+                                        headers: {}, // Пустые заголовки для публичных изображений
                                         loadingBuilder: (context, child, loadingProgress) {
                                           if (loadingProgress == null) return child;
                                           return Container(
