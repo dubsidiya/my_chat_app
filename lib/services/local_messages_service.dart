@@ -55,7 +55,18 @@ class LocalMessagesService {
         return [];
       }
       
-      final messages = messagesJson.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      // ✅ Преобразуем Map<dynamic, dynamic> в Map<String, dynamic>
+      final messages = messagesJson.map((json) {
+        if (json is Map) {
+          // Преобразуем все ключи и значения в правильные типы
+          final Map<String, dynamic> messageMap = {};
+          json.forEach((key, value) {
+            messageMap[key.toString()] = value;
+          });
+          return Message.fromJson(messageMap);
+        }
+        return Message.fromJson(json as Map<String, dynamic>);
+      }).toList();
       print('✅ Загружено ${messages.length} сообщений из кэша для чата $chatId');
       return messages;
     } catch (e) {
@@ -69,30 +80,79 @@ class LocalMessagesService {
     if (_box == null) await init();
     
     try {
-      final messages = await getMessages(chatId);
+      // ✅ Получаем сообщения напрямую из бокса, без преобразования в Message
+      final messagesJson = _box!.get('chat_$chatId') as List?;
+      List<Map<String, dynamic>> messages = [];
+      
+      if (messagesJson != null) {
+        // Преобразуем в список Map, исключая временные сообщения
+        messages = messagesJson.map((json) {
+          if (json is Map) {
+            final Map<String, dynamic> messageMap = {};
+            json.forEach((key, value) {
+              messageMap[key.toString()] = value;
+            });
+            return messageMap;
+          }
+          return json as Map<String, dynamic>;
+        }).where((m) {
+          final id = m['id']?.toString() ?? '';
+          return !id.startsWith('temp_');
+        }).toList();
+      }
       
       // Проверяем, нет ли уже такого сообщения
-      if (messages.any((m) => m.id == message.id)) {
+      final existingIndex = messages.indexWhere((m) => m['id']?.toString() == message.id);
+      if (existingIndex != -1) {
         // Обновляем существующее сообщение
-        final index = messages.indexWhere((m) => m.id == message.id);
-        messages[index] = message;
+        messages[existingIndex] = {
+          'id': message.id,
+          'chat_id': message.chatId,
+          'user_id': message.userId,
+          'content': message.content,
+          'image_url': message.imageUrl,
+          'original_image_url': message.originalImageUrl,
+          'message_type': message.messageType,
+          'sender_email': message.senderEmail,
+          'created_at': message.createdAt,
+          'delivered_at': message.deliveredAt,
+          'edited_at': message.editedAt,
+          'is_read': message.isRead,
+          'read_at': message.readAt,
+        };
       } else {
         // Добавляем новое сообщение
-        messages.add(message);
+        messages.add({
+          'id': message.id,
+          'chat_id': message.chatId,
+          'user_id': message.userId,
+          'content': message.content,
+          'image_url': message.imageUrl,
+          'original_image_url': message.originalImageUrl,
+          'message_type': message.messageType,
+          'sender_email': message.senderEmail,
+          'created_at': message.createdAt,
+          'delivered_at': message.deliveredAt,
+          'edited_at': message.editedAt,
+          'is_read': message.isRead,
+          'read_at': message.readAt,
+        });
       }
       
       // Сортируем по времени
       messages.sort((a, b) {
         try {
-          final aTime = DateTime.parse(a.createdAt);
-          final bTime = DateTime.parse(b.createdAt);
+          final aTime = DateTime.parse(a['created_at']?.toString() ?? '');
+          final bTime = DateTime.parse(b['created_at']?.toString() ?? '');
           return aTime.compareTo(bTime);
         } catch (e) {
           return 0;
         }
       });
       
-      await saveMessages(chatId, messages);
+      await _box!.put('chat_$chatId', messages);
+      await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
+      print('✅ Сообщение ${message.id} добавлено/обновлено в кэше');
     } catch (e) {
       print('❌ Ошибка добавления сообщения в кэш: $e');
     }
@@ -117,12 +177,51 @@ class LocalMessagesService {
     if (_box == null) await init();
     
     try {
-      final messages = await getMessages(chatId);
-      final index = messages.indexWhere((m) => m.id == message.id);
+      final messagesJson = _box!.get('chat_$chatId') as List?;
+      if (messagesJson == null) {
+        // Если кэша нет, просто добавляем сообщение
+        await addMessage(chatId, message);
+        return;
+      }
+      
+      // Преобразуем в список Map
+      final List<Map<String, dynamic>> messages = messagesJson.map((json) {
+        if (json is Map) {
+          final Map<String, dynamic> messageMap = {};
+          json.forEach((key, value) {
+            messageMap[key.toString()] = value;
+          });
+          return messageMap;
+        }
+        return json as Map<String, dynamic>;
+      }).toList();
+      
+      // Находим и обновляем сообщение
+      final index = messages.indexWhere((m) => m['id']?.toString() == message.id);
       if (index != -1) {
-        messages[index] = message;
-        await saveMessages(chatId, messages);
+        // Обновляем сообщение напрямую в JSON
+        messages[index] = {
+          'id': message.id,
+          'chat_id': message.chatId,
+          'user_id': message.userId,
+          'content': message.content,
+          'image_url': message.imageUrl,
+          'original_image_url': message.originalImageUrl,
+          'message_type': message.messageType,
+          'sender_email': message.senderEmail,
+          'created_at': message.createdAt,
+          'delivered_at': message.deliveredAt,
+          'edited_at': message.editedAt,
+          'is_read': message.isRead,
+          'read_at': message.readAt,
+        };
+        
+        await _box!.put('chat_$chatId', messages);
+        await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
         print('✅ Сообщение ${message.id} обновлено в кэше');
+      } else {
+        // Если сообщение не найдено, добавляем его
+        await addMessage(chatId, message);
       }
     } catch (e) {
       print('❌ Ошибка обновления сообщения в кэше: $e');

@@ -324,26 +324,61 @@ class _ChatScreenState extends State<ChatScreen> {
               
               if (mounted) {
                 setState(() {
-                  // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
-                  final exists = _messages.any((m) => m.id == message.id);
-                  if (!exists) {
-                    _messages.add(message);
-                    // Сортируем сообщения по времени после добавления
-                    _messages.sort((a, b) {
-                      try {
-                        final aTime = DateTime.parse(a.createdAt);
-                        final bTime = DateTime.parse(b.createdAt);
-                        return aTime.compareTo(bTime);
-                      } catch (e) {
-                        return 0;
-                      }
-                    });
-                    print('Message added to list. Total messages: ${_messages.length}');
+                  // ✅ Проверяем, есть ли временное сообщение от текущего пользователя
+                  // (чтобы заменить его на реальное сообщение от сервера)
+                  final tempIndex = _messages.indexWhere((m) => 
+                    m.id.startsWith('temp_') && 
+                    m.userId == widget.userId.toString() &&
+                    m.senderEmail == widget.userEmail &&
+                    // Проверяем содержимое (текст или изображение)
+                    ((m.content == message.content && m.content.isNotEmpty) ||
+                     (m.imageUrl == message.imageUrl && m.imageUrl != null) ||
+                     (m.content.isEmpty && m.imageUrl == null && message.content.isEmpty && message.imageUrl == null))
+                  );
+                  
+                  if (tempIndex != -1) {
+                    // ✅ Заменяем временное сообщение на реальное
+                    print('✅ Replacing temp message at index $tempIndex with real message ${message.id}');
+                    print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
+                    _messages[tempIndex] = message;
                     
-                    // ✅ Сохраняем новое сообщение в кэш
-                    LocalMessagesService.addMessage(widget.chatId, message);
+                    // ✅ Удаляем все остальные временные сообщения от этого пользователя
+                    _messages.removeWhere((m) => 
+                      m.id.startsWith('temp_') && 
+                      m.userId == widget.userId.toString() &&
+                      m.id != _messages[tempIndex].id
+                    );
+                    
+                    // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
+                    Future.delayed(Duration(milliseconds: 500), () {
+                      LocalMessagesService.updateMessage(widget.chatId, message);
+                    });
                   } else {
-                    print('Message already exists, skipping');
+                    // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
+                    final exists = _messages.any((m) => m.id == message.id);
+                    if (!exists) {
+                      // ✅ Если это сообщение от текущего пользователя и недавно отправлено,
+                      // возможно временное сообщение уже было удалено или не найдено
+                      // В этом случае просто добавляем реальное сообщение
+                      _messages.insert(0, message); // Добавляем в начало (reverse список)
+                      print('✅ Message added to list. Total messages: ${_messages.length}');
+                      
+                      // ✅ Сохраняем новое сообщение в кэш с задержкой
+                      Future.delayed(Duration(milliseconds: 500), () {
+                        LocalMessagesService.addMessage(widget.chatId, message);
+                      });
+                    } else {
+                      // ✅ Если сообщение уже есть, обновляем его и перемещаем в начало
+                      final existingIndex = _messages.indexWhere((m) => m.id == message.id);
+                      if (existingIndex != -1 && existingIndex != 0) {
+                        _messages.removeAt(existingIndex);
+                        _messages.insert(0, message);
+                        print('✅ Message moved to top via WebSocket');
+                      } else if (existingIndex == 0) {
+                        _messages[0] = message;
+                        print('✅ Message updated at top via WebSocket');
+                      }
+                    }
                   }
                 });
               }
@@ -418,11 +453,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     
     // ✅ Сначала загружаем из кэша для быстрого отображения
+    final existingTempMessages = _messages.where((m) => 
+      m.id.startsWith('temp_') && 
+      m.userId == widget.userId.toString()
+    ).toList();
+    
     try {
       final cachedMessages = await LocalMessagesService.getMessages(widget.chatId);
       if (cachedMessages.isNotEmpty && mounted) {
         setState(() {
-          _messages = cachedMessages;
+          // ✅ Сохраняем временные сообщения при загрузке из кэша
+          final cachedIds = cachedMessages.map((m) => m.id).toSet();
+          final uniqueTempMessages = existingTempMessages.where((m) => !cachedIds.contains(m.id)).toList();
+          _messages = [...uniqueTempMessages, ...cachedMessages];
         });
         print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
       }
@@ -436,12 +479,23 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.chatId,
         limit: _messagesPerPage,
         offset: 0,
-        useCache: true, // ✅ Используем кэш
+        useCache: false, // ✅ НЕ используем кэш при загрузке с сервера, чтобы не перезаписывать текущие сообщения
       );
       
       if (mounted) {
         setState(() {
-          _messages = result.messages;
+          // ✅ Объединяем существующие сообщения с новыми (сохраняем временные сообщения)
+          final currentTempMessages = _messages.where((m) => 
+            m.id.startsWith('temp_') && 
+            m.userId == widget.userId.toString()
+          ).toList();
+          final newMessages = result.messages;
+          
+          // ✅ Удаляем дубликаты и сохраняем временные сообщения
+          final existingIds = newMessages.map((m) => m.id).toSet();
+          final uniqueTempMessages = currentTempMessages.where((m) => !existingIds.contains(m.id)).toList();
+          
+          _messages = [...uniqueTempMessages, ...newMessages];
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
         });
@@ -842,8 +896,58 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _isUploadingImage = false);
     }
 
+    // ✅ Сохраняем replyToMessageId перед очисткой
+    final replyToMessageId = _replyToMessage?.id;
+    final replyToMessage = _replyToMessage;
+    
+    // ✅ Создаем временное сообщение для оптимистичного обновления UI
+    final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final tempMessage = Message(
+      id: tempMessageId,
+      chatId: widget.chatId,
+      userId: widget.userId,
+      content: text,
+      imageUrl: imageUrl,
+      originalImageUrl: imageUrl, // Временно используем тот же URL
+      messageType: imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text',
+      senderEmail: widget.userEmail,
+      createdAt: DateTime.now().toIso8601String(),
+      isRead: false,
+      replyToMessageId: replyToMessageId,
+      replyToMessage: replyToMessage,
+    );
+    
+    // ✅ Добавляем сообщение оптимистично в список (без перезагрузки)
+    if (mounted) {
+      setState(() {
+        _messages.insert(0, tempMessage); // Добавляем в начало (reverse список)
+        // Очищаем поле ответа
+        _replyToMessage = null;
+      });
+      
+      // Прокручиваем к новому сообщению
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+      
+      // ✅ НЕ сохраняем временное сообщение в кэш сразу
+      // Оно будет сохранено только после получения реального ответа от сервера
+      // Это предотвращает перезагрузку списка сообщений
+    }
+    
     try {
-      await _messagesService.sendMessage(widget.chatId, text, imageUrl: imageUrl);
+      // ✅ Отправляем сообщение и получаем ответ от сервера
+      final sentMessage = await _messagesService.sendMessage(
+        widget.chatId, 
+        text, 
+        imageUrl: imageUrl,
+        replyToMessageId: replyToMessageId,
+      );
+      
       if (mounted) {
         _controller.clear();
         // ✅ Память уже очищена выше после загрузки изображения
@@ -855,10 +959,153 @@ class _ChatScreenState extends State<ChatScreen> {
             _selectedImageName = null;
           });
         }
+        
+        // ✅ Если получили сообщение от сервера, обновляем временное сообщение
+        if (sentMessage != null) {
+          print('✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}');
+          print('🔍 Looking for temp message with id: $tempMessageId');
+          print('🔍 Current messages count: ${_messages.length}');
+          print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
+          
+          // ✅ Обновляем сразу, без WidgetsBinding, чтобы не потерять сообщение
+          final tempIndex = _messages.indexWhere((m) => m.id == tempMessageId);
+          print('🔍 Looking for temp message with id: $tempMessageId');
+          print('🔍 Current messages count: ${_messages.length}');
+          print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
+          print('🔍 Temp message found at index: $tempIndex');
+          
+          if (tempIndex != -1) {
+            print('✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}');
+            setState(() {
+              _messages[tempIndex] = sentMessage;
+              
+              // ✅ Удаляем все старые временные сообщения от этого пользователя
+              _messages.removeWhere((m) => 
+                m.id.startsWith('temp_') && 
+                m.userId == widget.userId.toString()
+              );
+            });
+            print('✅ Message updated in UI');
+          } else {
+            // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
+            final existingIndex = _messages.indexWhere((m) => m.id == sentMessage.id);
+            if (existingIndex != -1) {
+              print('⚠️ Message already exists at index $existingIndex, ensuring it\'s at the top');
+              if (existingIndex == 0) {
+                // ✅ Сообщение уже в начале, создаем новый список для принудительного обновления UI
+                setState(() {
+                  // ✅ Создаем новый список, чтобы Flutter увидел изменения
+                  final newMessages = List<Message>.from(_messages);
+                  newMessages[0] = sentMessage;
+                  
+                  // ✅ Удаляем все старые временные сообщения от этого пользователя
+                  newMessages.removeWhere((m) => 
+                    m.id.startsWith('temp_') && 
+                    m.userId == widget.userId.toString()
+                  );
+                  
+                  _messages = newMessages;
+                });
+                print('✅ Message updated at index 0 (new list created)');
+              } else {
+                // ✅ Удаляем сообщение из текущей позиции и вставляем в начало
+                setState(() {
+                  // ✅ Создаем новый список для принудительного обновления UI
+                  final newMessages = List<Message>.from(_messages);
+                  newMessages.removeAt(existingIndex);
+                  newMessages.insert(0, sentMessage);
+                  
+                  // ✅ Удаляем все старые временные сообщения от этого пользователя
+                  newMessages.removeWhere((m) => 
+                    m.id.startsWith('temp_') && 
+                    m.userId == widget.userId.toString()
+                  );
+                  
+                  _messages = newMessages;
+                });
+                print('✅ Message moved from index $existingIndex to the top of the list (new list created)');
+              }
+            } else {
+              print('⚠️ Temp message not found and message not in list, adding it');
+              setState(() {
+                // ✅ Создаем новый список для принудительного обновления UI
+                final newMessages = List<Message>.from(_messages);
+                newMessages.insert(0, sentMessage);
+                
+                // ✅ Удаляем все старые временные сообщения от этого пользователя
+                newMessages.removeWhere((m) => 
+                  m.id.startsWith('temp_') && 
+                  m.userId == widget.userId.toString()
+                );
+                
+                _messages = newMessages;
+              });
+              print('✅ Message added to list. Total: ${_messages.length} (new list created)');
+            }
+          }
+          
+          // ✅ Прокручиваем к новому сообщению после обновления UI
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _scrollController.hasClients) {
+              // ✅ Прокручиваем к началу списка (новое сообщение)
+              _scrollController.animateTo(
+                0,
+                duration: Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+              print('✅ Scrolled to top after message update');
+            }
+          });
+          
+          // ✅ Принудительно обновляем UI еще раз через небольшую задержку
+          Future.delayed(Duration(milliseconds: 100), () {
+            if (mounted) {
+              setState(() {
+                // ✅ Просто обновляем состояние, чтобы гарантировать перерисовку
+                print('✅ Force UI update after message sent');
+              });
+            }
+          });
+          
+          // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
+          Future.delayed(Duration(milliseconds: 500), () {
+            if (mounted) {
+              LocalMessagesService.addMessage(widget.chatId, sentMessage);
+            }
+          });
+        } else {
+          print('⚠️ No message received from server response');
+        }
+        
+        // ✅ Fallback: Если через 3 секунды временное сообщение все еще есть,
+        // значит WebSocket не получил сообщение - оставляем как есть
+        // (сообщение уже обновлено из ответа сервера выше)
+        Future.delayed(Duration(seconds: 3), () {
+          if (mounted && _messages.any((m) => m.id == tempMessageId)) {
+            print('⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response');
+          }
+        });
       }
+      
+      // ✅ Сообщение уже обновлено из ответа сервера
+      // Также будет обновлено через WebSocket (если придет) для синхронизации с другими клиентами
+      
     } catch (e) {
       print('Error sending message: $e');
+      
+      // ✅ Удаляем временное сообщение при ошибке
       if (mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m.id == tempMessageId);
+        });
+        
+        // Восстанавливаем поле ответа, если была ошибка
+        if (_replyToMessage == null && tempMessage.replyToMessage != null) {
+          setState(() {
+            _replyToMessage = tempMessage.replyToMessage;
+          });
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка отправки сообщения: $e')),
         );

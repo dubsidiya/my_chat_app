@@ -101,6 +101,14 @@ class MessagesService {
               }
             }
             
+            // ✅ Сохраняем сообщения в кэш только если useCache = true
+            if (useCache && isOnline) {
+              // Используем задержку, чтобы не триггерить перезагрузку UI
+              Future.delayed(Duration(milliseconds: 100), () {
+                LocalMessagesService.saveMessages(chatId, messages);
+              });
+            }
+            
             return MessagesPaginationResult(
               messages: messages,
               hasMore: paginationData['hasMore'] ?? false,
@@ -183,7 +191,7 @@ class MessagesService {
            }
          }
 
-  Future<void> sendMessage(
+  Future<Message?> sendMessage(
     String chatId, 
     String content, {
     String? imageUrl, 
@@ -251,11 +259,22 @@ class MessagesService {
     
     // ✅ После успешной отправки обновляем кэш
     try {
+      print('🔍 Parsing server response: ${response.body}');
       final responseData = jsonDecode(response.body);
+      print('🔍 Parsed response data: $responseData');
+      
       final sentMessage = Message.fromJson(responseData);
+      print('✅ Created Message object: id=${sentMessage.id}, content=${sentMessage.content}');
+      
       await LocalMessagesService.addMessage(chatId, sentMessage);
-    } catch (e) {
-      print('⚠️ Не удалось обновить кэш после отправки: $e');
+      
+      // ✅ Возвращаем отправленное сообщение для возможного обновления UI
+      return sentMessage;
+    } catch (e, stackTrace) {
+      print('❌ Error parsing server response: $e');
+      print('❌ Stack trace: $stackTrace');
+      print('❌ Response body: ${response.body}');
+      return null;
     }
   }
 
