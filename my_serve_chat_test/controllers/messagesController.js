@@ -238,6 +238,16 @@ export const sendMessage = async (req, res) => {
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
 
+  console.log('📨 sendMessage called:', {
+    chat_id,
+    content,
+    image_url,
+    original_image_url,
+    reply_to_message_id,
+    user_id,
+    body: req.body
+  });
+
   if (!chat_id || (!content && !image_url)) {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url' });
   }
@@ -248,10 +258,17 @@ export const sendMessage = async (req, res) => {
   }
 
   try {
+    // Преобразуем chat_id в число, если это строка
+    const chatIdNum = parseInt(chat_id, 10);
+    if (isNaN(chatIdNum)) {
+      console.error('❌ Invalid chat_id:', chat_id);
+      return res.status(400).json({ message: 'Некорректный chat_id' });
+    }
+
     // Проверяем, является ли пользователь участником чата
     const memberCheck = await pool.query(
       'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-      [chat_id, user_id]
+      [chatIdNum, user_id]
     );
 
     if (memberCheck.rows.length === 0) {
@@ -267,11 +284,24 @@ export const sendMessage = async (req, res) => {
     }
 
     // Используем user_id из токена (безопасно)
+    // Преобразуем reply_to_message_id в число, если это строка
+    const replyToMessageIdNum = reply_to_message_id ? parseInt(reply_to_message_id, 10) : null;
+    
+    console.log('📝 Inserting message:', {
+      chat_id: chatIdNum,
+      user_id,
+      content: content || '',
+      image_url: image_url || null,
+      original_image_url: original_image_url || null,
+      message_type,
+      reply_to_message_id: replyToMessageIdNum
+    });
+
     const result = await pool.query(`
       INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at, reply_to_message_id)
       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
       RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at, reply_to_message_id
-    `, [chat_id, user_id, content || '', image_url || null, original_image_url || null, message_type, reply_to_message_id || null]);
+    `, [chatIdNum, user_id, content || '', image_url || null, original_image_url || null, message_type, replyToMessageIdNum]);
 
     // Используем email из токена
     const senderEmail = req.user.email;
@@ -328,7 +358,7 @@ export const sendMessage = async (req, res) => {
       const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',
-        [chat_id]
+        [chatIdNum]
       );
 
       const wsMessage = {
@@ -346,7 +376,7 @@ export const sendMessage = async (req, res) => {
         sender_email: senderEmail
       };
 
-      console.log('Sending WebSocket message to chat:', chat_id);
+      console.log('Sending WebSocket message to chat:', chatIdNum);
       console.log('Message:', wsMessage);
       console.log('Chat members:', members.rows.map(r => r.user_id));
       console.log('Connected clients:', Array.from(clients.keys()));
@@ -380,7 +410,17 @@ export const sendMessage = async (req, res) => {
     res.status(201).json(response);
   } catch (error) {
     console.error('Ошибка отправки сообщения:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    console.error('Stack trace:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+    });
+    res.status(500).json({ 
+      message: 'Ошибка сервера',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
