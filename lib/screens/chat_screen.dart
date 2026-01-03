@@ -8,7 +8,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
-import 'dart:html' as html;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -251,12 +251,60 @@ class _ChatScreenState extends State<ChatScreen> {
           // ✅ Обработка событий реакций
           if (messageType == 'reaction_added' || messageType == 'reaction_removed') {
             final messageId = data['message_id']?.toString();
-            final currentChatId = widget.chatId.toString();
+            final reaction = data['reaction'] as String?;
+            final userId = data['user_id']?.toString();
             
             if (messageId != null && mounted) {
-              // Перезагружаем сообщения для получения актуальных реакций
-              // Или можно обновить только реакции через API
-              _loadMessages();
+              setState(() {
+                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+                if (index != -1) {
+                  final msg = _messages[index];
+                  final currentReactions = List<MessageReaction>.from(msg.reactions ?? []);
+                  
+                  if (messageType == 'reaction_added' && reaction != null) {
+                    // Добавляем реакцию, если её еще нет
+                    if (!currentReactions.any((r) => r.reaction == reaction && r.userId == userId)) {
+                      currentReactions.add(MessageReaction(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        messageId: messageId,
+                        userId: userId ?? '',
+                        reaction: reaction,
+                        createdAt: DateTime.now().toIso8601String(),
+                        userEmail: data['user_email'] as String?,
+                      ));
+                    }
+                  } else if (messageType == 'reaction_removed' && reaction != null) {
+                    // Удаляем реакцию
+                    currentReactions.removeWhere((r) => r.reaction == reaction && r.userId == userId);
+                  }
+                  
+                  // Обновляем сообщение с новыми реакциями
+                  _messages[index] = Message(
+                    id: msg.id,
+                    chatId: msg.chatId,
+                    userId: msg.userId,
+                    content: msg.content,
+                    imageUrl: msg.imageUrl,
+                    originalImageUrl: msg.originalImageUrl,
+                    messageType: msg.messageType,
+                    senderEmail: msg.senderEmail,
+                    createdAt: msg.createdAt,
+                    deliveredAt: msg.deliveredAt,
+                    editedAt: msg.editedAt,
+                    isRead: msg.isRead,
+                    readAt: msg.readAt,
+                    replyToMessageId: msg.replyToMessageId,
+                    replyToMessage: msg.replyToMessage,
+                    isPinned: msg.isPinned,
+                    reactions: currentReactions,
+                    isForwarded: msg.isForwarded,
+                    originalChatName: msg.originalChatName,
+                  );
+                  
+                  // Обновляем в кэше
+                  LocalMessagesService.updateMessage(widget.chatId, _messages[index]);
+                }
+              });
             }
             return;
           }
@@ -700,28 +748,23 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Скачивание изображения
   Future<void> _downloadImage(String imageUrl, String fileName) async {
     try {
-      if (kIsWeb) {
-        // На веб открываем изображение в новой вкладке для скачивания
-        // Используем anchor элемент для скачивания
-        final link = html.AnchorElement(href: imageUrl)
-          ..setAttribute('download', fileName)
-          ..target = '_blank';
-        html.document.body?.append(link);
-        link.click();
-        link.remove();
+      final url = Uri.parse(imageUrl);
+      if (await canLaunchUrl(url)) {
+        // Открываем изображение в браузере/приложении для просмотра
+        // Пользователь может сохранить его через контекстное меню
+        await launchUrl(url, mode: LaunchMode.externalApplication);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Изображение скачивается...')),
+            SnackBar(
+              content: Text(kIsWeb 
+                ? 'Изображение открыто в новой вкладке. Используйте "Сохранить как..." для скачивания.'
+                : 'Изображение открыто для просмотра'),
+              duration: Duration(seconds: 3),
+            ),
           );
         }
       } else {
-        // На мобильных используем url_launcher или другой способ
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Скачивание на мобильных устройствах будет добавлено позже'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        throw Exception('Не удалось открыть URL');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1407,14 +1450,93 @@ class _ChatScreenState extends State<ChatScreen> {
                   reverse: true,
                   itemCount: _messages.length + 
                       (_isLoadingMore ? 1 : 0) + 
-                      (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0),
+                      (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
+                      (_pinnedMessages.isNotEmpty ? 1 : 0),
                   itemBuilder: (context, index) {
                     final totalItems = _messages.length + 
                         (_isLoadingMore ? 1 : 0) + 
-                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0);
+                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
+                        (_pinnedMessages.isNotEmpty ? 1 : 0);
+                    
+                    // ✅ Показываем закрепленные сообщения вверху (последний элемент в reverse списке)
+                    if (_pinnedMessages.isNotEmpty && index == totalItems - 1) {
+                      return Container(
+                        margin: EdgeInsets.all(8),
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.push_pin, size: 16, color: Colors.amber.shade700),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Закрепленные сообщения (${_pinnedMessages.length})',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.amber.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 8),
+                            ..._pinnedMessages.take(3).map((pinned) => Padding(
+                              padding: EdgeInsets.only(bottom: 4),
+                              child: GestureDetector(
+                                onTap: () {
+                                  // Прокручиваем к закрепленному сообщению
+                                  final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
+                                  if (messageIndex != -1 && _scrollController.hasClients) {
+                                    // В reverse списке нужно прокрутить к нужной позиции
+                                    final targetPosition = (_messages.length - messageIndex - 1) * 100.0;
+                                    _scrollController.animateTo(
+                                      targetPosition,
+                                      duration: Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.push_pin, size: 14, color: Colors.amber.shade700),
+                                      SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          pinned.content.isNotEmpty 
+                                              ? (pinned.content.length > 30 
+                                                  ? '${pinned.content.substring(0, 30)}...'
+                                                  : pinned.content)
+                                              : 'Фото',
+                                          style: TextStyle(fontSize: 12),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Icon(Icons.arrow_forward, size: 16, color: Colors.amber.shade700),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )),
+                          ],
+                        ),
+                      );
+                    }
                     
                     // Показываем индикатор загрузки вверху при подгрузке (в reverse списке это последний элемент)
-                    if (_isLoadingMore && index == totalItems - 1) {
+                    final adjustedIndex = _pinnedMessages.isNotEmpty ? index - 1 : index;
+                    if (_isLoadingMore && adjustedIndex == totalItems - 1 - (_pinnedMessages.isNotEmpty ? 1 : 0)) {
                       return Padding(
                         padding: EdgeInsets.all(16),
                         child: Center(
@@ -1437,7 +1559,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     }
                     
                     // Показываем кнопку "Загрузить еще" если есть еще сообщения
-                    if (!_isLoadingMore && _hasMoreMessages && _messages.isNotEmpty && index == totalItems - 1) {
+                    final adjustedIndexForButton = _pinnedMessages.isNotEmpty ? index - 1 : index;
+                    if (!_isLoadingMore && _hasMoreMessages && _messages.isNotEmpty && adjustedIndexForButton == totalItems - 1 - (_pinnedMessages.isNotEmpty ? 1 : 0)) {
                       return Padding(
                         padding: EdgeInsets.all(16),
                         child: Center(
@@ -1454,9 +1577,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     }
                     
                     // Индекс сообщения в списке (reverse: true, поэтому инвертируем)
-                    // Учитываем дополнительные элементы (индикатор загрузки или кнопка)
+                    // Учитываем дополнительные элементы (индикатор загрузки, кнопка, закрепленные)
                     final extraItems = (_isLoadingMore ? 1 : 0) + 
-                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0);
+                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
+                        (_pinnedMessages.isNotEmpty ? 1 : 0);
                     final messageIndex = _messages.length - 1 - (index - extraItems);
                     
                     if (messageIndex < 0 || messageIndex >= _messages.length) {
@@ -1555,6 +1679,90 @@ class _ChatScreenState extends State<ChatScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // ✅ Показываем иконку закрепления
+                                if (msg.isPinned) ...[
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.push_pin,
+                                        size: 14,
+                                        color: isMine ? Colors.white70 : Colors.amber.shade700,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Закреплено',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontStyle: FontStyle.italic,
+                                          color: isMine ? Colors.white70 : Colors.amber.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: 4),
+                                ],
+                                // ✅ Отображение ответа на сообщение (если есть)
+                                if (msg.replyToMessage != null) ...[
+                                  Container(
+                                    margin: EdgeInsets.only(bottom: 8),
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: isMine 
+                                          ? Colors.white.withOpacity(0.2)
+                                          : Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border(
+                                        left: BorderSide(
+                                          color: isMine ? Colors.white : Colors.blue,
+                                          width: 3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          msg.replyToMessage!.senderEmail,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: isMine 
+                                                ? Colors.white.withOpacity(0.9)
+                                                : Colors.blue.shade700,
+                                          ),
+                                        ),
+                                        SizedBox(height: 4),
+                                        if (msg.replyToMessage!.hasImage)
+                                          Row(
+                                            children: [
+                                              Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Фото',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          Text(
+                                            msg.replyToMessage!.content.length > 50
+                                                ? '${msg.replyToMessage!.content.substring(0, 50)}...'
+                                                : msg.replyToMessage!.content,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isMine ? Colors.white70 : Colors.grey.shade700,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 // Показываем отправителя только если это не ваше сообщение
                                 if (!isMine) ...[
                                   Text(

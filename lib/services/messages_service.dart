@@ -190,6 +190,7 @@ class MessagesService {
     String? originalImageUrl,
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
   }) async {
+    print('🔍 sendMessage called: chatId=$chatId, content=$content, imageUrl=$imageUrl, originalImageUrl=$originalImageUrl, replyToMessageId=$replyToMessageId');
     // ✅ Проверяем подключение
     final connectivityResult = await Connectivity().checkConnectivity();
     final isOnline = connectivityResult != ConnectivityResult.none;
@@ -213,20 +214,39 @@ class MessagesService {
     }
     
     final headers = await _getAuthHeaders();
+    final body = jsonEncode({
+      'chat_id': chatId,
+      'content': content,
+      'image_url': imageUrl,
+      'original_image_url': originalImageUrl,
+      'reply_to_message_id': replyToMessageId,
+    });
+    
+    print('🔍 sendMessage request: url=$baseUrl/messages, body=$body, headers=$headers');
+    
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
       headers: headers,
-      body: jsonEncode({
-        'chat_id': chatId,
-        'content': content,
-        'image_url': imageUrl,
-        'original_image_url': originalImageUrl,
-        'reply_to_message_id': replyToMessageId,
-      }),
+      body: body,
     );
 
+    print('🔍 sendMessage response: statusCode=${response.statusCode}, body=${response.body}');
+
     if (response.statusCode != 201) {
-      throw Exception('Ошибка при отправке сообщения');
+      String errorMessage = 'Ошибка при отправке сообщения';
+      try {
+        if (response.body.trim().startsWith('{')) {
+          final error = jsonDecode(response.body);
+          errorMessage = error['message'] ?? error['error'] ?? errorMessage;
+        } else {
+          errorMessage = response.body;
+        }
+      } catch (e) {
+        print('Error parsing error response: $e');
+        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+      }
+      print('❌ sendMessage error: ${response.statusCode} - $errorMessage');
+      throw Exception(errorMessage);
     }
     
     // ✅ После успешной отправки обновляем кэш
@@ -502,13 +522,7 @@ class MessagesService {
       'reaction': reaction,
     });
     
-    print('🔍 addReaction request:', {
-      'url': '$baseUrl/messages/message/$messageId/reaction',
-      'messageId': messageId,
-      'reaction': reaction,
-      'body': body,
-      'headers': headers,
-    });
+    print('🔍 addReaction request: url=$baseUrl/messages/message/$messageId/reaction, messageId=$messageId, reaction=$reaction');
     
     final response = await http.post(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
@@ -516,10 +530,7 @@ class MessagesService {
       body: body,
     );
 
-    print('🔍 addReaction response:', {
-      'statusCode': response.statusCode,
-      'body': response.body,
-    });
+    print('🔍 addReaction response: statusCode=${response.statusCode}, body=${response.body}');
 
     if (response.statusCode != 200) {
       String errorMessage = 'Ошибка при добавлении реакции';

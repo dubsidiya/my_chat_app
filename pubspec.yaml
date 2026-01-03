@@ -19,6 +19,7 @@ dependencies:
   hive: ^2.2.3  # ✅ Локальное хранилище для кэширования сообщений
   hive_flutter: ^1.1.0  # ✅ Flutter интеграция для Hive
   connectivity_plus: ^5.0.2  # ✅ Проверка подключения к интернету
+  url_launcher: ^6.2.2  # ✅ Для открытия URL и скачивания файлов
 
 dev_dependencies:
   flutter_test:
