@@ -495,6 +495,9 @@ class MessagesService {
   // ✅ Добавить реакцию
   Future<void> addReaction(String messageId, String reaction) async {
     final headers = await _getAuthHeaders();
+    // ✅ Убеждаемся, что Content-Type установлен
+    headers['Content-Type'] = 'application/json';
+    
     final response = await http.post(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
@@ -504,13 +507,24 @@ class MessagesService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Ошибка при добавлении реакции');
+      String errorMessage = 'Ошибка при добавлении реакции';
+      try {
+        if (response.body.trim().startsWith('{')) {
+          final error = jsonDecode(response.body);
+          errorMessage = error['message'] ?? errorMessage;
+        }
+      } catch (_) {}
+      print('addReaction error: ${response.statusCode} - ${response.body}');
+      throw Exception(errorMessage);
     }
   }
 
   // ✅ Удалить реакцию
   Future<void> removeReaction(String messageId, String reaction) async {
     final headers = await _getAuthHeaders();
+    // ✅ Убеждаемся, что Content-Type установлен
+    headers['Content-Type'] = 'application/json';
+    
     final response = await http.delete(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
@@ -520,7 +534,15 @@ class MessagesService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Ошибка при удалении реакции');
+      String errorMessage = 'Ошибка при удалении реакции';
+      try {
+        if (response.body.trim().startsWith('{')) {
+          final error = jsonDecode(response.body);
+          errorMessage = error['message'] ?? errorMessage;
+        }
+      } catch (_) {}
+      print('removeReaction error: ${response.statusCode} - ${response.body}');
+      throw Exception(errorMessage);
     }
   }
 

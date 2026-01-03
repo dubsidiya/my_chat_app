@@ -1020,6 +1020,8 @@ export const addReaction = async (req, res) => {
     const { reaction } = req.body; // Эмодзи реакции
     const userId = req.user.userId;
     
+    console.log('addReaction called:', { messageId, reaction, userId, body: req.body });
+    
     if (!reaction || reaction.length === 0) {
       return res.status(400).json({ message: 'Укажите реакцию (эмодзи)' });
     }
@@ -1047,6 +1049,7 @@ export const addReaction = async (req, res) => {
     }
     
     // Добавляем или обновляем реакцию
+    // Используем ON CONFLICT для обработки случая, когда реакция уже существует
     const result = await pool.query(`
       INSERT INTO message_reactions (message_id, user_id, reaction)
       VALUES ($1, $2, $3)
@@ -1082,7 +1085,28 @@ export const addReaction = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка добавления реакции:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+    
+    // ✅ Более детальная обработка ошибок
+    if (error.code === '23505') { // Unique violation
+      return res.status(409).json({ message: 'Реакция уже существует' });
+    } else if (error.code === '23503') { // Foreign key violation
+      return res.status(404).json({ message: 'Сообщение или пользователь не найдены' });
+    } else if (error.code === '42P01') { // Table doesn't exist
+      return res.status(500).json({ 
+        message: 'Таблица message_reactions не найдена. Примените миграцию базы данных.',
+        error: 'Migration required'
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Ошибка сервера',
+      error: error.message 
+    });
   }
 };
 
