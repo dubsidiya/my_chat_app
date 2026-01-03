@@ -498,23 +498,43 @@ class MessagesService {
     // ✅ Убеждаемся, что Content-Type установлен
     headers['Content-Type'] = 'application/json';
     
+    final body = jsonEncode({
+      'reaction': reaction,
+    });
+    
+    print('🔍 addReaction request:', {
+      'url': '$baseUrl/messages/message/$messageId/reaction',
+      'messageId': messageId,
+      'reaction': reaction,
+      'body': body,
+      'headers': headers,
+    });
+    
     final response = await http.post(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
-      body: jsonEncode({
-        'reaction': reaction,
-      }),
+      body: body,
     );
+
+    print('🔍 addReaction response:', {
+      'statusCode': response.statusCode,
+      'body': response.body,
+    });
 
     if (response.statusCode != 200) {
       String errorMessage = 'Ошибка при добавлении реакции';
       try {
         if (response.body.trim().startsWith('{')) {
           final error = jsonDecode(response.body);
-          errorMessage = error['message'] ?? errorMessage;
+          errorMessage = error['message'] ?? error['error'] ?? errorMessage;
+        } else {
+          errorMessage = response.body;
         }
-      } catch (_) {}
-      print('addReaction error: ${response.statusCode} - ${response.body}');
+      } catch (e) {
+        print('Error parsing error response: $e');
+        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+      }
+      print('❌ addReaction error: ${response.statusCode} - $errorMessage');
       throw Exception(errorMessage);
     }
   }

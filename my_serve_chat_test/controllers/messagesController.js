@@ -1,6 +1,5 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
-import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 
 export const getMessages = async (req, res) => {
@@ -1017,12 +1016,29 @@ export const unpinMessage = async (req, res) => {
 export const addReaction = async (req, res) => {
   try {
     const messageId = req.params.messageId;
-    const { reaction } = req.body; // Эмодзи реакции
     const userId = req.user.userId;
     
-    console.log('addReaction called:', { messageId, reaction, userId, body: req.body });
+    // ✅ Детальное логирование для диагностики
+    console.log('🔍 addReaction called:', { 
+      messageId, 
+      userId,
+      body: req.body,
+      bodyType: typeof req.body,
+      bodyKeys: Object.keys(req.body || {}),
+      headers: req.headers['content-type'],
+      rawBody: JSON.stringify(req.body)
+    });
+    
+    // ✅ Проверяем, что body парсится правильно
+    if (!req.body) {
+      console.error('❌ req.body is null or undefined');
+      return res.status(400).json({ message: 'Тело запроса пустое' });
+    }
+    
+    const { reaction } = req.body;
     
     if (!reaction || reaction.length === 0) {
+      console.error('❌ reaction is missing or empty:', reaction);
       return res.status(400).json({ message: 'Укажите реакцию (эмодзи)' });
     }
     
@@ -1048,6 +1064,25 @@ export const addReaction = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
     
+    // ✅ Проверяем существование таблицы перед запросом
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'message_reactions'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.error('❌ Таблица message_reactions не существует!');
+      return res.status(500).json({ 
+        message: 'Таблица message_reactions не найдена. Примените миграцию базы данных.',
+        error: 'Table not found'
+      });
+    }
+    
+    console.log('✅ Параметры запроса:', { messageId, userId, reaction });
+    
     // Добавляем или обновляем реакцию
     // Используем ON CONFLICT для обработки случая, когда реакция уже существует
     const result = await pool.query(`
@@ -1056,6 +1091,8 @@ export const addReaction = async (req, res) => {
       ON CONFLICT (message_id, user_id, reaction) DO UPDATE SET created_at = CURRENT_TIMESTAMP
       RETURNING id, message_id, user_id, reaction, created_at
     `, [messageId, userId, reaction]);
+    
+    console.log('✅ Реакция успешно добавлена:', result.rows[0]);
     
     // Отправляем через WebSocket
     const clients = getWebSocketClients();
