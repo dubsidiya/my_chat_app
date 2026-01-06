@@ -19,22 +19,8 @@ class LocalMessagesService {
     if (_box == null) await init();
     
     try {
-      // Сохраняем сообщения по ключу chatId
-      final messagesJson = messages.map((m) => {
-        'id': m.id,
-        'chat_id': m.chatId,
-        'user_id': m.userId,
-        'content': m.content,
-        'image_url': m.imageUrl,
-        'original_image_url': m.originalImageUrl,
-        'message_type': m.messageType,
-        'sender_email': m.senderEmail,
-        'created_at': m.createdAt,
-        'delivered_at': m.deliveredAt,
-        'edited_at': m.editedAt,
-        'is_read': m.isRead,
-        'read_at': m.readAt,
-      }).toList();
+      // Сохраняем сообщения по ключу chatId (сохраняем ВСЕ поля)
+      final messagesJson = messages.map((m) => m.toJson()).toList();
       
       await _box!.put('chat_$chatId', messagesJson);
       await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
@@ -104,39 +90,11 @@ class LocalMessagesService {
       // Проверяем, нет ли уже такого сообщения
       final existingIndex = messages.indexWhere((m) => m['id']?.toString() == message.id);
       if (existingIndex != -1) {
-        // Обновляем существующее сообщение
-        messages[existingIndex] = {
-          'id': message.id,
-          'chat_id': message.chatId,
-          'user_id': message.userId,
-          'content': message.content,
-          'image_url': message.imageUrl,
-          'original_image_url': message.originalImageUrl,
-          'message_type': message.messageType,
-          'sender_email': message.senderEmail,
-          'created_at': message.createdAt,
-          'delivered_at': message.deliveredAt,
-          'edited_at': message.editedAt,
-          'is_read': message.isRead,
-          'read_at': message.readAt,
-        };
+        // Обновляем существующее сообщение (сохраняем ВСЕ поля через toJson)
+        messages[existingIndex] = message.toJson();
       } else {
-        // Добавляем новое сообщение
-        messages.add({
-          'id': message.id,
-          'chat_id': message.chatId,
-          'user_id': message.userId,
-          'content': message.content,
-          'image_url': message.imageUrl,
-          'original_image_url': message.originalImageUrl,
-          'message_type': message.messageType,
-          'sender_email': message.senderEmail,
-          'created_at': message.createdAt,
-          'delivered_at': message.deliveredAt,
-          'edited_at': message.editedAt,
-          'is_read': message.isRead,
-          'read_at': message.readAt,
-        });
+        // Добавляем новое сообщение (сохраняем ВСЕ поля через toJson)
+        messages.add(message.toJson());
       }
       
       // Сортируем по времени
@@ -199,22 +157,8 @@ class LocalMessagesService {
       // Находим и обновляем сообщение
       final index = messages.indexWhere((m) => m['id']?.toString() == message.id);
       if (index != -1) {
-        // Обновляем сообщение напрямую в JSON
-        messages[index] = {
-          'id': message.id,
-          'chat_id': message.chatId,
-          'user_id': message.userId,
-          'content': message.content,
-          'image_url': message.imageUrl,
-          'original_image_url': message.originalImageUrl,
-          'message_type': message.messageType,
-          'sender_email': message.senderEmail,
-          'created_at': message.createdAt,
-          'delivered_at': message.deliveredAt,
-          'edited_at': message.editedAt,
-          'is_read': message.isRead,
-          'read_at': message.readAt,
-        };
+        // Обновляем сообщение напрямую в JSON (сохраняем ВСЕ поля через toJson)
+        messages[index] = message.toJson();
         
         await _box!.put('chat_$chatId', messages);
         await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());

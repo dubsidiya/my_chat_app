@@ -472,20 +472,45 @@ class MessagesService {
 
   // ✅ Переслать сообщение
   Future<void> forwardMessage(String messageId, List<String> toChatIds) async {
+    print('🔍 forwardMessage called: messageId=$messageId, toChatIds=$toChatIds');
     final headers = await _getAuthHeaders();
+    // ✅ Сервер требует content или image_url даже для пересылки
+    // Отправляем пробел, так как пустая строка не проходит валидацию (!content = true для '')
+    final body = jsonEncode({
+      'forward_from_message_id': messageId,
+      'forward_to_chat_ids': toChatIds,
+      'chat_id': toChatIds.first, // Для совместимости
+      'content': ' ', // Пробел для прохождения валидации сервера (не пустая строка)
+    });
+    
+    print('🔍 forwardMessage request: url=$baseUrl/messages, body=$body');
+    
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
       headers: headers,
-      body: jsonEncode({
-        'forward_from_message_id': messageId,
-        'forward_to_chat_ids': toChatIds,
-        'chat_id': toChatIds.first, // Для совместимости
-      }),
+      body: body,
     );
 
+    print('🔍 forwardMessage response: statusCode=${response.statusCode}, body=${response.body}');
+
     if (response.statusCode != 201) {
-      throw Exception('Ошибка при пересылке сообщения');
+      String errorMessage = 'Ошибка при пересылке сообщения';
+      try {
+        if (response.body.trim().startsWith('{')) {
+          final error = jsonDecode(response.body);
+          errorMessage = error['message'] ?? error['error'] ?? errorMessage;
+        } else {
+          errorMessage = response.body;
+        }
+      } catch (e) {
+        print('Error parsing error response: $e');
+        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+      }
+      print('❌ forwardMessage error: ${response.statusCode} - $errorMessage');
+      throw Exception(errorMessage);
     }
+    
+    print('✅ forwardMessage success');
   }
 
   // ✅ Закрепить сообщение

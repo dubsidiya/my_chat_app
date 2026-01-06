@@ -42,6 +42,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _chatsService = ChatsService();
   WebSocketChannel? _channel;
   StreamSubscription? _webSocketSubscription;
+  final _listViewKey = GlobalKey();
 
   List<Message> _messages = [];
   bool _isLoading = false;
@@ -338,16 +339,23 @@ class _ChatScreenState extends State<ChatScreen> {
                   
                   if (tempIndex != -1) {
                     // ✅ Заменяем временное сообщение на реальное
-                    print('✅ Replacing temp message at index $tempIndex with real message ${message.id}');
+                    print('✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}');
                     print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
-                    _messages[tempIndex] = message;
+                    
+                    // ✅ Создаем новый список для принудительного обновления UI
+                    final newMessages = List<Message>.from(_messages);
+                    final tempId = newMessages[tempIndex].id; // Сохраняем ID временного сообщения
+                    newMessages[tempIndex] = message;
                     
                     // ✅ Удаляем все остальные временные сообщения от этого пользователя
-                    _messages.removeWhere((m) => 
+                    newMessages.removeWhere((m) => 
                       m.id.startsWith('temp_') && 
                       m.userId == widget.userId.toString() &&
-                      m.id != _messages[tempIndex].id
+                      m.id != tempId // НЕ удаляем то, что только что заменили
                     );
+                    
+                    _messages = newMessages;
+                    print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
                     
                     // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
                     Future.delayed(Duration(milliseconds: 500), () {
@@ -360,23 +368,48 @@ class _ChatScreenState extends State<ChatScreen> {
                       // ✅ Если это сообщение от текущего пользователя и недавно отправлено,
                       // возможно временное сообщение уже было удалено или не найдено
                       // В этом случае просто добавляем реальное сообщение
-                      _messages.insert(0, message); // Добавляем в начало (reverse список)
-                      print('✅ Message added to list. Total messages: ${_messages.length}');
+                      // НО: если это сообщение от текущего пользователя, возможно оно уже обновлено из ответа сервера
+                      // Проверяем, нет ли временного сообщения с таким же содержимым
+                      final hasMatchingTemp = _messages.any((m) => 
+                        m.id.startsWith('temp_') && 
+                        m.userId == widget.userId.toString() &&
+                        ((m.content == message.content && m.content.isNotEmpty) ||
+                         (m.imageUrl == message.imageUrl && m.imageUrl != null))
+                      );
                       
-                      // ✅ Сохраняем новое сообщение в кэш с задержкой
-                      Future.delayed(Duration(milliseconds: 500), () {
-                        LocalMessagesService.addMessage(widget.chatId, message);
-                      });
+                      if (hasMatchingTemp) {
+                        // ✅ Есть временное сообщение - не добавляем дубликат, оно будет заменено выше
+                        print('⚠️ WebSocket: Found matching temp message, skipping duplicate add');
+                      } else {
+                        // ✅ Добавляем сообщение только если нет временного
+                        final newMessages = List<Message>.from(_messages);
+                        newMessages.insert(0, message); // Добавляем в начало (reverse список)
+                        _messages = newMessages;
+                        print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
+                        
+                        // ✅ Сохраняем новое сообщение в кэш с задержкой
+                        Future.delayed(Duration(milliseconds: 500), () {
+                          LocalMessagesService.addMessage(widget.chatId, message);
+                        });
+                      }
                     } else {
                       // ✅ Если сообщение уже есть, обновляем его и перемещаем в начало
                       final existingIndex = _messages.indexWhere((m) => m.id == message.id);
-                      if (existingIndex != -1 && existingIndex != 0) {
-                        _messages.removeAt(existingIndex);
-                        _messages.insert(0, message);
-                        print('✅ Message moved to top via WebSocket');
-                      } else if (existingIndex == 0) {
-                        _messages[0] = message;
-                        print('✅ Message updated at top via WebSocket');
+                      if (existingIndex != -1) {
+                        // ✅ Обновляем сообщение на месте (может быть обновлена информация)
+                        final newMessages = List<Message>.from(_messages);
+                        newMessages[existingIndex] = message;
+                        
+                        if (existingIndex != 0) {
+                          // Перемещаем в начало только если не в начале
+                          newMessages.removeAt(existingIndex);
+                          newMessages.insert(0, message);
+                        }
+                        
+                        _messages = newMessages;
+                        print('✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}');
+                      } else {
+                        print('⚠️ WebSocket: Message exists check failed, but index not found');
                       }
                     }
                   }
@@ -465,7 +498,8 @@ class _ChatScreenState extends State<ChatScreen> {
           // ✅ Сохраняем временные сообщения при загрузке из кэша
           final cachedIds = cachedMessages.map((m) => m.id).toSet();
           final uniqueTempMessages = existingTempMessages.where((m) => !cachedIds.contains(m.id)).toList();
-          _messages = [...uniqueTempMessages, ...cachedMessages];
+          // старые сверху, временные (новые) в конце
+          _messages = [...cachedMessages, ...uniqueTempMessages];
         });
         print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
       }
@@ -495,15 +529,19 @@ class _ChatScreenState extends State<ChatScreen> {
           final existingIds = newMessages.map((m) => m.id).toSet();
           final uniqueTempMessages = currentTempMessages.where((m) => !existingIds.contains(m.id)).toList();
           
-          _messages = [...uniqueTempMessages, ...newMessages];
+          // старые сверху, новые снизу: серверные сообщения + временные в конце
+          _messages = [...newMessages, ...uniqueTempMessages];
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
         });
         
-        // Прокручиваем вниз после загрузки
+        // Прокручиваем вниз (к новым сообщениям) после загрузки
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
-            _scrollController.jumpTo(0);
+          if (_scrollController.hasClients && _messages.isNotEmpty) {
+            final maxScroll = _scrollController.position.maxScrollExtent;
+            if (maxScroll > 0) {
+              _scrollController.jumpTo(maxScroll);
+            }
           }
         });
       }
@@ -831,9 +869,23 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage() async {
+    print('🔍 _sendMessage called');
+    if (!mounted) {
+      print('⚠️ Widget not mounted, returning');
+      return;
+    }
+    
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
-    if (text.isEmpty && !hasImage || !mounted) return;
+    
+    print('🔍 Text: "$text", hasImage: $hasImage');
+    
+    if (text.isEmpty && !hasImage) {
+      print('⚠️ Text is empty and no image, returning');
+      return;
+    }
+    
+    print('✅ Proceeding with message send');
 
     String? imageUrl;
 
@@ -918,21 +970,58 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     
     // ✅ Добавляем сообщение оптимистично в список (без перезагрузки)
+    // Сохраняем позицию скролла ДО добавления сообщения
+    bool wasAtBottom = false;
+    double? savedScrollPosition;
+    if (mounted && _scrollController.hasClients) {
+      final currentMaxScroll = _scrollController.position.maxScrollExtent;
+      savedScrollPosition = _scrollController.position.pixels;
+      if (currentMaxScroll > 0) {
+        final threshold = 100.0; // Увеличиваем порог для более надежной проверки
+        wasAtBottom = savedScrollPosition >= (currentMaxScroll - threshold);
+      } else {
+        wasAtBottom = true; // Если список пустой или очень маленький, считаем что внизу
+      }
+    } else {
+      wasAtBottom = true; // Если контроллер не готов, считаем что внизу (не скроллим)
+    }
+    
     if (mounted) {
+      print('🔍 Adding temp message to UI: id=$tempMessageId, content=$text');
+      print('🔍 Current messages count before: ${_messages.length}');
+      print('🔍 Was at bottom before adding: $wasAtBottom');
+      print('🔍 Saved scroll position: $savedScrollPosition');
       setState(() {
-        _messages.insert(0, tempMessage); // Добавляем в начало (reverse список)
+        // ✅ Создаем новый список для гарантированного обновления UI
+        final newMessages = List<Message>.from(_messages);
+        newMessages.add(tempMessage); // Добавляем в конец, чтобы новые были снизу
+        _messages = newMessages;
         // Очищаем поле ответа
         _replyToMessage = null;
       });
+      print('✅ Temp message added to UI. New count: ${_messages.length}');
+      print('✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}');
       
-      // Прокручиваем к новому сообщению
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0,
-          duration: Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      // После добавления сообщения нужно скроллить вниз, чтобы остаться внизу
+      // (setState может сбросить позицию, поэтому нужно явно скроллить)
+      // Используем двойной addPostFrameCallback для гарантии, что ListView пересчитал размеры
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _scrollController.hasClients) {
+            final maxScroll = _scrollController.position.maxScrollExtent;
+            if (maxScroll > 0) {
+              // Если был внизу - просто jumpTo (мгновенно, без анимации) к новому maxScrollExtent
+              // Если не был внизу - не скроллим, пользователь сам прокрутит
+              if (wasAtBottom) {
+                _scrollController.jumpTo(maxScroll);
+                print('✅ Jumped to bottom (was at bottom, staying there). New maxScroll: $maxScroll');
+              } else {
+                print('✅ Was not at bottom, keeping current position');
+              }
+            }
+          }
+        });
+      });
       
       // ✅ НЕ сохраняем временное сообщение в кэш сразу
       // Оно будет сохранено только после получения реального ответа от сервера
@@ -941,12 +1030,14 @@ class _ChatScreenState extends State<ChatScreen> {
     
     try {
       // ✅ Отправляем сообщение и получаем ответ от сервера
+      print('🔍 Calling sendMessage service: chatId=${widget.chatId}, text="$text", imageUrl=$imageUrl, replyToMessageId=$replyToMessageId');
       final sentMessage = await _messagesService.sendMessage(
         widget.chatId, 
         text, 
         imageUrl: imageUrl,
         replyToMessageId: replyToMessageId,
       );
+      print('🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}');
       
       if (mounted) {
         _controller.clear();
@@ -977,60 +1068,46 @@ class _ChatScreenState extends State<ChatScreen> {
           if (tempIndex != -1) {
             print('✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}');
             setState(() {
-              _messages[tempIndex] = sentMessage;
+              // ✅ Создаем новый список для принудительного обновления UI
+              final newMessages = List<Message>.from(_messages);
+              newMessages[tempIndex] = sentMessage;
               
-              // ✅ Удаляем все старые временные сообщения от этого пользователя
-              _messages.removeWhere((m) => 
+              // ✅ Удаляем все старые временные сообщения от этого пользователя (кроме только что замененного)
+              newMessages.removeWhere((m) => 
                 m.id.startsWith('temp_') && 
-                m.userId == widget.userId.toString()
+                m.userId == widget.userId.toString() &&
+                m.id != tempMessageId // НЕ удаляем то, что только что заменили
               );
+              
+              _messages = newMessages;
             });
-            print('✅ Message updated in UI');
+            print('✅ Message updated in UI (new list created). Total messages: ${_messages.length}');
+            print('✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}');
           } else {
             // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
             final existingIndex = _messages.indexWhere((m) => m.id == sentMessage.id);
             if (existingIndex != -1) {
-              print('⚠️ Message already exists at index $existingIndex, ensuring it\'s at the top');
-              if (existingIndex == 0) {
-                // ✅ Сообщение уже в начале, создаем новый список для принудительного обновления UI
-                setState(() {
-                  // ✅ Создаем новый список, чтобы Flutter увидел изменения
-                  final newMessages = List<Message>.from(_messages);
-                  newMessages[0] = sentMessage;
-                  
-                  // ✅ Удаляем все старые временные сообщения от этого пользователя
-                  newMessages.removeWhere((m) => 
-                    m.id.startsWith('temp_') && 
-                    m.userId == widget.userId.toString()
-                  );
-                  
-                  _messages = newMessages;
-                });
-                print('✅ Message updated at index 0 (new list created)');
-              } else {
-                // ✅ Удаляем сообщение из текущей позиции и вставляем в начало
-                setState(() {
-                  // ✅ Создаем новый список для принудительного обновления UI
-                  final newMessages = List<Message>.from(_messages);
-                  newMessages.removeAt(existingIndex);
-                  newMessages.insert(0, sentMessage);
-                  
-                  // ✅ Удаляем все старые временные сообщения от этого пользователя
-                  newMessages.removeWhere((m) => 
-                    m.id.startsWith('temp_') && 
-                    m.userId == widget.userId.toString()
-                  );
-                  
-                  _messages = newMessages;
-                });
-                print('✅ Message moved from index $existingIndex to the top of the list (new list created)');
-              }
+              print('⚠️ Message already exists at index $existingIndex');
+              // Обновляем сообщение на текущей позиции, без перемещения
+              setState(() {
+                final newMessages = List<Message>.from(_messages);
+                newMessages[existingIndex] = sentMessage;
+                
+                // Удаляем временные сообщения
+                newMessages.removeWhere((m) => 
+                  m.id.startsWith('temp_') && 
+                  m.userId == widget.userId.toString()
+                );
+                
+                _messages = newMessages;
+              });
+              print('✅ Message updated in place at index $existingIndex');
             } else {
               print('⚠️ Temp message not found and message not in list, adding it');
               setState(() {
                 // ✅ Создаем новый список для принудительного обновления UI
                 final newMessages = List<Message>.from(_messages);
-                newMessages.insert(0, sentMessage);
+                newMessages.add(sentMessage); // добавляем в конец, новые снизу
                 
                 // ✅ Удаляем все старые временные сообщения от этого пользователя
                 newMessages.removeWhere((m) => 
@@ -1040,32 +1117,33 @@ class _ChatScreenState extends State<ChatScreen> {
                 
                 _messages = newMessages;
               });
-              print('✅ Message added to list. Total: ${_messages.length} (new list created)');
+              print('✅ Message added to end. Total: ${_messages.length} (new list created)');
             }
           }
           
-          // ✅ Прокручиваем к новому сообщению после обновления UI
+          // ✅ После обновления сообщения от сервера нужно сохранить позицию внизу
+          // (setState может сбросить позицию, поэтому нужно явно скроллить)
+          // Используем двойной addPostFrameCallback для гарантии, что ListView пересчитал размеры
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _scrollController.hasClients) {
-              // ✅ Прокручиваем к началу списка (новое сообщение)
-              _scrollController.animateTo(
-                0,
-                duration: Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-              print('✅ Scrolled to top after message update');
-            }
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _scrollController.hasClients) {
+                final maxScroll = _scrollController.position.maxScrollExtent;
+                if (maxScroll > 0) {
+                  // Если был внизу до отправки - остаемся внизу (jumpTo без анимации)
+                  // Используем wasAtBottom из области видимости выше
+                  if (wasAtBottom) {
+                    _scrollController.jumpTo(maxScroll);
+                    print('✅ Jumped to bottom after message update (was at bottom)');
+                  } else {
+                    // Если не был внизу - не скроллим, пользователь сам прокрутит
+                    print('✅ Was not at bottom, keeping current position');
+                  }
+                }
+              }
+            });
           });
           
-          // ✅ Принудительно обновляем UI еще раз через небольшую задержку
-          Future.delayed(Duration(milliseconds: 100), () {
-            if (mounted) {
-              setState(() {
-                // ✅ Просто обновляем состояние, чтобы гарантировать перерисовку
-                print('✅ Force UI update after message sent');
-              });
-            }
-          });
+          // Принудительные обновления UI больше не нужны — список обновляется напрямую
           
           // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
           Future.delayed(Duration(milliseconds: 500), () {
@@ -1090,8 +1168,9 @@ class _ChatScreenState extends State<ChatScreen> {
       // ✅ Сообщение уже обновлено из ответа сервера
       // Также будет обновлено через WebSocket (если придет) для синхронизации с другими клиентами
       
-    } catch (e) {
-      print('Error sending message: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error sending message: $e');
+      print('❌ Stack trace: $stackTrace');
       
       // ✅ Удаляем временное сообщение при ошибке
       if (mounted) {
@@ -1114,7 +1193,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // ✅ Меню действий с сообщением
-  Future<void> _showMessageMenu(Message message) async {
+  Future<void> _showMessageMenu(Message message, {bool isMine = true}) async {
     if (!mounted) return;
     
     final action = await showModalBottomSheet<String>(
@@ -1133,8 +1212,8 @@ class _ChatScreenState extends State<ChatScreen> {
               title: Text('Переслать'),
               onTap: () => Navigator.pop(context, 'forward'),
             ),
-            // ✅ Редактировать можно только текстовые сообщения
-            if (message.hasText && !message.hasImage)
+            // ✅ Редактировать можно только свои текстовые сообщения
+            if (isMine && message.hasText && !message.hasImage)
               ListTile(
                 leading: Icon(Icons.edit),
                 title: Text('Редактировать'),
@@ -1150,11 +1229,13 @@ class _ChatScreenState extends State<ChatScreen> {
               title: Text('Реакция'),
               onTap: () => Navigator.pop(context, 'reaction'),
             ),
-            ListTile(
-              leading: Icon(Icons.delete, color: Colors.red),
-              title: Text('Удалить', style: TextStyle(color: Colors.red)),
-              onTap: () => Navigator.pop(context, 'delete'),
-            ),
+            // ✅ Удалить можно только свои сообщения
+            if (isMine)
+              ListTile(
+                leading: Icon(Icons.delete, color: Colors.red),
+                title: Text('Удалить', style: TextStyle(color: Colors.red)),
+                onTap: () => Navigator.pop(context, 'delete'),
+              ),
             ListTile(
               leading: Icon(Icons.close),
               title: Text('Отмена'),
@@ -1199,39 +1280,59 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     
+    // Состояние выбранных чатов
+    final selectedChatIds = <String>{};
+    
     final selectedChats = await showDialog<List<String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Переслать сообщение'),
-        content: Container(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: availableChats.length,
-            itemBuilder: (context, index) {
-              final chat = availableChats[index];
-              return CheckboxListTile(
-                title: Text(chat.name),
-                value: false, // TODO: Реализовать множественный выбор
-                onChanged: (value) {},
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Вернуть выбранные чаты
-              Navigator.pop(context, []);
-            },
-            child: Text('Переслать'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Переслать сообщение'),
+              content: Container(
+                width: double.maxFinite,
+                constraints: BoxConstraints(maxHeight: 400),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: availableChats.length,
+                  itemBuilder: (context, index) {
+                    final chat = availableChats[index];
+                    final isSelected = selectedChatIds.contains(chat.id);
+                    return CheckboxListTile(
+                      title: Text(chat.name),
+                      value: isSelected,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          if (value == true) {
+                            selectedChatIds.add(chat.id);
+                          } else {
+                            selectedChatIds.remove(chat.id);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedChatIds.isEmpty
+                      ? null
+                      : () {
+                          Navigator.pop(context, selectedChatIds.toList());
+                        },
+                  child: Text('Переслать'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
     
     if (selectedChats != null && selectedChats.isNotEmpty) {
@@ -1690,151 +1791,149 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: _isLoading
                 ? Center(child: CircularProgressIndicator())
-                : Stack(
-              children: [
-                ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  itemCount: _messages.length + 
-                      (_isLoadingMore ? 1 : 0) + 
-                      (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
-                      (_pinnedMessages.isNotEmpty ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    final totalItems = _messages.length + 
-                        (_isLoadingMore ? 1 : 0) + 
-                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
-                        (_pinnedMessages.isNotEmpty ? 1 : 0);
-                    
-                    // ✅ Показываем закрепленные сообщения вверху (последний элемент в reverse списке)
-                    if (_pinnedMessages.isNotEmpty && index == totalItems - 1) {
-                      return Container(
-                        margin: EdgeInsets.all(8),
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.amber.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.push_pin, size: 16, color: Colors.amber.shade700),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Закрепленные сообщения (${_pinnedMessages.length})',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.amber.shade900,
+                : RepaintBoundary(
+                  child: Stack(
+                    children: [
+                      ListView.builder(
+                        key: ValueKey('messages_list_${widget.chatId}'),
+                        controller: _scrollController,
+                        reverse: false, // старые сверху, новые снизу
+                        itemCount: _messages.length +
+                            (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) + // кнопка
+                            (_isLoadingMore ? 1 : 0) + // индикатор
+                            (_pinnedMessages.isNotEmpty ? 1 : 0), // закрепленные
+                        itemBuilder: (context, index) {
+                          int cursor = 0;
+
+                          // Кнопка "Загрузить старые"
+                          if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) {
+                            if (index == cursor) {
+                              return Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _loadMoreMessages,
+                                    icon: Icon(Icons.arrow_upward, size: 18),
+                                    label: Text('Загрузить старые сообщения'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.blue.shade700,
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            ..._pinnedMessages.take(3).map((pinned) => Padding(
-                              padding: EdgeInsets.only(bottom: 4),
-                              child: GestureDetector(
-                                onTap: () {
-                                  // Прокручиваем к закрепленному сообщению
-                                  final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
-                                  if (messageIndex != -1 && _scrollController.hasClients) {
-                                    // В reverse списке нужно прокрутить к нужной позиции
-                                    final targetPosition = (_messages.length - messageIndex - 1) * 100.0;
-                                    _scrollController.animateTo(
-                                      targetPosition,
-                                      duration: Duration(milliseconds: 300),
-                                      curve: Curves.easeInOut,
-                                    );
-                                  }
-                                },
-                                child: Container(
-                                  padding: EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
+                              );
+                            }
+                            cursor++;
+                          }
+
+                          // Индикатор подгрузки
+                          if (_isLoadingMore) {
+                            if (index == cursor) {
+                              return Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.push_pin, size: 14, color: Colors.amber.shade700),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          pinned.content.isNotEmpty 
-                                              ? (pinned.content.length > 30 
-                                                  ? '${pinned.content.substring(0, 30)}...'
-                                                  : pinned.content)
-                                              : 'Фото',
-                                          style: TextStyle(fontSize: 12),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                      CircularProgressIndicator(),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Загрузка сообщений...',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                          fontSize: 12,
                                         ),
                                       ),
-                                      Icon(Icons.arrow_forward, size: 16, color: Colors.amber.shade700),
                                     ],
                                   ),
                                 ),
-                              ),
-                            )),
-                          ],
-                        ),
-                      );
-                    }
-                    
-                    // Показываем индикатор загрузки вверху при подгрузке (в reverse списке это последний элемент)
-                    final adjustedIndex = _pinnedMessages.isNotEmpty ? index - 1 : index;
-                    if (_isLoadingMore && adjustedIndex == totalItems - 1 - (_pinnedMessages.isNotEmpty ? 1 : 0)) {
-                      return Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 8),
-                              Text(
-                                'Загрузка сообщений...',
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 12,
+                              );
+                            }
+                            cursor++;
+                          }
+
+                          // Закрепленные сообщения (сверху)
+                          if (_pinnedMessages.isNotEmpty) {
+                            if (index == cursor) {
+                              return Container(
+                                margin: EdgeInsets.all(8),
+                                padding: EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.amber.shade200),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    
-                    // Показываем кнопку "Загрузить еще" если есть еще сообщения
-                    final adjustedIndexForButton = _pinnedMessages.isNotEmpty ? index - 1 : index;
-                    if (!_isLoadingMore && _hasMoreMessages && _messages.isNotEmpty && adjustedIndexForButton == totalItems - 1 - (_pinnedMessages.isNotEmpty ? 1 : 0)) {
-                      return Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: OutlinedButton.icon(
-                            onPressed: _loadMoreMessages,
-                            icon: Icon(Icons.arrow_upward, size: 18),
-                            label: Text('Загрузить старые сообщения'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue.shade700,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    
-                    // Индекс сообщения в списке (reverse: true, поэтому инвертируем)
-                    // Учитываем дополнительные элементы (индикатор загрузки, кнопка, закрепленные)
-                    final extraItems = (_isLoadingMore ? 1 : 0) + 
-                        (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) +
-                        (_pinnedMessages.isNotEmpty ? 1 : 0);
-                    final messageIndex = _messages.length - 1 - (index - extraItems);
-                    
-                    if (messageIndex < 0 || messageIndex >= _messages.length) {
-                      return SizedBox.shrink();
-                    }
-                    
-                    final msg = _messages[messageIndex];
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.push_pin, size: 16, color: Colors.amber.shade700),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Закрепленные сообщения (${_pinnedMessages.length})',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: 8),
+                                    ..._pinnedMessages.take(3).map((pinned) => Padding(
+                                      padding: EdgeInsets.only(bottom: 4),
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
+                                          if (messageIndex != -1 && _scrollController.hasClients) {
+                                            final targetPosition = messageIndex * 100.0;
+                                            _scrollController.animateTo(
+                                              targetPosition,
+                                              duration: Duration(milliseconds: 300),
+                                              curve: Curves.easeInOut,
+                                            );
+                                          }
+                                        },
+                                        child: Container(
+                                          padding: EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.push_pin, size: 14, color: Colors.amber.shade700),
+                                              SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  pinned.content.isNotEmpty 
+                                                      ? (pinned.content.length > 30 
+                                                          ? '${pinned.content.substring(0, 30)}...'
+                                                          : pinned.content)
+                                                      : 'Фото',
+                                                  style: TextStyle(fontSize: 12),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              Icon(Icons.arrow_forward, size: 16, color: Colors.amber.shade700),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    )),
+                                  ],
+                                ),
+                              );
+                            }
+                            cursor++;
+                          }
+
+                          // Сообщения
+                          final msgIndex = index - cursor;
+                          if (msgIndex < 0 || msgIndex >= _messages.length) {
+                            return SizedBox.shrink();
+                          }
+                          final msg = _messages[msgIndex];
                     final isMine = msg.senderEmail == widget.userEmail;
 
                 return Padding(
@@ -1877,9 +1976,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                       Flexible(
                         child: GestureDetector(
-                          onLongPress: isMine
-                              ? () => _showMessageMenu(msg)
-                              : null,
+                          onLongPress: () => _showMessageMenu(msg, isMine: isMine),
                           child: Container(
                             constraints: BoxConstraints(
                               maxWidth: MediaQuery.of(context).size.width * 0.75,
@@ -2183,68 +2280,6 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                   if (msg.hasText) SizedBox(height: 8),
                                 ],
-                                // ✅ Отображение ответа на сообщение (если есть)
-                                if (msg.replyToMessage != null) ...[
-                                  Container(
-                                    margin: EdgeInsets.only(bottom: 8),
-                                    padding: EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: isMine 
-                                          ? Colors.white.withOpacity(0.2)
-                                          : Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border(
-                                        left: BorderSide(
-                                          color: isMine ? Colors.white : Colors.blue,
-                                          width: 3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          msg.replyToMessage!.senderEmail,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: isMine 
-                                                ? Colors.white.withOpacity(0.9)
-                                                : Colors.blue.shade700,
-                                          ),
-                                        ),
-                                        SizedBox(height: 4),
-                                        if (msg.replyToMessage!.hasImage)
-                                          Row(
-                                            children: [
-                                              Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Фото',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: isMine ? Colors.white70 : Colors.grey.shade600,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        else
-                                          Text(
-                                            msg.replyToMessage!.content.length > 50
-                                                ? '${msg.replyToMessage!.content.substring(0, 50)}...'
-                                                : msg.replyToMessage!.content,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: isMine ? Colors.white70 : Colors.grey.shade700,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
                                 // Отображение текста
                                 if (msg.hasText) ...[
                                   Text(
@@ -2368,10 +2403,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   ),
                 );
-              },
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
           ),
           Container(
             decoration: BoxDecoration(
@@ -2574,7 +2610,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             child: IconButton(
                               icon: Icon(Icons.send, color: Colors.white),
-                              onPressed: _sendMessage,
+                              onPressed: () {
+                                print('🔍 Send button pressed!');
+                                _sendMessage();
+                              },
                               tooltip: 'Отправить',
                             ),
                           ),

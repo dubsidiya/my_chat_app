@@ -87,6 +87,30 @@ class Message {
       rethrow;
     }
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'chat_id': chatId,
+      'user_id': userId,
+      'content': content,
+      'image_url': imageUrl,
+      'original_image_url': originalImageUrl,
+      'message_type': messageType,
+      'sender_email': senderEmail,
+      'created_at': createdAt,
+      'delivered_at': deliveredAt,
+      'edited_at': editedAt,
+      'is_read': isRead,
+      'read_at': readAt,
+      'reply_to_message_id': replyToMessageId,
+      'reply_to_message': replyToMessage?.toJson(),
+      'is_pinned': isPinned,
+      'reactions': reactions?.map((r) => r.toJson()).toList(),
+      'is_forwarded': isForwarded,
+      'original_chat_name': originalChatName,
+    };
+  }
 }
 
 // ✅ Enum для статусов сообщений
