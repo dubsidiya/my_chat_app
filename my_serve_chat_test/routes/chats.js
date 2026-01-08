@@ -1,5 +1,5 @@
 import express from 'express';
-import { getUserChats, createChat, deleteChat, getChatMembers, addMembersToChat, removeMemberFromChat } from '../controllers/chatsController.js';
+import { getUserChats, createChat, deleteChat, getChatMembers, addMembersToChat, removeMemberFromChat, leaveChat } from '../controllers/chatsController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Более специфичные роуты должны быть раньше общих
+router.post('/:id/leave', leaveChat); // POST /chats/:id/leave - выход из чата
 router.get('/:id/members', getChatMembers); // GET /chats/:id/members
 router.post('/:id/members', addMembersToChat); // POST /chats/:id/members
 router.delete('/:id/members/:userId', removeMemberFromChat); // DELETE /chats/:id/members/:userId

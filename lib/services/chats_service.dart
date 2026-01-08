@@ -380,5 +380,56 @@ class ChatsService {
     }
   }
 
+  Future<void> leaveChat(String chatId) async {
+    try {
+      final url = Uri.parse('$baseUrl/chats/$chatId/leave');
+      print('Leaving chat: $chatId');
+      
+      final headers = await _getAuthHeaders();
+      final response = await http.post(url, headers: headers).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Таймаут при выходе из чата');
+        },
+      );
+
+      print('Leave chat status: ${response.statusCode}');
+      print('Leave chat response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        print('Left chat successfully: $chatId');
+        return;
+      } else if (response.statusCode == 400) {
+        String errorMessage = 'Не удалось выйти из чата';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      } else if (response.statusCode == 404) {
+        throw Exception('Чат не найден');
+      } else {
+        String errorMessage = 'Не удалось выйти из чата';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {
+          errorMessage = 'Ошибка сервера (${response.statusCode})';
+        }
+        print('Leave chat error: ${response.statusCode} - ${response.body}');
+        throw Exception('$errorMessage (${response.statusCode})');
+      }
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      print('Unexpected error in leaveChat: $e');
+      throw Exception('Неожиданная ошибка при выходе из чата: $e');
+    }
+  }
 }
 

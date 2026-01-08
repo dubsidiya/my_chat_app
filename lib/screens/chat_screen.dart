@@ -1682,6 +1682,59 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ✅ Выход из чата
+  Future<void> _leaveChat() async {
+    if (!mounted) return;
+
+    // Показываем диалог подтверждения
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Выйти из чата?'),
+        content: Text('Вы уверены, что хотите выйти из чата "${widget.chatName}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: Text('Выйти'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _chatsService.leaveChat(widget.chatId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Вы вышли из чата'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        // Возвращаемся на предыдущий экран
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      print('Ошибка выхода из чата: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при выходе из чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _showAddMembersDialog() async {
     if (!mounted) return;
     
@@ -1753,8 +1806,21 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ✅ Вычисляем высоту блока закрепленных сообщений
+  double _getPinnedMessagesHeight() {
+    if (_pinnedMessages.isEmpty) return 0.0;
+    // Компактные размеры
+    final headerHeight = 28.0; // Компактный заголовок
+    final messageHeight = 32.0; // Компактная высота одного сообщения
+    final messagesCount = _pinnedMessages.length > 3 ? 3 : _pinnedMessages.length;
+    final padding = 12.0; // Внутренние отступы
+    final margin = 8.0; // Внешние отступы
+    return headerHeight + (messagesCount * messageHeight) + padding + margin;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pinnedHeight = _getPinnedMessagesHeight();
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -1784,6 +1850,11 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: _showAddMembersDialog,
             tooltip: 'Добавить участников',
           ),
+          IconButton(
+            icon: Icon(Icons.exit_to_app),
+            onPressed: _leaveChat,
+            tooltip: 'Выйти из чата',
+          ),
         ],
       ),
       body: Column(
@@ -1794,14 +1865,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 : RepaintBoundary(
                   child: Stack(
                     children: [
-                      ListView.builder(
-                        key: ValueKey('messages_list_${widget.chatId}'),
-                        controller: _scrollController,
-                        reverse: false, // старые сверху, новые снизу
-                        itemCount: _messages.length +
-                            (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) + // кнопка
-                            (_isLoadingMore ? 1 : 0) + // индикатор
-                            (_pinnedMessages.isNotEmpty ? 1 : 0), // закрепленные
+                      // Отступ сверху для закрепленных сообщений
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: pinnedHeight,
+                        ),
+                        child: ListView.builder(
+                          key: ValueKey('messages_list_${widget.chatId}'),
+                          controller: _scrollController,
+                          reverse: false, // старые сверху, новые снизу
+                          itemCount: _messages.length +
+                              (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) + // кнопка
+                              (_isLoadingMore ? 1 : 0), // индикатор
                         itemBuilder: (context, index) {
                           int cursor = 0;
 
@@ -1845,83 +1920,6 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ),
                                     ],
                                   ),
-                                ),
-                              );
-                            }
-                            cursor++;
-                          }
-
-                          // Закрепленные сообщения (сверху)
-                          if (_pinnedMessages.isNotEmpty) {
-                            if (index == cursor) {
-                              return Container(
-                                margin: EdgeInsets.all(8),
-                                padding: EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.amber.shade200),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(Icons.push_pin, size: 16, color: Colors.amber.shade700),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          'Закрепленные сообщения (${_pinnedMessages.length})',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.amber.shade900,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 8),
-                                    ..._pinnedMessages.take(3).map((pinned) => Padding(
-                                      padding: EdgeInsets.only(bottom: 4),
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
-                                          if (messageIndex != -1 && _scrollController.hasClients) {
-                                            final targetPosition = messageIndex * 100.0;
-                                            _scrollController.animateTo(
-                                              targetPosition,
-                                              duration: Duration(milliseconds: 300),
-                                              curve: Curves.easeInOut,
-                                            );
-                                          }
-                                        },
-                                        child: Container(
-                                          padding: EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(Icons.push_pin, size: 14, color: Colors.amber.shade700),
-                                              SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  pinned.content.isNotEmpty 
-                                                      ? (pinned.content.length > 30 
-                                                          ? '${pinned.content.substring(0, 30)}...'
-                                                          : pinned.content)
-                                                      : 'Фото',
-                                                  style: TextStyle(fontSize: 12),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                              Icon(Icons.arrow_forward, size: 16, color: Colors.amber.shade700),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    )),
-                                  ],
                                 ),
                               );
                             }
@@ -2405,6 +2403,152 @@ class _ChatScreenState extends State<ChatScreen> {
                 );
                         },
                       ),
+                      ),
+                      // ✅ Закрепленные сообщения - всегда видны вверху
+                      if (_pinnedMessages.isNotEmpty)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100.withOpacity(0.95),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.grey.shade300.withOpacity(0.5),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 4,
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Компактный заголовок
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.push_pin,
+                                        size: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Закреплено',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                      SizedBox(width: 4),
+                                      Container(
+                                        padding: EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade300,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '${_pinnedMessages.length}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 10,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Компактный список сообщений
+                                Padding(
+                                  padding: EdgeInsets.only(left: 8, right: 8, bottom: 6),
+                                  child: Column(
+                                    children: _pinnedMessages.take(3).toList().asMap().entries.map((entry) {
+                                      final index = entry.key;
+                                      final pinned = entry.value;
+                                      final isLast = index == (_pinnedMessages.length > 3 ? 2 : _pinnedMessages.length - 1);
+                                      
+                                      return Container(
+                                        margin: EdgeInsets.only(bottom: isLast ? 0 : 4),
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () {
+                                              final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
+                                              if (messageIndex != -1 && _scrollController.hasClients) {
+                                                final targetPosition = (messageIndex * 100.0) + pinnedHeight;
+                                                _scrollController.animateTo(
+                                                  targetPosition,
+                                                  duration: Duration(milliseconds: 300),
+                                                  curve: Curves.easeInOut,
+                                                );
+                                              }
+                                            },
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Container(
+                                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: Colors.grey.shade200,
+                                                  width: 0.5,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.push_pin,
+                                                    size: 12,
+                                                    color: Colors.grey.shade400,
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      pinned.content.isNotEmpty 
+                                                          ? (pinned.content.length > 40 
+                                                              ? '${pinned.content.substring(0, 40)}...'
+                                                              : pinned.content)
+                                                          : 'Фото',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: Colors.grey.shade700,
+                                                        height: 1.2,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 6),
+                                                  Icon(
+                                                    Icons.chevron_right,
+                                                    size: 16,
+                                                    color: Colors.grey.shade400,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

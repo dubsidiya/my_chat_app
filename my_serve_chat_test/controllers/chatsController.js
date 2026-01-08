@@ -348,3 +348,90 @@ export const removeMemberFromChat = async (req, res) => {
     res.status(500).json({ message: "Ошибка удаления участника" });
   }
 };
+
+// Выход из чата (пользователь сам выходит)
+export const leaveChat = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const userId = req.user.userId; // Получаем из токена
+
+    if (!chatId) {
+      return res.status(400).json({ message: "Укажите ID чата" });
+    }
+
+    // Проверяем, существует ли чат
+    const chatCheck = await pool.query(
+      'SELECT id, created_by FROM chats WHERE id = $1',
+      [chatId]
+    );
+
+    if (chatCheck.rows.length === 0) {
+      return res.status(404).json({ message: "Чат не найден" });
+    }
+
+    const creatorId = chatCheck.rows[0].created_by;
+
+    // Проверяем, является ли пользователь участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(404).json({ message: "Вы не являетесь участником этого чата" });
+    }
+
+    // Получаем количество участников
+    const memberCount = await pool.query(
+      'SELECT COUNT(*) as count FROM chat_users WHERE chat_id = $1',
+      [chatId]
+    );
+    const count = parseInt(memberCount.rows[0].count);
+
+    // Если пользователь - создатель и он последний участник, удаляем чат полностью
+    const userIdStr = userId.toString();
+    const creatorIdStr = creatorId?.toString();
+    const isCreator = creatorIdStr && userIdStr === creatorIdStr;
+
+    if (isCreator && count === 1) {
+      // Удаляем чат полностью, так как создатель - последний участник
+      await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+      res.status(200).json({ message: "Чат удален, так как вы были последним участником" });
+      return;
+    }
+
+    // Если пользователь - создатель, но есть другие участники, не позволяем выйти
+    // (создатель должен передать права или удалить чат)
+    if (isCreator && count > 1) {
+      return res.status(400).json({ 
+        message: "Создатель чата не может выйти, пока есть другие участники. Удалите чат или передайте права создателя" 
+      });
+    }
+
+    // Обычный участник может выйти
+    await pool.query(
+      'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+
+    // Обновляем is_group, если участников стало 1 или меньше
+    const newCount = await pool.query(
+      'SELECT COUNT(*) as count FROM chat_users WHERE chat_id = $1',
+      [chatId]
+    );
+    const newCountValue = parseInt(newCount.rows[0].count);
+    
+    if (newCountValue <= 1) {
+      await pool.query(
+        'UPDATE chats SET is_group = false WHERE id = $1',
+        [chatId]
+      );
+    }
+
+    res.status(200).json({ message: "Вы успешно вышли из чата" });
+
+  } catch (error) {
+    console.error("Ошибка leaveChat:", error);
+    res.status(500).json({ message: "Ошибка выхода из чата" });
+  }
+};
