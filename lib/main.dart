@@ -244,12 +244,13 @@ class _MyAppState extends State<MyApp> {
           // Если есть сохраненные данные и токен - автоматически входим
           if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
             final userData = snapshot.data!;
-            print('✅ Автоматический вход: userId=${userData['id']}, email=${userData['email']}');
+            final userIdentifier = userData['email'] ?? userData['username'] ?? '';
+            print('✅ Автоматический вход: userId=${userData['id']}, username=$userIdentifier');
             print('✅ Токен найден: ${userData['token']!.substring(0, 20)}...');
             print('✅ Токен полный: ${userData['token']}');
             return MainTabsScreen(
               userId: userData['id']!,
-              userEmail: userData['email']!,
+              userEmail: userIdentifier,
               onThemeChanged: toggleTheme, // ✅ Передаем функцию переключения темы
             );
           } else {

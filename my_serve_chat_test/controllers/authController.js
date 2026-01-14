@@ -4,34 +4,35 @@ import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData } from '../utils/validation.js';
 
 export const register = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
   // Проверяем наличие данных
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email и пароль обязательны' });
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Логин и пароль обязательны' });
   }
 
-  // Нормализуем email перед валидацией (убираем пробелы, приводим к нижнему регистру)
-  const normalizedEmail = email.trim().toLowerCase();
+  // Нормализуем логин перед валидацией (убираем пробелы, приводим к нижнему регистру)
+  const normalizedUsername = username.trim().toLowerCase();
 
   // Валидация данных
-  const validation = validateRegisterData(normalizedEmail, password);
+  const validation = validateRegisterData(normalizedUsername, password);
   if (!validation.valid) {
-    console.log('Валидация не прошла:', { email: normalizedEmail, error: validation.message });
+    console.log('Валидация не прошла:', { username: normalizedUsername, error: validation.message });
     return res.status(400).json({ message: validation.message });
   }
 
   try {
-    // Проверяем существование пользователя с нормализованным email
+    // Проверяем существование пользователя с нормализованным логином
     // Используем LOWER и TRIM для поиска, чтобы найти даже если есть пробелы или другой регистр
+    // Используем поле email в БД для хранения логина (для обратной совместимости)
     const existing = await pool.query(
       'SELECT id, email FROM users WHERE LOWER(TRIM(email)) = $1',
-      [normalizedEmail]
+      [normalizedUsername]
     );
     
     if (existing.rows.length > 0) {
       console.log('Попытка регистрации существующего пользователя:', {
-        requested: normalizedEmail,
+        requested: normalizedUsername,
         existing: existing.rows[0].email
       });
       return res.status(400).json({ message: 'Пользователь уже существует' });
@@ -41,17 +42,18 @@ export const register = async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    // Сохраняем логин в поле email (для обратной совместимости со схемой БД)
     const result = await pool.query(
       'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
-      [normalizedEmail, hashedPassword]
+      [normalizedUsername, hashedPassword]
     );
 
-    // Генерируем JWT токен
+    // Генерируем JWT токен (используем логин вместо email)
     const token = generateToken(result.rows[0].id, result.rows[0].email);
 
     res.status(201).json({
       userId: result.rows[0].id,
-      email: result.rows[0].email,
+      username: result.rows[0].email, // Возвращаем как username
       token: token,
     });
   } catch (error) {
@@ -61,16 +63,16 @@ export const register = async (req, res) => {
 };
 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
   
   // Проверяем наличие данных
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email и пароль обязательны' });
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Логин и пароль обязательны' });
   }
   
   // Валидация данных
   try {
-    const validation = validateLoginData(email, password);
+    const validation = validateLoginData(username, password);
     if (!validation.valid) {
       return res.status(400).json({ message: validation.message });
     }
@@ -81,18 +83,18 @@ export const login = async (req, res) => {
   }
 
   try {
-    // Нормализуем email
-    const normalizedEmail = email.toLowerCase().trim();
+    // Нормализуем логин
+    const normalizedUsername = username.toLowerCase().trim();
     
-    // Получаем пользователя по email
+    // Получаем пользователя по логину (используем поле email в БД для хранения логина)
     const result = await pool.query(
       'SELECT id, email, password FROM users WHERE LOWER(TRIM(email)) = $1',
-      [normalizedEmail]
+      [normalizedUsername]
     );
 
     if (result.rows.length === 0) {
       // Не раскрываем, существует ли пользователь (защита от перечисления)
-      return res.status(401).json({ message: 'Неверный email или пароль' });
+      return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
     const user = result.rows[0];
@@ -122,10 +124,10 @@ export const login = async (req, res) => {
     }
     
     if (!passwordMatch) {
-      return res.status(401).json({ message: 'Неверный email или пароль' });
+      return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
-    // Генерируем JWT токен
+    // Генерируем JWT токен (используем логин вместо email)
     const token = generateToken(user.id, user.email);
 
     // Удаляем пароль из ответа
@@ -133,7 +135,7 @@ export const login = async (req, res) => {
 
     res.status(200).json({
       id: user.id,
-      email: user.email,
+      username: user.email, // Возвращаем как username
       token: token,
     });
   } catch (error) {

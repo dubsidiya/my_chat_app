@@ -36,27 +36,142 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat),
-            label: 'Чаты',
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              offset: Offset(0, -5),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(25),
+            topRight: Radius.circular(25),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.school),
-            label: 'Учет занятий',
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: Color(0xFF667eea),
+            unselectedItemColor: Colors.grey.shade400,
+            selectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+            unselectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+            elevation: 0,
+            items: [
+              BottomNavigationBarItem(
+                icon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _currentIndex == 0
+                        ? Color(0xFF667eea).withOpacity(0.15)
+                        : Colors.transparent,
+                  ),
+                  child: Icon(
+                    Icons.chat_bubble_rounded,
+                    size: 24,
+                  ),
+                ),
+                activeIcon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF667eea).withOpacity(0.2),
+                        Color(0xFF764ba2).withOpacity(0.2),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.chat_bubble_rounded,
+                    size: 24,
+                  ),
+                ),
+                label: 'Чаты',
+              ),
+              BottomNavigationBarItem(
+                icon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _currentIndex == 1
+                        ? Color(0xFF667eea).withOpacity(0.15)
+                        : Colors.transparent,
+                  ),
+                  child: Icon(
+                    Icons.school_rounded,
+                    size: 24,
+                  ),
+                ),
+                activeIcon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF667eea).withOpacity(0.2),
+                        Color(0xFF764ba2).withOpacity(0.2),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.school_rounded,
+                    size: 24,
+                  ),
+                ),
+                label: 'Учет занятий',
+              ),
+              BottomNavigationBarItem(
+                icon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _currentIndex == 2
+                        ? Color(0xFF667eea).withOpacity(0.15)
+                        : Colors.transparent,
+                  ),
+                  child: Icon(
+                    Icons.description_rounded,
+                    size: 24,
+                  ),
+                ),
+                activeIcon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF667eea).withOpacity(0.2),
+                        Color(0xFF764ba2).withOpacity(0.2),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.description_rounded,
+                    size: 24,
+                  ),
+                ),
+                label: 'Отчеты',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.description),
-            label: 'Отчеты',
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -24,15 +24,17 @@ export const authenticateToken = (req, res, next) => {
     
     req.user = user; // Сохраняем данные пользователя в запросе
     req.userId = user.userId; // Добавляем userId для удобства
-    console.log(`✅ JWT verified: userId=${user.userId}, email=${user.email}`);
+    // email в токене теперь содержит логин
+    console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
     next();
   });
 };
 
 // Генерация JWT токена
-export const generateToken = (userId, email) => {
+// username - логин пользователя (хранится в поле email в БД для обратной совместимости)
+export const generateToken = (userId, username) => {
   return jwt.sign(
-    { userId, email },
+    { userId, email: username, username: username }, // Сохраняем и как email (для совместимости) и как username
     JWT_SECRET,
     { expiresIn: '7d' } // Токен действителен 7 дней
   );

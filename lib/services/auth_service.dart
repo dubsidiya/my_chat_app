@@ -5,12 +5,12 @@ import 'storage_service.dart';
 class AuthService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
-  Future<Map<String, dynamic>?> loginUser(String email, String password) async {
+  Future<Map<String, dynamic>?> loginUser(String username, String password) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'username': username, 'password': password}),
       );
       print('Login status: ${response.statusCode}');
       print('Login response body: ${response.body}');
@@ -21,9 +21,11 @@ class AuthService {
         // Сохраняем токен
         if (data['token'] != null) {
           print('💾 Сохранение токена...');
+          // Используем username из ответа, если есть, иначе email (для обратной совместимости)
+          final userIdentifier = data['username'] ?? data['email'] ?? '';
           await StorageService.saveUserData(
             data['id'].toString(),
-            data['email'],
+            userIdentifier,
             data['token'],
           );
           print('✅ Токен сохранен успешно');
@@ -40,7 +42,7 @@ class AuthService {
           throw Exception('Ошибка сервера (500). Проверьте состояние базы данных на сервере.');
         }
       } else if (response.statusCode == 401) {
-        throw Exception('Неверный email или пароль');
+        throw Exception('Неверный логин или пароль');
       } else {
         throw Exception('Ошибка подключения к серверу (${response.statusCode})');
       }
@@ -52,12 +54,12 @@ class AuthService {
     }
   }
 
-  Future<bool> registerUser(String email, String password) async {
+  Future<bool> registerUser(String username, String password) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/register'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'username': username, 'password': password}),
       );
 
       print('REGISTER STATUS: ${response.statusCode}');
@@ -67,9 +69,11 @@ class AuthService {
         final data = jsonDecode(response.body);
         // Сохраняем токен
         if (data['token'] != null) {
+          // Используем username из ответа, если есть, иначе email (для обратной совместимости)
+          final userIdentifier = data['username'] ?? data['email'] ?? '';
           await StorageService.saveUserData(
             data['userId'].toString(),
-            data['email'],
+            userIdentifier,
             data['token'],
           );
         }

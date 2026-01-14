@@ -1,37 +1,32 @@
 import validator from 'validator';
 
-// Валидация email
-export const validateEmail = (email) => {
-  if (!email || typeof email !== 'string') {
-    return { valid: false, message: 'Email обязателен' };
+// Валидация логина
+export const validateUsername = (username) => {
+  if (!username || typeof username !== 'string') {
+    return { valid: false, message: 'Логин обязателен' };
   }
   
-  // Нормализуем email перед валидацией (убираем пробелы, приводим к нижнему регистру)
-  const normalizedEmail = email.trim().toLowerCase();
+  // Нормализуем логин (убираем пробелы, приводим к нижнему регистру)
+  const normalizedUsername = username.trim().toLowerCase();
   
-  if (!normalizedEmail) {
-    return { valid: false, message: 'Email обязателен' };
+  if (!normalizedUsername) {
+    return { valid: false, message: 'Логин обязателен' };
   }
   
-  // Простая проверка формата email (более мягкая)
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(normalizedEmail)) {
-    return { valid: false, message: 'Неверный формат email' };
+  // Проверка минимальной длины
+  if (normalizedUsername.length < 4) {
+    return { valid: false, message: 'Логин должен содержать минимум 4 символа' };
   }
   
-  // Дополнительная проверка через validator (если доступен)
-  try {
-    if (typeof validator !== 'undefined' && validator.isEmail) {
-      if (!validator.isEmail(normalizedEmail, { 
-        allow_utf8_local_part: true,
-        require_tld: true 
-      })) {
-        return { valid: false, message: 'Неверный формат email' };
-      }
-    }
-  } catch (e) {
-    // Если validator недоступен, используем только regex проверку
-    console.warn('validator недоступен, используется только regex проверка');
+  // Проверка максимальной длины
+  if (normalizedUsername.length > 50) {
+    return { valid: false, message: 'Логин слишком длинный (максимум 50 символов)' };
+  }
+  
+  // Проверка формата: только буквы, цифры, подчеркивания и дефисы
+  const usernameRegex = /^[a-z0-9_-]+$/;
+  if (!usernameRegex.test(normalizedUsername)) {
+    return { valid: false, message: 'Логин может содержать только буквы, цифры, подчеркивания и дефисы' };
   }
   
   return { valid: true };
@@ -55,10 +50,10 @@ export const validatePassword = (password) => {
 };
 
 // Валидация данных регистрации
-export const validateRegisterData = (email, password) => {
-  const emailValidation = validateEmail(email);
-  if (!emailValidation.valid) {
-    return emailValidation;
+export const validateRegisterData = (username, password) => {
+  const usernameValidation = validateUsername(username);
+  if (!usernameValidation.valid) {
+    return usernameValidation;
   }
   
   const passwordValidation = validatePassword(password);
@@ -70,9 +65,9 @@ export const validateRegisterData = (email, password) => {
 };
 
 // Валидация данных входа
-export const validateLoginData = (email, password) => {
-  if (!email || !password) {
-    return { valid: false, message: 'Email и пароль обязательны' };
+export const validateLoginData = (username, password) => {
+  if (!username || !password) {
+    return { valid: false, message: 'Логин и пароль обязательны' };
   }
   
   return { valid: true };
