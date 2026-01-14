@@ -54,18 +54,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
             MaterialPageRoute(builder: (_) => LoginScreen()),
           );
         }
-      } else {
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'Пользователь уже существует';
-          });
-        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Ошибка регистрации: $e';
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
         });
       }
     }

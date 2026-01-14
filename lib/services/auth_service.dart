@@ -53,28 +53,55 @@ class AuthService {
   }
 
   Future<bool> registerUser(String email, String password) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/register'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
 
-    print('REGISTER STATUS: ${response.statusCode}');
-    print('REGISTER RESPONSE: ${response.body}');
+      print('REGISTER STATUS: ${response.statusCode}');
+      print('REGISTER RESPONSE: ${response.body}');
 
-    if (response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      // Сохраняем токен
-      if (data['token'] != null) {
-        await StorageService.saveUserData(
-          data['userId'].toString(),
-          data['email'],
-          data['token'],
-        );
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        // Сохраняем токен
+        if (data['token'] != null) {
+          await StorageService.saveUserData(
+            data['userId'].toString(),
+            data['email'],
+            data['token'],
+          );
+        }
+        return true;
+      } else if (response.statusCode == 400) {
+        // Пробуем распарсить сообщение об ошибке
+        try {
+          final errorData = jsonDecode(response.body);
+          throw Exception(errorData['message'] ?? 'Ошибка регистрации');
+        } catch (e) {
+          if (e is Exception) {
+            rethrow;
+          }
+          throw Exception('Ошибка регистрации');
+        }
+      } else if (response.statusCode == 500) {
+        // Пробуем распарсить сообщение об ошибке
+        try {
+          final errorData = jsonDecode(response.body);
+          throw Exception(errorData['message'] ?? 'Ошибка сервера (500)');
+        } catch (e) {
+          throw Exception('Ошибка сервера (500). Проверьте состояние базы данных на сервере.');
+        }
+      } else {
+        throw Exception('Ошибка подключения к серверу (${response.statusCode})');
       }
-      return true;
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Ошибка сети: $e');
     }
-    return false;
   }
 
   Future<void> deleteAccount(String userId, String password) async {
