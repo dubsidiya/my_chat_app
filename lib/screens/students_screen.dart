@@ -19,6 +19,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
   final StudentsService _studentsService = StudentsService();
   List<Student> _students = [];
   bool _isLoading = false;
+  
+  static const Color _accent1 = Color(0xFF667eea);
+  static const Color _accent2 = Color(0xFF764ba2);
 
   @override
   void initState() {
@@ -108,34 +111,171 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Учет занятий'),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        title: Text(
+          'Учет занятий',
+          style: TextStyle(
+            color: Colors.grey.shade900,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            letterSpacing: 0.3,
+          ),
+        ),
+        actions: [
+          Container(
+            margin: EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: _accent1.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.refresh_rounded, color: _accent1),
+              onPressed: _loadStudents,
+              tooltip: 'Обновить',
+            ),
+          ),
+        ],
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(_accent1),
+                strokeWidth: 3,
+              ),
+            )
           : _students.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.school, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text(
-                        'Нет студентов',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Нажмите + чтобы добавить',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _accent1.withOpacity(0.2),
+                                _accent2.withOpacity(0.2),
+                              ],
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.school_rounded,
+                            size: 60,
+                            color: _accent1.withOpacity(0.7),
+                          ),
+                        ),
+                        SizedBox(height: 28),
+                        Text(
+                          'Нет студентов',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'Добавьте первого ученика или загрузите выписку',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: 28),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                gradient: LinearGradient(
+                                  colors: [_accent1, _accent2],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _accent1.withOpacity(0.3),
+                                    blurRadius: 12,
+                                    offset: Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: ElevatedButton.icon(
+                                onPressed: _addStudent,
+                                icon: Icon(Icons.add_rounded),
+                                label: Text(
+                                  'Добавить',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.green.withOpacity(0.12),
+                              ),
+                              child: TextButton.icon(
+                                onPressed: () async {
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BankStatementScreen(
+                                        onSuccess: _loadStudents,
+                                      ),
+                                    ),
+                                  );
+                                  if (result == true) {
+                                    _loadStudents();
+                                  }
+                                },
+                                icon: Icon(Icons.upload_file_rounded, color: Colors.green),
+                                label: Text(
+                                  'Выписка',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : RefreshIndicator(
                   onRefresh: _loadStudents,
                   child: ListView.builder(
                     itemCount: _students.length,
-                    padding: EdgeInsets.all(8),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemBuilder: (context, index) {
                       final student = _students[index];
                       return Dismissible(
@@ -144,9 +284,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         background: Container(
                           alignment: Alignment.centerRight,
                           padding: EdgeInsets.only(right: 20),
-                          color: Colors.red,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           child: Icon(
-                            Icons.delete,
+                            Icons.delete_outline_rounded,
                             color: Colors.white,
                             size: 32,
                           ),
@@ -182,25 +325,52 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           return result ?? false;
                         },
                         child: Card(
-                        margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        margin: EdgeInsets.symmetric(vertical: 6),
+                        elevation: 2,
+                        shadowColor: Colors.black.withOpacity(0.08),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: student.isDebtor
-                                ? Colors.red
-                                : Colors.blue,
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.white,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          leading: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: student.isDebtor
+                                    ? [Colors.red.shade400, Colors.red.shade700]
+                                    : [_accent1, _accent2],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (student.isDebtor ? Colors.red : _accent1).withOpacity(0.25),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 6),
+                                ),
+                              ],
                             ),
+                            child: Icon(Icons.person_rounded, color: Colors.white, size: 28),
                           ),
                           title: Text(
                             student.name,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.grey.shade900,
                             ),
                           ),
                           subtitle: student.parentName != null
-                              ? Text(student.parentName!)
+                              ? Padding(
+                                  padding: EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    student.parentName!,
+                                    style: TextStyle(color: Colors.grey.shade600),
+                                  ),
+                                )
                               : null,
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -211,23 +381,30 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: student.isDebtor
-                                      ? Colors.red
-                                      : Colors.green,
+                                  color: student.isDebtor ? Colors.red : Colors.green.shade700,
                                 ),
                               ),
+                              SizedBox(height: 4),
                               if (student.isDebtor)
-                                Text(
-                                  'Долг',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.red,
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    'Долг',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.red.shade700,
+                                    ),
                                   ),
                                 ),
                             ],
                           ),
                           onTap: () => _openStudentDetail(student),
-                          ),
+                        ),
                         ),
                       );
                     },
@@ -249,14 +426,15 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 _loadStudents();
               }
             },
-            child: Icon(Icons.upload_file),
-            backgroundColor: Colors.green,
+            child: Icon(Icons.upload_file_rounded),
+            backgroundColor: Colors.green.shade600,
           ),
           SizedBox(height: 16),
           FloatingActionButton(
             heroTag: "add",
             onPressed: _addStudent,
-            child: Icon(Icons.add),
+            child: Icon(Icons.add_rounded),
+            backgroundColor: _accent1,
           ),
         ],
       ),

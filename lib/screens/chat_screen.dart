@@ -36,13 +36,16 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  static const Color _accent1 = Color(0xFF667eea);
+  static const Color _accent2 = Color(0xFF764ba2);
+  static const Color _accent3 = Color(0xFFf093fb);
+
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _messagesService = MessagesService();
   final _chatsService = ChatsService();
   WebSocketChannel? _channel;
   StreamSubscription? _webSocketSubscription;
-  final _listViewKey = GlobalKey();
 
   List<Message> _messages = [];
   bool _isLoading = false;
@@ -98,13 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
   
   // ✅ Отметить конкретное сообщение как прочитанное
-  Future<void> _markMessageAsRead(String messageId) async {
-    try {
-      await _messagesService.markMessageAsRead(messageId);
-    } catch (e) {
-      print('Ошибка отметки сообщения как прочитанного: $e');
-    }
-  }
+  // (функция была неиспользуемой; при необходимости можно вернуть и вызывать при отображении сообщения)
 
   void _setupWebSocketListener() {
     if (_channel == null) return;
@@ -1822,46 +1819,108 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final pinnedHeight = _getPinnedMessagesHeight();
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Colors.grey.shade800),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.chatName),
+            Text(
+              widget.chatName,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.grey.shade900,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
             Text(
               widget.userEmail,
-              style: TextStyle(fontSize: 12, color: Colors.white70),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
         actions: [
-          IconButton(
-            icon: Icon(Icons.delete_sweep),
-            onPressed: _clearChat,
-            tooltip: 'Очистить чат',
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: _accent1.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.people_rounded, color: _accent1),
+              onPressed: _showMembersDialog,
+              tooltip: 'Участники чата',
+            ),
           ),
-          IconButton(
-            icon: Icon(Icons.people),
-            onPressed: _showMembersDialog,
-            tooltip: 'Участники чата',
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [_accent1, _accent2]),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent1.withOpacity(0.25),
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: Icon(Icons.person_add_rounded, color: Colors.white),
+              onPressed: _showAddMembersDialog,
+              tooltip: 'Добавить участников',
+            ),
           ),
-          IconButton(
-            icon: Icon(Icons.person_add),
-            onPressed: _showAddMembersDialog,
-            tooltip: 'Добавить участников',
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade700),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            onSelected: (value) {
+              if (value == 'clear') _clearChat();
+              if (value == 'leave') _leaveChat();
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_sweep_rounded, color: Colors.red.shade400, size: 20),
+                    SizedBox(width: 10),
+                    Text('Очистить чат'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'leave',
+                child: Row(
+                  children: [
+                    Icon(Icons.exit_to_app_rounded, color: Colors.orange.shade700, size: 20),
+                    SizedBox(width: 10),
+                    Text('Выйти из чата'),
+                  ],
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            icon: Icon(Icons.exit_to_app),
-            onPressed: _leaveChat,
-            tooltip: 'Выйти из чата',
-          ),
+          SizedBox(width: 6),
         ],
       ),
       body: Column(
         children: [
           Expanded(
             child: _isLoading
-                ? Center(child: CircularProgressIndicator())
+                ? Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(_accent1),
+                      strokeWidth: 3,
+                    ),
+                  )
                 : RepaintBoundary(
                   child: Stack(
                     children: [
@@ -1891,7 +1950,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                     icon: Icon(Icons.arrow_upward, size: 18),
                                     label: Text('Загрузить старые сообщения'),
                                     style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.blue.shade700,
+                                      foregroundColor: _accent1,
+                                      side: BorderSide(color: _accent1.withOpacity(0.35), width: 1.5),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1951,8 +2014,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                Colors.purple.shade400,
-                                Colors.purple.shade600,
+                                _accent3,
+                                _accent2,
                               ],
                             ),
                             shape: BoxShape.circle,
@@ -1989,8 +2052,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                       colors: [
-                                        Colors.blue.shade600,
-                                        Colors.blue.shade700,
+                                        _accent1,
+                                        _accent2,
                                       ],
                                     )
                                   : null,
@@ -2004,7 +2067,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               boxShadow: [
                                 BoxShadow(
                                   color: (isMine
-                                          ? Colors.blue
+                                          ? _accent1
                                           : Colors.grey)
                                       .withOpacity(0.2),
                                   blurRadius: 8,
@@ -2055,7 +2118,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border(
                                         left: BorderSide(
-                                          color: isMine ? Colors.white : Colors.blue,
+                                          color: isMine ? Colors.white : _accent1,
                                           width: 3,
                                         ),
                                       ),
@@ -2070,7 +2133,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                             fontWeight: FontWeight.bold,
                                             color: isMine 
                                                 ? Colors.white.withOpacity(0.9)
-                                                : Colors.blue.shade700,
+                                                : _accent1,
                                           ),
                                         ),
                                         SizedBox(height: 4),
@@ -2112,7 +2175,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: isMine ? Colors.white70 : Colors.blue.shade700,
+                                      color: isMine ? Colors.white70 : _accent1,
                                     ),
                                   ),
                                   SizedBox(height: 4),
@@ -2413,17 +2476,17 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Container(
                             margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade100.withOpacity(0.95),
-                              borderRadius: BorderRadius.circular(8),
+                              color: Colors.white.withOpacity(0.97),
+                              borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: Colors.grey.shade300.withOpacity(0.5),
-                                width: 1,
+                                color: _accent1.withOpacity(0.18),
+                                width: 1.2,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.04),
-                                  blurRadius: 4,
-                                  offset: Offset(0, 1),
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
                                 ),
                               ],
                             ),
@@ -2433,13 +2496,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               children: [
                                 // Компактный заголовок
                                 Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                   child: Row(
                                     children: [
                                       Icon(
                                         Icons.push_pin,
                                         size: 12,
-                                        color: Colors.grey.shade600,
+                                        color: _accent1.withOpacity(0.8),
                                       ),
                                       SizedBox(width: 6),
                                       Text(
@@ -2454,7 +2517,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       Container(
                                         padding: EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.grey.shade300,
+                                          color: _accent1.withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
@@ -2462,7 +2525,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           style: TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 10,
-                                            color: Colors.grey.shade700,
+                                            color: _accent1,
                                           ),
                                         ),
                                       ),
@@ -2498,11 +2561,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                             child: Container(
                                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                               decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(6),
+                                                color: Colors.grey.shade50,
+                                                borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
                                                   color: Colors.grey.shade200,
-                                                  width: 0.5,
+                                                  width: 1,
                                                 ),
                                               ),
                                               child: Row(
@@ -2510,7 +2573,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   Icon(
                                                     Icons.push_pin,
                                                     size: 12,
-                                                    color: Colors.grey.shade400,
+                                                    color: _accent1.withOpacity(0.6),
                                                   ),
                                                   SizedBox(width: 8),
                                                   Expanded(
@@ -2558,7 +2621,7 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.black.withOpacity(0.06),
                   blurRadius: 10,
                   offset: Offset(0, -2),
                 ),
@@ -2576,11 +2639,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         margin: EdgeInsets.only(bottom: 8),
                         padding: EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: _accent1.withOpacity(0.10),
                           borderRadius: BorderRadius.circular(8),
                           border: Border(
                             left: BorderSide(
-                              color: Colors.blue,
+                              color: _accent1,
                               width: 3,
                             ),
                           ),
@@ -2596,7 +2659,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade700,
+                                      color: _accent1,
                                     ),
                                   ),
                                   SizedBox(height: 4),
@@ -2694,16 +2757,23 @@ class _ChatScreenState extends State<ChatScreen> {
                     Row(
                       children: [
                         // Кнопка выбора изображения
-                        IconButton(
-                          icon: Icon(Icons.image, color: Colors.blue),
-                          onPressed: _pickImage,
-                          tooltip: 'Прикрепить изображение',
+                        Container(
+                          decoration: BoxDecoration(
+                            color: _accent1.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: IconButton(
+                            icon: Icon(Icons.image_rounded, color: _accent1),
+                            onPressed: _pickImage,
+                            tooltip: 'Прикрепить изображение',
+                          ),
                         ),
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: Colors.grey.shade200),
                             ),
                             child: TextField(
                               controller: _controller,
@@ -2739,14 +2809,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [
-                                  Colors.blue.shade600,
-                                  Colors.blue.shade700,
+                                  _accent1,
+                                  _accent2,
                                 ],
                               ),
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.blue.withOpacity(0.3),
+                                  color: _accent1.withOpacity(0.3),
                                   blurRadius: 8,
                                   offset: Offset(0, 2),
                                 ),

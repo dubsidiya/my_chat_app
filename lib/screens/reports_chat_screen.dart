@@ -21,6 +21,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   List<Report> _reports = [];
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now();
+  
+  static const Color _accent1 = Color(0xFF667eea);
+  static const Color _accent2 = Color(0xFF764ba2);
 
   @override
   void initState() {
@@ -189,27 +192,95 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Отчеты за день'),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        title: Text(
+          'Отчеты за день',
+          style: TextStyle(
+            color: Colors.grey.shade900,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            letterSpacing: 0.3,
+          ),
+        ),
+        actions: [
+          Container(
+            margin: EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: _accent1.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.refresh_rounded, color: _accent1),
+              onPressed: _loadReports,
+              tooltip: 'Обновить',
+            ),
+          ),
+        ],
       ),
+      backgroundColor: Colors.grey.shade50,
       body: Column(
         children: [
           // Поле ввода даты
           Container(
-            padding: EdgeInsets.all(16),
-            color: Colors.grey.shade100,
-            child: InkWell(
-              onTap: _selectDate,
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: 'Дата отчета',
-                  border: OutlineInputBorder(),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(_dateController.text),
-                    Icon(Icons.calendar_today),
-                  ],
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Card(
+              elevation: 2,
+              shadowColor: Colors.black.withOpacity(0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: InkWell(
+                onTap: _selectDate,
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(colors: [_accent1, _accent2]),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _accent1.withOpacity(0.25),
+                              blurRadius: 10,
+                              offset: Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Icon(Icons.calendar_today_rounded, color: Colors.white),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Дата отчета',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              _dateController.text,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade900,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -217,27 +288,95 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
           // Поле ввода отчета
           Container(
-            padding: EdgeInsets.all(16),
-            color: Colors.grey.shade50,
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
-                  controller: _contentController,
-                  decoration: InputDecoration(
-                    labelText: 'Содержание отчета',
-                    border: OutlineInputBorder(),
+                Card(
+                  elevation: 2,
+                  shadowColor: Colors.black.withOpacity(0.08),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  maxLines: 10,
-                  minLines: 5,
-                ),
-                SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _createReport,
-                  icon: Icon(Icons.send),
-                  label: Text('Создать отчет'),
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _contentController,
+                          decoration: InputDecoration(
+                            labelText: 'Содержание отчета',
+                            labelStyle: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade200,
+                                width: 1.5,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: _accent1, width: 2),
+                            ),
+                          ),
+                          maxLines: 10,
+                          minLines: 5,
+                        ),
+                        SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: _isLoading
+                              ? Center(
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(_accent1),
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    gradient: LinearGradient(colors: [_accent1, _accent2]),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: _accent1.withOpacity(0.3),
+                                        blurRadius: 12,
+                                        offset: Offset(0, 6),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ElevatedButton.icon(
+                                    onPressed: _createReport,
+                                    icon: Icon(Icons.send_rounded),
+                                    label: Text(
+                                      'Создать отчет',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -249,78 +388,188 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           // Список отчетов
           Expanded(
             child: _isLoading && _reports.isEmpty
-                ? Center(child: CircularProgressIndicator())
+                ? Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(_accent1),
+                      strokeWidth: 3,
+                    ),
+                  )
                 : _reports.isEmpty
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.description, size: 64, color: Colors.grey),
-                            SizedBox(height: 16),
-                            Text(
-                              'Нет отчетов',
-                              style: TextStyle(fontSize: 18, color: Colors.grey),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Создайте отчет за день',
-                              style: TextStyle(fontSize: 14, color: Colors.grey),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      _accent1.withOpacity(0.2),
+                                      _accent2.withOpacity(0.2),
+                                    ],
+                                  ),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.description_rounded,
+                                  size: 60,
+                                  color: _accent1.withOpacity(0.7),
+                                ),
+                              ),
+                              SizedBox(height: 28),
+                              Text(
+                                'Нет отчетов',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              SizedBox(height: 10),
+                              Text(
+                                'Создайте отчет за день — занятия сформируются автоматически',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
                       )
                     : RefreshIndicator(
                         onRefresh: _loadReports,
                         child: ListView.builder(
-                          padding: EdgeInsets.all(8),
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           itemCount: _reports.length,
                           itemBuilder: (context, index) {
                             final report = _reports[index];
                             return Card(
-                              margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                              margin: EdgeInsets.symmetric(vertical: 6),
+                              elevation: 2,
+                              shadowColor: Colors.black.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
                               child: ListTile(
-                                leading: Icon(
-                                  Icons.description,
-                                  color: report.isEdited ? Colors.orange : Colors.blue,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: report.isEdited
+                                          ? [Colors.orange.shade400, Colors.orange.shade700]
+                                          : [_accent1, _accent2],
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: (report.isEdited ? Colors.orange : _accent1)
+                                            .withOpacity(0.25),
+                                        blurRadius: 10,
+                                        offset: Offset(0, 6),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.description_rounded,
+                                    color: Colors.white,
+                                  ),
                                 ),
                                 title: Text(
                                   DateFormat('dd.MM.yyyy').format(report.reportDate),
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.grey.shade900,
+                                  ),
                                 ),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    SizedBox(height: 6),
                                     Text(
                                       report.content,
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(color: Colors.grey.shade700),
                                     ),
                                     SizedBox(height: 4),
-                                    Text(
-                                      'Занятий: ${report.lessonsCount ?? 0}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
                                     if (report.isEdited)
-                                      Text(
-                                        'Отредактирован',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.orange,
-                                          fontStyle: FontStyle.italic,
+                                      Padding(
+                                        padding: EdgeInsets.only(top: 6),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                'Отредактирован',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.orange.shade700,
+                                                ),
+                                              ),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Container(
+                                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: _accent1.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                'Занятий: ${report.lessonsCount ?? 0}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _accent1,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    else
+                                      Padding(
+                                        padding: EdgeInsets.only(top: 6),
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _accent1.withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            'Занятий: ${report.lessonsCount ?? 0}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: _accent1,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                   ],
                                 ),
                                 trailing: PopupMenuButton(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                   itemBuilder: (context) => [
                                     PopupMenuItem(
                                       value: 'edit',
                                       child: Row(
                                         children: [
-                                          Icon(Icons.edit, size: 20),
+                                          Icon(Icons.edit_rounded, size: 20),
                                           SizedBox(width: 8),
                                           Text('Редактировать'),
                                         ],
@@ -330,7 +579,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       value: 'delete',
                                       child: Row(
                                         children: [
-                                          Icon(Icons.delete, size: 20, color: Colors.red),
+                                          Icon(Icons.delete_outline_rounded,
+                                              size: 20, color: Colors.red),
                                           SizedBox(width: 8),
                                           Text('Удалить', style: TextStyle(color: Colors.red)),
                                         ],
