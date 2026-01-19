@@ -6,6 +6,7 @@ class StorageService {
   static const String _userEmailKey = 'user_email';
   static const String _tokenKey = 'auth_token';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
+  static const String _privateUnlockedPrefix = 'private_features_unlocked_';
 
   // Сохранение данных пользователя
   static Future<void> saveUserData(String userId, String userEmail, String token) async {
@@ -99,9 +100,25 @@ class StorageService {
   // Очистка данных пользователя (при выходе)
   static Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString(_userIdKey);
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_tokenKey);
+    if (userId != null) {
+      await prefs.remove('$_privateUnlockedPrefix$userId');
+    }
+  }
+
+  // ✅ Приватные вкладки: сохранение доступа (по userId)
+  static Future<void> setPrivateFeaturesUnlocked(String userId, bool unlocked) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_privateUnlockedPrefix$userId', unlocked);
+  }
+
+  // ✅ Приватные вкладки: проверка доступа (по userId)
+  static Future<bool> isPrivateFeaturesUnlocked(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('$_privateUnlockedPrefix$userId') ?? false;
   }
   
   // ✅ Сохранение режима темы

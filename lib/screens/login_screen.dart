@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Container(
                           width: 120,
                           height: 120,
-                          decoration: BoxDecoration(
+                    decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -116,22 +116,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Colors.white.withOpacity(0.9),
                               ],
                             ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
                                 color: Colors.black.withOpacity(0.2),
                                 blurRadius: 30,
                                 offset: Offset(0, 15),
                                 spreadRadius: 5,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
+                        ),
+                      ],
+                    ),
+                    child: Icon(
                             Icons.chat_bubble_rounded,
                             size: 60,
                             color: Color(0xFF667eea),
                           ),
-                        ),
+                    ),
                       );
                     },
                   ),
@@ -153,12 +153,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                     child: Column(
                       children: [
-                        Text(
-                          'Добро пожаловать!',
-                          style: TextStyle(
+                  Text(
+                    'Добро пожаловать!',
+                    style: TextStyle(
                             fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                             letterSpacing: 0.5,
                             shadows: [
                               Shadow(
@@ -167,12 +167,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 offset: Offset(0, 2),
                               ),
                             ],
-                          ),
-                        ),
+                    ),
+                  ),
                         SizedBox(height: 12),
-                        Text(
-                          'Войдите в свой аккаунт',
-                          style: TextStyle(
+                  Text(
+                    'Войдите в свой аккаунт',
+                    style: TextStyle(
                             fontSize: 18,
                             color: Colors.white.withOpacity(0.95),
                             fontWeight: FontWeight.w300,
@@ -201,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Card(
                       elevation: 20,
                       shadowColor: Colors.black.withOpacity(0.3),
-                      shape: RoundedRectangleBorder(
+                    shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
                       ),
                       child: Container(
@@ -215,12 +215,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               Colors.white.withOpacity(0.98),
                             ],
                           ),
-                        ),
-                        child: Padding(
+                    ),
+                    child: Padding(
                           padding: EdgeInsets.all(28),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                               // Поле логина
                               Container(
                                 decoration: BoxDecoration(
@@ -237,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller: _usernameController,
                                   keyboardType: TextInputType.text,
                                   style: TextStyle(fontSize: 16),
-                                  decoration: InputDecoration(
+                            decoration: InputDecoration(
                                     labelText: 'Логин',
                                     prefixIcon: Icon(
                                       Icons.person_outlined,
@@ -269,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-                              ),
+                          ),
                               SizedBox(height: 20),
                               // Поле пароля
                               Container(
@@ -284,10 +284,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ],
                                 ),
                                 child: TextField(
-                                  controller: _passwordController,
+                            controller: _passwordController,
                                   style: TextStyle(fontSize: 16),
-                                  decoration: InputDecoration(
-                                    labelText: 'Пароль',
+                            decoration: InputDecoration(
+                              labelText: 'Пароль',
                                     prefixIcon: Icon(
                                       Icons.lock_outlined,
                                       color: Color(0xFF667eea),
@@ -316,16 +316,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                         width: 2,
                                       ),
                                     ),
-                                  ),
-                                  obscureText: true,
-                                ),
+                            ),
+                            obscureText: true,
+                          ),
                               ),
                               SizedBox(height: 28),
-                              if (_errorMessage != null)
-                                Container(
+                          if (_errorMessage != null)
+                            Container(
                                   padding: EdgeInsets.all(14),
                                   margin: EdgeInsets.only(bottom: 20),
-                                  decoration: BoxDecoration(
+                              decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       colors: [
                                         Colors.red.shade50,
@@ -337,31 +337,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                       color: Colors.red.shade300,
                                       width: 1.5,
                                     ),
-                                  ),
-                                  child: Row(
-                                    children: [
+                              ),
+                              child: Row(
+                                children: [
                                       Icon(
                                         Icons.error_outline_rounded,
                                         color: Colors.red.shade700,
                                         size: 22,
                                       ),
                                       SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
+                                  Expanded(
+                                    child: Text(
+                                      _errorMessage!,
                                           style: TextStyle(
                                             color: Colors.red.shade700,
                                             fontSize: 14,
                                             fontWeight: FontWeight.w500,
                                           ),
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
-                                ),
-                              SizedBox(
+                                ],
+                              ),
+                            ),
+                          SizedBox(
                                 height: 56,
-                                child: _isLoading
+                            child: _isLoading
                                     ? Center(
                                         child: CircularProgressIndicator(
                                           valueColor: AlwaysStoppedAnimation<Color>(
@@ -387,14 +387,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                           ],
                                         ),
                                         child: ElevatedButton(
-                                          onPressed: _login,
-                                          style: ElevatedButton.styleFrom(
+                                    onPressed: _login,
+                                    style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.transparent,
                                             shadowColor: Colors.transparent,
                                             shape: RoundedRectangleBorder(
                                               borderRadius: BorderRadius.circular(16),
                                             ),
-                                          ),
+                                    ),
                                           child: Text(
                                             'Войти',
                                             style: TextStyle(
@@ -404,9 +404,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                             ),
                                           ),
                                         ),
-                                      ),
-                              ),
-                            ],
+                                  ),
+                          ),
+                        ],
                           ),
                         ),
                       ),
@@ -426,9 +426,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       );
                     },
                     child: TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
                           PageRouteBuilder(
                             pageBuilder: (context, animation, secondaryAnimation) =>
                                 RegisterScreen(),
@@ -439,17 +439,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               );
                             },
                           ),
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
+                      );
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
                         padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Нет аккаунта? ',
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Нет аккаунта? ',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w400,
@@ -463,18 +463,18 @@ class _LoginScreenState extends State<LoginScreen> {
                                 color: Colors.white.withOpacity(0.5),
                                 width: 1.5,
                               ),
-                            ),
+                        ),
                             child: Text(
-                              'Зарегистрироваться',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                          'Зарегистрироваться',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
                               ),
                             ),
                           ),
                         ],
-                      ),
+                        ),
                     ),
                   ),
                 ],

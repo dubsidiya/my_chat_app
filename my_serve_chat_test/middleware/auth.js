@@ -24,6 +24,8 @@ export const authenticateToken = (req, res, next) => {
     
     req.user = user; // Сохраняем данные пользователя в запросе
     req.userId = user.userId; // Добавляем userId для удобства
+    // Нормализуем флаг приватного доступа (для старых токенов)
+    req.user.privateAccess = user.privateAccess === true;
     // email в токене теперь содержит логин
     console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
     next();
@@ -32,12 +34,20 @@ export const authenticateToken = (req, res, next) => {
 
 // Генерация JWT токена
 // username - логин пользователя (хранится в поле email в БД для обратной совместимости)
-export const generateToken = (userId, username) => {
+export const generateToken = (userId, username, privateAccess = false) => {
   return jwt.sign(
-    { userId, email: username, username: username }, // Сохраняем и как email (для совместимости) и как username
+    { userId, email: username, username: username, privateAccess: privateAccess === true },
     JWT_SECRET,
     { expiresIn: '7d' } // Токен действителен 7 дней
   );
+};
+
+// Middleware: доступ только к приватным разделам
+export const requirePrivateAccess = (req, res, next) => {
+  if (req.user?.privateAccess === true) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Требуется приватный доступ' });
 };
 
 // Проверка токена для WebSocket

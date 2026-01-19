@@ -1,7 +1,10 @@
 import pool from '../db.js';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData } from '../utils/validation.js';
+
+const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 
 export const register = async (req, res) => {
   const { username, password } = req.body;
@@ -49,7 +52,7 @@ export const register = async (req, res) => {
     );
 
     // Генерируем JWT токен (используем логин вместо email)
-    const token = generateToken(result.rows[0].id, result.rows[0].email);
+    const token = generateToken(result.rows[0].id, result.rows[0].email, false);
 
     res.status(201).json({
       userId: result.rows[0].id,
@@ -128,7 +131,7 @@ export const login = async (req, res) => {
     }
 
     // Генерируем JWT токен (используем логин вместо email)
-    const token = generateToken(user.id, user.email);
+    const token = generateToken(user.id, user.email, false);
 
     // Удаляем пароль из ответа
     delete user.password;
@@ -141,6 +144,53 @@ export const login = async (req, res) => {
   } catch (error) {
     console.error('Ошибка входа:', error.message);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Разблокировка приватного доступа (выдача токена с privateAccess=true)
+export const unlockPrivateAccess = async (req, res) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+
+    if (!PRIVATE_ACCESS_CODE) {
+      return res.status(500).json({
+        message: 'PRIVATE_ACCESS_CODE не настроен на сервере',
+      });
+    }
+
+    const { code } = req.body || {};
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ message: 'Код обязателен' });
+    }
+
+    const normalized = code.trim();
+    // Сравнение в константное время (защита от тайминг-атак)
+    const a = Buffer.from(normalized, 'utf8');
+    const b = Buffer.from(PRIVATE_ACCESS_CODE, 'utf8');
+    const isEqual = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!isEqual) {
+      console.warn('unlockPrivateAccess: wrong code', {
+        userId: req.user.userId,
+        ip: req.ip,
+      });
+      return res.status(403).json({ message: 'Неверный код' });
+    }
+
+    // Берем username из токена (email/username уже содержит логин)
+    const username = req.user.username || req.user.email;
+    const token = generateToken(req.user.userId, username, true);
+
+    return res.status(200).json({
+      id: req.user.userId,
+      username: username,
+      token: token,
+      privateAccess: true,
+    });
+  } catch (error) {
+    console.error('Ошибка unlockPrivateAccess:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

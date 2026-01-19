@@ -30,6 +30,13 @@ class StudentsService {
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((json) => Student.fromJson(json)).toList();
+    } else if (response.statusCode == 403) {
+      try {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Требуется приватный доступ');
+      } catch (_) {
+        throw Exception('Требуется приватный доступ');
+      }
     } else {
       throw Exception('Не удалось загрузить студентов: ${response.statusCode}');
     }

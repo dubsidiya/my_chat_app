@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requirePrivateAccess } from '../middleware/auth.js';
 import {
   getAllStudents,
   createStudent,
@@ -20,7 +20,7 @@ import {
 const router = express.Router();
 
 // Все маршруты требуют аутентификации
-router.use(authenticateToken);
+router.use(authenticateToken, requirePrivateAccess);
 
 // Маршруты для студентов
 router.get('/', getAllStudents);
