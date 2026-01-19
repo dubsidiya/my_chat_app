@@ -2,7 +2,7 @@ import pool from '../db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
-import { validateRegisterData, validateLoginData } from '../utils/validation.js';
+import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 

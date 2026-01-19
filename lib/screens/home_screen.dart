@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
+import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -22,6 +23,33 @@ class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
   bool _isLoading = false;
+
+  String _formatLastMessageTime(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final now = DateTime.now();
+      final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      if (sameDay) {
+        return DateFormat('HH:mm').format(dt);
+      }
+      return DateFormat('dd.MM').format(dt);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _buildLastMessagePreview(Chat chat) {
+    if ((chat.lastMessageId ?? '').isEmpty) return 'Нет сообщений';
+    final type = chat.lastMessageType ?? 'text';
+    final hasImage = (chat.lastMessageImageUrl ?? '').isNotEmpty;
+    final text = (chat.lastMessageText ?? '').trim();
+    if (type == 'image' || (hasImage && text.isEmpty)) return 'Фото';
+    if (type == 'text_image' && hasImage) {
+      return text.isNotEmpty ? 'Фото · $text' : 'Фото';
+    }
+    return text.isNotEmpty ? text : 'Сообщение';
+  }
 
   @override
   void initState() {
@@ -659,12 +687,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  itemCount: _chats.length,
-                  itemBuilder: (context, index) {
-                    final chat = _chats[index];
-                    return Dismissible(
+              : RefreshIndicator(
+                  onRefresh: _loadChats,
+                  color: Color(0xFF667eea),
+                  child: ListView.builder(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    itemCount: _chats.length,
+                    itemBuilder: (context, index) {
+                      final chat = _chats[index];
+                      final lastTime = _formatLastMessageTime(chat.lastMessageAt);
+                      final preview = _buildLastMessagePreview(chat);
+                      final unread = chat.unreadCount;
+                      return Dismissible(
                       key: Key('chat_${chat.id}'),
                       direction: DismissDirection.endToStart,
                       background: Container(
@@ -796,7 +830,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                   SizedBox(width: 18),
-                                  // Название чата
+                                  // Название + превью
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -813,63 +847,66 @@ class _HomeScreenState extends State<HomeScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         SizedBox(height: 6),
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: (chat.isGroup
-                                                    ? Color(0xFFa855f7)
-                                                    : Color(0xFF667eea))
-                                                .withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                chat.isGroup
-                                                    ? Icons.group_rounded
-                                                    : Icons.person_rounded,
-                                                size: 14,
-                                                color: chat.isGroup
-                                                    ? Color(0xFFa855f7)
-                                                    : Color(0xFF667eea),
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                chat.isGroup
-                                                    ? 'Групповой чат'
-                                                    : 'Личный чат',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: chat.isGroup
-                                                      ? Color(0xFFa855f7)
-                                                      : Color(0xFF667eea),
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
+                                        Text(
+                                          preview,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey.shade600,
+                                            fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  // Кнопка удаления
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: IconButton(
-                                      icon: Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: Colors.red.shade400,
+                                  // Время + unread + меню
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        lastTime,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: unread > 0 ? Color(0xFF667eea) : Colors.grey.shade500,
+                                          fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                                        ),
                                       ),
-                                      onPressed: () => _deleteChat(chat),
-                                      tooltip: 'Удалить чат',
-                                    ),
+                                      SizedBox(height: 8),
+                                      if (unread > 0)
+                                        Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Color(0xFF667eea),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            unread > 99 ? '99+' : unread.toString(),
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        SizedBox(height: 28),
+                                      SizedBox(height: 6),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: IconButton(
+                                          icon: Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: Colors.red.shade400,
+                                          ),
+                                          onPressed: () => _deleteChat(chat),
+                                          tooltip: 'Удалить чат',
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -878,8 +915,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     );
-        },
-      ),
+                    },
+                  ),
+                ),
     );
   }
 }

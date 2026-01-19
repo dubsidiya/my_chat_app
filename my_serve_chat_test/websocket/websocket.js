@@ -18,7 +18,9 @@ export function setupWebSocket(server) {
     const token = url.searchParams.get('token');
     
     if (!token) {
-      console.log('WebSocket connection rejected: no token');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('WebSocket connection rejected: no token');
+      }
       ws.close(1008, 'Токен отсутствует');
       return;
     }
@@ -26,7 +28,9 @@ export function setupWebSocket(server) {
     // Проверяем токен
     const decoded = verifyWebSocketToken(token);
     if (!decoded) {
-      console.log('WebSocket connection rejected: invalid token');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('WebSocket connection rejected: invalid token');
+      }
       ws.close(1008, 'Недействительный токен');
       return;
     }
@@ -34,7 +38,9 @@ export function setupWebSocket(server) {
     const userId = decoded.userId.toString();
     const userEmail = decoded.email;
 
-    console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
+    }
     clients.set(userId, ws);
 
     ws.on('message', async (message) => {
@@ -106,7 +112,9 @@ export function setupWebSocket(server) {
           );
 
           if (memberCheck.rows.length === 0) {
-            console.log(`User ${userId} tried to send message to chat ${chatIdFinal} without being a member`);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`User ${userId} tried to send message to chat ${chatIdFinal} without being a member`);
+            }
             return;
           }
 

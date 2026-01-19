@@ -36,7 +36,7 @@ class ChatsService {
       print('   Authorization: ${headers['Authorization'] != null ? headers['Authorization']!.substring(0, 30) + "..." : "ОТСУТСТВУЕТ!"}');
       
       final response = await http.get(
-        Uri.parse('$baseUrl/chats/$userId'),
+        Uri.parse('$baseUrl/chats'),
         headers: headers,
       );
 

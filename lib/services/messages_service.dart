@@ -556,6 +556,42 @@ class MessagesService {
     }
   }
 
+  // 🔎 Поиск сообщений в чате
+  Future<List<Map<String, dynamic>>> searchMessages(String chatId, String query, {int limit = 20, String? before}) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse('$baseUrl/messages/chat/$chatId/search').replace(
+      queryParameters: {
+        'q': query,
+        'limit': limit.toString(),
+        if (before != null) 'before': before,
+      },
+    );
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = (data['results'] as List<dynamic>? ?? []);
+      return list.map((e) => e as Map<String, dynamic>).toList();
+    }
+    throw Exception('Ошибка поиска: ${response.statusCode}');
+  }
+
+  // 🎯 Получить окно сообщений вокруг messageId
+  Future<List<Message>> fetchMessagesAround(String chatId, String messageId, {int limit = 50}) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse('$baseUrl/messages/chat/$chatId/around/$messageId').replace(
+      queryParameters: {
+        'limit': limit.toString(),
+      },
+    );
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final messagesData = (data['messages'] as List<dynamic>? ?? []);
+      return messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+    }
+    throw Exception('Ошибка загрузки контекста: ${response.statusCode}');
+  }
+
   // ✅ Добавить реакцию
   Future<void> addReaction(String messageId, String reaction) async {
     final headers = await _getAuthHeaders();

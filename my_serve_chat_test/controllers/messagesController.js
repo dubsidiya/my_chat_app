@@ -2,19 +2,47 @@ import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 
+const ensureChatMember = async (chatId, userId) => {
+  const chatIdNum = parseInt(chatId, 10);
+  if (isNaN(chatIdNum)) return { ok: false, status: 400, message: 'Некорректный chatId' };
+
+  const memberCheck = await pool.query(
+    'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+    [chatIdNum, userId]
+  );
+  if (memberCheck.rows.length === 0) {
+    return { ok: false, status: 403, message: 'Вы не являетесь участником этого чата' };
+  }
+  return { ok: true, chatIdNum };
+};
+
 export const getMessages = async (req, res) => {
   const chatId = req.params.chatId;
+  const currentUserId = req.user.userId;
   
   // Параметры пагинации
-  const limit = parseInt(req.query.limit) || 50; // По умолчанию 50 сообщений
-  const offset = parseInt(req.query.offset) || 0;
+  const requestedLimit = parseInt(req.query.limit);
+  const requestedOffset = parseInt(req.query.offset);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 200);
+  const offset = Math.max(Number.isFinite(requestedOffset) ? requestedOffset : 0, 0);
   const beforeMessageId = req.query.before; // ID сообщения, до которого загружать (для cursor-based)
 
   try {
+    // ✅ Проверяем, что chatId валидный и пользователь участник чата
+    const membership = await ensureChatMember(chatId, currentUserId);
+    if (!membership.ok) {
+      return res.status(membership.status).json({ message: membership.message });
+    }
+    const chatIdNum = membership.chatIdNum;
+
     let result;
     let totalCountResult;
 
     if (beforeMessageId) {
+      const beforeIdNum = parseInt(beforeMessageId, 10);
+      if (isNaN(beforeIdNum)) {
+        return res.status(400).json({ message: 'Некорректный параметр before' });
+      }
       // Cursor-based pagination: загружаем сообщения до указанного ID (старые сообщения)
       // Загружаем на 1 больше, чтобы проверить, есть ли еще сообщения
       result = await pool.query(`
@@ -37,7 +65,7 @@ export const getMessages = async (req, res) => {
         WHERE messages.chat_id = $1 AND messages.id < $2
         ORDER BY messages.id DESC
         LIMIT $3
-      `, [chatId, beforeMessageId, limit + 1]);
+      `, [chatIdNum, beforeIdNum, limit + 1]);
       
       // Проверяем, есть ли еще сообщения (если получили больше чем limit)
       const hasMoreMessages = result.rows.length > limit;
@@ -50,14 +78,14 @@ export const getMessages = async (req, res) => {
       // Получаем общее количество для информации
       totalCountResult = await pool.query(
         'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
-        [chatId]
+        [chatIdNum]
       );
     } else {
       // Offset-based pagination: загружаем последние N сообщений
       // Сначала получаем общее количество сообщений
       totalCountResult = await pool.query(
         'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
-        [chatId]
+        [chatIdNum]
       );
       
       const totalCount = parseInt(totalCountResult.rows[0].total);
@@ -83,14 +111,11 @@ export const getMessages = async (req, res) => {
         WHERE messages.chat_id = $1
         ORDER BY messages.created_at ASC
         LIMIT $2 OFFSET $3
-      `, [chatId, limit, actualOffset]);
+      `, [chatIdNum, limit, actualOffset]);
     }
     
     const totalCount = parseInt(totalCountResult.rows[0].total);
 
-    // Получаем текущего пользователя для проверки прочтения
-    const currentUserId = req.user.userId;
-    
     // Форматируем в формат, который ожидает приложение
     const formattedMessages = await Promise.all(result.rows.map(async (row) => {
       // Проверяем, прочитал ли текущий пользователь это сообщение
@@ -200,7 +225,7 @@ export const getMessages = async (req, res) => {
         const minId = Math.min(...formattedMessages.map(m => m.id));
         const checkResult = await pool.query(
           'SELECT 1 FROM messages WHERE chat_id = $1 AND id < $2 LIMIT 1',
-          [chatId, minId]
+          [chatIdNum, minId]
         );
         hasMore = checkResult.rows.length > 0;
       }
@@ -231,6 +256,280 @@ export const getMessages = async (req, res) => {
   }
 };
 
+// Поиск сообщений в чате
+export const searchMessages = async (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const userId = req.user.userId;
+    const q = (req.query.q || '').toString().trim();
+    const requestedLimit = parseInt(req.query.limit);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 20, 1), 50);
+    const before = req.query.before ? parseInt(req.query.before, 10) : null;
+
+    if (!q) {
+      return res.status(400).json({ message: 'Параметр q обязателен' });
+    }
+    if (q.length > 100) {
+      return res.status(400).json({ message: 'Слишком длинный запрос' });
+    }
+
+    const membership = await ensureChatMember(chatId, userId);
+    if (!membership.ok) {
+      return res.status(membership.status).json({ message: membership.message });
+    }
+    const chatIdNum = membership.chatIdNum;
+
+    const params = [chatIdNum, `%${q}%`, limit, userId];
+    let beforeClause = '';
+    if (Number.isFinite(before)) {
+      beforeClause = ' AND m.id < $5';
+      params.push(before);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        m.id AS message_id,
+        m.content,
+        m.message_type,
+        m.image_url,
+        m.created_at,
+        u.email AS sender_email,
+        (mr.message_id IS NOT NULL) AS is_read
+      FROM messages m
+      JOIN users u ON u.id = m.user_id
+      LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = $4
+      WHERE m.chat_id = $1
+        AND m.content ILIKE $2
+        ${beforeClause}
+      ORDER BY m.id DESC
+      LIMIT $3
+      `,
+      params
+    );
+
+    const queryLower = q.toLowerCase();
+    const items = result.rows.map((row) => {
+      const content = (row.content || '').toString();
+      const idx = content.toLowerCase().indexOf(queryLower);
+      let snippet = content;
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 40);
+        const end = Math.min(content.length, idx + queryLower.length + 40);
+        snippet = content.substring(start, end);
+        if (start > 0) snippet = '…' + snippet;
+        if (end < content.length) snippet = snippet + '…';
+      } else if (content.length > 120) {
+        snippet = content.substring(0, 120) + '…';
+      }
+
+      return {
+        message_id: row.message_id?.toString(),
+        content_snippet: snippet,
+        message_type: row.message_type,
+        image_url: row.image_url,
+        created_at: row.created_at,
+        sender_email: row.sender_email,
+        is_read: row.is_read === true,
+      };
+    });
+
+    return res.status(200).json({ results: items });
+  } catch (error) {
+    console.error('Ошибка searchMessages:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Получить окно сообщений вокруг конкретного messageId
+export const getMessagesAround = async (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    const messageId = parseInt(req.params.messageId, 10);
+    const userId = req.user.userId;
+    const requestedLimit = parseInt(req.query.limit);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 10), 200);
+
+    if (isNaN(messageId)) {
+      return res.status(400).json({ message: 'Некорректный messageId' });
+    }
+
+    const membership = await ensureChatMember(chatId, userId);
+    if (!membership.ok) {
+      return res.status(membership.status).json({ message: membership.message });
+    }
+    const chatIdNum = membership.chatIdNum;
+
+    // Проверяем, что сообщение принадлежит чату
+    const msgCheck = await pool.query(
+      'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
+      [messageId, chatIdNum]
+    );
+    if (msgCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+
+    const half = Math.floor(limit / 2);
+
+    const older = await pool.query(
+      `
+      SELECT 
+        m.id,
+        m.chat_id,
+        m.user_id,
+        m.content,
+        m.image_url,
+        m.original_image_url,
+        m.message_type,
+        m.created_at,
+        m.delivered_at,
+        m.edited_at,
+        m.reply_to_message_id,
+        u.email AS sender_email,
+        pm.id IS NOT NULL AS is_pinned
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
+      WHERE m.chat_id = $1 AND m.id < $2
+      ORDER BY m.id DESC
+      LIMIT $3
+      `,
+      [chatIdNum, messageId, half]
+    );
+
+    const newer = await pool.query(
+      `
+      SELECT 
+        m.id,
+        m.chat_id,
+        m.user_id,
+        m.content,
+        m.image_url,
+        m.original_image_url,
+        m.message_type,
+        m.created_at,
+        m.delivered_at,
+        m.edited_at,
+        m.reply_to_message_id,
+        u.email AS sender_email,
+        pm.id IS NOT NULL AS is_pinned
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
+      WHERE m.chat_id = $1 AND m.id >= $2
+      ORDER BY m.id ASC
+      LIMIT $3
+      `,
+      [chatIdNum, messageId, half + 1]
+    );
+
+    const rows = [...older.rows.reverse(), ...newer.rows];
+
+    // Обогащаем данными как в getMessages (read status, reply, reactions, forwarded, original chat name)
+    const formattedMessages = await Promise.all(rows.map(async (row) => {
+      const readCheck = await pool.query(
+        'SELECT read_at FROM message_reads WHERE message_id = $1 AND user_id = $2',
+        [row.id, userId]
+      );
+      const isRead = readCheck.rows.length > 0;
+      const readAt = isRead ? readCheck.rows[0].read_at : null;
+
+      let replyToMessage = null;
+      if (row.reply_to_message_id) {
+        const replyCheck = await pool.query(`
+          SELECT 
+            m.id,
+            m.content,
+            m.image_url,
+            m.user_id,
+            u.email AS sender_email
+          FROM messages m
+          JOIN users u ON m.user_id = u.id
+          WHERE m.id = $1
+        `, [row.reply_to_message_id]);
+        if (replyCheck.rows.length > 0) {
+          replyToMessage = {
+            id: replyCheck.rows[0].id,
+            content: replyCheck.rows[0].content,
+            image_url: replyCheck.rows[0].image_url,
+            user_id: replyCheck.rows[0].user_id,
+            sender_email: replyCheck.rows[0].sender_email,
+          };
+        }
+      }
+
+      const reactionsResult = await pool.query(`
+        SELECT 
+          mr.id,
+          mr.message_id,
+          mr.user_id,
+          mr.reaction,
+          mr.created_at,
+          u.email AS user_email
+        FROM message_reactions mr
+        JOIN users u ON mr.user_id = u.id
+        WHERE mr.message_id = $1
+        ORDER BY mr.created_at ASC
+      `, [row.id]);
+
+      const reactions = reactionsResult.rows.map(r => ({
+        id: r.id,
+        message_id: r.message_id,
+        user_id: r.user_id,
+        reaction: r.reaction,
+        created_at: r.created_at,
+        user_email: r.user_email,
+      }));
+
+      const forwardCheck = await pool.query(
+        'SELECT original_chat_id FROM message_forwards WHERE message_id = $1 LIMIT 1',
+        [row.id]
+      );
+      const isForwarded = forwardCheck.rows.length > 0;
+      let originalChatName = null;
+      if (isForwarded && forwardCheck.rows[0].original_chat_id) {
+        const chatCheck = await pool.query(
+          'SELECT name FROM chats WHERE id = $1',
+          [forwardCheck.rows[0].original_chat_id]
+        );
+        if (chatCheck.rows.length > 0) {
+          originalChatName = chatCheck.rows[0].name;
+        }
+      }
+
+      return {
+        id: row.id,
+        chat_id: row.chat_id,
+        user_id: row.user_id,
+        content: row.content,
+        image_url: row.image_url,
+        original_image_url: row.original_image_url,
+        message_type: row.message_type || 'text',
+        created_at: row.created_at,
+        delivered_at: row.delivered_at,
+        edited_at: row.edited_at,
+        is_read: isRead,
+        read_at: readAt,
+        reply_to_message_id: row.reply_to_message_id,
+        reply_to_message: replyToMessage,
+        is_pinned: row.is_pinned || false,
+        reactions: reactions,
+        is_forwarded: isForwarded,
+        original_chat_name: originalChatName,
+        sender_email: row.sender_email
+      };
+    }));
+
+    return res.status(200).json({
+      messages: formattedMessages,
+      targetMessageId: messageId.toString(),
+    });
+  } catch (error) {
+    console.error('Ошибка getMessagesAround:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 export const sendMessage = async (req, res) => {
   // Приложение отправляет: { chat_id, content, image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids }
   const { chat_id, content, image_url, original_image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids } = req.body;
@@ -238,15 +537,16 @@ export const sendMessage = async (req, res) => {
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
 
-  console.log('📨 sendMessage called:', {
-    chat_id,
-    content,
-    image_url,
-    original_image_url,
-    reply_to_message_id,
-    user_id,
-    body: req.body
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('📨 sendMessage called:', {
+      chat_id,
+      content,
+      image_url,
+      original_image_url,
+      reply_to_message_id,
+      user_id,
+    });
+  }
 
   if (!chat_id || (!content && !image_url)) {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url' });
@@ -287,15 +587,17 @@ export const sendMessage = async (req, res) => {
     // Преобразуем reply_to_message_id в число, если это строка
     const replyToMessageIdNum = reply_to_message_id ? parseInt(reply_to_message_id, 10) : null;
     
-    console.log('📝 Inserting message:', {
-      chat_id: chatIdNum,
-      user_id,
-      content: content || '',
-      image_url: image_url || null,
-      original_image_url: original_image_url || null,
-      message_type,
-      reply_to_message_id: replyToMessageIdNum
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📝 Inserting message:', {
+        chat_id: chatIdNum,
+        user_id,
+        content: content || '',
+        image_url: image_url || null,
+        original_image_url: original_image_url || null,
+        message_type,
+        reply_to_message_id: replyToMessageIdNum
+      });
+    }
 
     const result = await pool.query(`
       INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at, reply_to_message_id)
@@ -376,10 +678,11 @@ export const sendMessage = async (req, res) => {
         sender_email: senderEmail
       };
 
-      console.log('Sending WebSocket message to chat:', chatIdNum);
-      console.log('Message:', wsMessage);
-      console.log('Chat members:', members.rows.map(r => r.user_id));
-      console.log('Connected clients:', Array.from(clients.keys()));
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Sending WebSocket message to chat:', chatIdNum);
+        console.log('Chat members:', members.rows.map(r => r.user_id));
+        console.log('Connected clients:', Array.from(clients.keys()));
+      }
 
       const wsMessageString = JSON.stringify(wsMessage);
       
@@ -391,16 +694,22 @@ export const sendMessage = async (req, res) => {
           try {
             client.send(wsMessageString);
             sentCount++;
-            console.log(`Message sent to user ${userIdStr}`);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`Message sent to user ${userIdStr}`);
+            }
           } catch (sendError) {
             console.error(`Error sending to user ${userIdStr}:`, sendError);
           }
         } else {
-          console.log(`User ${userIdStr} not connected or connection not open (readyState: ${client?.readyState})`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`User ${userIdStr} not connected or connection not open (readyState: ${client?.readyState})`);
+          }
         }
       });
       
-      console.log(`WebSocket message sent to ${sentCount} out of ${members.rows.length} members`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`WebSocket message sent to ${sentCount} out of ${members.rows.length} members`);
+      }
     } catch (wsError) {
       console.error('Ошибка отправки через WebSocket:', wsError);
       console.error('Stack:', wsError.stack);
@@ -459,6 +768,15 @@ export const editMessage = async (req, res) => {
     
     const message = messageCheck.rows[0];
     
+    // Дополнительная проверка: пользователь должен быть участником чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [message.chat_id, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
     // Проверяем права: только автор сообщения может его редактировать
     if (message.user_id.toString() !== userId.toString()) {
       return res.status(403).json({ 
@@ -706,6 +1024,12 @@ export const clearChat = async (req, res) => {
       return res.status(404).json({ message: 'Чат не найден' });
     }
 
+    // Усиливаем безопасность: очищать чат может только создатель
+    const creatorId = chatCheck.rows[0].created_by;
+    if (creatorId?.toString() !== userId?.toString()) {
+      return res.status(403).json({ message: 'Только создатель чата может очистить чат' });
+    }
+
     // Проверяем, является ли пользователь участником чата
     const memberCheck = await pool.query(
       'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
@@ -890,6 +1214,16 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
     }
     
     const original = originalMessage.rows[0];
+
+    // ✅ Пользователь должен быть участником исходного чата (иначе можно переслать "чужое" сообщение по id)
+    const sourceMemberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [original.original_chat_id, userId]
+    );
+    if (sourceMemberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником исходного чата' });
+    }
+
     const forwardedMessages = [];
     
     // Пересылаем в каждый указанный чат
@@ -1038,6 +1372,15 @@ export const unpinMessage = async (req, res) => {
     }
     
     const chatId = messageCheck.rows[0].chat_id;
+
+    // Доступ только для участников чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
     
     // Удаляем закрепление
     await pool.query(
@@ -1058,17 +1401,6 @@ export const addReaction = async (req, res) => {
     const messageId = req.params.messageId;
     const userId = req.user.userId;
     
-    // ✅ Детальное логирование для диагностики
-    console.log('🔍 addReaction called:', { 
-      messageId, 
-      userId,
-      body: req.body,
-      bodyType: typeof req.body,
-      bodyKeys: Object.keys(req.body || {}),
-      headers: req.headers['content-type'],
-      rawBody: JSON.stringify(req.body)
-    });
-    
     // ✅ Проверяем, что body парсится правильно
     if (!req.body) {
       console.error('❌ req.body is null or undefined');
@@ -1080,6 +1412,11 @@ export const addReaction = async (req, res) => {
     if (!reaction || reaction.length === 0) {
       console.error('❌ reaction is missing or empty:', reaction);
       return res.status(400).json({ message: 'Укажите реакцию (эмодзи)' });
+    }
+
+    // Ограничение на размер (защита от мусора в БД)
+    if (String(reaction).length > 32) {
+      return res.status(400).json({ message: 'Слишком длинная реакция' });
     }
     
     // Проверяем сообщение
@@ -1093,13 +1430,12 @@ export const addReaction = async (req, res) => {
     }
     
     const chatId = messageCheck.rows[0].chat_id;
-    
-    // Проверяем права
+
+    // Доступ только для участников чата
     const memberCheck = await pool.query(
       'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
-    
     if (memberCheck.rows.length === 0) {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
@@ -1121,7 +1457,9 @@ export const addReaction = async (req, res) => {
       });
     }
     
-    console.log('✅ Параметры запроса:', { messageId, userId, reaction });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Параметры запроса:', { messageId, userId, reaction });
+    }
     
     // Добавляем или обновляем реакцию
     // Используем ON CONFLICT для обработки случая, когда реакция уже существует
@@ -1132,7 +1470,9 @@ export const addReaction = async (req, res) => {
       RETURNING id, message_id, user_id, reaction, created_at
     `, [messageId, userId, reaction]);
     
-    console.log('✅ Реакция успешно добавлена:', result.rows[0]);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Реакция успешно добавлена:', result.rows[0]);
+    }
     
     // Отправляем через WebSocket
     const clients = getWebSocketClients();
@@ -1193,6 +1533,31 @@ export const removeReaction = async (req, res) => {
     const messageId = req.params.messageId;
     const { reaction } = req.body;
     const userId = req.user.userId;
+
+    if (!reaction || String(reaction).length === 0) {
+      return res.status(400).json({ message: 'Укажите реакцию (эмодзи)' });
+    }
+    if (String(reaction).length > 32) {
+      return res.status(400).json({ message: 'Слишком длинная реакция' });
+    }
+
+    // Проверяем сообщение и доступ к чату
+    const messageCheck = await pool.query(
+      'SELECT chat_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Сообщение не найдено' });
+    }
+    const chatId = messageCheck.rows[0].chat_id;
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
     
     await pool.query(
       'DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND reaction = $3',
@@ -1200,13 +1565,7 @@ export const removeReaction = async (req, res) => {
     );
     
     // Отправляем через WebSocket
-    const messageCheck = await pool.query(
-      'SELECT chat_id FROM messages WHERE id = $1',
-      [messageId]
-    );
-    
-    if (messageCheck.rows.length > 0) {
-      const chatId = messageCheck.rows[0].chat_id;
+    if (chatId) {
       const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',

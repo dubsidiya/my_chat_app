@@ -46,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _chatsService = ChatsService();
   WebSocketChannel? _channel;
   StreamSubscription? _webSocketSubscription;
+  final Map<String, GlobalKey> _messageKeys = {};
 
   List<Message> _messages = [];
   bool _isLoading = false;
@@ -59,6 +60,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isUploadingImage = false;
   Message? _replyToMessage; // ✅ Сообщение, на которое отвечаем
   List<Message> _pinnedMessages = []; // ✅ Закрепленные сообщения
+  String? _highlightMessageId; // ✅ Подсветка сообщения при прыжке
 
   @override
   void initState() {
@@ -74,6 +76,222 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
     });
+  }
+
+  GlobalKey _keyForMessage(String id) {
+    return _messageKeys.putIfAbsent(id, () => GlobalKey());
+  }
+
+  Future<void> _scrollToMessage(String messageId) async {
+    final key = _messageKeys[messageId];
+    final ctx = key?.currentContext;
+    if (ctx == null) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      duration: Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      alignment: 0.3,
+    );
+  }
+
+  Future<void> _jumpToMessage(String messageId) async {
+    try {
+      final around = await _messagesService.fetchMessagesAround(widget.chatId, messageId, limit: 50);
+      if (!mounted) return;
+
+      // Сохраняем временные сообщения (если есть), чтобы не потерять офлайн/отправленные
+      final temp = _messages.where((m) => m.id.startsWith('temp_')).toList();
+      final aroundIds = around.map((m) => m.id).toSet();
+      final uniqueTemp = temp.where((m) => !aroundIds.contains(m.id)).toList();
+
+      final minId = around
+          .map((m) => int.tryParse(m.id) ?? 1 << 30)
+          .fold<int>(1 << 30, (a, b) => a < b ? a : b);
+
+      setState(() {
+        _messages = [...around, ...uniqueTemp];
+        _messages.sort((a, b) {
+          try {
+            return DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt));
+          } catch (_) {
+            return 0;
+          }
+        });
+        _oldestMessageId = (minId == (1 << 30)) ? null : minId.toString();
+        _hasMoreMessages = true;
+        _highlightMessageId = messageId;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _scrollToMessage(messageId);
+      });
+
+      Future.delayed(Duration(seconds: 2), () {
+        if (!mounted) return;
+        if (_highlightMessageId == messageId) {
+          setState(() => _highlightMessageId = null);
+        }
+      });
+    } catch (e) {
+      print('Ошибка перехода к сообщению: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось перейти к сообщению')),
+      );
+    }
+  }
+
+  Future<void> _openSearch() async {
+    final controller = TextEditingController();
+    Timer? debounce;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        List<Map<String, dynamic>> results = [];
+        bool isLoading = false;
+        String? error;
+
+        Future<void> runSearch(StateSetter setModalState, String q) async {
+          final query = q.trim();
+          if (query.isEmpty) {
+            setModalState(() {
+              results = [];
+              error = null;
+              isLoading = false;
+            });
+            return;
+          }
+          setModalState(() {
+            isLoading = true;
+            error = null;
+          });
+          try {
+            final found = await _messagesService.searchMessages(widget.chatId, query, limit: 30);
+            setModalState(() {
+              results = found;
+              isLoading = false;
+            });
+          } catch (e) {
+            setModalState(() {
+              isLoading = false;
+              error = 'Ошибка поиска';
+            });
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(height: 10),
+                      Container(
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
+                        child: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            prefixIcon: Icon(Icons.search_rounded),
+                            hintText: 'Поиск по сообщениям…',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onChanged: (v) {
+                            debounce?.cancel();
+                            debounce = Timer(Duration(milliseconds: 250), () {
+                              runSearch(setModalState, v);
+                            });
+                          },
+                        ),
+                      ),
+                      if (isLoading)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: LinearProgressIndicator(minHeight: 2),
+                        ),
+                      if (error != null)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(error!, style: TextStyle(color: Colors.red)),
+                        ),
+                      Flexible(
+                        child: results.isEmpty
+                            ? Padding(
+                                padding: EdgeInsets.fromLTRB(16, 10, 16, 20),
+                                child: Text(
+                                  controller.text.trim().isEmpty
+                                      ? 'Введите запрос для поиска'
+                                      : 'Ничего не найдено',
+                                  style: TextStyle(color: Colors.grey.shade600),
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: results.length,
+                                separatorBuilder: (_, __) => Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final r = results[index];
+                                  final messageId = (r['message_id'] ?? '').toString();
+                                  final sender = (r['sender_email'] ?? '').toString();
+                                  final snippet = (r['content_snippet'] ?? '').toString();
+                                  final createdAt = (r['created_at'] ?? '').toString();
+                                  return ListTile(
+                                    title: Text(
+                                      sender.isNotEmpty ? sender : 'Сообщение',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      snippet,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: Text(
+                                      createdAt.isNotEmpty ? _formatDate(createdAt) : '',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      _jumpToMessage(messageId);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    debounce?.cancel();
+    controller.dispose();
   }
   
   // ✅ Загрузить закрепленные сообщения
@@ -1852,6 +2070,18 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
+              icon: Icon(Icons.search_rounded, color: _accent1),
+              onPressed: _openSearch,
+              tooltip: 'Поиск по сообщениям',
+            ),
+          ),
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: _accent1.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
               icon: Icon(Icons.people_rounded, color: _accent1),
               onPressed: _showMembersDialog,
               tooltip: 'Участники чата',
@@ -1997,8 +2227,17 @@ class _ChatScreenState extends State<ChatScreen> {
                           final msg = _messages[msgIndex];
                     final isMine = msg.senderEmail == widget.userEmail;
 
-                return Padding(
+                final isHighlighted = _highlightMessageId == msg.id;
+                return AnimatedContainer(
+                  key: _keyForMessage(msg.id),
+                  duration: Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isHighlighted ? _accent1.withOpacity(0.10) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Row(
                     mainAxisAlignment:
                         isMine ? MainAxisAlignment.end : MainAxisAlignment.start,

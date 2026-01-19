@@ -1,5 +1,5 @@
 import express from 'express';
-import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages } from '../controllers/messagesController.js';
+import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages, searchMessages, getMessagesAround } from '../controllers/messagesController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage as uploadImageMiddleware } from '../utils/uploadImage.js';
 
@@ -7,6 +7,10 @@ const router = express.Router();
 
 // Все роуты сообщений требуют аутентификации
 router.use(authenticateToken);
+
+// Search & jump-to-message must be before generic /:chatId
+router.get('/chat/:chatId/search', searchMessages); // GET /messages/chat/:chatId/search?q=...
+router.get('/chat/:chatId/around/:messageId', getMessagesAround); // GET /messages/chat/:chatId/around/:messageId
 
 router.get('/:chatId', getMessages);
 router.post('/', sendMessage);

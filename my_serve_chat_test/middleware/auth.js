@@ -1,24 +1,34 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Middleware для проверки JWT токена
 export const authenticateToken = (req, res, next) => {
+  if (!JWT_SECRET) {
+    // Не можем безопасно проверять токены без секрета
+    return res.status(500).json({ message: 'JWT_SECRET не настроен на сервере' });
+  }
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-  console.log(`🔐 Auth check: ${req.method} ${req.path}`);
-  console.log(`   Authorization header: ${authHeader ? 'present' : 'missing'}`);
-  console.log(`   Token: ${token ? token.substring(0, 20) + '...' : 'missing'}`);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`🔐 Auth check: ${req.method} ${req.path}`);
+    console.log(`   Authorization header: ${authHeader ? 'present' : 'missing'}`);
+  }
 
   if (!token) {
-    console.log('❌ No token provided');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('❌ No token provided');
+    }
     return res.status(401).json({ message: 'Токен доступа отсутствует' });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      console.error('JWT verification error:', err.message);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('JWT verification error:', err.message);
+      }
       return res.status(403).json({ message: 'Недействительный токен' });
     }
     
@@ -27,7 +37,9 @@ export const authenticateToken = (req, res, next) => {
     // Нормализуем флаг приватного доступа (для старых токенов)
     req.user.privateAccess = user.privateAccess === true;
     // email в токене теперь содержит логин
-    console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
+    }
     next();
   });
 };
@@ -35,6 +47,9 @@ export const authenticateToken = (req, res, next) => {
 // Генерация JWT токена
 // username - логин пользователя (хранится в поле email в БД для обратной совместимости)
 export const generateToken = (userId, username, privateAccess = false) => {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET не настроен на сервере');
+  }
   return jwt.sign(
     { userId, email: username, username: username, privateAccess: privateAccess === true },
     JWT_SECRET,
@@ -53,6 +68,7 @@ export const requirePrivateAccess = (req, res, next) => {
 // Проверка токена для WebSocket
 export const verifyWebSocketToken = (token) => {
   try {
+    if (!JWT_SECRET) return null;
     return jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return null;

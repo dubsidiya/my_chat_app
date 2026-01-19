@@ -21,9 +21,24 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
+// В production JWT_SECRET обязателен
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('❌ JWT_SECRET НЕ УСТАНОВЛЕН! Сервер не может безопасно запуститься в production.');
+  process.exit(1);
+}
+
 // Настройка trust proxy для работы за прокси (Render.com, Cloudflare и т.д.)
 // Это необходимо для правильной работы express-rate-limit
 app.set('trust proxy', true);
+
+// Базовые security headers (без дополнительных зависимостей)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 
 // Настройка CORS - ограничиваем только разрешенные домены
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
@@ -45,36 +60,48 @@ app.use(cors({
   origin: function (origin, callback) {
     // Разрешаем запросы без origin (мобильные приложения, Flutter, Postman и т.д.)
     if (!origin) {
-      console.log('CORS: Запрос без origin (мобильное приложение) - разрешено');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('CORS: Запрос без origin (мобильное приложение) - разрешено');
+      }
       return callback(null, true);
     }
     
     // Проверяем точное совпадение
     if (allAllowedOrigins.indexOf(origin) !== -1) {
-      console.log(`CORS: Разрешен origin (точное совпадение): ${origin}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`CORS: Разрешен origin (точное совпадение): ${origin}`);
+      }
       return callback(null, true);
     }
     
     // Проверяем localhost в любом виде (для разработки)
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      console.log(`CORS: Разрешен localhost origin: ${origin}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`CORS: Разрешен localhost origin: ${origin}`);
+      }
       return callback(null, true);
     }
     
     // Разрешаем все поддомены Vercel (для preview deployments)
     if (origin.includes('.vercel.app')) {
-      console.log(`CORS: Разрешен Vercel origin: ${origin}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`CORS: Разрешен Vercel origin: ${origin}`);
+      }
       return callback(null, true);
     }
     
     // Разрешаем все поддомены netlify (если используется)
     if (origin.includes('.netlify.app')) {
-      console.log(`CORS: Разрешен Netlify origin: ${origin}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`CORS: Разрешен Netlify origin: ${origin}`);
+      }
       return callback(null, true);
     }
     
-    console.log(`CORS: Заблокирован origin: ${origin}`);
-    console.log(`CORS: Разрешенные origins: ${allAllowedOrigins.join(', ')}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`CORS: Заблокирован origin: ${origin}`);
+      console.log(`CORS: Разрешенные origins: ${allAllowedOrigins.join(', ')}`);
+    }
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
