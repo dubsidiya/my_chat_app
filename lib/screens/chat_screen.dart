@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -58,9 +59,149 @@ class _ChatScreenState extends State<ChatScreen> {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isUploadingImage = false;
+  String? _selectedFilePath;
+  Uint8List? _selectedFileBytes;
+  String? _selectedFileName;
+  int? _selectedFileSize;
+  bool _isUploadingFile = false;
   Message? _replyToMessage; // ✅ Сообщение, на которое отвечаем
   List<Message> _pinnedMessages = []; // ✅ Закрепленные сообщения
   String? _highlightMessageId; // ✅ Подсветка сообщения при прыжке
+
+  // ✅ Realtime presence/typing
+  final Map<String, String> _memberEmailById = {};
+  final Set<String> _onlineUserIds = <String>{};
+  final Map<String, DateTime> _typingUntilByUserId = <String, DateTime>{};
+  Timer? _typingStopTimer;
+  Timer? _typingCleanupTimer;
+  bool _sentTyping = false;
+  bool _subscribedToChatRealtime = false;
+
+  Future<void> _showInviteDialog() async {
+    if (!mounted) return;
+    bool isLoading = false;
+    String? error;
+    Map<String, dynamic>? invite;
+    final ttlController = TextEditingController(text: '1440'); // 1 день
+    final usesController = TextEditingController(text: '10');
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            Future<void> create() async {
+              setLocal(() {
+                isLoading = true;
+                error = null;
+              });
+              try {
+                final ttl = int.tryParse(ttlController.text.trim());
+                final max = int.tryParse(usesController.text.trim());
+                final res = await _chatsService.createInvite(
+                  widget.chatId,
+                  ttlMinutes: ttl,
+                  maxUses: max,
+                );
+                setLocal(() {
+                  invite = res;
+                  isLoading = false;
+                });
+              } catch (e) {
+                setLocal(() {
+                  isLoading = false;
+                  error = e.toString().replaceFirst('Exception: ', '');
+                });
+              }
+            }
+
+            final code = invite?['code']?.toString();
+
+            return AlertDialog(
+              title: Text('Пригласить в чат'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (code != null && code.isNotEmpty) ...[
+                    Text('Код:'),
+                    SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            code,
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.copy_rounded),
+                          tooltip: 'Скопировать',
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: code));
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(content: Text('Код скопирован')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Передайте этот код человеку — он введёт его в “Вступить по коду”.',
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                    ),
+                  ] else ...[
+                    Text(
+                      'Создайте код приглашения. Его можно ограничить по времени и числу использований.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    SizedBox(height: 12),
+                    TextField(
+                      controller: ttlController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'TTL (минуты)',
+                        helperText: 'Напр. 60 = 1 час, 1440 = 1 день',
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    TextField(
+                      controller: usesController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Макс. использований',
+                        helperText: 'Напр. 1 или 10',
+                      ),
+                    ),
+                  ],
+                  if (error != null) ...[
+                    SizedBox(height: 10),
+                    Text(error!, style: TextStyle(color: Colors.red)),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: Text('Закрыть'),
+                ),
+                if (code == null || code.isEmpty)
+                  ElevatedButton(
+                    onPressed: isLoading ? null : create,
+                    child: isLoading
+                        ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text('Создать код'),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -71,11 +212,31 @@ class _ChatScreenState extends State<ChatScreen> {
     
     _loadMessages();
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
+    _loadChatMembers(); // ✅ Для presence/typing отображения
     
     // ✅ Отмечаем все сообщения как прочитанные при открытии чата
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
     });
+  }
+
+  Future<void> _loadChatMembers() async {
+    try {
+      final members = await _chatsService.getChatMembers(widget.chatId);
+      if (!mounted) return;
+      setState(() {
+        _memberEmailById
+          ..clear()
+          ..addEntries(members.map((m) {
+            final id = (m['id'] ?? '').toString();
+            final email = (m['email'] ?? '').toString();
+            return MapEntry(id, email);
+          }).where((e) => e.key.isNotEmpty));
+      });
+    } catch (e) {
+      // Не критично — presence/typing просто будет без имён
+      print('Ошибка загрузки участников (для presence/typing): $e');
+    }
   }
 
   GlobalKey _keyForMessage(String id) {
@@ -333,6 +494,58 @@ class _ChatScreenState extends State<ChatScreen> {
           
           // Проверяем тип сообщения
           final messageType = data['type'];
+
+          // ✅ Presence: начальное состояние
+          if (messageType == 'presence_state') {
+            final chatId = data['chat_id']?.toString();
+            if (chatId == widget.chatId.toString()) {
+              final list = (data['online_user_ids'] as List<dynamic>? ?? []);
+              setState(() {
+                _onlineUserIds
+                  ..clear()
+                  ..addAll(list.map((e) => e.toString()));
+              });
+            }
+            return;
+          }
+
+          // ✅ Presence: online/offline события
+          if (messageType == 'presence') {
+            final chatId = data['chat_id']?.toString();
+            if (chatId == widget.chatId.toString()) {
+              final uid = data['user_id']?.toString();
+              final status = data['status']?.toString();
+              if (uid != null && uid.isNotEmpty) {
+                setState(() {
+                  if (status == 'online') {
+                    _onlineUserIds.add(uid);
+                  } else if (status == 'offline') {
+                    _onlineUserIds.remove(uid);
+                    _typingUntilByUserId.remove(uid);
+                  }
+                });
+              }
+            }
+            return;
+          }
+
+          // ✅ Typing indicator
+          if (messageType == 'typing') {
+            final chatId = data['chat_id']?.toString();
+            final uid = data['user_id']?.toString();
+            final isTyping = data['is_typing'] == true;
+            if (chatId == widget.chatId.toString() && uid != null && uid.isNotEmpty && uid != widget.userId.toString()) {
+              setState(() {
+                if (isTyping) {
+                  _typingUntilByUserId[uid] = DateTime.now().add(Duration(seconds: 5));
+                } else {
+                  _typingUntilByUserId.remove(uid);
+                }
+              });
+              _scheduleTypingCleanup();
+            }
+            return;
+          }
           
           if (messageType == 'message_deleted') {
             // Обработка уведомления об удалении сообщения
@@ -655,8 +868,101 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
 
+    // ✅ Подписываемся на realtime события этого чата
+    _subscribeToChatRealtime();
+
     // Добавляем listener для автоматической подгрузки при скролле вверх
     _scrollController.addListener(_onScroll);
+  }
+
+  void _sendWsJson(Map<String, dynamic> payload) {
+    try {
+      if (_channel == null) return;
+      _channel!.sink.add(jsonEncode(payload));
+    } catch (e) {
+      print('Ошибка отправки WS payload: $e');
+    }
+  }
+
+  void _subscribeToChatRealtime() {
+    if (_subscribedToChatRealtime) return;
+    if (_channel == null) return;
+    _subscribedToChatRealtime = true;
+    _sendWsJson({
+      'type': 'subscribe',
+      'chat_id': widget.chatId,
+    });
+  }
+
+  void _scheduleTypingCleanup() {
+    _typingCleanupTimer?.cancel();
+    _typingCleanupTimer = Timer(Duration(seconds: 2), () {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final toRemove = _typingUntilByUserId.entries
+          .where((e) => e.value.isBefore(now))
+          .map((e) => e.key)
+          .toList();
+      if (toRemove.isEmpty) return;
+      setState(() {
+        for (final k in toRemove) {
+          _typingUntilByUserId.remove(k);
+        }
+      });
+    });
+  }
+
+  void _sendTyping(bool isTyping) {
+    _sendWsJson({
+      'type': 'typing',
+      'chat_id': widget.chatId,
+      'is_typing': isTyping,
+    });
+    _sentTyping = isTyping;
+  }
+
+  void _handleComposerChanged(String text) {
+    final trimmed = text.trim();
+    final shouldType = trimmed.isNotEmpty;
+
+    if (shouldType && !_sentTyping) {
+      _sendTyping(true);
+    }
+    if (!shouldType && _sentTyping) {
+      _sendTyping(false);
+    }
+
+    _typingStopTimer?.cancel();
+    if (shouldType) {
+      _typingStopTimer = Timer(Duration(seconds: 2), () {
+        if (!mounted) return;
+        if (_sentTyping) _sendTyping(false);
+      });
+    }
+  }
+
+  String _buildChatStatusLine() {
+    final now = DateTime.now();
+    final typingIds = _typingUntilByUserId.entries
+        .where((e) => e.value.isAfter(now))
+        .map((e) => e.key)
+        .where((id) => id != widget.userId.toString())
+        .toList();
+
+    if (typingIds.isNotEmpty) {
+      final names = typingIds
+          .map((id) => _memberEmailById[id] ?? 'Пользователь')
+          .toList();
+      if (names.length == 1) return '${names.first} печатает…';
+      if (names.length == 2) return '${names[0]} и ${names[1]} печатают…';
+      return 'Несколько участников печатают…';
+    }
+
+    // online count (кроме себя)
+    final onlineOthers = _onlineUserIds.where((id) => id != widget.userId.toString()).length;
+    if (onlineOthers > 0) return 'Онлайн: $onlineOthers';
+
+    return 'Вы: ${widget.userEmail}';
   }
 
   Future<void> _initWebSocket() async {
@@ -990,6 +1296,46 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: kIsWeb,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      setState(() {
+        _selectedFileName = file.name;
+        _selectedFileSize = file.size;
+        if (kIsWeb) {
+          _selectedFileBytes = file.bytes;
+          _selectedFilePath = null;
+        } else {
+          _selectedFilePath = file.path;
+          _selectedFileBytes = null;
+        }
+      });
+    } catch (e) {
+      print('Ошибка выбора файла: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось выбрать файл')),
+      );
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024.0;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024.0;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    final gb = mb / 1024.0;
+    return '${gb.toStringAsFixed(1)} GB';
+  }
+
   /// Сжатие изображения для уменьшения размера файла и использования памяти
   /// 
   /// [imageBytes] - оригинальные байты изображения
@@ -1092,17 +1438,28 @@ class _ChatScreenState extends State<ChatScreen> {
     
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
+    final hasFile = _selectedFilePath != null || _selectedFileBytes != null;
     
-    print('🔍 Text: "$text", hasImage: $hasImage');
+    print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
     
-    if (text.isEmpty && !hasImage) {
-      print('⚠️ Text is empty and no image, returning');
+    if (text.isEmpty && !hasImage && !hasFile) {
+      print('⚠️ Text is empty and no attachments, returning');
       return;
     }
     
     print('✅ Proceeding with message send');
 
+    // ✅ Останавливаем typing-индикатор перед отправкой
+    if (_sentTyping) {
+      _typingStopTimer?.cancel();
+      _sendTyping(false);
+    }
+
     String? imageUrl;
+    String? fileUrl;
+    String? fileName;
+    int? fileSize;
+    String? fileMime;
 
     // Загружаем изображение, если выбрано
     if (hasImage) {
@@ -1163,6 +1520,71 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _isUploadingImage = false);
     }
 
+    // Загружаем файл, если выбран
+    if (hasFile) {
+      // Сервер сейчас не поддерживает "image+file" в одном сообщении
+      if (hasImage) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Нельзя отправить изображение и файл в одном сообщении')),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isUploadingFile = true);
+      try {
+        List<int> bytes;
+        String name;
+
+        if (kIsWeb) {
+          if (_selectedFileBytes == null) {
+            throw Exception('Файл не выбран');
+          }
+          bytes = _selectedFileBytes!;
+          name = _selectedFileName ?? 'file';
+        } else {
+          if (_selectedFilePath == null) {
+            throw Exception('Файл не выбран');
+          }
+          final f = File(_selectedFilePath!);
+          bytes = await f.readAsBytes();
+          name = _selectedFileName ?? _selectedFilePath!.split('/').last;
+        }
+
+        final meta = await _messagesService.uploadFile(bytes, name);
+        fileUrl = meta['file_url']?.toString();
+        fileName = (meta['file_name'] ?? name).toString();
+        fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? _selectedFileSize ?? bytes.length;
+        fileMime = (meta['file_mime'] ?? '').toString();
+
+        if (fileUrl == null || fileUrl.isEmpty) {
+          throw Exception('Сервер не вернул file_url');
+        }
+
+        if (mounted) {
+          setState(() {
+            _selectedFilePath = null;
+            _selectedFileBytes = null;
+            _selectedFileName = null;
+            _selectedFileSize = null;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isUploadingFile = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка загрузки файла: ${e.toString().replaceFirst('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _isUploadingFile = false);
+    }
+
     // ✅ Сохраняем replyToMessageId перед очисткой
     final replyToMessageId = _replyToMessage?.id;
     final replyToMessage = _replyToMessage;
@@ -1176,7 +1598,13 @@ class _ChatScreenState extends State<ChatScreen> {
       content: text,
       imageUrl: imageUrl,
       originalImageUrl: imageUrl, // Временно используем тот же URL
-      messageType: imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text',
+      fileUrl: fileUrl,
+      fileName: fileName,
+      fileSize: fileSize,
+      fileMime: fileMime,
+      messageType: fileUrl != null
+          ? (text.isNotEmpty ? 'text_file' : 'file')
+          : (imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text'),
       senderEmail: widget.userEmail,
       createdAt: DateTime.now().toIso8601String(),
       isRead: false,
@@ -1251,6 +1679,10 @@ class _ChatScreenState extends State<ChatScreen> {
         text, 
         imageUrl: imageUrl,
         replyToMessageId: replyToMessageId,
+        fileUrl: fileUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        fileMime: fileMime,
       );
       print('🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}');
       
@@ -1263,6 +1695,14 @@ class _ChatScreenState extends State<ChatScreen> {
             _selectedImagePath = null;
             _selectedImageBytes = null;
             _selectedImageName = null;
+          });
+        }
+        if (_selectedFilePath != null || _selectedFileBytes != null) {
+          setState(() {
+            _selectedFilePath = null;
+            _selectedFileBytes = null;
+            _selectedFileName = null;
+            _selectedFileSize = null;
           });
         }
         
@@ -1860,6 +2300,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _webSocketSubscription?.cancel();
+    _typingStopTimer?.cancel();
+    _typingCleanupTimer?.cancel();
+    // best-effort: остановим typing и отпишемся
+    if (_sentTyping) {
+      _sendTyping(false);
+    }
+    _sendWsJson({'type': 'unsubscribe', 'chat_id': widget.chatId});
     _channel?.sink.close();
     _controller.dispose();
     super.dispose();
@@ -2056,7 +2503,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             Text(
-              widget.userEmail,
+              _buildChatStatusLine(),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               overflow: TextOverflow.ellipsis,
             ),
@@ -2114,8 +2561,19 @@ class _ChatScreenState extends State<ChatScreen> {
             onSelected: (value) {
               if (value == 'clear') _clearChat();
               if (value == 'leave') _leaveChat();
+              if (value == 'invite') _showInviteDialog();
             },
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'invite',
+                child: Row(
+                  children: [
+                    Icon(Icons.link_rounded, color: Colors.green.shade700, size: 20),
+                    SizedBox(width: 10),
+                    Text('Пригласить (код)'),
+                  ],
+                ),
+              ),
               PopupMenuItem(
                 value: 'clear',
                 child: Row(
@@ -2376,7 +2834,24 @@ class _ChatScreenState extends State<ChatScreen> {
                                           ),
                                         ),
                                         SizedBox(height: 4),
-                                        if (msg.replyToMessage!.hasImage)
+                                        if (msg.replyToMessage!.hasFile)
+                                          Row(
+                                            children: [
+                                              Icon(Icons.insert_drive_file_rounded, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                msg.replyToMessage!.fileName ?? 'Файл',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          )
+                                        else if (msg.replyToMessage!.hasImage)
                                           Row(
                                             children: [
                                               Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
@@ -2578,7 +3053,66 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (msg.hasText) SizedBox(height: 8),
+                                  if (msg.hasText || msg.hasFile) SizedBox(height: 8),
+                                ],
+                                // ✅ Отображение файла (attachment)
+                                if (msg.hasFile) ...[
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final url = Uri.parse(msg.fileUrl!);
+                                      if (await canLaunchUrl(url)) {
+                                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                                      } else if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Не удалось открыть файл')),
+                                        );
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: isMine ? Colors.white.withOpacity(0.18) : Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: isMine ? Colors.white.withOpacity(0.25) : Colors.grey.shade200,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.insert_drive_file_rounded, size: 18, color: isMine ? Colors.white : _accent2),
+                                          SizedBox(width: 8),
+                                          Flexible(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  msg.fileName ?? 'Файл',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: isMine ? Colors.white : Colors.grey.shade900,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (msg.fileSize != null)
+                                                  Text(
+                                                    _formatBytes(msg.fileSize!),
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          SizedBox(width: 8),
+                                          Icon(Icons.open_in_new_rounded, size: 16, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ],
                                 // Отображение текста
                                 if (msg.hasText) ...[
@@ -2902,7 +3436,26 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                   ),
                                   SizedBox(height: 4),
-                                  if (_replyToMessage!.hasImage)
+                                  if (_replyToMessage!.hasFile)
+                                    Row(
+                                      children: [
+                                        Icon(Icons.insert_drive_file_rounded, size: 14, color: Colors.grey.shade600),
+                                        SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            _replyToMessage!.fileName ?? 'Файл',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade600,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  else if (_replyToMessage!.hasImage)
                                     Row(
                                       children: [
                                         Icon(Icons.image, size: 14, color: Colors.grey.shade600),
@@ -2993,8 +3546,70 @@ class _ChatScreenState extends State<ChatScreen> {
                           ],
                         ),
                       ),
+                    // Превью выбранного файла
+                    if (_selectedFilePath != null || _selectedFileBytes != null)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.insert_drive_file_rounded, color: _accent2),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _selectedFileName ?? 'Файл',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  if (_selectedFileSize != null)
+                                    Text(
+                                      _formatBytes(_selectedFileSize!),
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedFilePath = null;
+                                  _selectedFileBytes = null;
+                                  _selectedFileName = null;
+                                  _selectedFileSize = null;
+                                });
+                              },
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                      ),
                     Row(
                       children: [
+                        // Кнопка выбора файла
+                        Container(
+                          decoration: BoxDecoration(
+                            color: _accent2.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: IconButton(
+                            icon: Icon(Icons.attach_file_rounded, color: _accent2),
+                            onPressed: _pickFile,
+                            tooltip: 'Прикрепить файл',
+                          ),
+                        ),
+                        SizedBox(width: 8),
                         // Кнопка выбора изображения
                         Container(
                           decoration: BoxDecoration(
@@ -3027,12 +3642,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                               maxLines: null,
                               textCapitalization: TextCapitalization.sentences,
+                              onChanged: _handleComposerChanged,
                             ),
                           ),
                         ),
                         SizedBox(width: 8),
                         // Кнопка отправки
-                        if (_isUploadingImage)
+                        if (_isUploadingImage || _isUploadingFile)
                           Padding(
                             padding: EdgeInsets.all(12),
                             child: SizedBox(

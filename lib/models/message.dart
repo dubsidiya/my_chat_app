@@ -5,6 +5,10 @@ class Message {
   final String content;
   final String? imageUrl;
   final String? originalImageUrl; // ✅ URL оригинального изображения
+  final String? fileUrl; // ✅ URL файла-вложения
+  final String? fileName; // ✅ Имя файла (оригинальное)
+  final int? fileSize; // ✅ Размер файла (bytes)
+  final String? fileMime; // ✅ MIME-тип файла
   final String messageType; // 'text', 'image', 'text_image'
   final String senderEmail;
   final String createdAt;
@@ -26,6 +30,10 @@ class Message {
     required this.content,
     this.imageUrl,
     this.originalImageUrl,
+    this.fileUrl,
+    this.fileName,
+    this.fileSize,
+    this.fileMime,
     this.messageType = 'text',
     required this.senderEmail,
     required this.createdAt,
@@ -43,6 +51,8 @@ class Message {
 
   bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
   bool get hasOriginalImage => originalImageUrl != null && originalImageUrl!.isNotEmpty;
+  bool get hasFile => fileUrl != null && fileUrl!.isNotEmpty;
+  bool get isFileOnly => messageType == 'file' || (hasFile && content.isEmpty);
   bool get isImageOnly => messageType == 'image' || (hasImage && content.isEmpty);
   bool get hasText => content.isNotEmpty;
   bool get isEdited => editedAt != null && editedAt!.isNotEmpty;
@@ -63,6 +73,10 @@ class Message {
         content: json['content'] ?? '',
         imageUrl: json['image_url'] as String?,
         originalImageUrl: json['original_image_url'] as String?,
+        fileUrl: json['file_url'] as String?,
+        fileName: json['file_name'] as String?,
+        fileSize: json['file_size'] is int ? (json['file_size'] as int) : int.tryParse((json['file_size'] ?? '').toString()),
+        fileMime: json['file_mime'] as String?,
         messageType: json['message_type'] ?? 'text',
         senderEmail: json['sender_email'] ?? '',
         createdAt: json['created_at']?.toString() ?? '',
@@ -96,6 +110,10 @@ class Message {
       'content': content,
       'image_url': imageUrl,
       'original_image_url': originalImageUrl,
+      'file_url': fileUrl,
+      'file_name': fileName,
+      'file_size': fileSize,
+      'file_mime': fileMime,
       'message_type': messageType,
       'sender_email': senderEmail,
       'created_at': createdAt,

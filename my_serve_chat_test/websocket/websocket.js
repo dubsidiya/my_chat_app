@@ -4,6 +4,36 @@ import { verifyWebSocketToken } from '../middleware/auth.js';
 
 const clients = new Map(); // userId -> ws
 
+async function ensureChatMember(chatId, userId) {
+  const chatIdNum = parseInt(chatId, 10);
+  if (!Number.isFinite(chatIdNum)) return { ok: false, status: 400 };
+
+  const memberCheck = await pool.query(
+    'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+    [chatIdNum, userId]
+  );
+  if (memberCheck.rows.length === 0) return { ok: false, status: 403, chatIdNum };
+  return { ok: true, chatIdNum };
+}
+
+async function broadcastToChat(chatIdNum, payload, { excludeUserId } = {}) {
+  const members = await pool.query(
+    'SELECT user_id FROM chat_users WHERE chat_id = $1',
+    [chatIdNum]
+  );
+
+  const data = JSON.stringify(payload);
+  members.rows.forEach((row) => {
+    const memberId = row.user_id?.toString();
+    if (!memberId) return;
+    if (excludeUserId && memberId === excludeUserId.toString()) return;
+    const client = clients.get(memberId);
+    if (client && client.readyState === 1) {
+      client.send(data);
+    }
+  });
+}
+
 // Экспортируем функцию для получения клиентов
 export function getWebSocketClients() {
   return clients;
@@ -42,11 +72,85 @@ export function setupWebSocket(server) {
       console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
     }
     clients.set(userId, ws);
+    ws.userId = userId;
+    ws.userEmail = userEmail;
+    ws.subscriptions = new Set(); // chatIds (string)
 
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
         
+        // ✅ Подписка на presence/typing конкретного чата
+        if (data.type === 'subscribe') {
+          const chatId = data.chat_id || data.chatId;
+          if (!chatId) return;
+
+          const membership = await ensureChatMember(chatId, userId);
+          if (!membership.ok) return;
+          const chatIdNum = membership.chatIdNum;
+
+          ws.subscriptions.add(chatIdNum.toString());
+
+          // Возвращаем текущее состояние "кто онлайн" в этом чате
+          const members = await pool.query(
+            'SELECT user_id FROM chat_users WHERE chat_id = $1',
+            [chatIdNum]
+          );
+          const onlineUserIds = members.rows
+            .map((r) => r.user_id?.toString())
+            .filter((id) => id && clients.get(id)?.readyState === 1);
+
+          ws.send(JSON.stringify({
+            type: 'presence_state',
+            chat_id: chatIdNum.toString(),
+            online_user_ids: onlineUserIds,
+            ts: new Date().toISOString(),
+          }));
+
+          // Сообщаем остальным участникам (у кого открыт этот чат), что пользователь онлайн
+          await broadcastToChat(chatIdNum, {
+            type: 'presence',
+            chat_id: chatIdNum.toString(),
+            user_id: userId,
+            user_email: userEmail,
+            status: 'online',
+            ts: new Date().toISOString(),
+          }, { excludeUserId: userId });
+
+          return;
+        }
+
+        if (data.type === 'unsubscribe') {
+          const chatId = data.chat_id || data.chatId;
+          if (!chatId) return;
+          const chatIdNum = parseInt(chatId, 10);
+          if (!Number.isFinite(chatIdNum)) return;
+          ws.subscriptions.delete(chatIdNum.toString());
+          return;
+        }
+
+        // ✅ Индикатор "печатает"
+        if (data.type === 'typing') {
+          const chatId = data.chat_id || data.chatId;
+          const isTyping = data.is_typing === true;
+          if (!chatId) return;
+
+          const membership = await ensureChatMember(chatId, userId);
+          if (!membership.ok) return;
+          const chatIdNum = membership.chatIdNum;
+
+          await broadcastToChat(chatIdNum, {
+            type: 'typing',
+            chat_id: chatIdNum.toString(),
+            user_id: userId,
+            user_email: userEmail,
+            is_typing: isTyping,
+            ts: new Date().toISOString(),
+          }, { excludeUserId: userId });
+
+          return;
+        }
+
         // ✅ Обработка события прочтения сообщения
         if (data.type === 'mark_read') {
           const messageId = data.message_id;
@@ -156,6 +260,23 @@ export function setupWebSocket(server) {
     });
 
     ws.on('close', () => {
+      // Уведомляем чаты, на которые был подписан клиент, что он оффлайн
+      try {
+        const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
+        subs.forEach((chatIdStr) => {
+          const chatIdNum = parseInt(chatIdStr, 10);
+          if (!Number.isFinite(chatIdNum)) return;
+          // best-effort, без await (close handler)
+          broadcastToChat(chatIdNum, {
+            type: 'presence',
+            chat_id: chatIdNum.toString(),
+            user_id: userId,
+            user_email: userEmail,
+            status: 'offline',
+            ts: new Date().toISOString(),
+          }, { excludeUserId: userId }).catch(() => {});
+        });
+      } catch (_) {}
       clients.delete(userId);
     });
   });

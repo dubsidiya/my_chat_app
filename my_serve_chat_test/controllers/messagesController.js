@@ -1,6 +1,7 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
+import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 
 const ensureChatMember = async (chatId, userId) => {
   const chatIdNum = parseInt(chatId, 10);
@@ -52,6 +53,11 @@ export const getMessages = async (req, res) => {
           messages.user_id,
           messages.content,
           messages.image_url,
+          messages.original_image_url,
+          messages.file_url,
+          messages.file_name,
+          messages.file_size,
+          messages.file_mime,
           messages.message_type,
           messages.created_at,
           messages.delivered_at,
@@ -98,6 +104,11 @@ export const getMessages = async (req, res) => {
           messages.user_id,
           messages.content,
           messages.image_url,
+          messages.original_image_url,
+          messages.file_url,
+          messages.file_name,
+          messages.file_size,
+          messages.file_mime,
           messages.message_type,
           messages.created_at,
           messages.delivered_at,
@@ -199,6 +210,11 @@ export const getMessages = async (req, res) => {
         user_id: row.user_id,
         content: row.content,
         image_url: row.image_url,
+        original_image_url: row.original_image_url,
+        file_url: row.file_url,
+        file_name: row.file_name,
+        file_size: row.file_size,
+        file_mime: row.file_mime,
         message_type: row.message_type || 'text',
         created_at: row.created_at,
         delivered_at: row.delivered_at,
@@ -380,6 +396,10 @@ export const getMessagesAround = async (req, res) => {
         m.content,
         m.image_url,
         m.original_image_url,
+        m.file_url,
+        m.file_name,
+        m.file_size,
+        m.file_mime,
         m.message_type,
         m.created_at,
         m.delivered_at,
@@ -406,6 +426,10 @@ export const getMessagesAround = async (req, res) => {
         m.content,
         m.image_url,
         m.original_image_url,
+        m.file_url,
+        m.file_name,
+        m.file_size,
+        m.file_mime,
         m.message_type,
         m.created_at,
         m.delivered_at,
@@ -504,6 +528,10 @@ export const getMessagesAround = async (req, res) => {
         content: row.content,
         image_url: row.image_url,
         original_image_url: row.original_image_url,
+        file_url: row.file_url,
+        file_name: row.file_name,
+        file_size: row.file_size,
+        file_mime: row.file_mime,
         message_type: row.message_type || 'text',
         created_at: row.created_at,
         delivered_at: row.delivered_at,
@@ -532,7 +560,7 @@ export const getMessagesAround = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   // Приложение отправляет: { chat_id, content, image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids }
-  const { chat_id, content, image_url, original_image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids } = req.body;
+  const { chat_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
@@ -548,8 +576,13 @@ export const sendMessage = async (req, res) => {
     });
   }
 
-  if (!chat_id || (!content && !image_url)) {
-    return res.status(400).json({ message: 'Укажите chat_id и content или image_url' });
+  if (!chat_id || (!content && !image_url && !file_url)) {
+    return res.status(400).json({ message: 'Укажите chat_id и content или image_url или file_url' });
+  }
+
+  // Пока упрощаем: нельзя одновременно image и file в одном сообщении (чтобы не плодить message_type)
+  if (image_url && file_url) {
+    return res.status(400).json({ message: 'Нельзя отправлять изображение и файл в одном сообщении' });
   }
   
   // ✅ Если пересылка сообщений
@@ -577,7 +610,11 @@ export const sendMessage = async (req, res) => {
 
     // Определяем тип сообщения
     let message_type = 'text';
-    if (image_url && content) {
+    if (file_url && content) {
+      message_type = 'text_file';
+    } else if (file_url) {
+      message_type = 'file';
+    } else if (image_url && content) {
       message_type = 'text_image';
     } else if (image_url) {
       message_type = 'image';
@@ -600,10 +637,22 @@ export const sendMessage = async (req, res) => {
     }
 
     const result = await pool.query(`
-      INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at, reply_to_message_id)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
-      RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at, reply_to_message_id
-    `, [chatIdNum, user_id, content || '', image_url || null, original_image_url || null, message_type, replyToMessageIdNum]);
+      INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, delivered_at, reply_to_message_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, $11)
+      RETURNING id, chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, delivered_at, reply_to_message_id
+    `, [
+      chatIdNum,
+      user_id,
+      content || '',
+      image_url || null,
+      original_image_url || null,
+      file_url || null,
+      file_name || null,
+      file_size ? parseInt(file_size, 10) : null,
+      file_mime || null,
+      message_type,
+      replyToMessageIdNum,
+    ]);
 
     // Используем email из токена
     const senderEmail = req.user.email;
@@ -641,6 +690,11 @@ export const sendMessage = async (req, res) => {
       user_id: message.user_id,
       content: message.content,
       image_url: message.image_url,
+      original_image_url: message.original_image_url,
+      file_url: message.file_url,
+      file_name: message.file_name,
+      file_size: message.file_size,
+      file_mime: message.file_mime,
       message_type: message.message_type,
       created_at: message.created_at,
       delivered_at: message.delivered_at,
@@ -669,6 +723,11 @@ export const sendMessage = async (req, res) => {
         user_id: message.user_id,
         content: message.content,
         image_url: message.image_url,
+        original_image_url: message.original_image_url,
+        file_url: message.file_url,
+        file_name: message.file_name,
+        file_size: message.file_size,
+        file_mime: message.file_mime,
         message_type: message.message_type,
         created_at: message.created_at,
         delivered_at: message.delivered_at,
@@ -807,7 +866,7 @@ export const editMessage = async (req, res) => {
       UPDATE messages 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, chat_id, user_id, content, image_url, message_type, created_at, edited_at
+      RETURNING id, chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, edited_at
     `;
     
     const result = await pool.query(updateQuery, updateValues);
@@ -828,6 +887,11 @@ export const editMessage = async (req, res) => {
         user_id: updatedMessage.user_id,
         content: updatedMessage.content,
         image_url: updatedMessage.image_url,
+        original_image_url: updatedMessage.original_image_url,
+        file_url: updatedMessage.file_url,
+        file_name: updatedMessage.file_name,
+        file_size: updatedMessage.file_size,
+        file_mime: updatedMessage.file_mime,
         message_type: updatedMessage.message_type,
         created_at: updatedMessage.created_at,
         edited_at: updatedMessage.edited_at,
@@ -850,6 +914,11 @@ export const editMessage = async (req, res) => {
       user_id: updatedMessage.user_id,
       content: updatedMessage.content,
       image_url: updatedMessage.image_url,
+      original_image_url: updatedMessage.original_image_url,
+      file_url: updatedMessage.file_url,
+      file_name: updatedMessage.file_name,
+      file_size: updatedMessage.file_size,
+      file_mime: updatedMessage.file_mime,
       message_type: updatedMessage.message_type,
       created_at: updatedMessage.created_at,
       edited_at: updatedMessage.edited_at,
@@ -881,6 +950,8 @@ export const deleteMessage = async (req, res) => {
         messages.content,
         messages.created_at,
         messages.image_url,
+        messages.original_image_url,
+        messages.file_url,
         messages.message_type
       FROM messages
       WHERE messages.id = $1`,
@@ -945,6 +1016,16 @@ export const deleteMessage = async (req, res) => {
       } catch (deleteError) {
         console.error('Ошибка удаления оригинального изображения из облака:', deleteError);
         // Продолжаем удаление сообщения, даже если изображение не удалилось
+      }
+    }
+
+    // ✅ Удаляем файл-attachment, если он есть
+    if (message.file_url) {
+      try {
+        await deleteCloudFile(message.file_url);
+        console.log('File deleted from Yandex Cloud:', message.file_url);
+      } catch (deleteError) {
+        console.error('Ошибка удаления файла из облака:', deleteError);
       }
     }
 
@@ -1024,10 +1105,16 @@ export const clearChat = async (req, res) => {
       return res.status(404).json({ message: 'Чат не найден' });
     }
 
-    // Усиливаем безопасность: очищать чат может только создатель
-    const creatorId = chatCheck.rows[0].created_by;
-    if (creatorId?.toString() !== userId?.toString()) {
-      return res.status(403).json({ message: 'Только создатель чата может очистить чат' });
+    // Усиливаем безопасность: очищать чат может owner/admin (или создатель как fallback)
+    const creatorId = chatCheck.rows[0].created_by?.toString();
+    const roleCheck = await pool.query(
+      'SELECT role FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    const role = (roleCheck.rows[0]?.role || '').toString().toLowerCase();
+    const isOwnerOrAdmin = role === 'owner' || role === 'admin' || (creatorId && creatorId === userId.toString());
+    if (!isOwnerOrAdmin) {
+      return res.status(403).json({ message: 'Очистить чат может только owner/admin' });
     }
 
     // Проверяем, является ли пользователь участником чата
@@ -1710,6 +1797,32 @@ export const uploadImage = async (req, res) => {
     res.status(500).json({ 
       message: 'Ошибка загрузки изображения',
       error: error.message 
+    });
+  }
+};
+
+// Загрузка файла (attachment)
+export const uploadFile = async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ message: 'Файл не загружен' });
+    }
+
+    const uploaded = await uploadFileToCloud(file, 'files');
+
+    return res.status(200).json({
+      file_url: uploaded.fileUrl,
+      file_name: uploaded.originalName,
+      file_size: uploaded.size,
+      file_mime: uploaded.mime,
+      stored_file_name: uploaded.storedFileName,
+    });
+  } catch (error) {
+    console.error('Ошибка загрузки файла:', error);
+    return res.status(500).json({
+      message: 'Ошибка загрузки файла',
+      error: error.message,
     });
   }
 };

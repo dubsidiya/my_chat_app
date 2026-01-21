@@ -1,7 +1,8 @@
 import express from 'express';
-import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages, searchMessages, getMessagesAround } from '../controllers/messagesController.js';
+import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, uploadFile, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages, searchMessages, getMessagesAround } from '../controllers/messagesController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage as uploadImageMiddleware } from '../utils/uploadImage.js';
+import { uploadFile as uploadFileMiddleware } from '../utils/uploadFile.js';
 
 const router = express.Router();
 
@@ -31,6 +32,20 @@ router.post('/upload-image', (req, res, next) => {
     next();
   });
 }, uploadImage); // POST /messages/upload-image
+
+// Upload file (single field: file)
+router.post('/upload-file', (req, res, next) => {
+  uploadFileMiddleware.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('Multer file error:', err);
+      return res.status(400).json({
+        message: err.message || 'Ошибка загрузки файла',
+        error: err.toString(),
+      });
+    }
+    next();
+  });
+}, uploadFile); // POST /messages/upload-file
 router.delete('/message/:messageId', deleteMessage); // DELETE /messages/message/:messageId
 router.delete('/:chatId', clearChat); // DELETE /messages/:chatId
 

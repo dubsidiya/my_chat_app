@@ -196,6 +196,10 @@ class MessagesService {
     String content, {
     String? imageUrl, 
     String? originalImageUrl,
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
+    String? fileMime,
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
   }) async {
     print('🔍 sendMessage called: chatId=$chatId, content=$content, imageUrl=$imageUrl, originalImageUrl=$originalImageUrl, replyToMessageId=$replyToMessageId');
@@ -227,6 +231,10 @@ class MessagesService {
       'content': content,
       'image_url': imageUrl,
       'original_image_url': originalImageUrl,
+      'file_url': fileUrl,
+      'file_name': fileName,
+      'file_size': fileSize,
+      'file_mime': fileMime,
       'reply_to_message_id': replyToMessageId,
     });
     
@@ -371,6 +379,54 @@ class MessagesService {
         rethrow;
       }
       throw Exception('Неожиданная ошибка при загрузке изображения: $e');
+    }
+  }
+
+  // Загрузка файла (attachment)
+  Future<Map<String, dynamic>> uploadFile(List<int> fileBytes, String fileName) async {
+    final token = await StorageService.getToken();
+    if (token == null) {
+      throw Exception('Токен не найден');
+    }
+
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/messages/upload-file'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: fileName,
+        ),
+      );
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        if (response.body.trim().startsWith('<')) {
+          throw Exception('Сервер вернул HTML вместо JSON');
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data;
+      }
+
+      String errorMessage = 'Не удалось загрузить файл (${response.statusCode})';
+      try {
+        if (response.body.trim().startsWith('{')) {
+          final error = jsonDecode(response.body);
+          errorMessage = error['message'] ?? errorMessage;
+        }
+      } catch (_) {}
+      throw Exception(errorMessage);
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Неожиданная ошибка при загрузке файла: $e');
     }
   }
 

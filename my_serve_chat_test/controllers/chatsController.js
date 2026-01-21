@@ -1,5 +1,51 @@
 import pool from '../db.js';
 
+const normalizeRole = (role) => (role || '').toString().toLowerCase();
+
+const getChatCreatorId = async (chatId) => {
+  const r = await pool.query('SELECT created_by FROM chats WHERE id = $1', [chatId]);
+  return r.rows.length ? r.rows[0].created_by?.toString() : null;
+};
+
+const getMemberRole = async (chatId, userId) => {
+  const r = await pool.query(
+    'SELECT role FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+    [chatId, userId]
+  );
+  if (!r.rows.length) return null;
+  return normalizeRole(r.rows[0].role);
+};
+
+const isOwnerOrAdmin = async (chatId, userId) => {
+  const role = await getMemberRole(chatId, userId);
+  if (role === 'owner' || role === 'admin') return true;
+  // fallback: если роль ещё не проставлена, считаем создателя owner
+  const creatorId = await getChatCreatorId(chatId);
+  return creatorId && creatorId.toString() === userId.toString();
+};
+
+const isOwner = async (chatId, userId) => {
+  const role = await getMemberRole(chatId, userId);
+  if (role === 'owner') return true;
+  const creatorId = await getChatCreatorId(chatId);
+  return creatorId && creatorId.toString() === userId.toString();
+};
+
+const generateInviteCode = () => {
+  // 22 chars url-safe-ish
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let s = '';
+  for (let i = 0; i < 22; i++) {
+    s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return s;
+};
+
+const ensureChatMember = async (chatId, userId) => {
+  const r = await pool.query('SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
+  return r.rows.length > 0;
+};
+
 // Получение всех чатов пользователя
 export const getUserChats = async (req, res) => {
   try {
@@ -42,6 +88,10 @@ export const getChatsList = async (req, res) => {
           m.content AS last_message_content,
           m.message_type AS last_message_type,
           m.image_url AS last_message_image_url,
+          m.file_url AS last_message_file_url,
+          m.file_name AS last_message_file_name,
+          m.file_size AS last_message_file_size,
+          m.file_mime AS last_message_file_mime,
           m.created_at AS last_message_created_at,
           u.email AS last_sender_email
         FROM messages m
@@ -73,6 +123,10 @@ export const getChatsList = async (req, res) => {
             'content', lm.last_message_content,
             'message_type', lm.last_message_type,
             'image_url', lm.last_message_image_url,
+            'file_url', lm.last_message_file_url,
+            'file_name', lm.last_message_file_name,
+            'file_size', lm.last_message_file_size,
+            'file_mime', lm.last_message_file_mime,
             'created_at', lm.last_message_created_at,
             'sender_email', lm.last_sender_email
           )
@@ -127,9 +181,10 @@ export const createChat = async (req, res) => {
 
     // Добавляем участников в chat_users (как в схеме БД)
     for (const userId of userIds) {
+      const role = userId.toString() === creatorId.toString() ? 'owner' : 'member';
       await pool.query(
-        `INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)`,
-        [chatId, userId]
+        `INSERT INTO chat_users (chat_id, user_id, role) VALUES ($1, $2, $3)`,
+        [chatId, userId, role]
       );
     }
 
@@ -167,17 +222,10 @@ export const deleteChat = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    const chat = chatCheck.rows[0];
-    const creatorId = chat.created_by;
-
-    // Проверяем, является ли пользователь создателем
-    const userIdStr = userId.toString();
-    const creatorIdStr = creatorId?.toString();
-    
-    if (creatorIdStr && userIdStr !== creatorIdStr) {
-      return res.status(403).json({ 
-        message: "Только создатель чата может его удалить" 
-      });
+    // Удалять чат может owner
+    const canDelete = await isOwner(chatId, userId);
+    if (!canDelete) {
+      return res.status(403).json({ message: "Только владелец (owner) может удалить чат" });
     }
 
     // Проверяем, является ли пользователь участником чата
@@ -239,7 +287,7 @@ export const getChatMembers = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    const creatorId = chatInfo.rows[0].created_by;
+    const creatorId = chatInfo.rows[0].created_by?.toString();
 
     // Доступ к участникам только для участников чата
     const requesterMemberCheck = await pool.query(
@@ -252,11 +300,13 @@ export const getChatMembers = async (req, res) => {
 
     // Получаем участников чата
     const result = await pool.query(
-      `SELECT u.id, u.email
+      `SELECT u.id, u.email, cu.role
        FROM users u
        JOIN chat_users cu ON u.id = cu.user_id
        WHERE cu.chat_id = $1
-       ORDER BY u.id`,
+       ORDER BY 
+         CASE cu.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+         u.id`,
       [chatId]
     );
 
@@ -264,7 +314,8 @@ export const getChatMembers = async (req, res) => {
     const members = result.rows.map(row => ({
       id: row.id,
       email: row.email,
-      is_creator: row.id === creatorId
+      role: row.role || (row.id?.toString() === creatorId ? 'owner' : 'member'),
+      is_creator: row.id?.toString() === creatorId
     }));
 
     res.json(members);
@@ -295,10 +346,10 @@ export const addMembersToChat = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    // Добавлять участников может только создатель чата
-    const creatorId = chatCheck.rows[0].created_by;
-    if (creatorId?.toString() !== requesterId?.toString()) {
-      return res.status(403).json({ message: "Только создатель чата может добавлять участников" });
+    // Добавлять участников может owner или admin
+    const canAdd = await isOwnerOrAdmin(chatId, requesterId);
+    if (!canAdd) {
+      return res.status(403).json({ message: "Добавлять участников может только owner/admin" });
     }
 
     // Добавляем участников (пропускаем, если уже есть)
@@ -313,7 +364,7 @@ export const addMembersToChat = async (req, res) => {
 
         if (existing.rows.length === 0) {
           await pool.query(
-            `INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)`,
+            `INSERT INTO chat_users (chat_id, user_id, role) VALUES ($1, $2, 'member')`,
             [chatId, targetUserId]
           );
           addedUsers.push(targetUserId);
@@ -380,11 +431,13 @@ export const removeMemberFromChat = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    const creatorId = chatInfo.rows[0].created_by;
+    const creatorId = chatInfo.rows[0].created_by?.toString();
 
-    // Удалять участников может только создатель чата
-    if (creatorId?.toString() !== requesterId?.toString()) {
-      return res.status(403).json({ message: "Только создатель чата может удалять участников" });
+    const requesterRole = await getMemberRole(chatId, requesterId);
+    const requesterIsOwner = requesterRole === 'owner' || (creatorId && creatorId === requesterId.toString());
+    const requesterIsAdmin = requesterRole === 'admin';
+    if (!requesterIsOwner && !requesterIsAdmin) {
+      return res.status(403).json({ message: "Удалять участников может только owner/admin" });
     }
 
     // Проверяем, является ли пользователь участником чата
@@ -397,9 +450,17 @@ export const removeMemberFromChat = async (req, res) => {
       return res.status(404).json({ message: "Пользователь не является участником чата" });
     }
 
-    // Не позволяем удалить создателя чата
-    if (targetUserId == creatorId || targetUserId.toString() === creatorId?.toString()) {
-      return res.status(400).json({ message: "Нельзя удалить создателя чата" });
+    // Не позволяем удалить владельца
+    if (targetUserId.toString() === creatorId) {
+      return res.status(400).json({ message: "Нельзя удалить владельца (owner) чата" });
+    }
+
+    // Если requester admin — он может удалять только member (не admin/owner)
+    if (requesterIsAdmin && !requesterIsOwner) {
+      const targetRole = await getMemberRole(chatId, targetUserId);
+      if (targetRole === 'admin' || targetRole === 'owner' || targetUserId.toString() === creatorId) {
+        return res.status(403).json({ message: "Админ не может удалять owner/admin" });
+      }
     }
 
     // Получаем количество участников
@@ -462,7 +523,7 @@ export const leaveChat = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    const creatorId = chatCheck.rows[0].created_by;
+    const creatorId = chatCheck.rows[0].created_by?.toString();
 
     // Проверяем, является ли пользователь участником чата
     const memberCheck = await pool.query(
@@ -481,10 +542,11 @@ export const leaveChat = async (req, res) => {
     );
     const count = parseInt(memberCount.rows[0].count);
 
-    // Если пользователь - создатель и он последний участник, удаляем чат полностью
+    // Если пользователь - owner (или создатель), и он последний участник, удаляем чат полностью
     const userIdStr = userId.toString();
-    const creatorIdStr = creatorId?.toString();
-    const isCreator = creatorIdStr && userIdStr === creatorIdStr;
+    const isCreator = creatorId && userIdStr === creatorId;
+    const role = await getMemberRole(chatId, userId);
+    const isOwnerMember = role === 'owner' || isCreator;
 
     if (isCreator && count === 1) {
       // Удаляем чат полностью, так как создатель - последний участник
@@ -493,11 +555,10 @@ export const leaveChat = async (req, res) => {
       return;
     }
 
-    // Если пользователь - создатель, но есть другие участники, не позволяем выйти
-    // (создатель должен передать права или удалить чат)
-    if (isCreator && count > 1) {
+    // Если пользователь - owner и есть другие участники, не позволяем выйти (нужен transfer ownership)
+    if (isOwnerMember && count > 1) {
       return res.status(400).json({ 
-        message: "Создатель чата не может выйти, пока есть другие участники. Удалите чат или передайте права создателя" 
+        message: "Owner не может выйти, пока есть другие участники. Удалите чат или передайте ownership" 
       });
     }
 
@@ -526,5 +587,227 @@ export const leaveChat = async (req, res) => {
   } catch (error) {
     console.error("Ошибка leaveChat:", error);
     res.status(500).json({ message: "Ошибка выхода из чата" });
+  }
+};
+
+// ✅ Изменение роли участника (owner-only)
+export const updateMemberRole = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const targetUserId = req.params.userId;
+    const requesterId = req.user.userId;
+    const role = normalizeRole(req.body?.role);
+
+    if (!chatId || !targetUserId) {
+      return res.status(400).json({ message: 'Некорректные параметры' });
+    }
+    if (!['admin', 'member'].includes(role)) {
+      return res.status(400).json({ message: "role должен быть 'admin' или 'member'" });
+    }
+
+    const owner = await isOwner(chatId, requesterId);
+    if (!owner) {
+      return res.status(403).json({ message: 'Только owner может менять роли' });
+    }
+
+    // target должен быть участником
+    const targetRole = await getMemberRole(chatId, targetUserId);
+    const creatorId = await getChatCreatorId(chatId);
+    if (!targetRole && !(creatorId && creatorId === targetUserId.toString())) {
+      return res.status(404).json({ message: 'Пользователь не является участником чата' });
+    }
+    if (creatorId && creatorId === targetUserId.toString()) {
+      return res.status(400).json({ message: 'Нельзя менять роль owner через этот endpoint (используйте transfer)' });
+    }
+
+    await pool.query(
+      'UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3',
+      [role, chatId, targetUserId]
+    );
+
+    return res.status(200).json({ success: true, message: 'Роль обновлена' });
+  } catch (error) {
+    console.error('Ошибка updateMemberRole:', error);
+    return res.status(500).json({ message: 'Ошибка обновления роли' });
+  }
+};
+
+// ✅ Передача ownership (owner-only)
+export const transferOwnership = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const requesterId = req.user.userId;
+    const newOwnerId = req.body?.newOwnerId?.toString();
+
+    if (!chatId || !newOwnerId) {
+      return res.status(400).json({ message: 'Укажите newOwnerId' });
+    }
+
+    const owner = await isOwner(chatId, requesterId);
+    if (!owner) {
+      return res.status(403).json({ message: 'Только owner может передать ownership' });
+    }
+
+    // новый owner должен быть участником
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, newOwnerId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Новый owner должен быть участником чата' });
+    }
+
+    // текущего owner делаем admin, нового — owner
+    await pool.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['admin', chatId, requesterId]);
+    await pool.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['owner', chatId, newOwnerId]);
+    await pool.query('UPDATE chats SET created_by = $1 WHERE id = $2', [newOwnerId, chatId]);
+
+    return res.status(200).json({ success: true, message: 'Ownership передан' });
+  } catch (error) {
+    console.error('Ошибка transferOwnership:', error);
+    return res.status(500).json({ message: 'Ошибка передачи ownership' });
+  }
+};
+
+// ✅ Создать инвайт (owner/admin)
+export const createInvite = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const requesterId = req.user.userId;
+    const ttlMinutes = req.body?.ttlMinutes != null ? parseInt(req.body.ttlMinutes, 10) : null;
+    const maxUses = req.body?.maxUses != null ? parseInt(req.body.maxUses, 10) : null;
+
+    if (!chatId) return res.status(400).json({ message: 'Укажите chatId' });
+
+    const canCreate = await isOwnerOrAdmin(chatId, requesterId);
+    if (!canCreate) {
+      return res.status(403).json({ message: 'Создавать инвайт может только owner/admin' });
+    }
+
+    let expiresAt = null;
+    if (Number.isFinite(ttlMinutes) && ttlMinutes > 0) {
+      // ограничим TTL разумно
+      const minutes = Math.min(ttlMinutes, 60 * 24 * 30); // максимум 30 дней
+      expiresAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    }
+
+    let maxUsesVal = null;
+    if (Number.isFinite(maxUses) && maxUses > 0) {
+      maxUsesVal = Math.min(maxUses, 1000);
+    }
+
+    // генерируем уникальный code (несколько попыток)
+    let code = null;
+    for (let i = 0; i < 5; i++) {
+      const candidate = generateInviteCode();
+      const exists = await pool.query('SELECT 1 FROM chat_invites WHERE code = $1', [candidate]);
+      if (exists.rows.length === 0) {
+        code = candidate;
+        break;
+      }
+    }
+    if (!code) {
+      return res.status(500).json({ message: 'Не удалось сгенерировать invite code' });
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO chat_invites (chat_id, code, created_by, expires_at, max_uses)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, chat_id, code, created_at, expires_at, max_uses, use_count, revoked`,
+      [chatId, code, requesterId, expiresAt, maxUsesVal]
+    );
+
+    return res.status(201).json(inserted.rows[0]);
+  } catch (error) {
+    console.error('Ошибка createInvite:', error);
+    return res.status(500).json({ message: 'Ошибка создания инвайта' });
+  }
+};
+
+// ✅ Вступить в чат по коду (member)
+export const joinByInvite = async (req, res) => {
+  try {
+    const requesterId = req.user.userId;
+    const code = (req.body?.code || '').toString().trim();
+
+    if (!code) return res.status(400).json({ message: 'Укажите code' });
+    if (code.length > 128) return res.status(400).json({ message: 'Слишком длинный code' });
+
+    const inviteRes = await pool.query(
+      `SELECT id, chat_id, expires_at, max_uses, use_count, revoked
+       FROM chat_invites
+       WHERE code = $1`,
+      [code]
+    );
+    if (inviteRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Инвайт не найден' });
+    }
+
+    const invite = inviteRes.rows[0];
+    if (invite.revoked === true) {
+      return res.status(400).json({ message: 'Инвайт отозван' });
+    }
+    if (invite.expires_at) {
+      const exp = new Date(invite.expires_at);
+      if (Date.now() > exp.getTime()) {
+        return res.status(400).json({ message: 'Инвайт истёк' });
+      }
+    }
+    if (invite.max_uses != null && invite.use_count >= invite.max_uses) {
+      return res.status(400).json({ message: 'Инвайт больше недоступен (лимит использований)' });
+    }
+
+    const chatId = invite.chat_id;
+
+    // если уже участник — просто вернуть чат
+    const already = await ensureChatMember(chatId, requesterId);
+    if (!already) {
+      await pool.query(
+        `INSERT INTO chat_users (chat_id, user_id, role)
+         VALUES ($1, $2, 'member')
+         ON CONFLICT DO NOTHING`,
+        [chatId, requesterId]
+      );
+      await pool.query('UPDATE chat_invites SET use_count = use_count + 1 WHERE id = $1', [invite.id]);
+      // обновим is_group если участников стало >1
+      const memberCount = await pool.query('SELECT COUNT(*)::int as count FROM chat_users WHERE chat_id = $1', [chatId]);
+      if ((memberCount.rows[0]?.count ?? 0) > 1) {
+        await pool.query('UPDATE chats SET is_group = true WHERE id = $1', [chatId]);
+      }
+    }
+
+    const chatRes = await pool.query('SELECT id, name, is_group FROM chats WHERE id = $1', [chatId]);
+    if (chatRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+
+    return res.status(200).json({
+      chat: chatRes.rows[0],
+      joined: !already,
+    });
+  } catch (error) {
+    console.error('Ошибка joinByInvite:', error);
+    return res.status(500).json({ message: 'Ошибка вступления по инвайту' });
+  }
+};
+
+// ✅ Отозвать инвайт (owner/admin)
+export const revokeInvite = async (req, res) => {
+  try {
+    const requesterId = req.user.userId;
+    const inviteId = req.params.inviteId;
+
+    const inv = await pool.query('SELECT id, chat_id FROM chat_invites WHERE id = $1', [inviteId]);
+    if (inv.rows.length === 0) return res.status(404).json({ message: 'Инвайт не найден' });
+    const chatId = inv.rows[0].chat_id;
+
+    const can = await isOwnerOrAdmin(chatId, requesterId);
+    if (!can) return res.status(403).json({ message: 'Отозвать инвайт может только owner/admin' });
+
+    await pool.query('UPDATE chat_invites SET revoked = true WHERE id = $1', [inviteId]);
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка revokeInvite:', error);
+    return res.status(500).json({ message: 'Ошибка отзыва инвайта' });
   }
 };

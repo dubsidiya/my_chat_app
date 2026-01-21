@@ -431,5 +431,49 @@ class ChatsService {
       throw Exception('Неожиданная ошибка при выходе из чата: $e');
     }
   }
+
+  // ✅ Создать инвайт в чат (owner/admin)
+  Future<Map<String, dynamic>> createInvite(String chatId, {int? ttlMinutes, int? maxUses}) async {
+    final headers = await _getAuthHeaders();
+    final body = <String, dynamic>{};
+    if (ttlMinutes != null) body['ttlMinutes'] = ttlMinutes;
+    if (maxUses != null) body['maxUses'] = maxUses;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/chats/$chatId/invites'),
+      headers: headers,
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    String msg = 'Не удалось создать инвайт';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
+
+  // ✅ Вступить по коду
+  Future<Map<String, dynamic>> joinByInviteCode(String code) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/chats/join'),
+      headers: headers,
+      body: jsonEncode({'code': code}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    String msg = 'Не удалось вступить по коду';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
 }
 

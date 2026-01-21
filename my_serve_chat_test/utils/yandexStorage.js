@@ -105,41 +105,30 @@ export const deleteFromYandex = async (imageUrl) => {
     // или: https://bucket.storage.yandexcloud.net/original/original-image-xxx.jpg
     // или: https://storage.yandexcloud.net/bucket/images/image-xxx.jpg
     let key;
-    
-    // Проверяем папку images или original
-    if (imageUrl.includes('/images/')) {
-      // Извлекаем часть после /images/
-      const parts = imageUrl.split('/images/');
-      if (parts.length > 1) {
-        key = `images/${parts[1]}`;
-      } else {
+
+    // Поддерживаем несколько папок (images/original/files)
+    const folders = ['images', 'original', 'files'];
+    for (const folder of folders) {
+      const marker = `/${folder}/`;
+      if (imageUrl.includes(marker)) {
+        const parts = imageUrl.split(marker);
+        if (parts.length > 1 && parts[1]) {
+          key = `${folder}/${parts[1]}`;
+          break;
+        }
+
         // Альтернативный формат URL
         const urlParts = imageUrl.split('/');
-        const imagesIndex = urlParts.findIndex(part => part === 'images');
-        if (imagesIndex !== -1 && imagesIndex < urlParts.length - 1) {
-          key = `images/${urlParts.slice(imagesIndex + 1).join('/')}`;
-        } else {
-          console.log('Could not extract key from URL:', imageUrl);
-          return;
+        const idx = urlParts.findIndex((part) => part === folder);
+        if (idx !== -1 && idx < urlParts.length - 1) {
+          key = `${folder}/${urlParts.slice(idx + 1).join('/')}`;
+          break;
         }
       }
-    } else if (imageUrl.includes('/original/')) {
-      // Извлекаем часть после /original/
-      const parts = imageUrl.split('/original/');
-      if (parts.length > 1) {
-        key = `original/${parts[1]}`;
-      } else {
-        const urlParts = imageUrl.split('/');
-        const originalIndex = urlParts.findIndex(part => part === 'original');
-        if (originalIndex !== -1 && originalIndex < urlParts.length - 1) {
-          key = `original/${urlParts.slice(originalIndex + 1).join('/')}`;
-        } else {
-          console.log('Could not extract key from URL:', imageUrl);
-          return;
-        }
-      }
-    } else {
-      console.log('URL does not contain /images/ or /original/ path:', imageUrl);
+    }
+
+    if (!key) {
+      console.log('URL does not contain supported folder path (images/original/files):', imageUrl);
       return;
     }
 

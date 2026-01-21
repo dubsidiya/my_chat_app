@@ -6,6 +6,10 @@ class Chat {
   final String? lastMessageText;
   final String? lastMessageType;
   final String? lastMessageImageUrl;
+  final String? lastMessageFileUrl;
+  final String? lastMessageFileName;
+  final int? lastMessageFileSize;
+  final String? lastMessageFileMime;
   final String? lastMessageAt;
   final String? lastSenderEmail;
   final int unreadCount;
@@ -18,6 +22,10 @@ class Chat {
     this.lastMessageText,
     this.lastMessageType,
     this.lastMessageImageUrl,
+    this.lastMessageFileUrl,
+    this.lastMessageFileName,
+    this.lastMessageFileSize,
+    this.lastMessageFileMime,
     this.lastMessageAt,
     this.lastSenderEmail,
     this.unreadCount = 0,
@@ -38,6 +46,12 @@ class Chat {
         lastMessageText: lastMap?['content']?.toString(),
         lastMessageType: lastMap?['message_type']?.toString(),
         lastMessageImageUrl: lastMap?['image_url']?.toString(),
+        lastMessageFileUrl: lastMap?['file_url']?.toString(),
+        lastMessageFileName: lastMap?['file_name']?.toString(),
+        lastMessageFileSize: lastMap?['file_size'] is int
+            ? (lastMap?['file_size'] as int)
+            : int.tryParse((lastMap?['file_size'] ?? '').toString()),
+        lastMessageFileMime: lastMap?['file_mime']?.toString(),
         lastMessageAt: lastMap?['created_at']?.toString(),
         lastSenderEmail: lastMap?['sender_email']?.toString(),
       );

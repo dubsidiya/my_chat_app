@@ -43,12 +43,89 @@ class _HomeScreenState extends State<HomeScreen> {
     if ((chat.lastMessageId ?? '').isEmpty) return 'Нет сообщений';
     final type = chat.lastMessageType ?? 'text';
     final hasImage = (chat.lastMessageImageUrl ?? '').isNotEmpty;
+    final hasFile = (chat.lastMessageFileUrl ?? '').isNotEmpty;
     final text = (chat.lastMessageText ?? '').trim();
     if (type == 'image' || (hasImage && text.isEmpty)) return 'Фото';
+    if (type == 'file' || (hasFile && text.isEmpty)) return 'Файл';
+    if (type == 'text_file' && hasFile) {
+      return text.isNotEmpty ? 'Файл · $text' : 'Файл';
+    }
     if (type == 'text_image' && hasImage) {
       return text.isNotEmpty ? 'Фото · $text' : 'Фото';
     }
     return text.isNotEmpty ? text : 'Сообщение';
+  }
+
+  Future<void> _joinByInviteDialog() async {
+    final controller = TextEditingController();
+    bool isLoading = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            Future<void> doJoin() async {
+              final code = controller.text.trim();
+              if (code.isEmpty) {
+                setLocal(() => error = 'Введите код');
+                return;
+              }
+              setLocal(() {
+                isLoading = true;
+                error = null;
+              });
+              try {
+                await _chatsService.joinByInviteCode(code);
+                if (!mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text('Готово: вы вступили в чат')),
+                );
+                _loadChats();
+              } catch (e) {
+                setLocal(() {
+                  isLoading = false;
+                  error = e.toString().replaceFirst('Exception: ', '');
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: Text('Вступить по коду'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: 'Код инвайта',
+                      errorText: error,
+                    ),
+                    onSubmitted: (_) => doJoin(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: isLoading ? null : doJoin,
+                  child: isLoading
+                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Вступить'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -444,6 +521,18 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.refresh_rounded, color: Color(0xFF667eea)),
               onPressed: _loadChats,
               tooltip: 'Обновить',
+            ),
+          ),
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.vpn_key_rounded, color: Colors.green.shade700),
+              onPressed: _joinByInviteDialog,
+              tooltip: 'Вступить по коду',
             ),
           ),
           Container(
