@@ -476,5 +476,25 @@ class ChatsService {
     } catch (_) {}
     throw Exception('$msg (${response.statusCode})');
   }
+
+  // ✅ Переименовать групповой чат (owner/admin)
+  Future<Map<String, dynamic>> renameChat(String chatId, String name) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.put(
+      Uri.parse('$baseUrl/chats/$chatId/name'),
+      headers: headers,
+      body: jsonEncode({'name': name}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    String msg = 'Не удалось переименовать чат';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
 }
 

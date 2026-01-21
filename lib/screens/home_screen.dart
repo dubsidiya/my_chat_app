@@ -179,7 +179,10 @@ class _HomeScreenState extends State<HomeScreen> {
           isGroup: chat.isGroup,
         ),
       ),
-    );
+    ).then((_) {
+      // После возврата обновим список (на случай переименования/изменений)
+      if (mounted) _loadChats();
+    });
   }
 
   Future<void> _deleteChat(Chat chat) async {

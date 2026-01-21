@@ -904,3 +904,37 @@ export const revokeInvite = async (req, res) => {
     return res.status(500).json({ message: 'Ошибка отзыва инвайта' });
   }
 };
+
+// ✅ Переименовать чат (только групповой; owner/admin)
+export const renameChat = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const requesterId = req.user.userId;
+    const name = (req.body?.name || '').toString().trim();
+
+    if (!chatId) return res.status(400).json({ message: 'Укажите chatId' });
+    if (!name) return res.status(400).json({ message: 'Укажите name' });
+    if (name.length > 100) return res.status(400).json({ message: 'Слишком длинное имя (макс 100)' });
+
+    const chatCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (chatCheck.rows.length === 0) return res.status(404).json({ message: 'Чат не найден' });
+    if (!chatCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: 'Переименование доступно только для группового чата' });
+    }
+
+    const can = await isOwnerOrAdmin(chatId, requesterId);
+    if (!can) {
+      return res.status(403).json({ message: 'Переименовать чат может только owner/admin' });
+    }
+
+    const updated = await pool.query(
+      'UPDATE chats SET name = $1 WHERE id = $2 RETURNING id, name, is_group',
+      [name, chatId]
+    );
+
+    return res.status(200).json(updated.rows[0]);
+  } catch (error) {
+    console.error('Ошибка renameChat:', error);
+    return res.status(500).json({ message: 'Ошибка переименования чата' });
+  }
+};

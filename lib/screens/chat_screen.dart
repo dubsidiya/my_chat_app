@@ -78,6 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _typingCleanupTimer;
   bool _sentTyping = false;
   bool _subscribedToChatRealtime = false;
+  late String _chatTitle;
 
   Future<void> _showInviteDialog() async {
     if (!mounted) return;
@@ -205,9 +206,84 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _renameGroupChatDialog() async {
+    if (!mounted) return;
+    final controller = TextEditingController(text: _chatTitle);
+    bool isLoading = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            Future<void> save() async {
+              final name = controller.text.trim();
+              if (name.isEmpty) {
+                setLocal(() => error = 'Введите имя');
+                return;
+              }
+              setLocal(() {
+                isLoading = true;
+                error = null;
+              });
+              try {
+                final updated = await _chatsService.renameChat(widget.chatId, name);
+                final newName = (updated['name'] ?? name).toString();
+                if (!mounted) return;
+                setState(() => _chatTitle = newName);
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text('Название обновлено')),
+                );
+              } catch (e) {
+                setLocal(() {
+                  isLoading = false;
+                  error = e.toString().replaceFirst('Exception: ', '');
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: Text('Переименовать чат'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: 'Название группы',
+                      errorText: error,
+                    ),
+                    onSubmitted: (_) => save(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: isLoading ? null : save,
+                  child: isLoading
+                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Сохранить'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _chatTitle = widget.chatName;
 
     // Инициализируем WebSocket асинхронно
     _initWebSocket();
@@ -2496,7 +2572,7 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              widget.chatName,
+              _chatTitle,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.grey.shade900,
@@ -2566,8 +2642,20 @@ class _ChatScreenState extends State<ChatScreen> {
               if (value == 'clear') _clearChat();
               if (value == 'leave') _leaveChat();
               if (value == 'invite' && widget.isGroup) _showInviteDialog();
+              if (value == 'rename' && widget.isGroup) _renameGroupChatDialog();
             },
             itemBuilder: (context) => [
+              if (widget.isGroup)
+                PopupMenuItem(
+                  value: 'rename',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_rounded, color: Colors.blueGrey.shade700, size: 20),
+                      SizedBox(width: 10),
+                      Text('Переименовать'),
+                    ],
+                  ),
+                ),
               if (widget.isGroup)
                 PopupMenuItem(
                   value: 'invite',
