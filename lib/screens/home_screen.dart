@@ -176,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
           userEmail: widget.userEmail,
           chatId: chat.id,
           chatName: chat.name,
+          isGroup: chat.isGroup,
         ),
       ),
     );
@@ -1028,11 +1029,30 @@ class _CreateChatDialog extends StatefulWidget {
 class _CreateChatDialogState extends State<_CreateChatDialog> {
   late final TextEditingController _nameController;
   bool _isCreating = false;
+  bool _isGroup = false;
+  bool _loadingUsers = true;
+  List<Map<String, dynamic>> _users = [];
+  final Set<String> _selectedUserIds = {};
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    try {
+      final users = await widget.chatsService.getAllUsers(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        _loadingUsers = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingUsers = false);
+    }
   }
 
   @override
@@ -1043,14 +1063,19 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
 
   Future<void> _createChat() async {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (_selectedUserIds.isEmpty) return;
+    if (_isGroup && name.isEmpty) return;
+    if (!_isGroup && _selectedUserIds.length != 1) return;
+    if (_isGroup && _selectedUserIds.length < 1) return;
 
     setState(() {
       _isCreating = true;
     });
 
     try {
-      await widget.chatsService.createChat(name, [widget.userId]);
+      final selected = _selectedUserIds.toList();
+      final finalName = name.isNotEmpty ? name : 'Чат 1-на-1';
+      await widget.chatsService.createChat(finalName, selected, isGroup: _isGroup);
       
       if (mounted) {
         Navigator.pop(context, true);
@@ -1106,38 +1131,119 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
       ),
       content: Container(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: TextField(
-          controller: _nameController,
-          style: TextStyle(fontSize: 16),
-          decoration: InputDecoration(
-            labelText: 'Имя чата',
-            labelStyle: TextStyle(
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: Text('1-на-1'),
+                    selected: !_isGroup,
+                    onSelected: _isCreating
+                        ? null
+                        : (_) {
+                            setState(() {
+                              _isGroup = false;
+                              // оставляем только одного выбранного
+                              if (_selectedUserIds.length > 1) {
+                                final first = _selectedUserIds.first;
+                                _selectedUserIds
+                                  ..clear()
+                                  ..add(first);
+                              }
+                            });
+                          },
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: Text('Групповой'),
+                    selected: _isGroup,
+                    onSelected: _isCreating
+                        ? null
+                        : (_) {
+                            setState(() {
+                              _isGroup = true;
+                            });
+                          },
+                  ),
+                ),
+              ],
             ),
-            filled: true,
-            fillColor: Colors.grey.shade50,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(
-                color: Colors.grey.shade200,
-                width: 1.5,
+            SizedBox(height: 12),
+            if (_isGroup)
+              TextField(
+                controller: _nameController,
+                style: TextStyle(fontSize: 16),
+                decoration: InputDecoration(
+                  labelText: 'Имя группы',
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                enabled: !_isCreating,
+              ),
+            if (_isGroup) SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _isGroup ? 'Участники' : 'Выберите человека',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(
-                color: Color(0xFF667eea),
-                width: 2,
+            SizedBox(height: 8),
+            if (_loadingUsers)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_users.isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Нет пользователей для добавления'),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: 260),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _users.length,
+                  itemBuilder: (context, i) {
+                    final u = _users[i];
+                    final id = (u['id'] ?? '').toString();
+                    final email = (u['email'] ?? '').toString();
+                    final selected = _selectedUserIds.contains(id);
+                    return CheckboxListTile(
+                      dense: true,
+                      value: selected,
+                      onChanged: _isCreating
+                          ? null
+                          : (v) {
+                              setState(() {
+                                if (_isGroup) {
+                                  if (v == true) {
+                                    _selectedUserIds.add(id);
+                                  } else {
+                                    _selectedUserIds.remove(id);
+                                  }
+                                } else {
+                                  _selectedUserIds
+                                    ..clear()
+                                    ..add(id);
+                                }
+                              });
+                            },
+                      title: Text(email.isNotEmpty ? email : 'Пользователь $id'),
+                    );
+                  },
+                ),
               ),
-            ),
-          ),
-          autofocus: true,
-          enabled: !_isCreating,
+          ],
         ),
       ),
       actions: [
@@ -1177,7 +1283,15 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             ],
           ),
           child: ElevatedButton(
-            onPressed: _isCreating ? null : _createChat,
+            onPressed: _isCreating
+                ? null
+                : () {
+                    final name = _nameController.text.trim();
+                    if (_selectedUserIds.isEmpty) return;
+                    if (_isGroup && name.isEmpty) return;
+                    if (!_isGroup && _selectedUserIds.length != 1) return;
+                    _createChat();
+                  },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.transparent,
               shadowColor: Colors.transparent,

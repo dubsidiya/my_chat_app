@@ -24,12 +24,14 @@ class ChatScreen extends StatefulWidget {
   final String userEmail;
   final String chatId;
   final String chatName;
+  final bool isGroup;
 
   const ChatScreen({
     required this.userId,
     required this.userEmail,
     required this.chatId,
     required this.chatName,
+    required this.isGroup,
   });
 
   @override
@@ -2547,11 +2549,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
-            child: IconButton(
-              icon: Icon(Icons.person_add_rounded, color: Colors.white),
-              onPressed: _showAddMembersDialog,
-              tooltip: 'Добавить участников',
-            ),
+            child: widget.isGroup
+                ? IconButton(
+                    icon: Icon(Icons.person_add_rounded, color: Colors.white),
+                    onPressed: _showAddMembersDialog,
+                    tooltip: 'Добавить участников',
+                  )
+                : SizedBox.shrink(),
           ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade700),
@@ -2561,19 +2565,20 @@ class _ChatScreenState extends State<ChatScreen> {
             onSelected: (value) {
               if (value == 'clear') _clearChat();
               if (value == 'leave') _leaveChat();
-              if (value == 'invite') _showInviteDialog();
+              if (value == 'invite' && widget.isGroup) _showInviteDialog();
             },
             itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'invite',
-                child: Row(
-                  children: [
-                    Icon(Icons.link_rounded, color: Colors.green.shade700, size: 20),
-                    SizedBox(width: 10),
-                    Text('Пригласить (код)'),
-                  ],
+              if (widget.isGroup)
+                PopupMenuItem(
+                  value: 'invite',
+                  child: Row(
+                    children: [
+                      Icon(Icons.link_rounded, color: Colors.green.shade700, size: 20),
+                      SizedBox(width: 10),
+                      Text('Пригласить (код)'),
+                    ],
+                  ),
                 ),
-              ),
               PopupMenuItem(
                 value: 'clear',
                 child: Row(

@@ -79,7 +79,7 @@ class ChatsService {
     }
   }
 
-  Future<Chat> createChat(String name, List<String> userIds) async {
+  Future<Chat> createChat(String name, List<String> userIds, {bool isGroup = false}) async {
     try {
       final url = Uri.parse('$baseUrl/chats');
       print('Creating chat at: $url');
@@ -92,6 +92,7 @@ class ChatsService {
         body: jsonEncode({
           'name': name,
           'userIds': userIds,
+          'is_group': isGroup,
         }),
       ).timeout(
         const Duration(seconds: 10),
@@ -103,7 +104,7 @@ class ChatsService {
       print('Create chat status: ${response.statusCode}');
       print('Create chat response: ${response.body}');
 
-    if (response.statusCode == 201) {
+    if (response.statusCode == 201 || response.statusCode == 200) {
         try {
           final responseData = jsonDecode(response.body);
           if (responseData is! Map<String, dynamic>) {

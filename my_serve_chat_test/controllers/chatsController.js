@@ -54,10 +54,25 @@ export const getUserChats = async (req, res) => {
 
     // Используем chat_users (как в схеме БД) вместо chat_members
     const result = await pool.query(
-      `SELECT c.id, c.name, c.is_group
-       FROM chats c
-       JOIN chat_users cu ON c.id = cu.chat_id
-       WHERE cu.user_id = $1`,
+      `
+      SELECT
+        c.id,
+        c.is_group,
+        CASE
+          WHEN c.is_group = true THEN c.name
+          ELSE COALESCE(ou.email, c.name)
+        END AS name
+      FROM chats c
+      JOIN chat_users cu ON c.id = cu.chat_id AND cu.user_id = $1
+      LEFT JOIN LATERAL (
+        SELECT u.email
+        FROM chat_users cu2
+        JOIN users u ON u.id = cu2.user_id
+        WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
+        ORDER BY u.id
+        LIMIT 1
+      ) ou ON true
+      `,
       [userId]
     );
 
@@ -76,10 +91,23 @@ export const getChatsList = async (req, res) => {
     const result = await pool.query(
       `
       WITH user_chats AS (
-        SELECT c.id, c.name, c.is_group
+        SELECT
+          c.id,
+          c.is_group,
+          CASE
+            WHEN c.is_group = true THEN c.name
+            ELSE COALESCE(ou.email, c.name)
+          END AS name
         FROM chats c
-        JOIN chat_users cu ON cu.chat_id = c.id
-        WHERE cu.user_id = $1
+        JOIN chat_users cu ON cu.chat_id = c.id AND cu.user_id = $1
+        LEFT JOIN LATERAL (
+          SELECT u.email
+          FROM chat_users cu2
+          JOIN users u ON u.id = cu2.user_id
+          WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
+          ORDER BY u.id
+          LIMIT 1
+        ) ou ON true
       ),
       last_messages AS (
         SELECT DISTINCT ON (m.chat_id)
@@ -149,19 +177,13 @@ export const getChatsList = async (req, res) => {
 // Создание чата
 export const createChat = async (req, res) => {
   try {
-    // Приложение отправляет: { name, userIds: [userId1, userId2, ...] }
+    // Приложение отправляет: { name?, userIds: [userId1, ...], is_group?: boolean }
     const { name, userIds } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ message: "Укажите имя чата" });
-    }
+    const isGroupRequested = req.body?.is_group === true || req.body?.isGroup === true || req.body?.chat_type === 'group';
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({ message: "Укажите хотя бы одного участника (userIds)" });
     }
-
-    // Определяем, групповой ли чат (больше 1 участника)
-    const isGroup = userIds.length > 1;
 
     // Создатель чата - текущий пользователь из токена
     const creatorId = req.user.userId;
@@ -171,20 +193,65 @@ export const createChat = async (req, res) => {
       userIds.unshift(creatorId.toString());
     }
 
+    // Убираем дубликаты
+    const uniqueUserIds = Array.from(new Set(userIds.map((x) => x.toString())));
+
+    // ✅ 1-на-1 чат: строго 2 участника (создатель + 1 человек), и запрещаем добавления позже
+    if (!isGroupRequested) {
+      if (uniqueUserIds.length !== 2) {
+        return res.status(400).json({ message: "Для чата 1-на-1 выберите ровно одного человека" });
+      }
+
+      const otherId = uniqueUserIds.find((x) => x !== creatorId.toString());
+      // Проверим, нет ли уже такого 1-на-1 чата между этими двумя
+      const existing = await pool.query(
+        `
+        SELECT c.id, c.name, c.is_group
+        FROM chats c
+        JOIN chat_users cu1 ON cu1.chat_id = c.id AND cu1.user_id = $1
+        JOIN chat_users cu2 ON cu2.chat_id = c.id AND cu2.user_id = $2
+        WHERE c.is_group = false
+        LIMIT 1
+        `,
+        [creatorId.toString(), otherId]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(200).json({
+          id: existing.rows[0].id?.toString(),
+          name: existing.rows[0].name,
+          is_group: false,
+          already_exists: true,
+        });
+      }
+    } else {
+      // ✅ Групповой чат: минимум 2 участника (создатель + хотя бы 1 человек)
+      if (uniqueUserIds.length < 2) {
+        return res.status(400).json({ message: "Для группового чата выберите хотя бы одного участника" });
+      }
+      if (!name || String(name).trim().isEmpty) {
+        return res.status(400).json({ message: "Укажите имя группового чата" });
+      }
+    }
+
+    const isGroup = isGroupRequested === true;
+    const finalName = isGroup
+      ? (name && String(name).trim().isNotEmpty ? String(name).trim() : 'Групповой чат')
+      : 'Личный чат';
+
     // Создаём чат с is_group и created_by
     const chatResult = await pool.query(
       `INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id, name, is_group, created_by`,
-      [name, isGroup, creatorId]
+      [finalName, isGroup, creatorId]
     );
 
     const chatId = chatResult.rows[0].id;
 
     // Добавляем участников в chat_users (как в схеме БД)
-    for (const userId of userIds) {
-      const role = userId.toString() === creatorId.toString() ? 'owner' : 'member';
+    for (const uid of uniqueUserIds) {
+      const role = uid.toString() === creatorId.toString() ? 'owner' : 'member';
       await pool.query(
         `INSERT INTO chat_users (chat_id, user_id, role) VALUES ($1, $2, $3)`,
-        [chatId, userId, role]
+        [chatId, uid, role]
       );
     }
 
@@ -344,6 +411,12 @@ export const addMembersToChat = async (req, res) => {
 
     if (chatCheck.rows.length === 0) {
       return res.status(404).json({ message: "Чат не найден" });
+    }
+
+    // ✅ Добавлять участников можно только в групповые чаты
+    const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (!groupCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: "Нельзя добавлять участников в чат 1-на-1. Создайте групповой чат." });
     }
 
     // Добавлять участников может owner или admin
@@ -601,6 +674,12 @@ export const updateMemberRole = async (req, res) => {
     if (!chatId || !targetUserId) {
       return res.status(400).json({ message: 'Некорректные параметры' });
     }
+
+    // Только групповые чаты
+    const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (!groupCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: 'Роли доступны только в групповых чатах' });
+    }
     if (!['admin', 'member'].includes(role)) {
       return res.status(400).json({ message: "role должен быть 'admin' или 'member'" });
     }
@@ -643,6 +722,12 @@ export const transferOwnership = async (req, res) => {
       return res.status(400).json({ message: 'Укажите newOwnerId' });
     }
 
+    // Только групповые чаты
+    const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (!groupCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: 'Ownership доступен только в групповых чатах' });
+    }
+
     const owner = await isOwner(chatId, requesterId);
     if (!owner) {
       return res.status(403).json({ message: 'Только owner может передать ownership' });
@@ -678,6 +763,12 @@ export const createInvite = async (req, res) => {
     const maxUses = req.body?.maxUses != null ? parseInt(req.body.maxUses, 10) : null;
 
     if (!chatId) return res.status(400).json({ message: 'Укажите chatId' });
+
+    // Только групповые чаты
+    const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (!groupCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: 'Инвайты доступны только для групповых чатов' });
+    }
 
     const canCreate = await isOwnerOrAdmin(chatId, requesterId);
     if (!canCreate) {
@@ -759,6 +850,12 @@ export const joinByInvite = async (req, res) => {
 
     const chatId = invite.chat_id;
 
+    // Только групповые чаты (инвайты для 1-на-1 не поддерживаем)
+    const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+    if (!groupCheck.rows[0]?.is_group) {
+      return res.status(400).json({ message: 'Инвайт ведёт в чат 1-на-1 (это запрещено)' });
+    }
+
     // если уже участник — просто вернуть чат
     const already = await ensureChatMember(chatId, requesterId);
     if (!already) {
@@ -769,11 +866,7 @@ export const joinByInvite = async (req, res) => {
         [chatId, requesterId]
       );
       await pool.query('UPDATE chat_invites SET use_count = use_count + 1 WHERE id = $1', [invite.id]);
-      // обновим is_group если участников стало >1
-      const memberCount = await pool.query('SELECT COUNT(*)::int as count FROM chat_users WHERE chat_id = $1', [chatId]);
-      if ((memberCount.rows[0]?.count ?? 0) > 1) {
-        await pool.query('UPDATE chats SET is_group = true WHERE id = $1', [chatId]);
-      }
+      // is_group уже true (см. проверку выше)
     }
 
     const chatRes = await pool.query('SELECT id, name, is_group FROM chats WHERE id = $1', [chatId]);
