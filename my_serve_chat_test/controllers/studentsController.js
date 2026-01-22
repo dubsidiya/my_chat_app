@@ -1,16 +1,18 @@
 import pool from '../db.js';
 
-// Получение всех студентов (общие для всех преподавателей)
+// Получение всех студентов (привязаны к владельцу created_by)
 export const getAllStudents = async (req, res) => {
   try {
-    // Убрали фильтрацию по created_by - все преподаватели видят всех студентов
+    const userId = req.user.userId;
     const result = await pool.query(
       `SELECT s.*, 
               COALESCE(SUM(CASE WHEN t.type = 'deposit' THEN t.amount ELSE -t.amount END), 0) as balance
        FROM students s
-       LEFT JOIN transactions t ON s.id = t.student_id
+       LEFT JOIN transactions t ON s.id = t.student_id AND t.created_by = $1
+       WHERE s.created_by = $1
        GROUP BY s.id
-       ORDER BY s.name`
+       ORDER BY s.name`,
+      [userId]
     );
 
     res.json(result.rows);
@@ -41,8 +43,9 @@ export const createStudent = async (req, res) => {
       const existingResult = await pool.query(
         `SELECT * FROM students 
          WHERE LOWER(TRIM(name)) = LOWER($1) 
-         AND (phone IS NULL OR phone = $2 OR phone = $3)`,
-        [trimmedName, trimmedPhone, trimmedPhone.replace(/\D/g, '')]
+         AND created_by = $2
+         AND (phone IS NULL OR phone = $3 OR phone = $4)`,
+        [trimmedName, userId, trimmedPhone, trimmedPhone.replace(/\D/g, '')]
       );
       if (existingResult.rows.length > 0) {
         existingStudent = existingResult.rows[0];
@@ -51,8 +54,8 @@ export const createStudent = async (req, res) => {
       // Если телефона нет, ищем только по имени (точное совпадение)
       const existingResult = await pool.query(
         `SELECT * FROM students 
-         WHERE LOWER(TRIM(name)) = LOWER($1)`,
-        [trimmedName]
+         WHERE LOWER(TRIM(name)) = LOWER($1) AND created_by = $2`,
+        [trimmedName, userId]
       );
       if (existingResult.rows.length > 0) {
         existingStudent = existingResult.rows[0];
@@ -113,16 +116,17 @@ export const createStudent = async (req, res) => {
   }
 };
 
-// Обновление студента (любой преподаватель может обновить)
+// Обновление студента (только владелец)
 export const updateStudent = async (req, res) => {
   try {
+    const userId = req.user.userId;
     const { id } = req.params;
     const { name, parent_name, phone, email, notes } = req.body;
 
     // Проверяем, что студент существует
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1',
-      [id]
+      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
+      [id, userId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -144,15 +148,16 @@ export const updateStudent = async (req, res) => {
   }
 };
 
-// Удаление студента (любой преподаватель может удалить)
+// Удаление студента (только владелец)
 export const deleteStudent = async (req, res) => {
   try {
+    const userId = req.user.userId;
     const { id } = req.params;
 
     // Проверяем, что студент существует
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1',
-      [id]
+      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
+      [id, userId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -171,12 +176,13 @@ export const deleteStudent = async (req, res) => {
 // Получение баланса студента
 export const getStudentBalance = async (req, res) => {
   try {
+    const userId = req.user.userId;
     const { id } = req.params;
 
     // Проверяем, что студент существует
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1',
-      [id]
+      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
+      [id, userId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -186,8 +192,8 @@ export const getStudentBalance = async (req, res) => {
     const result = await pool.query(
       `SELECT COALESCE(SUM(CASE WHEN type = 'deposit' THEN amount ELSE -amount END), 0) as balance
        FROM transactions
-       WHERE student_id = $1`,
-      [id]
+       WHERE student_id = $1 AND created_by = $2`,
+      [id, userId]
     );
 
     res.json({ balance: parseFloat(result.rows[0].balance) });
@@ -200,12 +206,13 @@ export const getStudentBalance = async (req, res) => {
 // Получение истории транзакций студента
 export const getStudentTransactions = async (req, res) => {
   try {
+    const userId = req.user.userId;
     const { id } = req.params;
 
     // Проверяем, что студент существует
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1',
-      [id]
+      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
+      [id, userId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -216,9 +223,9 @@ export const getStudentTransactions = async (req, res) => {
       `SELECT t.*, l.lesson_date, l.lesson_time
        FROM transactions t
        LEFT JOIN lessons l ON t.lesson_id = l.id
-       WHERE t.student_id = $1
+       WHERE t.student_id = $1 AND t.created_by = $2
        ORDER BY t.created_at DESC`,
-      [id]
+      [id, userId]
     );
 
     res.json(result.rows);

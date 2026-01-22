@@ -114,14 +114,15 @@ export const getReport = async (req, res) => {
     const lessonsResult = await pool.query(
       `SELECT l.*, s.name as student_name
        FROM report_lessons rl
-       JOIN lessons l ON rl.lesson_id = l.id
-       JOIN students s ON l.student_id = s.id
+       JOIN lessons l ON rl.lesson_id = l.id AND l.created_by = $2
+       JOIN students s ON l.student_id = s.id AND s.created_by = $2
        WHERE rl.report_id = $1
        ORDER BY l.lesson_date, l.lesson_time`,
-      [id]
+      [id, userId]
     );
 
     report.lessons = lessonsResult.rows;
+    report.lessons_count = lessonsResult.rows.length;
 
     res.json(report);
   } catch (error) {
@@ -132,16 +133,29 @@ export const getReport = async (req, res) => {
 
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { report_date, content } = req.body;
+  const userId = req.user.userId;
+  const { report_date, content } = req.body;
 
-    if (!report_date || !content) {
-      return res.status(400).json({ message: 'Дата и содержание отчета обязательны' });
+  if (!report_date || !content) {
+    return res.status(400).json({ message: 'Дата и содержание отчета обязательны' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Защита от дубля: один отчет на дату на пользователя
+    const existingReport = await client.query(
+      'SELECT id FROM reports WHERE report_date = $1 AND created_by = $2 LIMIT 1',
+      [report_date, userId]
+    );
+    if (existingReport.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'Отчет за эту дату уже существует' });
     }
 
     // Создаем отчет
-    const reportResult = await pool.query(
+    const reportResult = await client.query(
       `INSERT INTO reports (report_date, content, created_by)
        VALUES ($1, $2, $3)
        RETURNING *`,
@@ -156,120 +170,137 @@ export const createReport = async (req, res) => {
     // Создаем занятия для каждого найденного ученика
     const createdLessons = [];
     for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
-      // Ищем студента по имени (точное совпадение или частичное) - общий для всех преподавателей
-      const studentResult = await pool.query(
-        `SELECT id FROM students 
-         WHERE LOWER(TRIM(name)) = LOWER($1) OR LOWER(TRIM(name)) LIKE LOWER($2)
-         ORDER BY CASE WHEN LOWER(TRIM(name)) = LOWER($1) THEN 1 ELSE 2 END
+      const name = studentName.trim();
+      if (!name) continue;
+
+      // Ищем студента ТОЛЬКО среди студентов пользователя
+      let studentResult = await client.query(
+        `SELECT id FROM students
+         WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
          LIMIT 1`,
-        [studentName.trim(), `%${studentName.trim()}%`]
+        [userId, name]
+      );
+      if (studentResult.rows.length === 0) {
+        studentResult = await client.query(
+          `SELECT id FROM students
+           WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+           LIMIT 1`,
+          [userId, `%${name}%`]
+        );
+      }
+
+      if (studentResult.rows.length === 0) continue;
+      const studentId = studentResult.rows[0].id;
+
+      // Формируем время в формате ЧЧ:ММ
+      const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
+      
+      // Формируем описание с временем
+      let description = `Занятие ${report_date}`;
+      if (timeStart && timeEnd) {
+        description += ` ${timeStart}-${timeEnd}`;
+      }
+      if (isCancelled) {
+        description += ' (отмена, оплачивается)';
+      }
+
+      // Создаем занятие
+      const lessonResult = await client.query(
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [studentId, report_date, lessonTime, price, notes || null, userId]
       );
 
-      if (studentResult.rows.length > 0) {
-        const studentId = studentResult.rows[0].id;
+      const lesson = lessonResult.rows[0];
 
-        // Формируем время в формате ЧЧ:ММ
-        const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
-        
-        // Формируем описание с временем
-        let description = `Занятие ${report_date}`;
-        if (timeStart && timeEnd) {
-          description += ` ${timeStart}-${timeEnd}`;
-        }
-        if (isCancelled) {
-          description += ' (отмена, оплачивается)';
-        }
+      // Создаем транзакцию списания
+      await client.query(
+        `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
+         VALUES ($1, $2, 'lesson', $3, $4, $5)`,
+        [studentId, price, description, lesson.id, userId]
+      );
 
-        // Создаем занятие
-        const lessonResult = await pool.query(
-          `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [studentId, report_date, lessonTime, price, notes || null, userId]
-        );
+      // Связываем занятие с отчетом
+      await client.query(
+        `INSERT INTO report_lessons (report_id, lesson_id)
+         VALUES ($1, $2)`,
+        [report.id, lesson.id]
+      );
 
-        const lesson = lessonResult.rows[0];
-
-        // Создаем транзакцию списания
-        await pool.query(
-          `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
-           VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-          [
-            studentId,
-            price,
-            description,
-            lesson.id,
-            userId
-          ]
-        );
-
-        // Связываем занятие с отчетом
-        await pool.query(
-          `INSERT INTO report_lessons (report_id, lesson_id)
-           VALUES ($1, $2)`,
-          [report.id, lesson.id]
-        );
-
-        createdLessons.push({ ...lesson, student_name: studentName });
-      }
+      createdLessons.push({ ...lesson, student_name: studentName });
     }
 
     report.lessons = createdLessons;
+    report.lessons_count = createdLessons.length;
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
 
-    res.status(201).json(report);
+    await client.query('COMMIT');
+    return res.status(201).json(report);
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка создания отчета:', error);
-    res.status(500).json({ message: 'Ошибка создания отчета' });
+    return res.status(500).json({ message: 'Ошибка создания отчета' });
+  } finally {
+    client.release();
   }
 };
 
 // Обновление отчета (удаляет старые занятия и создает новые)
 export const updateReport = async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+  const { report_date, content } = req.body;
+
+  if (!report_date || !content) {
+    return res.status(400).json({ message: 'Дата и содержание отчета обязательны' });
+  }
+
+  const client = await pool.connect();
   try {
-    const userId = req.user.userId;
-    const { id } = req.params;
-    const { report_date, content } = req.body;
+    await client.query('BEGIN');
 
     // Проверяем, что отчет принадлежит пользователю
-    const checkResult = await pool.query(
+    const checkResult = await client.query(
       'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
       [id, userId]
     );
-
     if (checkResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчет не найден' });
     }
 
     // Получаем старые занятия из отчета
-    const oldLessonsResult = await pool.query(
+    const oldLessonsResult = await client.query(
       `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
       [id]
     );
+    const oldLessonIds = oldLessonsResult.rows.map((row) => row.lesson_id);
 
-    const oldLessonIds = oldLessonsResult.rows.map(row => row.lesson_id);
-
-    // Удаляем старые транзакции и занятия
-    for (const lessonId of oldLessonIds) {
-      // Удаляем транзакцию
-      await pool.query('DELETE FROM transactions WHERE lesson_id = $1', [lessonId]);
-      // Удаляем занятие
-      await pool.query('DELETE FROM lessons WHERE id = $1', [lessonId]);
+    // Удаляем старые транзакции и занятия (только свои)
+    if (oldLessonIds.length > 0) {
+      await client.query(
+        'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
+        [userId, oldLessonIds]
+      );
+      await client.query(
+        'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
+        [userId, oldLessonIds]
+      );
     }
 
     // Удаляем связи
-    await pool.query('DELETE FROM report_lessons WHERE report_id = $1', [id]);
+    await client.query('DELETE FROM report_lessons WHERE report_id = $1', [id]);
 
     // Обновляем отчет
-    const reportResult = await pool.query(
+    const reportResult = await client.query(
       `UPDATE reports 
        SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       WHERE id = $3 AND created_by = $4
        RETURNING *`,
-      [report_date, content, id]
+      [report_date, content, id, userId]
     );
-
     const report = reportResult.rows[0];
 
     // Парсим новое содержание и создаем занятия заново
@@ -277,107 +308,119 @@ export const updateReport = async (req, res) => {
     const createdLessons = [];
 
     for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
-      // Ищем студента по имени (общий для всех преподавателей)
-      const studentResult = await pool.query(
-        `SELECT id FROM students 
-         WHERE LOWER(TRIM(name)) = LOWER($1) OR LOWER(TRIM(name)) LIKE LOWER($2)
-         ORDER BY CASE WHEN LOWER(TRIM(name)) = LOWER($1) THEN 1 ELSE 2 END
+      const name = studentName.trim();
+      if (!name) continue;
+
+      let studentResult = await client.query(
+        `SELECT id FROM students
+         WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
          LIMIT 1`,
-        [studentName.trim(), `%${studentName.trim()}%`]
+        [userId, name]
+      );
+      if (studentResult.rows.length === 0) {
+        studentResult = await client.query(
+          `SELECT id FROM students
+           WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+           LIMIT 1`,
+          [userId, `%${name}%`]
+        );
+      }
+      if (studentResult.rows.length === 0) continue;
+      const studentId = studentResult.rows[0].id;
+
+      const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
+
+      let description = `Занятие ${report_date}`;
+      if (timeStart && timeEnd) description += ` ${timeStart}-${timeEnd}`;
+      if (isCancelled) description += ' (отмена, оплачивается)';
+
+      const lessonResult = await client.query(
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [studentId, report_date, lessonTime, price, notes || null, userId]
+      );
+      const lesson = lessonResult.rows[0];
+
+      await client.query(
+        `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
+         VALUES ($1, $2, 'lesson', $3, $4, $5)`,
+        [studentId, price, description, lesson.id, userId]
       );
 
-      if (studentResult.rows.length > 0) {
-        const studentId = studentResult.rows[0].id;
+      await client.query(
+        `INSERT INTO report_lessons (report_id, lesson_id)
+         VALUES ($1, $2)`,
+        [report.id, lesson.id]
+      );
 
-        // Формируем время в формате ЧЧ:ММ
-        const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
-        
-        // Формируем описание с временем
-        let description = `Занятие ${report_date}`;
-        if (timeStart && timeEnd) {
-          description += ` ${timeStart}-${timeEnd}`;
-        }
-        if (isCancelled) {
-          description += ' (отмена, оплачивается)';
-        }
-
-        const lessonResult = await pool.query(
-          `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [studentId, report_date, lessonTime, price, notes || null, userId]
-        );
-
-        const lesson = lessonResult.rows[0];
-
-        await pool.query(
-          `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
-           VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-          [
-            studentId,
-            price,
-            description,
-            lesson.id,
-            userId
-          ]
-        );
-
-        await pool.query(
-          `INSERT INTO report_lessons (report_id, lesson_id)
-           VALUES ($1, $2)`,
-          [report.id, lesson.id]
-        );
-
-        createdLessons.push({ ...lesson, student_name: studentName });
-      }
+      createdLessons.push({ ...lesson, student_name: studentName });
     }
 
     report.lessons = createdLessons;
+    report.lessons_count = createdLessons.length;
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
 
-    res.json(report);
+    await client.query('COMMIT');
+    return res.json(report);
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка обновления отчета:', error);
-    res.status(500).json({ message: 'Ошибка обновления отчета' });
+    return res.status(500).json({ message: 'Ошибка обновления отчета' });
+  } finally {
+    client.release();
   }
 };
 
 // Удаление отчета
 export const deleteReport = async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+
+  const client = await pool.connect();
   try {
-    const userId = req.user.userId;
-    const { id } = req.params;
+    await client.query('BEGIN');
 
     // Проверяем, что отчет принадлежит пользователю
-    const checkResult = await pool.query(
+    const checkResult = await client.query(
       'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
       [id, userId]
     );
-
     if (checkResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчет не найден' });
     }
 
     // Получаем занятия из отчета
-    const lessonsResult = await pool.query(
+    const lessonsResult = await client.query(
       `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
       [id]
     );
+    const lessonIds = lessonsResult.rows.map((r) => r.lesson_id);
 
-    // Удаляем транзакции и занятия
-    for (const row of lessonsResult.rows) {
-      await pool.query('DELETE FROM transactions WHERE lesson_id = $1', [row.lesson_id]);
-      await pool.query('DELETE FROM lessons WHERE id = $1', [row.lesson_id]);
+    if (lessonIds.length > 0) {
+      await client.query(
+        'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
+        [userId, lessonIds]
+      );
+      await client.query(
+        'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
+        [userId, lessonIds]
+      );
     }
 
     // Удаляем отчет (каскадно удалит связи)
-    await pool.query('DELETE FROM reports WHERE id = $1', [id]);
+    await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
 
-    res.json({ message: 'Отчет удален' });
+    await client.query('COMMIT');
+    return res.json({ message: 'Отчет удален' });
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка удаления отчета:', error);
-    res.status(500).json({ message: 'Ошибка удаления отчета' });
+    return res.status(500).json({ message: 'Ошибка удаления отчета' });
+  } finally {
+    client.release();
   }
 };
 

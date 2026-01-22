@@ -88,17 +88,18 @@ const parseExcel = (buffer) => {
   return xlsx.utils.sheet_to_json(worksheet);
 };
 
-// Поиск студента по описанию платежа
-const findStudentByPaymentDescription = async (description) => {
+// Поиск студента по описанию платежа (только среди студентов владельца)
+const findStudentByPaymentDescription = async (userId, description) => {
   if (!description || typeof description !== 'string') {
     return null;
   }
 
   const desc = description.toLowerCase().trim();
   
-  // Получаем всех студентов
+  // Получаем студентов пользователя
   const studentsResult = await pool.query(
-    `SELECT id, name, parent_name, phone FROM students`
+    `SELECT id, name, parent_name, phone FROM students WHERE created_by = $1`,
+    [userId]
   );
 
   // Ищем совпадения по имени, имени родителя или телефону
@@ -246,7 +247,7 @@ export const processBankStatement = async (req, res) => {
         }
 
         // Ищем студента по описанию платежа
-        const student = await findStudentByPaymentDescription(description);
+        const student = await findStudentByPaymentDescription(userId, description);
 
         processedPayments.push({
           row: i + 1,
@@ -297,6 +298,7 @@ export const applyPayments = async (req, res) => {
 
     const results = [];
     const errors = [];
+    let skipped = 0;
 
     for (const payment of payments) {
       try {
@@ -312,8 +314,8 @@ export const applyPayments = async (req, res) => {
 
         // Проверяем, что студент существует
         const studentCheck = await pool.query(
-          'SELECT id, name FROM students WHERE id = $1',
-          [studentId]
+          'SELECT id, name FROM students WHERE id = $1 AND created_by = $2',
+          [studentId, userId]
         );
 
         if (studentCheck.rows.length === 0) {
@@ -325,18 +327,33 @@ export const applyPayments = async (req, res) => {
         }
 
         // Создаем транзакцию пополнения (из банковской выписки)
+        const createdAt = date ? new Date(date) : new Date();
         const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
+
+        // Best-effort дедуп: если уже есть идентичная запись на эту дату — пропускаем
+        if (date) {
+          const dup = await pool.query(
+            `SELECT id FROM transactions
+             WHERE student_id = $1
+               AND created_by = $2
+               AND type = 'deposit'
+               AND amount = $3
+               AND description = $4
+               AND DATE(created_at) = DATE($5)
+             LIMIT 1`,
+            [studentId, userId, amount, finalDescription, createdAt]
+          );
+          if (dup.rows.length > 0) {
+            skipped += 1;
+            continue;
+          }
+        }
+
         const result = await pool.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
            VALUES ($1, $2, 'deposit', $3, $4, $5)
            RETURNING *`,
-          [
-            studentId,
-            amount,
-            finalDescription,
-            userId,
-            date ? new Date(date) : new Date()
-          ]
+          [studentId, amount, finalDescription, userId, createdAt]
         );
 
         results.push({
@@ -354,6 +371,7 @@ export const applyPayments = async (req, res) => {
     res.json({
       success: results.length,
       failed: errors.length,
+      skipped,
       results: results,
       errors: errors
     });
