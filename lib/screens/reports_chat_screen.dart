@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/report.dart';
 import '../services/reports_service.dart';
 import 'edit_report_screen.dart';
+import 'report_builder_screen.dart';
 
 class ReportsChatScreen extends StatefulWidget {
   final String userId;
@@ -16,7 +17,6 @@ class ReportsChatScreen extends StatefulWidget {
 
 class _ReportsChatScreenState extends State<ReportsChatScreen> {
   final ReportsService _reportsService = ReportsService();
-  final TextEditingController _contentController = TextEditingController();
   final TextEditingController _dateController = TextEditingController();
   List<Report> _reports = [];
   bool _isLoading = false;
@@ -34,7 +34,6 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
   @override
   void dispose() {
-    _contentController.dispose();
     _dateController.dispose();
     super.dispose();
   }
@@ -82,52 +81,27 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     }
   }
 
-  Future<void> _createReport() async {
-    final content = _contentController.text.trim();
-    if (content.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Введите содержание отчета'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+  Future<void> _openBuilder() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportBuilderScreen(initialDate: _selectedDate),
+      ),
+    );
+    if (result == true) {
+      _loadReports();
     }
+  }
 
-    setState(() => _isLoading = true);
-
-    try {
-      final report = await _reportsService.createReport(
-        reportDate: _selectedDate,
-        content: content,
-      );
-
-      if (mounted) {
-        _contentController.clear();
-        _loadReports();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Отчет создан! Создано занятий: ${report.lessonsCount ?? 0}',
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+  Future<void> _openBuilderEdit(int reportId) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportBuilderScreen(reportId: reportId),
+      ),
+    );
+    if (result == true) {
+      _loadReports();
     }
   }
 
@@ -204,6 +178,18 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: _accent1.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.add_rounded, color: _accent1),
+              onPressed: _openBuilder,
+              tooltip: 'Новый отчет',
+            ),
+          ),
           Container(
             margin: EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
@@ -302,78 +288,41 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                     padding: EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        TextField(
-                          controller: _contentController,
-                          decoration: InputDecoration(
-                            labelText: 'Содержание отчета',
-                            labelStyle: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: Colors.grey.shade200,
-                                width: 1.5,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: _accent1, width: 2),
-                            ),
-                          ),
-                          maxLines: 10,
-                          minLines: 5,
-                        ),
-                        SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
                           height: 52,
-                          child: _isLoading
-                              ? Center(
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(_accent1),
-                                    strokeWidth: 3,
-                                  ),
-                                )
-                              : Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    gradient: LinearGradient(colors: [_accent1, _accent2]),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: _accent1.withOpacity(0.3),
-                                        blurRadius: 12,
-                                        offset: Offset(0, 6),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ElevatedButton.icon(
-                                    onPressed: _createReport,
-                                    icon: Icon(Icons.send_rounded),
-                                    label: Text(
-                                      'Создать отчет',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                    ),
-                                  ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(colors: [_accent1, _accent2]),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _accent1.withOpacity(0.3),
+                                  blurRadius: 12,
+                                  offset: Offset(0, 6),
                                 ),
+                              ],
+                            ),
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoading ? null : _openBuilder,
+                              icon: Icon(Icons.playlist_add_check_rounded),
+                              label: Text(
+                                'Сформировать отчет',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -571,7 +520,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         children: [
                                           Icon(Icons.edit_rounded, size: 20),
                                           SizedBox(width: 8),
-                                          Text('Редактировать'),
+                                          Text('Редактировать (конструктор)'),
+                                        ],
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'edit_text',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.text_snippet_outlined, size: 20),
+                                          SizedBox(width: 8),
+                                          Text('Редактировать (текст)'),
                                         ],
                                       ),
                                     ),
@@ -589,6 +548,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   ],
                                   onSelected: (value) {
                                     if (value == 'edit') {
+                                      _openBuilderEdit(report.id);
+                                    } else if (value == 'edit_text') {
                                       _editReport(report);
                                     } else if (value == 'delete') {
                                       _deleteReport(report);

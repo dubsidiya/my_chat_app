@@ -70,6 +70,94 @@ const parseReportContent = (content, reportDate, userId) => {
   return lessons;
 };
 
+// -----------------------------
+// Структурные отчеты (конструктор)
+// -----------------------------
+const MAX_SLOTS_PER_DAY = 10;
+const MAX_STUDENTS_PER_SLOT = 2;
+
+const isValidTimeHHMM = (t) => typeof t === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
+
+const toMinutes = (t) => {
+  const [h, m] = t.split(':').map((x) => parseInt(x, 10));
+  return h * 60 + m;
+};
+
+const formatPriceK = (priceRub) => {
+  const n = typeof priceRub === 'string' ? parseFloat(priceRub) : priceRub;
+  if (!Number.isFinite(n)) return '0.0';
+  return (n / 1000).toFixed(1);
+};
+
+const buildReportContentFromSlots = (reportDate, slots, studentIdToName) => {
+  const lines = [];
+  lines.push(String(reportDate));
+  lines.push('');
+  for (const slot of slots) {
+    const start = slot.timeStart;
+    const end = slot.timeEnd;
+    const studentParts = (slot.students || []).map((s) => {
+      const name = studentIdToName.get(s.studentId) || `ID:${s.studentId}`;
+      return `${name} ${formatPriceK(s.price)}`;
+    });
+    lines.push(`${start}-${end} ${studentParts.join(' / ')}`.trim());
+  }
+  return lines.join('\n').trim();
+};
+
+const minutesToHHMM = (mins) => {
+  const m = Math.max(0, Math.min(23 * 60 + 59, mins));
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
+const normalizeSlots = (rawSlots) => {
+  if (!Array.isArray(rawSlots)) return [];
+  return rawSlots
+    .map((s) => ({
+      timeStart: typeof s?.timeStart === 'string' ? s.timeStart.trim() : '',
+      timeEnd: typeof s?.timeEnd === 'string' ? s.timeEnd.trim() : '',
+      students: Array.isArray(s?.students) ? s.students : [],
+    }))
+    .filter((s) => s.timeStart && s.timeEnd);
+};
+
+const validateSlots = (slots) => {
+  if (!Array.isArray(slots) || slots.length === 0) {
+    return 'Нужно добавить хотя бы одно занятие';
+  }
+  if (slots.length > MAX_SLOTS_PER_DAY) {
+    return `Максимум ${MAX_SLOTS_PER_DAY} занятий в день`;
+  }
+  for (const slot of slots) {
+    if (!isValidTimeHHMM(slot.timeStart) || !isValidTimeHHMM(slot.timeEnd)) {
+      return 'Время должно быть в формате ЧЧ:ММ';
+    }
+    const a = toMinutes(slot.timeStart);
+    const b = toMinutes(slot.timeEnd);
+    if (b <= a) return 'Время окончания должно быть позже времени начала';
+    if (!Array.isArray(slot.students) || slot.students.length === 0) {
+      return 'В каждом времени должен быть выбран хотя бы один ученик';
+    }
+    if (slot.students.length > MAX_STUDENTS_PER_SLOT) {
+      return `В одном времени максимум ${MAX_STUDENTS_PER_SLOT} ученика`;
+    }
+    const ids = slot.students.map((x) => x?.studentId).filter(Boolean);
+    const unique = new Set(ids);
+    if (ids.length !== unique.size) {
+      return 'В одном времени нельзя выбрать одного и того же ученика дважды';
+    }
+    for (const st of slot.students) {
+      const id = parseInt(st?.studentId, 10);
+      const price = typeof st?.price === 'string' ? parseFloat(st.price) : st?.price;
+      if (!id || Number.isNaN(id)) return 'Некорректный ученик в занятии';
+      if (!Number.isFinite(price) || price <= 0) return 'Укажите стоимость для каждого ученика';
+    }
+  }
+  return null;
+};
+
 // Получение всех отчетов пользователя
 export const getAllReports = async (req, res) => {
   try {
@@ -134,10 +222,11 @@ export const getReport = async (req, res) => {
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
   const userId = req.user.userId;
-  const { report_date, content } = req.body;
+  const { report_date, content, slots: rawSlots } = req.body;
 
-  if (!report_date || !content) {
-    return res.status(400).json({ message: 'Дата и содержание отчета обязательны' });
+  const hasSlots = Array.isArray(rawSlots);
+  if (!report_date || (!content && !hasSlots)) {
+    return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
   }
 
   const client = await pool.connect();
@@ -154,62 +243,121 @@ export const createReport = async (req, res) => {
       return res.status(409).json({ message: 'Отчет за эту дату уже существует' });
     }
 
+    let finalContent = content;
+    let parsedLessons = [];
+
+    if (hasSlots) {
+      const slots = normalizeSlots(rawSlots);
+      const err = validateSlots(slots);
+      if (err) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: err });
+      }
+
+      // Получаем имена студентов (только свои)
+      const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
+      const studentsResult = await client.query(
+        `SELECT id, name FROM students WHERE created_by = $1 AND id = ANY($2::int[])`,
+        [userId, studentIds]
+      );
+      if (studentsResult.rows.length !== studentIds.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'В отчете есть ученики, которых нет в списке доступных' });
+      }
+
+      const idToName = new Map(studentsResult.rows.map((r) => [r.id, r.name]));
+      finalContent = buildReportContentFromSlots(report_date, slots, idToName);
+
+      // Преобразуем slots в список "уроков" как дальше ожидает логика вставок
+      parsedLessons = slots.flatMap((slot) => {
+        const durationMinutes = toMinutes(slot.timeEnd) - toMinutes(slot.timeStart);
+        const timeStart = slot.timeStart;
+        const timeEnd = slot.timeEnd;
+        return slot.students.map((st) => ({
+          studentId: parseInt(st.studentId, 10),
+          studentName: idToName.get(parseInt(st.studentId, 10)) || '',
+          price: typeof st.price === 'string' ? parseFloat(st.price) : st.price,
+          timeStart,
+          timeEnd,
+          lessonTimeHHMM: timeStart,
+          durationMinutes,
+          notes: null,
+          isCancelled: false,
+        }));
+      });
+    }
+
     // Создаем отчет
     const reportResult = await client.query(
       `INSERT INTO reports (report_date, content, created_by)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [report_date, content, userId]
+      [report_date, finalContent, userId]
     );
 
     const report = reportResult.rows[0];
 
-    // Парсим содержание отчета
-    const parsedLessons = parseReportContent(content, report_date, userId);
+    // Парсим содержание отчета (старый способ) если slots не передавали
+    if (!hasSlots) {
+      parsedLessons = parseReportContent(finalContent, report_date, userId);
+    }
 
     // Создаем занятия для каждого найденного ученика
     const createdLessons = [];
-    for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
-      const name = studentName.trim();
-      if (!name) continue;
+    for (const item of parsedLessons) {
+      const { price, notes, isCancelled } = item;
 
-      // Ищем студента ТОЛЬКО среди студентов пользователя
-      let studentResult = await client.query(
-        `SELECT id FROM students
-         WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
-         LIMIT 1`,
-        [userId, name]
-      );
-      if (studentResult.rows.length === 0) {
-        studentResult = await client.query(
+      // studentId может прийти из slots напрямую
+      let studentId = item.studentId;
+      let studentName = item.studentName;
+
+      if (!studentId) {
+        const name = (item.studentName || '').trim();
+        if (!name) continue;
+        // Ищем студента ТОЛЬКО среди студентов пользователя
+        let studentResult = await client.query(
           `SELECT id FROM students
-           WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+           WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
            LIMIT 1`,
-          [userId, `%${name}%`]
+          [userId, name]
         );
+        if (studentResult.rows.length === 0) {
+          studentResult = await client.query(
+            `SELECT id FROM students
+             WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+             LIMIT 1`,
+            [userId, `%${name}%`]
+          );
+        }
+        if (studentResult.rows.length === 0) continue;
+        studentId = studentResult.rows[0].id;
+        studentName = name;
       }
 
-      if (studentResult.rows.length === 0) continue;
-      const studentId = studentResult.rows[0].id;
-
-      // Формируем время в формате ЧЧ:ММ
-      const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
+      // Формируем время старта
+      const lessonTime = item.lessonTimeHHMM ? String(item.lessonTimeHHMM).substring(0, 5) : null;
       
       // Формируем описание с временем
       let description = `Занятие ${report_date}`;
-      if (timeStart && timeEnd) {
-        description += ` ${timeStart}-${timeEnd}`;
-      }
+      if (item.timeStart && item.timeEnd) description += ` ${item.timeStart}-${item.timeEnd}`;
       if (isCancelled) {
         description += ' (отмена, оплачивается)';
       }
 
       // Создаем занятие
       const lessonResult = await client.query(
-        `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-        [studentId, report_date, lessonTime, price, notes || null, userId]
+        [
+          studentId,
+          report_date,
+          lessonTime,
+          item.durationMinutes || 60,
+          price,
+          notes || null,
+          userId,
+        ]
       );
 
       const lesson = lessonResult.rows[0];
@@ -251,10 +399,11 @@ export const createReport = async (req, res) => {
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
-  const { report_date, content } = req.body;
+  const { report_date, content, slots: rawSlots } = req.body;
 
-  if (!report_date || !content) {
-    return res.status(400).json({ message: 'Дата и содержание отчета обязательны' });
+  const hasSlots = Array.isArray(rawSlots);
+  if (!report_date || (!content && !hasSlots)) {
+    return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
   }
 
   const client = await pool.connect();
@@ -269,6 +418,16 @@ export const updateReport = async (req, res) => {
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчет не найден' });
+    }
+
+    // Защита от конфликта даты: нельзя сменить дату на уже существующий отчет
+    const dateConflict = await client.query(
+      'SELECT id FROM reports WHERE report_date = $1 AND created_by = $2 AND id <> $3 LIMIT 1',
+      [report_date, userId, id]
+    );
+    if (dateConflict.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'Отчет за эту дату уже существует' });
     }
 
     // Получаем старые занятия из отчета
@@ -293,52 +452,101 @@ export const updateReport = async (req, res) => {
     // Удаляем связи
     await client.query('DELETE FROM report_lessons WHERE report_id = $1', [id]);
 
+    let finalContent = content;
+    let parsedLessons = [];
+
+    if (hasSlots) {
+      const slots = normalizeSlots(rawSlots);
+      const err = validateSlots(slots);
+      if (err) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: err });
+      }
+
+      const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
+      const studentsResult = await client.query(
+        `SELECT id, name FROM students WHERE created_by = $1 AND id = ANY($2::int[])`,
+        [userId, studentIds]
+      );
+      if (studentsResult.rows.length !== studentIds.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'В отчете есть ученики, которых нет в списке доступных' });
+      }
+      const idToName = new Map(studentsResult.rows.map((r) => [r.id, r.name]));
+      finalContent = buildReportContentFromSlots(report_date, slots, idToName);
+      parsedLessons = slots.flatMap((slot) => {
+        const durationMinutes = toMinutes(slot.timeEnd) - toMinutes(slot.timeStart);
+        const timeStart = slot.timeStart;
+        const timeEnd = slot.timeEnd;
+        return slot.students.map((st) => ({
+          studentId: parseInt(st.studentId, 10),
+          studentName: idToName.get(parseInt(st.studentId, 10)) || '',
+          price: typeof st.price === 'string' ? parseFloat(st.price) : st.price,
+          timeStart,
+          timeEnd,
+          lessonTimeHHMM: timeStart,
+          durationMinutes,
+          notes: null,
+          isCancelled: false,
+        }));
+      });
+    }
+
     // Обновляем отчет
     const reportResult = await client.query(
       `UPDATE reports 
        SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND created_by = $4
        RETURNING *`,
-      [report_date, content, id, userId]
+      [report_date, finalContent, id, userId]
     );
     const report = reportResult.rows[0];
 
     // Парсим новое содержание и создаем занятия заново
-    const parsedLessons = parseReportContent(content, report_date, userId);
+    if (!hasSlots) {
+      parsedLessons = parseReportContent(finalContent, report_date, userId);
+    }
     const createdLessons = [];
 
-    for (const { studentName, price, timeStart, timeEnd, isCancelled, notes } of parsedLessons) {
-      const name = studentName.trim();
-      if (!name) continue;
+    for (const item of parsedLessons) {
+      const { price, notes, isCancelled } = item;
 
-      let studentResult = await client.query(
-        `SELECT id FROM students
-         WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
-         LIMIT 1`,
-        [userId, name]
-      );
-      if (studentResult.rows.length === 0) {
-        studentResult = await client.query(
+      let studentId = item.studentId;
+      let studentName = item.studentName;
+
+      if (!studentId) {
+        const name = (item.studentName || '').trim();
+        if (!name) continue;
+        let studentResult = await client.query(
           `SELECT id FROM students
-           WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+           WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
            LIMIT 1`,
-          [userId, `%${name}%`]
+          [userId, name]
         );
+        if (studentResult.rows.length === 0) {
+          studentResult = await client.query(
+            `SELECT id FROM students
+             WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+             LIMIT 1`,
+            [userId, `%${name}%`]
+          );
+        }
+        if (studentResult.rows.length === 0) continue;
+        studentId = studentResult.rows[0].id;
+        studentName = name;
       }
-      if (studentResult.rows.length === 0) continue;
-      const studentId = studentResult.rows[0].id;
 
-      const lessonTime = timeStart ? `${timeStart.padStart(2, '0')}:00` : null;
+      const lessonTime = item.lessonTimeHHMM ? String(item.lessonTimeHHMM).substring(0, 5) : null;
 
       let description = `Занятие ${report_date}`;
-      if (timeStart && timeEnd) description += ` ${timeStart}-${timeEnd}`;
+      if (item.timeStart && item.timeEnd) description += ` ${item.timeStart}-${item.timeEnd}`;
       if (isCancelled) description += ' (отмена, оплачивается)';
 
       const lessonResult = await client.query(
-        `INSERT INTO lessons (student_id, lesson_date, lesson_time, price, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-        [studentId, report_date, lessonTime, price, notes || null, userId]
+        [studentId, report_date, lessonTime, item.durationMinutes || 60, price, notes || null, userId]
       );
       const lesson = lessonResult.rows[0];
 

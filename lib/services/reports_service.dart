@@ -81,6 +81,31 @@ class ReportsService {
     }
   }
 
+  /// Создание отчета через конструктор (структурные slots)
+  /// slots: [{ timeStart: "14:00", timeEnd: "16:00", students: [{studentId: 1, price: 2000.0}, ...]}]
+  Future<Report> createReportStructured({
+    required DateTime reportDate,
+    required List<Map<String, dynamic>> slots,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/reports'),
+      headers: headers,
+      body: jsonEncode({
+        'report_date': reportDate.toIso8601String().split('T')[0],
+        'slots': slots,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      return Report.fromJson(data);
+    }
+
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось создать отчет');
+  }
+
   // Обновление отчета
   Future<Report> updateReport({
     required int id,
@@ -104,6 +129,31 @@ class ReportsService {
       final error = jsonDecode(response.body);
       throw Exception(error['message'] ?? 'Не удалось обновить отчет');
     }
+  }
+
+  /// Обновление отчета через конструктор (структурные slots)
+  Future<Report> updateReportStructured({
+    required int id,
+    required DateTime reportDate,
+    required List<Map<String, dynamic>> slots,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.put(
+      Uri.parse('$baseUrl/reports/$id'),
+      headers: headers,
+      body: jsonEncode({
+        'report_date': reportDate.toIso8601String().split('T')[0],
+        'slots': slots,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return Report.fromJson(data);
+    }
+
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось обновить отчет');
   }
 
   // Удаление отчета
