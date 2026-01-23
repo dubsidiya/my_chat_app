@@ -14,6 +14,7 @@ import studentsRoutes from './routes/students.js';
 import reportsRoutes from './routes/reports.js';
 import bankStatementRoutes from './routes/bankStatement.js';
 import setupRoutes from './routes/setup.js';
+import adminRoutes from './routes/admin.js';
 import { setupWebSocket } from './websocket/websocket.js';
 
 dotenv.config();
@@ -142,6 +143,7 @@ app.use('/students', studentsRoutes);
 app.use('/reports', reportsRoutes);
 app.use('/bank-statement', bankStatementRoutes);
 app.use('/setup', setupRoutes);
+app.use('/admin', adminRoutes);
 
 // Подключение WebSocket
 setupWebSocket(server);

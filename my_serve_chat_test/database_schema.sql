@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS students (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица связи преподавателей и студентов (для общего реестра студентов)
+-- Важно: видимость студентов для преподавателя определяется этой связью
+CREATE TABLE IF NOT EXISTS teacher_students (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(teacher_id, student_id)
+);
+
 -- Таблица занятий
 CREATE TABLE IF NOT EXISTS lessons (
     id SERIAL PRIMARY KEY,
@@ -112,6 +122,7 @@ CREATE TABLE IF NOT EXISTS reports (
     id SERIAL PRIMARY KEY,
     report_date DATE NOT NULL,
     content TEXT NOT NULL,
+    is_late BOOLEAN NOT NULL DEFAULT FALSE,
     created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -129,6 +140,7 @@ CREATE TABLE IF NOT EXISTS report_lessons (
 -- Индексы для отчетов
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(report_date DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_created_by ON reports(created_by);
+CREATE INDEX IF NOT EXISTS idx_reports_is_late ON reports(is_late);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_report_id ON report_lessons(report_id);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_lesson_id ON report_lessons(lesson_id);
 

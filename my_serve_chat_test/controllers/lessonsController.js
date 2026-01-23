@@ -1,15 +1,23 @@
 import pool from '../db.js';
 
+const hasStudentAccess = async (client, teacherId, studentId) => {
+  const r = await client.query(
+    'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+    [teacherId, studentId]
+  );
+  return r.rows.length > 0;
+};
+
 // Получение всех занятий студента
 export const getStudentLessons = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { studentId } = req.params;
 
-    // Проверяем, что студент существует и принадлежит пользователю
+    // Проверяем, что студент доступен пользователю
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [studentId, userId]
+      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+      [userId, studentId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -48,13 +56,9 @@ export const createLesson = async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Проверяем, что студент принадлежит пользователю
-    const checkResult = await client.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [student_id, userId]
-    );
-
-    if (checkResult.rows.length === 0) {
+    // Проверяем, что студент доступен пользователю
+    const can = await hasStudentAccess(client, userId, student_id);
+    if (!can) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Студент не найден' });
     }

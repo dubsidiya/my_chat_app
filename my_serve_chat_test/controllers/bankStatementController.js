@@ -88,17 +88,21 @@ const parseExcel = (buffer) => {
   return xlsx.utils.sheet_to_json(worksheet);
 };
 
-// Поиск студента по описанию платежа
-const findStudentByPaymentDescription = async (description) => {
+// Поиск студента по описанию платежа (только среди студентов текущего преподавателя)
+const findStudentByPaymentDescription = async (teacherId, description) => {
   if (!description || typeof description !== 'string') {
     return null;
   }
 
   const desc = description.toLowerCase().trim();
   
-  // Получаем всех студентов
+  // Получаем студентов, доступных текущему преподавателю
   const studentsResult = await pool.query(
-    `SELECT id, name, parent_name, phone FROM students`
+    `SELECT s.id, s.name, s.parent_name, s.phone
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     WHERE ts.teacher_id = $1`,
+    [teacherId]
   );
 
   // Ищем совпадения по имени, имени родителя или телефону
@@ -246,7 +250,7 @@ export const processBankStatement = async (req, res) => {
         }
 
         // Ищем студента по описанию платежа
-        const student = await findStudentByPaymentDescription(description);
+        const student = await findStudentByPaymentDescription(userId, description);
 
         processedPayments.push({
           row: i + 1,
@@ -310,10 +314,14 @@ export const applyPayments = async (req, res) => {
           continue;
         }
 
-        // Проверяем, что студент существует
+        // Проверяем, что студент существует и доступен пользователю
         const studentCheck = await pool.query(
-          'SELECT id, name FROM students WHERE id = $1',
-          [studentId]
+          `SELECT s.id, s.name
+           FROM teacher_students ts
+           JOIN students s ON s.id = ts.student_id
+           WHERE ts.teacher_id = $1 AND s.id = $2
+           LIMIT 1`,
+          [userId, studentId]
         );
 
         if (studentCheck.rows.length === 0) {

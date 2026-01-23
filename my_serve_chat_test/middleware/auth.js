@@ -65,6 +65,33 @@ export const requirePrivateAccess = (req, res, next) => {
   return res.status(403).json({ message: 'Требуется приватный доступ' });
 };
 
+// Middleware: доступ только суперпользователю (для бухгалтерии/админки)
+// Настройка через env:
+// - SUPERUSER_USERNAMES="admin,owner@example" (логины из users.email; сравнение case-insensitive)
+// - SUPERUSER_USER_IDS="1,2,3"
+export const requireSuperuser = (req, res, next) => {
+  const username = (req.user?.username || req.user?.email || '').toString().trim().toLowerCase();
+  const userId = req.user?.userId;
+
+  const ids = (process.env.SUPERUSER_USER_IDS || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((x) => parseInt(x, 10))
+    .filter((x) => Number.isFinite(x));
+
+  const names = (process.env.SUPERUSER_USERNAMES || '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
+  const byId = typeof userId === 'number' && ids.includes(userId);
+  const byName = username && names.includes(username);
+
+  if (byId || byName) return next();
+  return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
+};
+
 // Проверка токена для WebSocket
 export const verifyWebSocketToken = (token) => {
   try {

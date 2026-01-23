@@ -1,15 +1,39 @@
 import pool from '../db.js';
 
+const normalizePhoneDigits = (v) => (v || '').toString().replace(/\D/g, '');
+const normalizeEmail = (v) => (v || '').toString().trim().toLowerCase();
+
+const ensureTeacherStudentLink = async (client, teacherId, studentId) => {
+  await client.query(
+    `INSERT INTO teacher_students (teacher_id, student_id)
+     VALUES ($1, $2)
+     ON CONFLICT DO NOTHING`,
+    [teacherId, studentId]
+  );
+};
+
+const assertTeacherHasStudentAccess = async (client, teacherId, studentId) => {
+  const r = await client.query(
+    `SELECT 1
+     FROM teacher_students
+     WHERE teacher_id = $1 AND student_id = $2
+     LIMIT 1`,
+    [teacherId, studentId]
+  );
+  return r.rows.length > 0;
+};
+
 // Получение всех студентов (привязаны к владельцу created_by)
 export const getAllStudents = async (req, res) => {
   try {
     const userId = req.user.userId;
     const result = await pool.query(
       `SELECT s.*, 
-              COALESCE(SUM(CASE WHEN t.type = 'deposit' THEN t.amount ELSE -t.amount END), 0) as balance
-       FROM students s
-       LEFT JOIN transactions t ON s.id = t.student_id AND t.created_by = $1
-       WHERE s.created_by = $1
+              COALESCE(SUM(CASE WHEN t.type IN ('deposit', 'refund') THEN t.amount ELSE -t.amount END), 0) as balance
+       FROM teacher_students ts
+       JOIN students s ON s.id = ts.student_id
+       LEFT JOIN transactions t ON s.id = t.student_id
+       WHERE ts.teacher_id = $1
        GROUP BY s.id
        ORDER BY s.name`,
       [userId]
@@ -24,95 +48,131 @@ export const getAllStudents = async (req, res) => {
 
 // Создание нового студента (или возврат существующего, если уже есть)
 export const createStudent = async (req, res) => {
+  const userId = req.user.userId;
+  const { name, parent_name, phone, email, notes } = req.body;
+
+  if (!name || name.trim() === '') {
+    return res.status(400).json({ message: 'Имя студента обязательно' });
+  }
+
+  const trimmedName = name.trim();
+  const trimmedPhone = phone?.trim() || null;
+  const phoneDigits = normalizePhoneDigits(trimmedPhone);
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+
+  const client = await pool.connect();
   try {
-    const userId = req.user.userId;
-    const { name, parent_name, phone, email, notes } = req.body;
+    await client.query('BEGIN');
 
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ message: 'Имя студента обязательно' });
-    }
-
-    const trimmedName = name.trim();
-    const trimmedPhone = phone?.trim() || null;
-
-    // Проверяем, существует ли уже студент с таким именем (и телефоном, если указан)
-    // Если телефон указан, ищем по имени И телефону
-    // Если телефона нет, ищем только по имени
+    // Ищем существующего студента в общем реестре:
+    // 1) по телефону (если есть), 2) по email (если есть).
+    // Важно: если нет ни телефона, ни email — НЕ объединяем по одному только имени (чтобы не склеить разных детей с одинаковыми именами).
     let existingStudent = null;
-    if (trimmedPhone) {
-      const existingResult = await pool.query(
-        `SELECT * FROM students 
-         WHERE LOWER(TRIM(name)) = LOWER($1) 
-         AND created_by = $2
-         AND (phone IS NULL OR phone = $3 OR phone = $4)`,
-        [trimmedName, userId, trimmedPhone, trimmedPhone.replace(/\D/g, '')]
+
+    if (phoneDigits) {
+      const r = await client.query(
+        `SELECT *
+         FROM students
+         WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $1
+         LIMIT 1`,
+        [phoneDigits]
       );
-      if (existingResult.rows.length > 0) {
-        existingStudent = existingResult.rows[0];
-      }
-    } else {
-      // Если телефона нет, ищем только по имени (точное совпадение)
-      const existingResult = await pool.query(
-        `SELECT * FROM students 
-         WHERE LOWER(TRIM(name)) = LOWER($1) AND created_by = $2`,
-        [trimmedName, userId]
+      if (r.rows.length > 0) existingStudent = r.rows[0];
+    }
+
+    if (!existingStudent && normalizedEmail) {
+      const r = await client.query(
+        `SELECT *
+         FROM students
+         WHERE LOWER(TRIM(COALESCE(email, ''))) = $1
+         LIMIT 1`,
+        [normalizedEmail]
       );
-      if (existingResult.rows.length > 0) {
-        existingStudent = existingResult.rows[0];
+      if (r.rows.length > 0) existingStudent = r.rows[0];
+    }
+
+    // Если нет ни телефона, ни email — пробуем объединить по имени,
+    // но ТОЛЬКО если в базе ровно один кандидат (чтобы не склеить однофамильцев).
+    if (!existingStudent && !phoneDigits && !normalizedEmail) {
+      const r = await client.query(
+        `SELECT *
+         FROM students
+         WHERE LOWER(TRIM(name)) = LOWER($1)`,
+        [trimmedName]
+      );
+      if (r.rows.length === 1) {
+        existingStudent = r.rows[0];
       }
     }
 
-    // Если студент уже существует, возвращаем его
     if (existingStudent) {
-      // Обновляем данные, если они были изменены (но не перезаписываем существующие данные)
+      // Привязываем студента текущему преподавателю (если ещё не привязан)
+      await ensureTeacherStudentLink(client, userId, existingStudent.id);
+
+      // Заполняем недостающие поля, не перетирая существующие
       const updates = [];
       const values = [];
-      let paramIndex = 1;
+      let idx = 1;
 
       if (parent_name && parent_name.trim() && !existingStudent.parent_name) {
-        updates.push(`parent_name = $${paramIndex++}`);
+        updates.push(`parent_name = $${idx++}`);
         values.push(parent_name.trim());
       }
       if (trimmedPhone && !existingStudent.phone) {
-        updates.push(`phone = $${paramIndex++}`);
+        updates.push(`phone = $${idx++}`);
         values.push(trimmedPhone);
       }
-      if (email && email.trim() && !existingStudent.email) {
-        updates.push(`email = $${paramIndex++}`);
-        values.push(email.trim());
+      if (normalizedEmail && !existingStudent.email) {
+        updates.push(`email = $${idx++}`);
+        values.push(normalizedEmail);
       }
       if (notes && notes.trim() && !existingStudent.notes) {
-        updates.push(`notes = $${paramIndex++}`);
+        updates.push(`notes = $${idx++}`);
         values.push(notes.trim());
       }
 
+      let student = existingStudent;
       if (updates.length > 0) {
         values.push(existingStudent.id);
-        const updateResult = await pool.query(
-          `UPDATE students 
+        const upd = await client.query(
+          `UPDATE students
            SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $${paramIndex}
+           WHERE id = $${idx}
            RETURNING *`,
           values
         );
-        return res.status(200).json(updateResult.rows[0]);
+        student = upd.rows[0];
       }
 
-      return res.status(200).json(existingStudent);
+      await client.query('COMMIT');
+      return res.status(200).json(student);
     }
 
-    // Если студента нет, создаем нового
-    const result = await pool.query(
+    // Создаем нового студента и сразу привязываем к преподавателю
+    const created = await client.query(
       `INSERT INTO students (name, parent_name, phone, email, notes, created_by)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [trimmedName, parent_name?.trim() || null, trimmedPhone, email?.trim() || null, notes?.trim() || null, userId]
+      [
+        trimmedName,
+        parent_name?.trim() || null,
+        trimmedPhone,
+        normalizedEmail,
+        notes?.trim() || null,
+        userId,
+      ]
     );
+    const student = created.rows[0];
+    await ensureTeacherStudentLink(client, userId, student.id);
 
-    res.status(201).json(result.rows[0]);
+    await client.query('COMMIT');
+    return res.status(201).json(student);
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка создания студента:', error);
-    res.status(500).json({ message: 'Ошибка создания студента' });
+    return res.status(500).json({ message: 'Ошибка создания студента' });
+  } finally {
+    client.release();
   }
 };
 
@@ -123,10 +183,14 @@ export const updateStudent = async (req, res) => {
     const { id } = req.params;
     const { name, parent_name, phone, email, notes } = req.body;
 
-    // Проверяем, что студент существует
+    if (!name || !name.toString().trim()) {
+      return res.status(400).json({ message: 'Имя студента обязательно' });
+    }
+
+    // Проверяем доступ к студенту через связь teacher_students
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [id, userId]
+      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+      [userId, id]
     );
 
     if (checkResult.rows.length === 0) {
@@ -138,7 +202,14 @@ export const updateStudent = async (req, res) => {
        SET name = $1, parent_name = $2, phone = $3, email = $4, notes = $5, updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING *`,
-      [name.trim(), parent_name?.trim() || null, phone?.trim() || null, email?.trim() || null, notes?.trim() || null, id]
+      [
+        name.toString().trim(),
+        parent_name?.trim() || null,
+        phone?.trim() || null,
+        email ? normalizeEmail(email) : null,
+        notes?.trim() || null,
+        id,
+      ]
     );
 
     res.json(result.rows[0]);
@@ -148,28 +219,44 @@ export const updateStudent = async (req, res) => {
   }
 };
 
-// Удаление студента (только владелец)
+// Удаление студента из списка преподавателя (и удаление из БД, если больше ни у кого не привязан)
 export const deleteStudent = async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+
+  const client = await pool.connect();
   try {
-    const userId = req.user.userId;
-    const { id } = req.params;
+    await client.query('BEGIN');
 
-    // Проверяем, что студент существует
-    const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [id, userId]
-    );
-
-    if (checkResult.rows.length === 0) {
+    const hasAccess = await assertTeacherHasStudentAccess(client, userId, id);
+    if (!hasAccess) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Студент не найден' });
     }
 
-    await pool.query('DELETE FROM students WHERE id = $1', [id]);
+    // Снимаем привязку студент↔преподаватель
+    await client.query(
+      'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
+      [userId, id]
+    );
 
-    res.json({ message: 'Студент удален' });
+    // Если больше ни у кого не числится — удаляем полностью
+    const stillLinked = await client.query(
+      'SELECT 1 FROM teacher_students WHERE student_id = $1 LIMIT 1',
+      [id]
+    );
+    if (stillLinked.rows.length === 0) {
+      await client.query('DELETE FROM students WHERE id = $1', [id]);
+    }
+
+    await client.query('COMMIT');
+    return res.json({ message: 'Студент удален' });
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка удаления студента:', error);
-    res.status(500).json({ message: 'Ошибка удаления студента' });
+    return res.status(500).json({ message: 'Ошибка удаления студента' });
+  } finally {
+    client.release();
   }
 };
 
@@ -179,10 +266,10 @@ export const getStudentBalance = async (req, res) => {
     const userId = req.user.userId;
     const { id } = req.params;
 
-    // Проверяем, что студент существует
+    // Проверяем доступ к студенту
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [id, userId]
+      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+      [userId, id]
     );
 
     if (checkResult.rows.length === 0) {
@@ -190,10 +277,10 @@ export const getStudentBalance = async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT COALESCE(SUM(CASE WHEN type = 'deposit' THEN amount ELSE -amount END), 0) as balance
+      `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
        FROM transactions
-       WHERE student_id = $1 AND created_by = $2`,
-      [id, userId]
+       WHERE student_id = $1`,
+      [id]
     );
 
     res.json({ balance: parseFloat(result.rows[0].balance) });
@@ -209,10 +296,10 @@ export const getStudentTransactions = async (req, res) => {
     const userId = req.user.userId;
     const { id } = req.params;
 
-    // Проверяем, что студент существует
+    // Проверяем доступ к студенту
     const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1 AND created_by = $2',
-      [id, userId]
+      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+      [userId, id]
     );
 
     if (checkResult.rows.length === 0) {
@@ -220,12 +307,13 @@ export const getStudentTransactions = async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT t.*, l.lesson_date, l.lesson_time
+      `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
        FROM transactions t
        LEFT JOIN lessons l ON t.lesson_id = l.id
-       WHERE t.student_id = $1 AND t.created_by = $2
+       LEFT JOIN users u ON t.created_by = u.id
+       WHERE t.student_id = $1
        ORDER BY t.created_at DESC`,
-      [id, userId]
+      [id]
     );
 
     res.json(result.rows);

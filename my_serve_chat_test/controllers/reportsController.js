@@ -203,7 +203,8 @@ export const getReport = async (req, res) => {
       `SELECT l.*, s.name as student_name
        FROM report_lessons rl
        JOIN lessons l ON rl.lesson_id = l.id AND l.created_by = $2
-       JOIN students s ON l.student_id = s.id AND s.created_by = $2
+       JOIN students s ON l.student_id = s.id
+       JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = $2
        WHERE rl.report_id = $1
        ORDER BY l.lesson_date, l.lesson_time`,
       [id, userId]
@@ -233,6 +234,13 @@ export const createReport = async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Запрещаем отчеты за будущие даты
+    const futureCheck = await client.query('SELECT ($1::date > CURRENT_DATE) as is_future', [report_date]);
+    if (futureCheck.rows[0]?.is_future) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'Нельзя создать отчет за будущую дату' });
+    }
+
     // Защита от дубля: один отчет на дату на пользователя
     const existingReport = await client.query(
       'SELECT id FROM reports WHERE report_date = $1 AND created_by = $2 LIMIT 1',
@@ -257,7 +265,10 @@ export const createReport = async (req, res) => {
       // Получаем имена студентов (только свои)
       const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
       const studentsResult = await client.query(
-        `SELECT id, name FROM students WHERE created_by = $1 AND id = ANY($2::int[])`,
+        `SELECT s.id, s.name
+         FROM teacher_students ts
+         JOIN students s ON s.id = ts.student_id
+         WHERE ts.teacher_id = $1 AND s.id = ANY($2::int[])`,
         [userId, studentIds]
       );
       if (studentsResult.rows.length !== studentIds.length) {
@@ -289,8 +300,8 @@ export const createReport = async (req, res) => {
 
     // Создаем отчет
     const reportResult = await client.query(
-      `INSERT INTO reports (report_date, content, created_by)
-       VALUES ($1, $2, $3)
+      `INSERT INTO reports (report_date, content, created_by, is_late)
+       VALUES ($1, $2, $3, ($1::date < CURRENT_DATE))
        RETURNING *`,
       [report_date, finalContent, userId]
     );
@@ -316,15 +327,19 @@ export const createReport = async (req, res) => {
         if (!name) continue;
         // Ищем студента ТОЛЬКО среди студентов пользователя
         let studentResult = await client.query(
-          `SELECT id FROM students
-           WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
+          `SELECT s.id
+           FROM teacher_students ts
+           JOIN students s ON s.id = ts.student_id
+           WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) = LOWER($2)
            LIMIT 1`,
           [userId, name]
         );
         if (studentResult.rows.length === 0) {
           studentResult = await client.query(
-            `SELECT id FROM students
-             WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+            `SELECT s.id
+             FROM teacher_students ts
+             JOIN students s ON s.id = ts.student_id
+             WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
              LIMIT 1`,
             [userId, `%${name}%`]
           );
@@ -410,6 +425,13 @@ export const updateReport = async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Запрещаем отчеты за будущие даты
+    const futureCheck = await client.query('SELECT ($1::date > CURRENT_DATE) as is_future', [report_date]);
+    if (futureCheck.rows[0]?.is_future) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'Нельзя установить будущую дату отчета' });
+    }
+
     // Проверяем, что отчет принадлежит пользователю
     const checkResult = await client.query(
       'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
@@ -465,7 +487,10 @@ export const updateReport = async (req, res) => {
 
       const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
       const studentsResult = await client.query(
-        `SELECT id, name FROM students WHERE created_by = $1 AND id = ANY($2::int[])`,
+        `SELECT s.id, s.name
+         FROM teacher_students ts
+         JOIN students s ON s.id = ts.student_id
+         WHERE ts.teacher_id = $1 AND s.id = ANY($2::int[])`,
         [userId, studentIds]
       );
       if (studentsResult.rows.length !== studentIds.length) {
@@ -495,7 +520,7 @@ export const updateReport = async (req, res) => {
     // Обновляем отчет
     const reportResult = await client.query(
       `UPDATE reports 
-       SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+       SET report_date = $1, content = $2, is_late = ($1::date < CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND created_by = $4
        RETURNING *`,
       [report_date, finalContent, id, userId]
@@ -518,15 +543,19 @@ export const updateReport = async (req, res) => {
         const name = (item.studentName || '').trim();
         if (!name) continue;
         let studentResult = await client.query(
-          `SELECT id FROM students
-           WHERE created_by = $1 AND LOWER(TRIM(name)) = LOWER($2)
+          `SELECT s.id
+           FROM teacher_students ts
+           JOIN students s ON s.id = ts.student_id
+           WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) = LOWER($2)
            LIMIT 1`,
           [userId, name]
         );
         if (studentResult.rows.length === 0) {
           studentResult = await client.query(
-            `SELECT id FROM students
-             WHERE created_by = $1 AND LOWER(TRIM(name)) LIKE LOWER($2)
+            `SELECT s.id
+             FROM teacher_students ts
+             JOIN students s ON s.id = ts.student_id
+             WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
              LIMIT 1`,
             [userId, `%${name}%`]
           );

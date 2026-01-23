@@ -449,6 +449,25 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       style: TextStyle(color: Colors.grey.shade700),
                                     ),
                                     SizedBox(height: 4),
+                                    if (report.isLate)
+                                      Padding(
+                                        padding: EdgeInsets.only(top: 6),
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            'Поздний отчет',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.red.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     if (report.isEdited)
                                       Padding(
                                         padding: EdgeInsets.only(top: 6),

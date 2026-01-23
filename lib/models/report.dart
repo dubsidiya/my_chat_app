@@ -2,6 +2,7 @@ class Report {
   final int id;
   final DateTime reportDate;
   final String content;
+  final bool isLate;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final int? lessonsCount;
@@ -11,6 +12,7 @@ class Report {
     required this.id,
     required this.reportDate,
     required this.content,
+    required this.isLate,
     required this.createdAt,
     this.updatedAt,
     this.lessonsCount,
@@ -22,6 +24,7 @@ class Report {
       id: json['id'] as int,
       reportDate: DateTime.parse(json['report_date'] as String),
       content: json['content'] as String,
+      isLate: json['is_late'] == true,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)

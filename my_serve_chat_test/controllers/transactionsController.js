@@ -1,5 +1,13 @@
 import pool from '../db.js';
 
+const hasStudentAccess = async (teacherId, studentId) => {
+  const r = await pool.query(
+    'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+    [teacherId, studentId]
+  );
+  return r.rows.length > 0;
+};
+
 // Пополнение баланса
 export const depositBalance = async (req, res) => {
   try {
@@ -14,13 +22,9 @@ export const depositBalance = async (req, res) => {
       return res.status(400).json({ message: 'ID студента и сумма обязательны' });
     }
 
-    // Проверяем, что студент существует (общий для всех преподавателей)
-    const checkResult = await pool.query(
-      'SELECT id FROM students WHERE id = $1',
-      [student_id]
-    );
-
-    if (checkResult.rows.length === 0) {
+    // Проверяем, что студент доступен пользователю
+    const can = await hasStudentAccess(userId, student_id);
+    if (!can) {
       return res.status(404).json({ message: 'Студент не найден' });
     }
 

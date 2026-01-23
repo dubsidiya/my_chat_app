@@ -4,6 +4,7 @@ import '../services/students_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
 import 'bank_statement_screen.dart';
+import 'accounting_export_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String userId;
@@ -123,6 +124,23 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AccountingExportScreen()),
+                );
+              },
+              tooltip: 'Выгрузка (бухгалтерия)',
+            ),
+          ),
           Container(
             margin: EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
