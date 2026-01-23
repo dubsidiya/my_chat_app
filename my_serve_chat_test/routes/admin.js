@@ -1,11 +1,11 @@
 import express from 'express';
-import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../middleware/auth.js';
+import { authenticateToken, requireSuperuser } from '../middleware/auth.js';
 import { exportAccounting } from '../controllers/adminAccountingController.js';
 
 const router = express.Router();
 
-// Админские маршруты: только с приватным доступом + суперпользователь
-router.use(authenticateToken, requirePrivateAccess, requireSuperuser);
+// Админские маршруты: суперпользователь (privateAccess не требуется)
+router.use(authenticateToken, requireSuperuser);
 
 router.get('/accounting/export', exportAccounting);
 

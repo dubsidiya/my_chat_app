@@ -295,7 +295,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Доступно только суперпользователю (нужен приватный доступ).',
+                    'Доступно только суперпользователю.',
                     style: TextStyle(color: Colors.grey),
                   ),
                 ],
