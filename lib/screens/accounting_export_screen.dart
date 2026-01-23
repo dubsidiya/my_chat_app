@@ -38,6 +38,173 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     return double.tryParse(v.toString()) ?? 0;
   }
 
+  String _money0(dynamic v) => _asDouble(v).toStringAsFixed(0);
+
+  Widget _chip({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+  }
+
+  Widget _teacherHeader({
+    required String teacherName,
+    required int studentsCount,
+    required int lessonsCount,
+    required int unpaidCount,
+    required double unpaidSum,
+  }) {
+    final accent1 = const Color(0xFF667eea);
+    final accent2 = const Color(0xFF764ba2);
+    final debtColor = Colors.red.shade700;
+    final okColor = Colors.green.shade700;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [accent1.withAlpha(36), accent2.withAlpha(36)]),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent1.withAlpha(40)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF667eea), Color(0xFF764ba2)]),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: accent1.withAlpha(50),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                _initials(teacherName.isEmpty ? '—' : teacherName),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  teacherName.isEmpty ? '—' : teacherName,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip(icon: Icons.group_rounded, label: 'детей: $studentsCount', color: accent2),
+                    _chip(icon: Icons.event_note_rounded, label: 'занятий: $lessonsCount', color: accent1),
+                    _chip(
+                      icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                      label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
+                      color: unpaidCount > 0 ? debtColor : okColor,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lessonTile(Map<String, dynamic> l) {
+    final date = (l['lessonDate'] ?? '').toString();
+    final time = (l['lessonTime'] ?? '').toString();
+    final price = _money0(l['price']);
+    final paid = _money0(l['paidAmount']);
+    final unpaid = _money0(l['unpaidAmount']);
+    final isPaid = l['isPaid'] == true;
+    final color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
+    final bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withAlpha(40)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 6),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  [date, if (time.isNotEmpty) time].join(' '),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text('цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid', style: const TextStyle(color: Colors.black87)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withAlpha(22),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              isPaid ? 'Оплачено' : 'Долг',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickFrom() async {
     final picked = await showDatePicker(
       context: context,
@@ -360,10 +527,33 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     ...filteredTree.map((t) {
                       final teacherName = (t['teacherUsername'] ?? '').toString();
                       final students = (t['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+
+                      final lessonsCount = students.fold<int>(
+                        0,
+                        (acc, s) => acc + ((s['lessons'] as List?)?.length ?? 0),
+                      );
+                      int unpaidCount = 0;
+                      double unpaidSum = 0;
+                      for (final s in students) {
+                        final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+                        for (final l in lessons) {
+                          if (l['isPaid'] == true) continue;
+                          unpaidCount += 1;
+                          unpaidSum += _asDouble(l['unpaidAmount']);
+                        }
+                      }
+
                       return ExpansionTile(
                         tilePadding: EdgeInsets.zero,
-                        title: Text(teacherName.isEmpty ? '—' : teacherName),
-                        subtitle: Text('детей: ${students.length}'),
+                        childrenPadding: const EdgeInsets.only(top: 10),
+                        title: _teacherHeader(
+                          teacherName: teacherName,
+                          studentsCount: students.length,
+                          lessonsCount: lessonsCount,
+                          unpaidCount: unpaidCount,
+                          unpaidSum: unpaidSum,
+                        ),
+                        subtitle: const SizedBox.shrink(),
                         children: [
                           ...students.map((s) {
                             final studentName = (s['studentName'] ?? '').toString();
@@ -374,41 +564,48 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                               (acc, x) => acc + _asDouble(x['unpaidAmount']),
                             );
                             return ExpansionTile(
-                              tilePadding: const EdgeInsets.only(left: 12),
-                              title: Text(studentName.isEmpty ? '—' : studentName),
-                              subtitle: Text('занятий: ${lessons.length} • долг: $unpaidCount • сумма долга: ${unpaidSum.toStringAsFixed(0)}'),
+                              tilePadding: const EdgeInsets.only(left: 4, right: 4),
+                              childrenPadding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(18),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(40),
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.person_rounded,
+                                  color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                                ),
+                              ),
+                              title: Text(
+                                studentName.isEmpty ? '—' : studentName,
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _chip(
+                                      icon: Icons.event_note_rounded,
+                                      label: 'занятий: ${lessons.length}',
+                                      color: const Color(0xFF667eea),
+                                    ),
+                                    _chip(
+                                      icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                                      label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
+                                      color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                                    ),
+                                  ],
+                                ),
+                              ),
                               children: [
-                                ...lessons.map((l) {
-                                  final date = (l['lessonDate'] ?? '').toString();
-                                  final time = (l['lessonTime'] ?? '').toString();
-                                  final price = l['price'];
-                                  final paid = l['paidAmount'];
-                                  final unpaid = l['unpaidAmount'];
-                                  final isPaid = l['isPaid'] == true;
-                                  return ListTile(
-                                    dense: true,
-                                    title: Text(
-                                      [date, if (time.isNotEmpty) time].join(' '),
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                    subtitle: Text('цена: $price • опл: $paid • долг: $unpaid'),
-                                    trailing: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: (isPaid ? Colors.green : Colors.red).withAlpha(25),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        isPaid ? 'Оплачено' : 'Долг',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: isPaid ? Colors.green.shade700 : Colors.red.shade700,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
+                                ...lessons.map(_lessonTile),
                               ],
                             );
                           }),
