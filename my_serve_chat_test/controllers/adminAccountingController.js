@@ -19,6 +19,22 @@ const asCsv = (rows) => {
   return rows.map((r) => r.map(escape).join(',')).join('\n');
 };
 
+const toIsoDate = (v) => {
+  if (!v) return '';
+  if (typeof v === 'string') {
+    // pg может вернуть 'YYYY-MM-DD' или 'YYYY-MM-DDTHH:MM:SS...'
+    if (v.length >= 10) return v.slice(0, 10);
+    return v;
+  }
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // fallback
+  try {
+    return new Date(v).toISOString().slice(0, 10);
+  } catch (_) {
+    return '';
+  }
+};
+
 // GET /admin/accounting/export?from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv
 export const exportAccounting = async (req, res) => {
   try {
@@ -111,6 +127,16 @@ export const exportAccounting = async (req, res) => {
       lessonsByStudent.get(sid).push(l);
     }
 
+    // debug: диапазон дат в уроках до конца периода
+    let minLessonDate = null;
+    let maxLessonDate = null;
+    for (const l of lessonsRes.rows) {
+      const d = toIsoDate(l.lesson_date);
+      if (!d) continue;
+      if (!minLessonDate || d < minLessonDate) minLessonDate = d;
+      if (!maxLessonDate || d > maxLessonDate) maxLessonDate = d;
+    }
+
     // FIFO распределение кредитов по занятиям до конца периода
     const coverageByLessonId = new Map(); // lessonId -> {paid, unpaid}
     const remainingCreditByStudent = new Map();
@@ -140,7 +166,7 @@ export const exportAccounting = async (req, res) => {
     const teacherAgg = new Map(); // teacherId -> {teacherId, teacherUsername, lessonsCount, amount, paid, unpaid}
 
     for (const l of lessonsRes.rows) {
-      const d = (l.lesson_date || '').toString().slice(0, 10);
+      const d = toIsoDate(l.lesson_date);
       if (d < from || d > to) continue;
       const cov = coverageByLessonId.get(l.id) || { paid: 0, unpaid: toNumber(l.price) };
       const st = studentById.get(l.student_id);
@@ -238,6 +264,8 @@ export const exportAccounting = async (req, res) => {
       period: { from, to },
       debug: {
         lessonsUpToTo: lessonsRes.rows.length,
+        minLessonDate,
+        maxLessonDate,
       },
       totals: {
         lessonsCount: lessonsInPeriod.length,
