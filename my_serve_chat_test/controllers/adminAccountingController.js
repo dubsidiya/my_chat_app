@@ -57,6 +57,7 @@ export const exportAccounting = async (req, res) => {
        FROM students
        ORDER BY name, id`
     );
+    const studentById = new Map(studentsRes.rows.map((s) => [s.id, s]));
 
     // 4) Кредит (депозиты/рефанды) по ученикам на конец периода
     // created_at <= (to + 1 day) 00:00
@@ -142,10 +143,11 @@ export const exportAccounting = async (req, res) => {
       const d = (l.lesson_date || '').toString().slice(0, 10);
       if (d < from || d > to) continue;
       const cov = coverageByLessonId.get(l.id) || { paid: 0, unpaid: toNumber(l.price) };
+      const st = studentById.get(l.student_id);
       const row = {
         lessonId: l.id,
         studentId: l.student_id,
-        studentName: studentsRes.rows.find((s) => s.id === l.student_id)?.name || '',
+        studentName: st?.name || '',
         lessonDate: d,
         lessonTime: l.lesson_time ? l.lesson_time.toString().slice(0, 5) : null,
         durationMinutes: l.duration_minutes,
@@ -192,6 +194,46 @@ export const exportAccounting = async (req, res) => {
 
     const teacherOut = [...teacherAgg.values()].sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));
 
+    // Дерево: преподаватель -> дети -> занятия (с paid/unpaid)
+    const treeByTeacher = new Map(); // teacherId -> {teacherId, teacherUsername, students: Map}
+    for (const l of lessonsInPeriod) {
+      const tid = l.teacherId;
+      if (!treeByTeacher.has(tid)) {
+        treeByTeacher.set(tid, {
+          teacherId: tid,
+          teacherUsername: l.teacherUsername,
+          students: new Map(), // studentId -> {studentId, studentName, lessons: []}
+        });
+      }
+      const tNode = treeByTeacher.get(tid);
+      if (!tNode.students.has(l.studentId)) {
+        tNode.students.set(l.studentId, {
+          studentId: l.studentId,
+          studentName: l.studentName,
+          lessons: [],
+        });
+      }
+      tNode.students.get(l.studentId).lessons.push({
+        lessonId: l.lessonId,
+        lessonDate: l.lessonDate,
+        lessonTime: l.lessonTime,
+        durationMinutes: l.durationMinutes,
+        price: l.price,
+        paidAmount: l.paidAmount,
+        unpaidAmount: l.unpaidAmount,
+        isPaid: l.isPaid,
+        notes: l.notes,
+      });
+    }
+
+    const tree = [...treeByTeacher.values()]
+      .map((t) => ({
+        teacherId: t.teacherId,
+        teacherUsername: t.teacherUsername,
+        students: [...t.students.values()].sort((a, b) => (a.studentName || '').localeCompare(b.studentName || '')),
+      }))
+      .sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));
+
     const payload = {
       period: { from, to },
       totals: {
@@ -203,6 +245,7 @@ export const exportAccounting = async (req, res) => {
       teachers: teacherOut,
       students: studentsOut,
       lessons: lessonsInPeriod,
+      tree,
     };
 
     if (format === 'csv') {
