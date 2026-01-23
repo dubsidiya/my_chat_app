@@ -96,9 +96,9 @@ export const exportAccounting = async (req, res) => {
               l.price,
               l.notes,
               l.created_by as teacher_id,
-              u.email as teacher_username
+              COALESCE(u.email, '(unknown)') as teacher_username
        FROM lessons l
-       JOIN users u ON u.id = l.created_by
+       LEFT JOIN users u ON u.id = l.created_by
        WHERE l.lesson_date <= $1::date
        ORDER BY l.student_id, l.lesson_date, l.lesson_time NULLS LAST, l.created_at, l.id`,
       [to]
@@ -236,6 +236,9 @@ export const exportAccounting = async (req, res) => {
 
     const payload = {
       period: { from, to },
+      debug: {
+        lessonsUpToTo: lessonsRes.rows.length,
+      },
       totals: {
         lessonsCount: lessonsInPeriod.length,
         lessonsAmount: lessonsInPeriod.reduce((acc, x) => acc + x.price, 0),

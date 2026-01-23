@@ -148,6 +148,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final totals = _data?['totals'] as Map<String, dynamic>?;
     final teachers = (_data?['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final tree = (_data?['tree'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+    final debug = _data?['debug'] as Map<String, dynamic>?;
 
     final q = _norm(_query);
 
@@ -325,6 +326,20 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     Text('Сумма занятий: ${(totals['lessonsAmount'] ?? 0).toString()}'),
                     Text('Оплачено: ${(totals['paidAmount'] ?? 0).toString()}'),
                     Text('Долг: ${(totals['unpaidAmount'] ?? 0).toString()}'),
+                    if ((totals['lessonsCount'] ?? 0) == 0) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'В выбранном периоде занятий не найдено. Попробуй выбрать более широкий период.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      if (debug != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'debug: lessonsUpToTo=${debug['lessonsUpToTo']}',
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
