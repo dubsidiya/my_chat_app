@@ -233,9 +233,12 @@ export const exportAccounting = async (req, res) => {
       }
       const tNode = treeByTeacher.get(tid);
       if (!tNode.students.has(l.studentId)) {
+        const sid = l.studentId;
         tNode.students.set(l.studentId, {
-          studentId: l.studentId,
+          studentId: sid,
           studentName: l.studentName,
+          overallDebtAsOfTo: debtByStudent.get(sid) || 0,
+          overallPrepaidAsOfTo: remainingCreditByStudent.get(sid) || 0,
           lessons: [],
         });
       }

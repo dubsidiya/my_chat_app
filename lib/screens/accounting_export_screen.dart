@@ -563,6 +563,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                               0,
                               (acc, x) => acc + _asDouble(x['unpaidAmount']),
                             );
+                            final overallDebt = _asDouble(s['overallDebtAsOfTo']);
+                            final overallPrepaid = _asDouble(s['overallPrepaidAsOfTo']);
                             return ExpansionTile(
                               tilePadding: const EdgeInsets.only(left: 4, right: 4),
                               childrenPadding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
@@ -601,6 +603,18 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                       label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
                                       color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
                                     ),
+                                    if (overallDebt > 0)
+                                      _chip(
+                                        icon: Icons.account_balance_wallet_rounded,
+                                        label: 'общий долг: ₽${overallDebt.toStringAsFixed(0)}',
+                                        color: Colors.red.shade700,
+                                      )
+                                    else if (overallPrepaid > 0)
+                                      _chip(
+                                        icon: Icons.account_balance_wallet_rounded,
+                                        label: 'предоплата: ₽${overallPrepaid.toStringAsFixed(0)}',
+                                        color: Colors.green.shade700,
+                                      ),
                                   ],
                                 ),
                               ),
