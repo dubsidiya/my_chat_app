@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
 import 'storage_service.dart';
 
@@ -7,9 +8,7 @@ class ChatsService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
   Future<Map<String, String>> _getAuthHeaders() async {
-    print('🔍 _getAuthHeaders вызван');
     final token = await StorageService.getToken();
-    print('🔍 getToken вернул: ${token != null ? "токен найден" : "NULL"}');
     
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -17,41 +16,28 @@ class ChatsService {
     
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
-      print('📤 Отправка запроса с токеном: ${token.substring(0, 20)}...');
-      print('📤 Полный заголовок Authorization: Bearer ${token.substring(0, 30)}...');
     } else {
-      print('❌ КРИТИЧНО: Запрос отправляется БЕЗ токена!');
-      print('   token is null или пустой');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('ChatsService: request without token');
+      }
     }
     
-    print('📋 Итоговые заголовки: ${headers.keys}');
     return headers;
   }
 
   Future<List<Chat>> fetchChats(String userId) async {
     try {
-      print('🔍 fetchChats вызван для userId: $userId');
       final headers = await _getAuthHeaders();
-      print('📋 Заголовки запроса: ${headers.keys}');
-      print('   Authorization: ${headers['Authorization'] != null ? headers['Authorization']!.substring(0, 30) + "..." : "ОТСУТСТВУЕТ!"}');
       
       final response = await http.get(
         Uri.parse('$baseUrl/chats'),
         headers: headers,
       );
 
-      print('Fetch chats status: ${response.statusCode}');
-      print('Fetch chats response: ${response.body}');
-      
-      if (response.statusCode == 401) {
-        print('❌ 401 Unauthorized - токен недействителен или отсутствует');
-        print('Проверьте, что токен сохранен и отправляется в заголовках');
-      }
-
     if (response.statusCode == 200) {
         try {
       final List<dynamic> data = jsonDecode(response.body);
-          print('Parsed ${data.length} chats');
           
           // Безопасный парсинг с обработкой ошибок
           final List<Chat> chats = [];
@@ -59,22 +45,21 @@ class ChatsService {
             try {
               chats.add(Chat.fromJson(chatJson as Map<String, dynamic>));
             } catch (e) {
-              print('Error parsing chat: $e');
-              print('Chat JSON: $chatJson');
+              if (kDebugMode) {
+                // ignore: avoid_print
+                print('ChatsService: error parsing chat: $e');
+              }
               // Пропускаем проблемный чат, но продолжаем обработку
             }
           }
           return chats;
         } catch (e) {
-          print('Error decoding JSON: $e');
           throw Exception('Ошибка парсинга ответа сервера: $e');
         }
     } else {
-        print('Error fetching chats: ${response.statusCode} - ${response.body}');
         throw Exception('Не удалось загрузить чаты: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error in fetchChats: $e');
       rethrow;
     }
   }
@@ -82,8 +67,6 @@ class ChatsService {
   Future<Chat> createChat(String name, List<String> userIds, {bool isGroup = false}) async {
     try {
       final url = Uri.parse('$baseUrl/chats');
-      print('Creating chat at: $url');
-      print('Request body: name=$name, userIds=$userIds');
       
       final headers = await _getAuthHeaders();
       final response = await http.post(
@@ -101,9 +84,6 @@ class ChatsService {
         },
     );
 
-      print('Create chat status: ${response.statusCode}');
-      print('Create chat response: ${response.body}');
-
     if (response.statusCode == 201 || response.statusCode == 200) {
         try {
           final responseData = jsonDecode(response.body);
@@ -111,16 +91,11 @@ class ChatsService {
             throw Exception('Неверный формат ответа сервера: ожидается объект');
           }
           final chat = Chat.fromJson(responseData);
-          print('Chat created successfully: ${chat.id} - ${chat.name}');
           return chat;
         } catch (e) {
-          print('Error parsing created chat: $e');
-          print('Response body: ${response.body}');
           throw Exception('Ошибка парсинга созданного чата: $e');
         }
       } else if (response.statusCode == 404) {
-        print('ERROR: Endpoint not found. Check server routes.');
-        print('Tried URL: $url');
         throw Exception('Эндпоинт не найден (404). Проверьте, что сервер обрабатывает POST /chats');
       } else {
         // Пытаемся распарсить сообщение об ошибке
@@ -133,14 +108,12 @@ class ChatsService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Create chat error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in createChat: $e');
       throw Exception('Неожиданная ошибка при создании чата: $e');
     }
   }
@@ -148,7 +121,6 @@ class ChatsService {
   Future<List<Map<String, dynamic>>> getAllUsers(String excludeUserId) async {
     try {
       final url = Uri.parse('$baseUrl/auth/users');
-      print('Fetching all users (excluding: $excludeUserId)');
       
       final headers = await _getAuthHeaders();
       final response = await http.get(url, headers: headers).timeout(
@@ -157,9 +129,6 @@ class ChatsService {
           throw Exception('Таймаут при получении списка пользователей');
         },
       );
-
-      print('Get users status: ${response.statusCode}');
-      print('Get users response: ${response.body}');
 
       if (response.statusCode == 200) {
         try {
@@ -176,18 +145,15 @@ class ChatsService {
           }
           return users;
         } catch (e) {
-          print('Error decoding users JSON: $e');
           throw Exception('Ошибка парсинга списка пользователей: $e');
         }
       } else {
-        print('Error fetching users: ${response.statusCode} - ${response.body}');
         throw Exception('Не удалось получить список пользователей: ${response.statusCode}');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in getAllUsers: $e');
       throw Exception('Неожиданная ошибка при получении списка пользователей: $e');
     }
   }
@@ -195,7 +161,6 @@ class ChatsService {
   Future<List<Map<String, dynamic>>> getChatMembers(String chatId) async {
     try {
       final url = Uri.parse('$baseUrl/chats/$chatId/members');
-      print('Fetching chat members for chat: $chatId');
       
       final headers = await _getAuthHeaders();
       final response = await http.get(url, headers: headers).timeout(
@@ -204,9 +169,6 @@ class ChatsService {
           throw Exception('Таймаут при получении участников чата');
         },
       );
-
-      print('Get chat members status: ${response.statusCode}');
-      print('Get chat members response: ${response.body}');
 
       if (response.statusCode == 200) {
         try {
@@ -220,18 +182,15 @@ class ChatsService {
           }
           return members;
         } catch (e) {
-          print('Error decoding chat members JSON: $e');
           throw Exception('Ошибка парсинга участников чата: $e');
         }
       } else {
-        print('Error fetching chat members: ${response.statusCode} - ${response.body}');
         throw Exception('Не удалось получить участников чата: ${response.statusCode}');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in getChatMembers: $e');
       throw Exception('Неожиданная ошибка при получении участников чата: $e');
     }
   }
@@ -239,8 +198,6 @@ class ChatsService {
   Future<void> addMembersToChat(String chatId, List<String> userIds) async {
     try {
       final url = Uri.parse('$baseUrl/chats/$chatId/members');
-      print('Adding members to chat: $chatId');
-      print('User IDs: $userIds');
       
       final headers = await _getAuthHeaders();
       final response = await http.post(
@@ -256,11 +213,7 @@ class ChatsService {
         },
       );
 
-      print('Add members status: ${response.statusCode}');
-      print('Add members response: ${response.body}');
-
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('Members added successfully to chat: $chatId');
         return;
       } else if (response.statusCode == 404) {
         throw Exception('Чат не найден');
@@ -274,14 +227,12 @@ class ChatsService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Add members error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in addMembersToChat: $e');
       throw Exception('Неожиданная ошибка при добавлении участников: $e');
     }
   }
@@ -289,7 +240,6 @@ class ChatsService {
   Future<void> removeMemberFromChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/chats/$chatId/members/$userId');
-      print('Removing member from chat: $chatId, userId: $userId');
       
       final headers = await _getAuthHeaders();
       final response = await http.delete(url, headers: headers).timeout(
@@ -299,11 +249,7 @@ class ChatsService {
         },
       );
 
-      print('Remove member status: ${response.statusCode}');
-      print('Remove member response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Member removed successfully from chat: $chatId');
         return;
       } else if (response.statusCode == 404) {
         throw Exception('Участник не найден в чате');
@@ -317,14 +263,12 @@ class ChatsService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Remove member error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in removeMemberFromChat: $e');
       throw Exception('Неожиданная ошибка при удалении участника: $e');
     }
   }
@@ -332,7 +276,6 @@ class ChatsService {
   Future<void> deleteChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/chats/$chatId');
-      print('Deleting chat at: $url');
       
       final headers = await _getAuthHeaders();
       final response = await http.delete(url, headers: headers).timeout(
@@ -342,11 +285,7 @@ class ChatsService {
         },
       );
 
-      print('Delete chat status: ${response.statusCode}');
-      print('Delete chat response: ${response.body}');
-
       if (response.statusCode == 200 || response.statusCode == 204) {
-        print('Chat deleted successfully: $chatId');
         return;
       } else if (response.statusCode == 403) {
         String errorMessage = 'Недостаточно прав для удаления чата';
@@ -369,14 +308,12 @@ class ChatsService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Delete chat error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in deleteChat: $e');
       throw Exception('Неожиданная ошибка при удалении чата: $e');
     }
   }
@@ -384,7 +321,6 @@ class ChatsService {
   Future<void> leaveChat(String chatId) async {
     try {
       final url = Uri.parse('$baseUrl/chats/$chatId/leave');
-      print('Leaving chat: $chatId');
       
       final headers = await _getAuthHeaders();
       final response = await http.post(url, headers: headers).timeout(
@@ -394,11 +330,7 @@ class ChatsService {
         },
       );
 
-      print('Leave chat status: ${response.statusCode}');
-      print('Leave chat response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Left chat successfully: $chatId');
         return;
       } else if (response.statusCode == 400) {
         String errorMessage = 'Не удалось выйти из чата';
@@ -421,14 +353,12 @@ class ChatsService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Leave chat error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in leaveChat: $e');
       throw Exception('Неожиданная ошибка при выходе из чата: $e');
     }
   }

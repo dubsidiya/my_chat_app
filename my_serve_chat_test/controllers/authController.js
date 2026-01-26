@@ -171,10 +171,10 @@ export const unlockPrivateAccess = async (req, res) => {
     const b = Buffer.from(PRIVATE_ACCESS_CODE, 'utf8');
     const isEqual = a.length === b.length && crypto.timingSafeEqual(a, b);
     if (!isEqual) {
-      console.warn('unlockPrivateAccess: wrong code', {
-        userId: req.user.userId,
-        ip: req.ip,
-      });
+      // Не логируем userId/ip в продакшене (избегаем утечек PII в логах)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('unlockPrivateAccess: wrong code');
+      }
       return res.status(403).json({ message: 'Неверный код' });
     }
 

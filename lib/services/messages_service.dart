@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart'; // ✅ Импорт сервиса кэширования
@@ -30,9 +31,11 @@ class MessagesService {
     };
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
-      print('📤 Отправка запроса с токеном: ${token.substring(0, 20)}...');
     } else {
-      print('⚠️ Запрос отправляется БЕЗ токена!');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('MessagesService: request without token');
+      }
     }
     return headers;
   }
@@ -54,7 +57,10 @@ class MessagesService {
     
     // ✅ Если есть кэш и мы офлайн, возвращаем из кэша
     if (!isOnline && useCache) {
-      print('⚠️ Нет подключения к интернету, загружаем из кэша');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('MessagesService: offline, using cache');
+      }
       final cachedMessages = await LocalMessagesService.getMessages(chatId);
       return MessagesPaginationResult(
         messages: cachedMessages,
@@ -78,9 +84,6 @@ class MessagesService {
       final headers = await _getAuthHeaders();
       final response = await http.get(uri, headers: headers);
 
-      print('Fetch messages status: ${response.statusCode}');
-      print('Fetch messages response: ${response.body}');
-
       if (response.statusCode == 200) {
         try {
           final dynamic decodedData = jsonDecode(response.body);
@@ -96,8 +99,10 @@ class MessagesService {
               try {
                 messages.add(Message.fromJson(msgJson as Map<String, dynamic>));
               } catch (e) {
-                print('Error parsing message: $e');
-                print('Message JSON: $msgJson');
+                if (kDebugMode) {
+                  // ignore: avoid_print
+                  print('MessagesService: error parsing message: $e');
+                }
               }
             }
             
@@ -123,8 +128,10 @@ class MessagesService {
               try {
                 messages.add(Message.fromJson(msgJson as Map<String, dynamic>));
               } catch (e) {
-                print('Error parsing message: $e');
-                print('Message JSON: $msgJson');
+                if (kDebugMode) {
+                  // ignore: avoid_print
+                  print('MessagesService: error parsing message: $e');
+                }
               }
             }
             
@@ -141,7 +148,6 @@ class MessagesService {
                    );
                  } else {
             // Неожиданный формат
-            print('Unexpected response format: $decodedData');
             return MessagesPaginationResult(
               messages: [],
               hasMore: false,
@@ -150,13 +156,15 @@ class MessagesService {
             );
           }
         } catch (e) {
-          print('Error decoding messages JSON: $e');
           throw Exception('Ошибка парсинга сообщений: $e');
         }
              } else {
                // ✅ Если ошибка сервера, пытаемся загрузить из кэша
                if (useCache) {
-                 print('⚠️ Ошибка загрузки с сервера, пробуем кэш');
+                 if (kDebugMode) {
+                   // ignore: avoid_print
+                   print('MessagesService: server error, trying cache');
+                 }
                  final cachedMessages = await LocalMessagesService.getMessages(chatId);
                  if (cachedMessages.isNotEmpty) {
                    return MessagesPaginationResult(
@@ -169,14 +177,15 @@ class MessagesService {
                    );
                  }
                }
-               print('Error fetching messages: ${response.statusCode} - ${response.body}');
                throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
              }
            } catch (e) {
-             print('Error in fetchMessagesPaginated: $e');
              // ✅ Если ошибка сети, пытаемся загрузить из кэша
              if (useCache && e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
-               print('⚠️ Ошибка сети, загружаем из кэша');
+               if (kDebugMode) {
+                 // ignore: avoid_print
+                 print('MessagesService: network error, using cache');
+               }
                final cachedMessages = await LocalMessagesService.getMessages(chatId);
                if (cachedMessages.isNotEmpty) {
                  return MessagesPaginationResult(
@@ -202,7 +211,6 @@ class MessagesService {
     String? fileMime,
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
   }) async {
-    print('🔍 sendMessage called: chatId=$chatId, content=$content, imageUrl=$imageUrl, originalImageUrl=$originalImageUrl, replyToMessageId=$replyToMessageId');
     // ✅ Проверяем подключение
     final connectivityResult = await Connectivity().checkConnectivity();
     final isOnline = connectivityResult != ConnectivityResult.none;
@@ -237,16 +245,12 @@ class MessagesService {
       'file_mime': fileMime,
       'reply_to_message_id': replyToMessageId,
     });
-    
-    print('🔍 sendMessage request: url=$baseUrl/messages, body=$body, headers=$headers');
-    
+
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
       headers: headers,
       body: body,
     );
-
-    print('🔍 sendMessage response: statusCode=${response.statusCode}, body=${response.body}');
 
     if (response.statusCode != 201) {
       String errorMessage = 'Ошибка при отправке сообщения';
@@ -258,30 +262,28 @@ class MessagesService {
           errorMessage = response.body;
         }
       } catch (e) {
-        print('Error parsing error response: $e');
         errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
       }
-      print('❌ sendMessage error: ${response.statusCode} - $errorMessage');
       throw Exception(errorMessage);
     }
     
     // ✅ После успешной отправки обновляем кэш
     try {
-      print('🔍 Parsing server response: ${response.body}');
       final responseData = jsonDecode(response.body);
-      print('🔍 Parsed response data: $responseData');
       
       final sentMessage = Message.fromJson(responseData);
-      print('✅ Created Message object: id=${sentMessage.id}, content=${sentMessage.content}');
       
       await LocalMessagesService.addMessage(chatId, sentMessage);
       
       // ✅ Возвращаем отправленное сообщение для возможного обновления UI
       return sentMessage;
     } catch (e, stackTrace) {
-      print('❌ Error parsing server response: $e');
-      print('❌ Stack trace: $stackTrace');
-      print('❌ Response body: ${response.body}');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('MessagesService: error parsing sendMessage response: $e');
+        // ignore: avoid_print
+        print(stackTrace);
+      }
       return null;
     }
   }
@@ -323,17 +325,24 @@ class MessagesService {
             filename: originalFileName,
           ),
         );
-        print('Uploading original image: $originalFileName, size: ${originalBytes.length} bytes');
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Uploading original image: $originalFileName, size: ${originalBytes.length} bytes');
+        }
       }
 
-      print('Uploading compressed image: $fileName, size: ${imageBytes.length} bytes');
-      print('URL: $baseUrl/messages/upload-image');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Uploading image: $fileName, size: ${imageBytes.length} bytes');
+      }
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      print('Upload response status: ${response.statusCode}');
-      print('Upload response body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Upload image status: ${response.statusCode}');
+      }
 
       if (response.statusCode == 200) {
         // Проверяем, что ответ действительно JSON
@@ -346,15 +355,16 @@ class MessagesService {
           if (data['image_url'] != null) {
             // Сохраняем original_image_url, если есть (для будущего использования)
             if (data['original_image_url'] != null) {
-              print('✅ Оригинальное изображение сохранено: ${data['original_image_url']}');
+              if (kDebugMode) {
+                // ignore: avoid_print
+                print('Original image URL returned');
+              }
             }
             return data['image_url'] as String;
           } else {
             throw Exception('Сервер не вернул image_url');
           }
         } catch (e) {
-          print('JSON decode error: $e');
-          print('Response body: ${response.body}');
           throw Exception('Ошибка парсинга ответа сервера: $e');
         }
       } else {
@@ -374,7 +384,6 @@ class MessagesService {
         throw Exception(errorMessage);
       }
     } catch (e) {
-      print('Error uploading image: $e');
       if (e is Exception) {
         rethrow;
       }
@@ -433,7 +442,6 @@ class MessagesService {
   Future<void> deleteMessage(String messageId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/message/$messageId?userId=$userId');
-      print('Deleting message: $messageId');
       
       final headers = await _getAuthHeaders();
       final response = await http.delete(url, headers: headers).timeout(
@@ -443,11 +451,7 @@ class MessagesService {
         },
       );
 
-      print('Delete message status: ${response.statusCode}');
-      print('Delete message response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Message deleted successfully: $messageId');
         return;
       } else if (response.statusCode == 403) {
         String errorMessage = 'Недостаточно прав для удаления сообщения';
@@ -470,14 +474,12 @@ class MessagesService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Delete message error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in deleteMessage: $e');
       throw Exception('Неожиданная ошибка при удалении сообщения: $e');
     }
   }
@@ -528,7 +530,6 @@ class MessagesService {
 
   // ✅ Переслать сообщение
   Future<void> forwardMessage(String messageId, List<String> toChatIds) async {
-    print('🔍 forwardMessage called: messageId=$messageId, toChatIds=$toChatIds');
     final headers = await _getAuthHeaders();
     // ✅ Сервер требует content или image_url даже для пересылки
     // Отправляем пробел, так как пустая строка не проходит валидацию (!content = true для '')
@@ -539,15 +540,11 @@ class MessagesService {
       'content': ' ', // Пробел для прохождения валидации сервера (не пустая строка)
     });
     
-    print('🔍 forwardMessage request: url=$baseUrl/messages, body=$body');
-    
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
       headers: headers,
       body: body,
     );
-
-    print('🔍 forwardMessage response: statusCode=${response.statusCode}, body=${response.body}');
 
     if (response.statusCode != 201) {
       String errorMessage = 'Ошибка при пересылке сообщения';
@@ -559,14 +556,10 @@ class MessagesService {
           errorMessage = response.body;
         }
       } catch (e) {
-        print('Error parsing error response: $e');
         errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
       }
-      print('❌ forwardMessage error: ${response.statusCode} - $errorMessage');
       throw Exception(errorMessage);
     }
-    
-    print('✅ forwardMessage success');
   }
 
   // ✅ Закрепить сообщение
@@ -658,15 +651,11 @@ class MessagesService {
       'reaction': reaction,
     });
     
-    print('🔍 addReaction request: url=$baseUrl/messages/message/$messageId/reaction, messageId=$messageId, reaction=$reaction');
-    
     final response = await http.post(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
       body: body,
     );
-
-    print('🔍 addReaction response: statusCode=${response.statusCode}, body=${response.body}');
 
     if (response.statusCode != 200) {
       String errorMessage = 'Ошибка при добавлении реакции';
@@ -678,10 +667,8 @@ class MessagesService {
           errorMessage = response.body;
         }
       } catch (e) {
-        print('Error parsing error response: $e');
         errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
       }
-      print('❌ addReaction error: ${response.statusCode} - $errorMessage');
       throw Exception(errorMessage);
     }
   }
@@ -708,7 +695,6 @@ class MessagesService {
           errorMessage = error['message'] ?? errorMessage;
         }
       } catch (_) {}
-      print('removeReaction error: ${response.statusCode} - ${response.body}');
       throw Exception(errorMessage);
     }
   }
@@ -716,7 +702,6 @@ class MessagesService {
   Future<void> clearChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');
-      print('Clearing chat: $chatId');
       
       final headers = await _getAuthHeaders();
       final response = await http.delete(url, headers: headers).timeout(
@@ -726,11 +711,7 @@ class MessagesService {
         },
       );
 
-      print('Clear chat status: ${response.statusCode}');
-      print('Clear chat response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Chat cleared successfully: $chatId');
         return;
       } else if (response.statusCode == 403) {
         String errorMessage = 'Недостаточно прав для очистки чата';
@@ -753,14 +734,12 @@ class MessagesService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Clear chat error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in clearChat: $e');
       throw Exception('Неожиданная ошибка при очистке чата: $e');
     }
   }

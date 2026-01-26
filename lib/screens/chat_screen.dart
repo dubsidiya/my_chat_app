@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
@@ -1047,21 +1048,29 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final token = await StorageService.getToken();
       if (token == null) {
-        print('WebSocket: No token available');
         return;
       }
 
-      // Подключаемся к WebSocket с токеном
-      _channel = WebSocketChannel.connect(
-        Uri.parse('wss://my-server-chat.onrender.com?token=$token'),
-      );
+      // Подключаемся к WebSocket:
+      // - web: через query param (нет возможности поставить Authorization header)
+      // - mobile/desktop: через Authorization header (не светим токен в URL)
+      if (kIsWeb) {
+        _channel = WebSocketChannel.connect(
+          Uri.parse('wss://my-server-chat.onrender.com?token=$token'),
+        );
+      } else {
+        _channel = IOWebSocketChannel.connect(
+          Uri.parse('wss://my-server-chat.onrender.com'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+      }
       
       // Настраиваем слушатель после подключения
       if (mounted) {
         _setupWebSocketListener();
       }
     } catch (e) {
-      print('Error initializing WebSocket: $e');
+      // Не логируем чувствительные данные
     }
   }
 

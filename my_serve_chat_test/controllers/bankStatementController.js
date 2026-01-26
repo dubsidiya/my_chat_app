@@ -21,11 +21,16 @@ export const upload = multer({
       'text/plain',
       'application/octet-stream' // Для некоторых браузеров
     ];
+    const allowExcel = process.env.ALLOW_EXCEL_UPLOADS === 'true';
+    const ext = (file.originalname || '').toLowerCase();
+    const isCsv = ext.endsWith('.csv') || file.mimetype === 'text/csv';
+    const isExcel = ext.endsWith('.xlsx') || ext.endsWith('.xls');
     
-    if (allowedMimes.includes(file.mimetype) || 
-        file.originalname.endsWith('.csv') || 
-        file.originalname.endsWith('.xlsx') || 
-        file.originalname.endsWith('.xls')) {
+    if (isExcel && !allowExcel) {
+      return cb(new Error('Загрузка Excel отключена на сервере. Используйте CSV.'));
+    }
+
+    if (allowedMimes.includes(file.mimetype) || isCsv || (allowExcel && isExcel)) {
       cb(null, true);
     } else {
       cb(new Error('Неподдерживаемый формат файла. Используйте CSV или Excel (.xlsx, .xls)'));
@@ -68,11 +73,22 @@ const parseCSV = (buffer) => {
     const separator = detectDelimiter(decodedText);
     const results = [];
     const stream = Readable.from(decodedText);
+    const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
     
     stream
       .pipe(csvParser({
         separator,
-        mapHeaders: ({ header }) => header ? header.trim() : header
+        mapHeaders: ({ header }) => {
+          if (!header) return header;
+          const h = header.toString().trim();
+          const lower = h.toLowerCase();
+          if (!h) return null;
+          // Защита от prototype pollution через заголовки
+          if (blockedKeys.has(lower)) return null;
+          // Ограничим длину ключа
+          if (h.length > 120) return h.substring(0, 120);
+          return h;
+        }
       }))
       .on('data', (data) => results.push(data))
       .on('end', () => resolve(results))
@@ -85,7 +101,39 @@ const parseExcel = (buffer) => {
   const workbook = xlsx.read(buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
-  return xlsx.utils.sheet_to_json(worksheet);
+  // Защита от prototype pollution: сначала получаем массивы, затем сами строим объекты с безопасными ключами
+  const rows = xlsx.utils.sheet_to_json(worksheet, {
+    header: 1,
+    raw: true,
+    blankrows: false,
+    defval: '',
+  });
+
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
+  const headersRaw = (rows[0] || []).map((h) => (h ?? '').toString().trim());
+  const headers = headersRaw.map((h) => {
+    const lower = h.toLowerCase();
+    if (!h) return null;
+    if (blockedKeys.has(lower)) return null;
+    return h.length > 120 ? h.substring(0, 120) : h;
+  });
+
+  // Ограничим количество строк, чтобы снизить DoS-риск
+  const maxRows = 10000;
+  const out = [];
+  for (let i = 1; i < rows.length && out.length < maxRows; i++) {
+    const r = rows[i] || [];
+    const obj = {};
+    for (let c = 0; c < headers.length; c++) {
+      const key = headers[c];
+      if (!key) continue;
+      obj[key] = r[c];
+    }
+    out.push(obj);
+  }
+  return out;
 };
 
 // Поиск студента по описанию платежа (только среди студентов текущего преподавателя)
@@ -188,10 +236,17 @@ export const processBankStatement = async (req, res) => {
     const file = req.file;
     let rows = [];
 
+    // Дополнительная защита по размеру (помимо multer.limits)
+    const size = file.size || file.buffer?.length || 0;
+    if (size > 10 * 1024 * 1024) {
+      return res.status(400).json({ message: 'Файл слишком большой (макс 10MB)' });
+    }
+
     // Определяем формат файла и парсим
+    const allowExcel = process.env.ALLOW_EXCEL_UPLOADS === 'true';
     if (file.originalname.endsWith('.csv') || file.mimetype === 'text/csv') {
       rows = await parseCSV(file.buffer);
-    } else if (file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls')) {
+    } else if (allowExcel && (file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls'))) {
       rows = await parseExcel(file.buffer);
     } else {
       return res.status(400).json({ message: 'Неподдерживаемый формат файла' });

@@ -53,7 +53,6 @@ export const setupCorsEndpoint = async (req, res) => {
     res.status(500).json({
       success: false,
       message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

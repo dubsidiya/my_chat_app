@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class StorageService {
   static const String _userIdKey = 'user_id';
@@ -8,22 +9,27 @@ class StorageService {
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
 
+  static const FlutterSecureStorage _secure = FlutterSecureStorage();
+
   // Сохранение данных пользователя
   static Future<void> saveUserData(String userId, String userEmail, String token) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userIdKey, userId);
       await prefs.setString(_userEmailKey, userEmail);
-      await prefs.setString(_tokenKey, token);
-      print('✅ Токен сохранен в SharedPreferences: ${token.substring(0, 20)}...');
+      // Токен: на mobile/desktop — secure storage, на web — shared_preferences
       if (kIsWeb) {
-        print('✅ Платформа: WEB - данные сохранены');
-        print('   Проверьте в DevTools: Application → Local Storage → flutter.auth_token');
+        await prefs.setString(_tokenKey, token);
+      } else {
+        await _secure.write(key: _tokenKey, value: token);
+        // Удаляем возможный старый токен из prefs (миграция)
+        await prefs.remove(_tokenKey);
       }
     } catch (e) {
-      print('❌ Ошибка сохранения токена: $e');
-      if (kIsWeb) {
-        print('   Платформа: WEB - возможно проблема с SharedPreferences на веб');
+      if (kDebugMode) {
+        // Не логируем токен/PII
+        // ignore: avoid_print
+        print('StorageService.saveUserData error: $e');
       }
       rethrow;
     }
@@ -32,39 +38,24 @@ class StorageService {
   // Получение данных пользователя
   static Future<Map<String, String>?> getUserData() async {
     try {
-      print('🔍 getUserData вызван');
       final prefs = await SharedPreferences.getInstance();
-      print('✅ SharedPreferences получен');
       
       final userId = prefs.getString(_userIdKey);
       final userEmail = prefs.getString(_userEmailKey);
-      final token = prefs.getString(_tokenKey);
-
-      print('🔍 getUserData результаты:');
-      print('   userId: $userId');
-      print('   userEmail: $userEmail');
-      print('   token: ${token != null ? (token.length > 20 ? token.substring(0, 20) + "..." : token) : "НЕ НАЙДЕН"}');
-      print('   token length: ${token?.length ?? 0}');
+      final token = await getToken();
 
       if (userId != null && userEmail != null && token != null) {
-        print('✅ Все данные найдены, возвращаем Map');
-        print('   Возвращаем: id=$userId, email=$userEmail, token=${token.substring(0, 20)}...');
         return {
           'id': userId,
           'email': userEmail,
           'token': token,
         };
-      } else {
-        print('⚠️ Не все данные найдены:');
-        print('   userId: ${userId != null ? "есть ($userId)" : "НЕТ"}');
-        print('   userEmail: ${userEmail != null ? "есть ($userEmail)" : "НЕТ"}');
-        print('   token: ${token != null ? "есть (length: ${token.length})" : "НЕТ"}');
       }
       return null;
     } catch (e) {
-      print('❌ Ошибка getUserData: $e');
       if (kDebugMode) {
-        print('   Stack trace: ${StackTrace.current}');
+        // ignore: avoid_print
+        print('StorageService.getUserData error: $e');
       }
       return null;
     }
@@ -74,24 +65,24 @@ class StorageService {
   static Future<String?> getToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString(_tokenKey);
-      if (token != null) {
-        print('✅ Токен получен из SharedPreferences: ${token.substring(0, 20)}...');
-        if (kIsWeb) {
-          print('   Платформа: WEB');
-        }
-      } else {
-        print('⚠️ Токен не найден в SharedPreferences');
-        if (kIsWeb) {
-          print('⚠️ Платформа: WEB - проверьте localStorage в DevTools (Application → Local Storage)');
-          print('   Ищите ключ: flutter.auth_token');
+      if (kIsWeb) {
+        return prefs.getString(_tokenKey);
+      }
+      final token = await _secure.read(key: _tokenKey);
+      // Фоллбек/миграция со старой версии
+      if (token == null) {
+        final legacy = prefs.getString(_tokenKey);
+        if (legacy != null && legacy.isNotEmpty) {
+          await _secure.write(key: _tokenKey, value: legacy);
+          await prefs.remove(_tokenKey);
+          return legacy;
         }
       }
       return token;
     } catch (e) {
-      print('❌ Ошибка получения токена: $e');
-      if (kIsWeb) {
-        print('   Платформа: WEB - возможно проблема с SharedPreferences на веб');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getToken error: $e');
       }
       return null;
     }
@@ -104,6 +95,9 @@ class StorageService {
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_tokenKey);
+    if (!kIsWeb) {
+      await _secure.delete(key: _tokenKey);
+    }
     if (userId != null) {
       await prefs.remove('$_privateUnlockedPrefix$userId');
     }
@@ -127,7 +121,10 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_themeModeKey, isDark);
     } catch (e) {
-      print('❌ Ошибка сохранения темы: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.saveThemeMode error: $e');
+      }
     }
   }
   
@@ -137,7 +134,10 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(_themeModeKey) ?? false; // По умолчанию светлая тема
     } catch (e) {
-      print('❌ Ошибка получения темы: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getThemeMode error: $e');
+      }
       return false;
     }
   }

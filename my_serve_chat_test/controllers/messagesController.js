@@ -771,23 +771,14 @@ export const sendMessage = async (req, res) => {
       }
     } catch (wsError) {
       console.error('Ошибка отправки через WebSocket:', wsError);
-      console.error('Stack:', wsError.stack);
       // Не прерываем выполнение, сообщение уже сохранено в БД
     }
 
     res.status(201).json(response);
   } catch (error) {
     console.error('Ошибка отправки сообщения:', error);
-    console.error('Stack trace:', error.stack);
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      code: error.code,
-    });
     res.status(500).json({ 
       message: 'Ошибка сервера',
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

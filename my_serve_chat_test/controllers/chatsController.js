@@ -330,10 +330,8 @@ export const deleteChat = async (req, res) => {
 
   } catch (error) {
     console.error("Ошибка deleteChat:", error);
-    console.error("Stack:", error.stack);
     res.status(500).json({ 
       message: "Ошибка удаления чата",
-      error: error.message 
     });
   }
 };

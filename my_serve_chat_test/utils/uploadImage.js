@@ -8,12 +8,6 @@ const storage = multer.memoryStorage();
 
 // Фильтр файлов - только изображения
 const fileFilter = (req, file, cb) => {
-  console.log('File filter check:', {
-    originalname: file.originalname,
-    mimetype: file.mimetype,
-    fieldname: file.fieldname
-  });
-
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const allowedMimeTypes = [
     'image/jpeg',
@@ -30,24 +24,14 @@ const fileFilter = (req, file, cb) => {
     ? allowedTypes.test(path.extname(file.originalname).toLowerCase())
     : false;
 
-  // Проверяем MIME-тип
-  const mimetype = file.mimetype 
-    ? allowedMimeTypes.some(type => file.mimetype.toLowerCase().includes(type.split('/')[1])) ||
-      allowedMimeTypes.includes(file.mimetype.toLowerCase())
-    : false;
+  // Проверяем MIME-тип (строго по allowlist)
+  const mimetype = file.mimetype ? allowedMimeTypes.includes(file.mimetype.toLowerCase()) : false;
 
-  // Если есть хотя бы одно совпадение (расширение ИЛИ MIME-тип), разрешаем
-  // Это важно для веб-платформы, где MIME-тип может быть неточным
+  // Разрешаем, если совпало расширение ИЛИ MIME-тип
+  // (на web MIME иногда приходит неточным, но includes() использовать нельзя — легко обходится)
   if (extname || mimetype) {
-    console.log('File accepted:', file.originalname);
     return cb(null, true);
   } else {
-    console.log('File rejected:', {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      extname: extname,
-      mimetypeCheck: mimetype
-    });
     cb(new Error('Только изображения! Разрешенные форматы: JPEG, JPG, PNG, GIF, WEBP'));
   }
 };

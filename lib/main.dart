@@ -37,19 +37,11 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _isDarkMode = false;
-  static _MyAppState? _instance;
 
   @override
   void initState() {
     super.initState();
-    _instance = this;
     _loadThemePreference();
-  }
-
-  @override
-  void dispose() {
-    _instance = null;
-    super.dispose();
   }
 
   Future<void> _loadThemePreference() async {
@@ -68,11 +60,6 @@ class _MyAppState extends State<MyApp> {
       });
     }
     StorageService.saveThemeMode(isDark);
-  }
-
-  // ✅ Статический метод для обновления темы из любого места
-  static void updateTheme(bool isDark) {
-    _instance?.toggleTheme(isDark);
   }
 
   @override
@@ -245,24 +232,12 @@ class _MyAppState extends State<MyApp> {
           if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
             final userData = snapshot.data!;
             final userIdentifier = userData['email'] ?? userData['username'] ?? '';
-            print('✅ Автоматический вход: userId=${userData['id']}, username=$userIdentifier');
-            print('✅ Токен найден: ${userData['token']!.substring(0, 20)}...');
-            print('✅ Токен полный: ${userData['token']}');
             return MainTabsScreen(
               userId: userData['id']!,
               userEmail: userIdentifier,
               onThemeChanged: toggleTheme, // ✅ Передаем функцию переключения темы
             );
           } else {
-            print('⚠️ Автоматический вход не выполнен:');
-            print('  - hasData: ${snapshot.hasData}');
-            print('  - data: ${snapshot.data}');
-            if (snapshot.data != null) {
-              print('  - keys: ${snapshot.data!.keys}');
-              print('  - token: ${snapshot.data!['token']}');
-            } else {
-              print('  - snapshot.data is null');
-            }
           }
 
           // Если данных нет - показываем экран входа

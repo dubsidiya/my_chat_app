@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'storage_service.dart';
 
 class AuthService {
@@ -12,15 +13,11 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'username': username, 'password': password}),
       );
-      print('Login status: ${response.statusCode}');
-      print('Login response body: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('✅ Login успешен, получены данные: ${data.keys}');
         // Сохраняем токен
         if (data['token'] != null) {
-          print('💾 Сохранение токена...');
           // Используем username из ответа, если есть, иначе email (для обратной совместимости)
           final userIdentifier = data['username'] ?? data['email'] ?? '';
           await StorageService.saveUserData(
@@ -30,9 +27,6 @@ class AuthService {
           );
           // При обычном логине приватный доступ не выдаем (требуется отдельная разблокировка)
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), false);
-          print('✅ Токен сохранен успешно');
-        } else {
-          print('⚠️ Токен не получен в ответе!');
         }
         return data;
       } else if (response.statusCode == 500) {
@@ -63,9 +57,6 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'username': username, 'password': password}),
       );
-
-      print('REGISTER STATUS: ${response.statusCode}');
-      print('REGISTER RESPONSE: ${response.body}');
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -120,7 +111,6 @@ class AuthService {
       }
 
       final url = Uri.parse('$baseUrl/auth/user/$userId');
-      print('Deleting account: $userId');
 
       final response = await http.delete(
         url,
@@ -136,11 +126,7 @@ class AuthService {
         },
       );
 
-      print('Delete account status: ${response.statusCode}');
-      print('Delete account response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Account deleted successfully: $userId');
         return;
       } else if (response.statusCode == 401) {
         String errorMessage = 'Неверный пароль';
@@ -170,14 +156,16 @@ class AuthService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Delete account error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in deleteAccount: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('AuthService.deleteAccount unexpected error: $e');
+      }
       throw Exception('Неожиданная ошибка при удалении аккаунта: $e');
     }
   }
@@ -190,7 +178,6 @@ class AuthService {
       }
 
       final url = Uri.parse('$baseUrl/auth/user/$userId/password');
-      print('Changing password for user: $userId');
 
       final response = await http.put(
         url,
@@ -209,11 +196,7 @@ class AuthService {
         },
       );
 
-      print('Change password status: ${response.statusCode}');
-      print('Change password response: ${response.body}');
-
       if (response.statusCode == 200) {
-        print('Password changed successfully for user: $userId');
         return;
       } else if (response.statusCode == 401) {
         String errorMessage = 'Неверный текущий пароль';
@@ -243,14 +226,16 @@ class AuthService {
         } catch (_) {
           errorMessage = 'Ошибка сервера (${response.statusCode})';
         }
-        print('Change password error: ${response.statusCode} - ${response.body}');
         throw Exception('$errorMessage (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) {
         rethrow;
       }
-      print('Unexpected error in changePassword: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('AuthService.changePassword unexpected error: $e');
+      }
       throw Exception('Неожиданная ошибка при смене пароля: $e');
     }
   }

@@ -83,21 +83,8 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // Разрешаем все поддомены Vercel (для preview deployments)
-    if (origin.includes('.vercel.app')) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`CORS: Разрешен Vercel origin: ${origin}`);
-      }
-      return callback(null, true);
-    }
-    
-    // Разрешаем все поддомены netlify (если используется)
-    if (origin.includes('.netlify.app')) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`CORS: Разрешен Netlify origin: ${origin}`);
-      }
-      return callback(null, true);
-    }
+    // ВАЖНО: не разрешаем wildcard для *.vercel.app / *.netlify.app.
+    // Если нужны preview-домены — добавляйте их явно в ALLOWED_ORIGINS.
     
     if (process.env.NODE_ENV === 'development') {
       console.log(`CORS: Заблокирован origin: ${origin}`);
@@ -132,9 +119,41 @@ const authLimiter = rateLimit({
   },
 });
 
+// Общий rate limit для API (защита от DoS)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: 'Слишком много запросов, попробуйте позже',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Более строгий лимит для загрузок
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  message: 'Слишком много загрузок, попробуйте позже',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Применяем rate limiting только к эндпоинтам аутентификации
 app.use('/auth/login', authLimiter);
 app.use('/auth/register', authLimiter);
+
+// Общий лимит на основные API
+app.use('/messages', apiLimiter);
+app.use('/chats', apiLimiter);
+app.use('/students', apiLimiter);
+app.use('/reports', apiLimiter);
+app.use('/admin', apiLimiter);
+app.use('/bank-statement', apiLimiter);
+app.use('/setup', apiLimiter);
+
+// Строгий лимит на upload endpoints (messages + bank statement)
+app.use('/messages/upload-image', uploadLimiter);
+app.use('/messages/upload-file', uploadLimiter);
+app.use('/bank-statement/upload', uploadLimiter);
 
 app.use('/auth', authRoutes);
 app.use('/chats', chatRoutes);
@@ -161,9 +180,10 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔐 JWT_SECRET: ${process.env.JWT_SECRET ? 'установлен' : 'НЕ УСТАНОВЛЕН!'}`);
-  console.log(`🌐 ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'по умолчанию'}`);
-  console.log(`🗄️  DATABASE_URL: ${process.env.DATABASE_URL ? 'установлен' : 'НЕ УСТАНОВЛЕН!'}`);
+  // Не логируем наличие/отсутствие секретов и строк подключения в продакшене
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`🌐 ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'по умолчанию'}`);
+  }
   
   // Проверка переменных Яндекс Object Storage
   const hasYandexConfig = process.env.YANDEX_ACCESS_KEY_ID && 

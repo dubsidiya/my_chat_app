@@ -132,6 +132,17 @@ export const deleteFromYandex = async (imageUrl) => {
       return;
     }
 
+    // Простейшая валидация ключа (защита от странных URL / path traversal)
+    // Разрешаем только images/original/files + безопасные символы.
+    if (
+      key.includes('..') ||
+      key.startsWith('/') ||
+      !/^(images|original|files)\/[a-zA-Z0-9._/-]+$/.test(key)
+    ) {
+      console.warn('Invalid storage key extracted from URL, skipping delete');
+      return;
+    }
+
     console.log('Deleting from Yandex Cloud:', { bucket: BUCKET_NAME, key });
 
     const command = new DeleteObjectCommand({

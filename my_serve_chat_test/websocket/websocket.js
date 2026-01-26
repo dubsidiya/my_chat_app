@@ -43,9 +43,20 @@ export function setupWebSocket(server) {
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (ws, req) => {
-    // Получаем токен из query параметров
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const token = url.searchParams.get('token');
+    // Получаем токен:
+    // 1) из Authorization header (предпочтительно для mobile/desktop)
+    // 2) из query параметра token (fallback для web)
+    let token = null;
+
+    const authHeader = (req.headers['authorization'] || '').toString();
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      token = authHeader.slice(7).trim();
+    }
+
+    if (!token) {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      token = url.searchParams.get('token');
+    }
     
     if (!token) {
       if (process.env.NODE_ENV === 'development') {
