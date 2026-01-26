@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/lesson.dart';
 import '../models/transaction.dart';
+import '../config/api_config.dart';
 import 'storage_service.dart';
 
 class CreateStudentResult {
@@ -16,7 +17,7 @@ class CreateStudentResult {
 }
 
 class StudentsService {
-  final String baseUrl = 'https://my-server-chat.onrender.com';
+  final String baseUrl = ApiConfig.baseUrl;
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();

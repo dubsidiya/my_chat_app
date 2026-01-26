@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import 'storage_service.dart';
 
 class AdminService {
-  final String baseUrl = 'https://my-server-chat.onrender.com';
+  final String baseUrl = ApiConfig.baseUrl;
 
   Map<String, dynamic>? _tryDecodeJson(String body) {
     if (body.isEmpty) return null;

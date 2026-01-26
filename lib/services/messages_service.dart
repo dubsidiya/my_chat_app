@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
+import '../config/api_config.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 
@@ -22,7 +23,7 @@ class MessagesPaginationResult {
 }
 
 class MessagesService {
-  final String baseUrl = 'https://my-server-chat.onrender.com';
+  final String baseUrl = ApiConfig.baseUrl;
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
