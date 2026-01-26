@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requirePrivateAccess } from '../middleware/auth.js';
+import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../middleware/auth.js';
 import {
   getAllStudents,
   createStudent,
@@ -20,23 +20,24 @@ import {
 const router = express.Router();
 
 // Все маршруты требуют аутентификации
-router.use(authenticateToken, requirePrivateAccess);
+router.use(authenticateToken);
 
 // Маршруты для студентов
-router.get('/', getAllStudents);
-router.post('/', createStudent);
-router.put('/:id', updateStudent);
-router.delete('/:id', deleteStudent);
-router.get('/:id/balance', getStudentBalance);
-router.get('/:id/transactions', getStudentTransactions);
+router.get('/', requirePrivateAccess, getAllStudents);
+router.post('/', requirePrivateAccess, createStudent);
+router.put('/:id', requirePrivateAccess, updateStudent);
+router.delete('/:id', requirePrivateAccess, deleteStudent);
+router.get('/:id/balance', requirePrivateAccess, getStudentBalance);
+router.get('/:id/transactions', requirePrivateAccess, getStudentTransactions);
 
 // Маршруты для занятий
-router.get('/:studentId/lessons', getStudentLessons);
-router.post('/:studentId/lessons', createLesson);
-router.delete('/lessons/:id', deleteLesson);
+router.get('/:studentId/lessons', requirePrivateAccess, getStudentLessons);
+router.post('/:studentId/lessons', requirePrivateAccess, createLesson);
+router.delete('/lessons/:id', requirePrivateAccess, deleteLesson);
 
 // Маршруты для транзакций
-router.post('/:studentId/deposit', depositBalance);
+// Пополнение баланса — только суперпользователь (бухгалтерия)
+router.post('/:studentId/deposit', requireSuperuser, depositBalance);
 
 export default router;
 

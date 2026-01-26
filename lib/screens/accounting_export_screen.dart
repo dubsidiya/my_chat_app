@@ -539,6 +539,9 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
         .whereType<Map<String, dynamic>>()
         .toList();
 
+    final isSuperuserDenied = (_error ?? '').contains('Требуется доступ суперпользователя') ||
+        (_error ?? '').contains('HTTP 403');
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Выгрузка (бухгалтерия)'),
@@ -561,26 +564,32 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                 children: [
                   const Text('Бухгалтерия', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _openDepositFromAccounting,
-                          icon: const Icon(Icons.add_circle_outline_rounded),
-                          label: const Text('Пополнить баланс'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  if (isSuperuserDenied)
+                    Text(
+                      'Недостаточно прав. Этот раздел доступен только суперпользователю.',
+                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _openDepositFromAccounting,
+                            icon: const Icon(Icons.add_circle_outline_rounded),
+                            label: const Text('Пополнить баланс'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _openBankStatementFromAccounting,
-                          icon: const Icon(Icons.upload_file_rounded),
-                          label: const Text('Загрузить выписку'),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _openBankStatementFromAccounting,
+                            icon: const Icon(Icons.upload_file_rounded),
+                            label: const Text('Загрузить выписку'),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   const SizedBox(height: 8),
                   Text(
                     'Пополнение баланса и выписки доступны только здесь.',
