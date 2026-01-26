@@ -5,6 +5,16 @@ import '../models/lesson.dart';
 import '../models/transaction.dart';
 import 'storage_service.dart';
 
+class CreateStudentResult {
+  final Student student;
+  final bool wasExisting;
+
+  const CreateStudentResult({
+    required this.student,
+    required this.wasExisting,
+  });
+}
+
 class StudentsService {
   final String baseUrl = 'https://my-server-chat.onrender.com';
 
@@ -43,7 +53,7 @@ class StudentsService {
   }
 
   // Создание студента
-  Future<Student> createStudent({
+  Future<CreateStudentResult> createStudent({
     required String name,
     String? parentName,
     String? phone,
@@ -63,13 +73,18 @@ class StudentsService {
       }),
     );
 
-    if (response.statusCode == 201) {
+    // 201 = создан новый студент
+    // 200 = студент уже существовал в базе и был добавлен (привязан) к текущему преподавателю
+    if (response.statusCode == 201 || response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return Student.fromJson({...data, 'balance': 0.0});
-    } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось создать студента');
+      return CreateStudentResult(
+        student: Student.fromJson({...data, 'balance': 0.0}),
+        wasExisting: response.statusCode == 200,
+      );
     }
+
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось создать студента');
   }
 
   // Обновление студента

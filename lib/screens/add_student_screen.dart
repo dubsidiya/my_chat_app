@@ -32,7 +32,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _studentsService.createStudent(
+      final result = await _studentsService.createStudent(
         name: _nameController.text.trim(),
         parentName: _parentNameController.text.trim().isEmpty
             ? null
@@ -52,7 +52,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Студент добавлен'),
+            content: Text(
+              result.wasExisting
+                  ? 'Ученик уже существует — добавлен к вам'
+                  : 'Ученик добавлен',
+            ),
             backgroundColor: Colors.green,
           ),
         );

@@ -5,7 +5,6 @@ import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../services/students_service.dart';
 import 'add_lesson_screen.dart';
-import 'deposit_screen.dart';
 
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
@@ -89,20 +88,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
     if (result == true) {
       // Быстрое обновление данных после добавления занятия
-      await _refreshData();
-    }
-  }
-
-  void _deposit() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DepositScreen(studentId: widget.student.id),
-      ),
-    );
-
-    if (result == true) {
-      // Быстрое обновление данных после пополнения
       await _refreshData();
     }
   }
@@ -328,18 +313,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _deposit,
-                    icon: Icon(Icons.add),
-                    label: Text('Пополнить'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _addLesson,

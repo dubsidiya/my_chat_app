@@ -3,7 +3,6 @@ import '../models/student.dart';
 import '../services/students_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
-import 'bank_statement_screen.dart';
 import 'accounting_export_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
@@ -248,41 +247,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 ),
                               ),
                             ),
-                            Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: Colors.green.withOpacity(0.12),
-                              ),
-                              child: TextButton.icon(
-                                onPressed: () async {
-                                  final result = await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => BankStatementScreen(
-                                        onSuccess: _loadStudents,
-                                      ),
-                                    ),
-                                  );
-                                  if (result == true) {
-                                    _loadStudents();
-                                  }
-                                },
-                                icon: Icon(Icons.upload_file_rounded, color: Colors.green),
-                                label: Text(
-                                  'Выписка',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green.shade700,
-                                  ),
-                                ),
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 18,
-                                    vertical: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                       ],
@@ -428,33 +392,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     },
                   ),
                 ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: "upload",
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BankStatementScreen(onSuccess: _loadStudents),
-                ),
-              );
-              if (result == true) {
-                _loadStudents();
-              }
-            },
-            child: Icon(Icons.upload_file_rounded),
-            backgroundColor: Colors.green.shade600,
-          ),
-          SizedBox(height: 16),
-          FloatingActionButton(
-            heroTag: "add",
-            onPressed: _addStudent,
-            child: Icon(Icons.add_rounded),
-            backgroundColor: _accent1,
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        heroTag: "add",
+        onPressed: _addStudent,
+        child: Icon(Icons.add_rounded),
+        backgroundColor: _accent1,
       ),
     );
   }

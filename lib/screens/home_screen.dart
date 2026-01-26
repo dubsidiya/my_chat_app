@@ -23,6 +23,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
   bool _isLoading = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
 
   String _formatLastMessageTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -133,6 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     print('HomeScreen initialized with userId: ${widget.userId}, userEmail: ${widget.userEmail}');
     _loadChats();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadChats() async {
@@ -500,6 +508,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+    final filteredChats = _chats.where((c) {
+      if (q.isEmpty) return true;
+      final name = c.name.toLowerCase();
+      final preview = _buildLastMessagePreview(c).toLowerCase();
+      return name.contains(q) || preview.contains(q);
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
@@ -780,236 +796,289 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: _loadChats,
-                  color: Color(0xFF667eea),
-                  child: ListView.builder(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _chats.length,
-                    itemBuilder: (context, index) {
-                      final chat = _chats[index];
-                      final lastTime = _formatLastMessageTime(chat.lastMessageAt);
-                      final preview = _buildLastMessagePreview(chat);
-                      final unread = chat.unreadCount;
-                      return Dismissible(
-                      key: Key('chat_${chat.id}'),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: EdgeInsets.only(right: 20),
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200, width: 1.5),
                         ),
-                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        child: Icon(Icons.delete, color: Colors.white, size: 28),
-                      ),
-            confirmDismiss: (direction) async {
-              // Показываем диалог подтверждения
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Удалить чат?'),
-                  content: Text('Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('Отмена'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                      ),
-                      child: Text('Удалить'),
-                    ),
-                  ],
-                ),
-              );
-              return confirmed ?? false;
-            },
-            onDismissed: (direction) async {
-              // Удаляем чат после подтверждения
-              if (!mounted) return;
-              try {
-                await _chatsService.deleteChat(chat.id, widget.userId);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Чат "${chat.name}" удален'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                  // Обновляем список чатов
-                  _loadChats();
-                }
-              } catch (e) {
-                print('Ошибка удаления чата: $e');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-                  // Восстанавливаем список, так как удаление не удалось
-                  _loadChats();
-                }
-              }
-            },
-                      child: Card(
-                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        elevation: 2,
-                        shadowColor: Colors.black.withOpacity(0.1),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: InkWell(
-                          onTap: () => _openChat(chat),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Colors.white,
-                                  Colors.grey.shade50,
-                                ],
-                              ),
-                            ),
-                            child: Padding(
-                              padding: EdgeInsets.all(18),
-                              child: Row(
-                                children: [
-                                  // Аватар с улучшенным дизайном
-                                  Container(
-                                    width: 64,
-                                    height: 64,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: chat.isGroup
-                                            ? [
-                                                Color(0xFFa855f7),
-                                                Color(0xFF7c3aed),
-                                              ]
-                                            : [
-                                                Color(0xFF667eea),
-                                                Color(0xFF764ba2),
-                                              ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: (chat.isGroup
-                                                  ? Color(0xFFa855f7)
-                                                  : Color(0xFF667eea))
-                                              .withOpacity(0.4),
-                                          blurRadius: 12,
-                                          offset: Offset(0, 6),
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      chat.isGroup
-                                          ? Icons.group_rounded
-                                          : Icons.person_rounded,
-                                      color: Colors.white,
-                                      size: 32,
-                                    ),
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (v) => setState(() => _query = v),
+                          decoration: InputDecoration(
+                            hintText: 'Поиск по чатам',
+                            hintStyle: TextStyle(color: Colors.grey.shade500),
+                            prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF667eea)),
+                            suffixIcon: _query.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: Icon(Icons.close_rounded, color: Colors.grey.shade600),
+                                    onPressed: () {
+                                      setState(() {
+                                        _query = '';
+                                        _searchController.clear();
+                                      });
+                                    },
                                   ),
-                                  SizedBox(width: 18),
-                                  // Название + превью
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          chat.name,
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.grey.shade900,
-                                            letterSpacing: 0.2,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          preview,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey.shade600,
-                                            fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Время + unread + меню
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        lastTime,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: unread > 0 ? Color(0xFF667eea) : Colors.grey.shade500,
-                                          fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
-                                        ),
-                                      ),
-                                      SizedBox(height: 8),
-                                      if (unread > 0)
-                                        Container(
-                                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: Color(0xFF667eea),
-                                            borderRadius: BorderRadius.circular(999),
-                                          ),
-                                          child: Text(
-                                            unread > 99 ? '99+' : unread.toString(),
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        SizedBox(height: 28),
-                                      SizedBox(height: 6),
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: IconButton(
-                                          icon: Icon(
-                                            Icons.delete_outline_rounded,
-                                            color: Colors.red.shade400,
-                                          ),
-                                          onPressed: () => _deleteChat(chat),
-                                          tooltip: 'Удалить чат',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           ),
                         ),
                       ),
-                    );
-                    },
-                  ),
+                    ),
+                    Expanded(
+                      child: filteredChats.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  'Ничего не найдено',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _loadChats,
+                              color: Color(0xFF667eea),
+                              child: ListView.builder(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                itemCount: filteredChats.length,
+                                itemBuilder: (context, index) {
+                                  final chat = filteredChats[index];
+                                  final lastTime = _formatLastMessageTime(chat.lastMessageAt);
+                                  final preview = _buildLastMessagePreview(chat);
+                                  final unread = chat.unreadCount;
+                                  return Dismissible(
+                                    key: Key('chat_${chat.id}'),
+                                    direction: DismissDirection.endToStart,
+                                    background: Container(
+                                      alignment: Alignment.centerRight,
+                                      padding: EdgeInsets.only(right: 20),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                      child: Icon(Icons.delete, color: Colors.white, size: 28),
+                                    ),
+                                    confirmDismiss: (direction) async {
+                                      // Показываем диалог подтверждения
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: Text('Удалить чат?'),
+                                          content: Text(
+                                              'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(context, false),
+                                              child: Text('Отмена'),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(context, true),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.red,
+                                              ),
+                                              child: Text('Удалить'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      return confirmed ?? false;
+                                    },
+                                    onDismissed: (direction) async {
+                                      // Удаляем чат после подтверждения
+                                      if (!mounted) return;
+                                      try {
+                                        await _chatsService.deleteChat(chat.id, widget.userId);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Чат "${chat.name}" удален'),
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                          // Обновляем список чатов
+                                          _loadChats();
+                                        }
+                                      } catch (e) {
+                                        print('Ошибка удаления чата: $e');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  'Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+                                              duration: const Duration(seconds: 3),
+                                            ),
+                                          );
+                                          // Восстанавливаем список, так как удаление не удалось
+                                          _loadChats();
+                                        }
+                                      }
+                                    },
+                                    child: Card(
+                                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      elevation: 2,
+                                      shadowColor: Colors.black.withOpacity(0.1),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: InkWell(
+                                        onTap: () => _openChat(chat),
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(20),
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                              colors: [
+                                                Colors.white,
+                                                Colors.grey.shade50,
+                                              ],
+                                            ),
+                                          ),
+                                          child: Padding(
+                                            padding: EdgeInsets.all(18),
+                                            child: Row(
+                                              children: [
+                                                // Аватар с улучшенным дизайном
+                                                Container(
+                                                  width: 64,
+                                                  height: 64,
+                                                  decoration: BoxDecoration(
+                                                    gradient: LinearGradient(
+                                                      begin: Alignment.topLeft,
+                                                      end: Alignment.bottomRight,
+                                                      colors: chat.isGroup
+                                                          ? [
+                                                              Color(0xFFa855f7),
+                                                              Color(0xFF7c3aed),
+                                                            ]
+                                                          : [
+                                                              Color(0xFF667eea),
+                                                              Color(0xFF764ba2),
+                                                            ],
+                                                    ),
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: (chat.isGroup
+                                                                ? Color(0xFFa855f7)
+                                                                : Color(0xFF667eea))
+                                                            .withOpacity(0.4),
+                                                        blurRadius: 12,
+                                                        offset: Offset(0, 6),
+                                                        spreadRadius: 1,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: Icon(
+                                                    chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
+                                                    color: Colors.white,
+                                                    size: 32,
+                                                  ),
+                                                ),
+                                                SizedBox(width: 18),
+                                                // Название + превью
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        chat.name,
+                                                        style: TextStyle(
+                                                          fontSize: 18,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Colors.grey.shade900,
+                                                          letterSpacing: 0.2,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                      SizedBox(height: 6),
+                                                      Text(
+                                                        preview,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          color: Colors.grey.shade600,
+                                                          fontWeight:
+                                                              unread > 0 ? FontWeight.w600 : FontWeight.w400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                // Время + unread + меню
+                                                Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                                  children: [
+                                                    Text(
+                                                      lastTime,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: unread > 0 ? Color(0xFF667eea) : Colors.grey.shade500,
+                                                        fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                    SizedBox(height: 8),
+                                                    if (unread > 0)
+                                                      Container(
+                                                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                        decoration: BoxDecoration(
+                                                          color: Color(0xFF667eea),
+                                                          borderRadius: BorderRadius.circular(999),
+                                                        ),
+                                                        child: Text(
+                                                          unread > 99 ? '99+' : unread.toString(),
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      )
+                                                    else
+                                                      SizedBox(height: 28),
+                                                    SizedBox(height: 6),
+                                                    Container(
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.red.shade50,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                      ),
+                                                      child: IconButton(
+                                                        icon: Icon(
+                                                          Icons.delete_outline_rounded,
+                                                          color: Colors.red.shade400,
+                                                        ),
+                                                        onPressed: () => _deleteChat(chat),
+                                                        tooltip: 'Удалить чат',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                    ),
+                  ],
                 ),
     );
   }

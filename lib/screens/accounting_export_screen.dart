@@ -5,7 +5,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../services/admin_service.dart';
+import '../services/students_service.dart';
+import '../models/student.dart';
 import '../utils/download_text_file.dart';
+import 'bank_statement_screen.dart';
+import 'deposit_screen.dart';
 
 class AccountingExportScreen extends StatefulWidget {
   const AccountingExportScreen({super.key});
@@ -16,6 +20,7 @@ class AccountingExportScreen extends StatefulWidget {
 
 class _AccountingExportScreenState extends State<AccountingExportScreen> {
   final AdminService _adminService = AdminService();
+  final StudentsService _studentsService = StudentsService();
 
   bool _isLoading = false;
   String? _error;
@@ -304,6 +309,164 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
+  Future<Student?> _pickStudentForDeposit() async {
+    try {
+      final students = await _studentsService.getAllStudents();
+      if (!mounted) return null;
+
+      if (students.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Нет учеников для пополнения'), backgroundColor: Colors.orange),
+        );
+        return null;
+      }
+
+      return await showModalBottomSheet<Student>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) {
+          final searchController = TextEditingController();
+          String query = '';
+
+          return StatefulBuilder(
+            builder: (context, setLocal) {
+              final q = _norm(query);
+              final filtered = students.where((s) {
+                if (q.isEmpty) return true;
+                return _norm(s.name).contains(q) ||
+                    (s.phone != null && _norm(s.phone!).contains(q)) ||
+                    (s.email != null && _norm(s.email!).contains(q));
+              }).toList();
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.75,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Выберите ученика',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: (v) => setLocal(() => query = v),
+                          decoration: InputDecoration(
+                            hintText: 'Поиск по имени / телефону / email',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () => setLocal(() {
+                                      query = '';
+                                      searchController.clear();
+                                    }),
+                                  ),
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Ничего не найдено',
+                                  style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (_, i) {
+                                  final s = filtered[i];
+                                  return ListTile(
+                                    leading: const Icon(Icons.person_rounded),
+                                    title: Text(s.name),
+                                    subtitle: Text(
+                                      [
+                                        if (s.phone != null && s.phone!.isNotEmpty) s.phone!,
+                                        if (s.email != null && s.email!.isNotEmpty) s.email!,
+                                      ].join(' • '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => Navigator.pop(ctx, s),
+                                  );
+                                },
+                              ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки учеников: $e'), backgroundColor: Colors.red),
+      );
+      return null;
+    }
+  }
+
+  Future<void> _openDepositFromAccounting() async {
+    final student = await _pickStudentForDeposit();
+    if (student == null || !mounted) return;
+
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => DepositScreen(studentId: student.id)),
+    );
+
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Баланс пополнен: ${student.name}'), backgroundColor: Colors.green),
+      );
+    }
+  }
+
+  Future<void> _openBankStatementFromAccounting() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => BankStatementScreen()),
+    );
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Платежи применены'), backgroundColor: Colors.green),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -390,6 +553,44 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Бухгалтерия', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _openDepositFromAccounting,
+                          icon: const Icon(Icons.add_circle_outline_rounded),
+                          label: const Text('Пополнить баланс'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openBankStatementFromAccounting,
+                          icon: const Icon(Icons.upload_file_rounded),
+                          label: const Text('Загрузить выписку'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Пополнение баланса и выписки доступны только здесь.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
