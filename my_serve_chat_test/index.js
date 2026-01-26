@@ -43,8 +43,14 @@ app.use((req, res, next) => {
 
 // Настройка CORS - ограничиваем только разрешенные домены
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : ['http://localhost:3000', 'https://my-chat-app.vercel.app'];
+
+// Опциональные pattern/wildcard origins (например: https://*.vercel.app, *.netlify.app, my-chat-app-*.vercel.app)
+// Нужны, когда фронтенд живёт на preview-доменах (Vercel/Netlify) и меняется на каждый деплой.
+const allowedOriginPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
+  ? process.env.ALLOWED_ORIGIN_PATTERNS.split(',').map(p => p.trim()).filter(Boolean)
+  : [];
 
 // Добавляем стандартные домены для разработки
 const defaultOrigins = [
@@ -67,8 +73,18 @@ app.use(cors({
       return callback(null, true);
     }
     
+    // Нормализуем origin (без path/query) и вытаскиваем hostname/protocol для pattern-проверок
+    let originUrl = null;
+    let normalizedOrigin = origin;
+    try {
+      originUrl = new URL(origin);
+      normalizedOrigin = `${originUrl.protocol}//${originUrl.hostname}${originUrl.port ? `:${originUrl.port}` : ''}`;
+    } catch (_) {
+      // origin может быть невалидным URL; оставляем как есть
+    }
+
     // Проверяем точное совпадение
-    if (allAllowedOrigins.indexOf(origin) !== -1) {
+    if (allAllowedOrigins.indexOf(origin) !== -1 || allAllowedOrigins.indexOf(normalizedOrigin) !== -1) {
       if (process.env.NODE_ENV === 'development') {
         console.log(`CORS: Разрешен origin (точное совпадение): ${origin}`);
       }
@@ -83,18 +99,64 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // ВАЖНО: не разрешаем wildcard для *.vercel.app / *.netlify.app.
-    // Если нужны preview-домены — добавляйте их явно в ALLOWED_ORIGINS.
+    // Pattern/wildcard поддержка (управляется через ALLOWED_ORIGIN_PATTERNS)
+    // Примеры:
+    // - ALLOWED_ORIGIN_PATTERNS=https://*.vercel.app
+    // - ALLOWED_ORIGIN_PATTERNS=my-chat-app-*.vercel.app,*.netlify.app
+    if (allowedOriginPatterns.length > 0 && originUrl) {
+      const host = originUrl.hostname.toLowerCase();
+      const proto = originUrl.protocol.toLowerCase();
+
+      const matchesPattern = (pattern) => {
+        // pattern может быть:
+        // - https://*.vercel.app
+        // - *.vercel.app
+        // - my-chat-app-*.vercel.app
+        // - https://mydomain.com
+        const raw = pattern.trim();
+        if (!raw) return false;
+
+        // Если указана схема — проверяем её отдельно
+        let patternProto = null;
+        let patternHost = raw;
+        if (raw.includes('://')) {
+          const parts = raw.split('://');
+          patternProto = `${parts[0].toLowerCase()}:`;
+          patternHost = parts.slice(1).join('://');
+        }
+
+        if (patternProto && patternProto !== proto) return false;
+
+        // Превращаем wildcard в regex по hostname
+        const escaped = patternHost
+          .toLowerCase()
+          .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+          .replace(/\*/g, '.*');
+        const re = new RegExp(`^${escaped}$`);
+        return re.test(host);
+      };
+
+      if (allowedOriginPatterns.some(matchesPattern)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`CORS: Разрешен origin (pattern): ${origin} (host: ${host})`);
+        }
+        return callback(null, true);
+      }
+    }
     
     if (process.env.NODE_ENV === 'development') {
       console.log(`CORS: Заблокирован origin: ${origin}`);
       console.log(`CORS: Разрешенные origins: ${allAllowedOrigins.join(', ')}`);
+      if (allowedOriginPatterns.length > 0) {
+        console.log(`CORS: Разрешенные patterns: ${allowedOriginPatterns.join(', ')}`);
+      }
     }
-    callback(new Error('Not allowed by CORS'));
+    callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204
 }));
 
 app.use(bodyParser.json());
