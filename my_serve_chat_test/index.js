@@ -22,6 +22,11 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
+// Health check endpoint (для keep-alive пинга на Render free tier)
+app.get('/healthz', (req, res) => {
+  res.status(200).send('ok');
+});
+
 // В production JWT_SECRET обязателен
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   console.error('❌ JWT_SECRET НЕ УСТАНОВЛЕН! Сервер не может безопасно запуститься в production.');

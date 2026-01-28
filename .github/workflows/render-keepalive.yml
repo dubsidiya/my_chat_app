@@ -1,0 +1,19 @@
+name: render-keepalive
+
+on:
+  schedule:
+    # GitHub Actions schedule: минимум раз в 5 минут
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -fsS "https://my-server-chat.onrender.com/healthz" >/dev/null
+            # пауза 60 сек между пингами (последний раз можно не ждать)
+            if [ "$i" -lt 5 ]; then sleep 60; fi
+          done
