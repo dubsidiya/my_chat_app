@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { isSuperuser } from '../middleware/auth.js';
 
 const normalizePhoneDigits = (v) => (v || '').toString().replace(/\D/g, '');
 const normalizeEmail = (v) => (v || '').toString().trim().toLowerCase();
@@ -26,6 +27,19 @@ const assertTeacherHasStudentAccess = async (client, teacherId, studentId) => {
 // Получение всех студентов (привязаны к владельцу created_by)
 export const getAllStudents = async (req, res) => {
   try {
+    // Суперпользователь (бухгалтерия) должен видеть всех учеников
+    if (isSuperuser(req.user)) {
+      const result = await pool.query(
+        `SELECT s.*, 
+                COALESCE(SUM(CASE WHEN t.type IN ('deposit', 'refund') THEN t.amount ELSE -t.amount END), 0) as balance
+         FROM students s
+         LEFT JOIN transactions t ON s.id = t.student_id
+         GROUP BY s.id
+         ORDER BY s.name`
+      );
+      return res.json(result.rows);
+    }
+
     const userId = req.user.userId;
     const result = await pool.query(
       `SELECT s.*, 
@@ -266,14 +280,15 @@ export const getStudentBalance = async (req, res) => {
     const userId = req.user.userId;
     const { id } = req.params;
 
-    // Проверяем доступ к студенту
-    const checkResult = await pool.query(
-      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
-      [userId, id]
-    );
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Студент не найден' });
+    // Суперпользователь (бухгалтерия) может смотреть баланс любого ученика
+    if (!isSuperuser(req.user)) {
+      const checkResult = await pool.query(
+        'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+        [userId, id]
+      );
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
     }
 
     const result = await pool.query(
@@ -296,14 +311,15 @@ export const getStudentTransactions = async (req, res) => {
     const userId = req.user.userId;
     const { id } = req.params;
 
-    // Проверяем доступ к студенту
-    const checkResult = await pool.query(
-      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
-      [userId, id]
-    );
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Студент не найден' });
+    // Суперпользователь (бухгалтерия) может смотреть транзакции любого ученика
+    if (!isSuperuser(req.user)) {
+      const checkResult = await pool.query(
+        'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+        [userId, id]
+      );
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
     }
 
     const result = await pool.query(

@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { isSuperuser } from '../middleware/auth.js';
 
 const hasStudentAccess = async (client, teacherId, studentId) => {
   const r = await client.query(
@@ -14,22 +15,31 @@ export const getStudentLessons = async (req, res) => {
     const userId = req.user.userId;
     const { studentId } = req.params;
 
-    // Проверяем, что студент доступен пользователю
-    const checkResult = await pool.query(
-      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
-      [userId, studentId]
-    );
+    // Суперпользователь (бухгалтерия) может смотреть занятия любого ученика
+    if (!isSuperuser(req.user)) {
+      const checkResult = await pool.query(
+        'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+        [userId, studentId]
+      );
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Студент не найден' });
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
     }
 
-    const result = await pool.query(
-      `SELECT * FROM lessons
-       WHERE student_id = $1 AND created_by = $2
-       ORDER BY lesson_date DESC, lesson_time DESC`,
-      [studentId, userId]
-    );
+    const result = isSuperuser(req.user)
+        ? await pool.query(
+            `SELECT * FROM lessons
+             WHERE student_id = $1
+             ORDER BY lesson_date DESC, lesson_time DESC`,
+            [studentId]
+          )
+        : await pool.query(
+            `SELECT * FROM lessons
+             WHERE student_id = $1 AND created_by = $2
+             ORDER BY lesson_date DESC, lesson_time DESC`,
+            [studentId, userId]
+          );
 
     res.json(result.rows);
   } catch (error) {
