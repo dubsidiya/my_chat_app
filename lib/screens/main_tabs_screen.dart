@@ -79,7 +79,11 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setLocal) {
+            final theme = Theme.of(context);
+            final scheme = theme.colorScheme;
+            final isDark = theme.brightness == Brightness.dark;
             return AlertDialog(
+              scrollable: true,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -115,7 +119,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
                 children: [
                   Text(
                     'Введите код, чтобы открыть “Учет занятий” и “Отчеты”.',
-                    style: TextStyle(color: Colors.grey.shade700),
+                    style: TextStyle(color: scheme.onSurface.withOpacity(0.70)),
                   ),
                   SizedBox(height: 12),
                   TextField(
@@ -133,7 +137,10 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: Colors.grey.shade200, width: 1.5),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withOpacity(isDark ? 0.22 : 0.14),
+                          width: 1.5,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -157,7 +164,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
                   child: Text(
                     'Отмена',
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: scheme.onSurface.withOpacity(0.70),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -201,8 +208,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
         );
       },
     );
-
-    controller.dispose();
 
     if (code == null || code.isEmpty || !mounted) return;
 

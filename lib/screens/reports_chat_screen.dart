@@ -165,6 +165,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
@@ -248,7 +249,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               'Дата отчета',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade600,
+                                color: scheme.onSurface.withOpacity(0.65),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -257,14 +258,14 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               _dateController.text,
                               style: TextStyle(
                                 fontSize: 16,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                      Icon(Icons.chevron_right_rounded, color: scheme.onSurface.withOpacity(isDark ? 0.38 : 0.32)),
                     ],
                   ),
                 ),
@@ -374,7 +375,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.grey.shade700,
+                            color: scheme.onSurface.withOpacity(0.75),
                                 ),
                               ),
                               SizedBox(height: 10),
@@ -382,7 +383,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 'Создайте отчет за день — занятия сформируются автоматически',
                                 style: TextStyle(
                                   fontSize: 16,
-                                  color: Colors.grey.shade500,
+                            color: scheme.onSurface.withOpacity(0.60),
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -435,7 +436,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    color: Colors.grey.shade900,
+                                    color: scheme.onSurface,
                                   ),
                                 ),
                                 subtitle: Column(
@@ -446,7 +447,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       report.content,
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: Colors.grey.shade700),
+                                      style: TextStyle(color: scheme.onSurface.withOpacity(0.70)),
                                     ),
                                     SizedBox(height: 4),
                                     if (report.isLate)
