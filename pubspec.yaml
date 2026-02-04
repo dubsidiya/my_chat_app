@@ -22,6 +22,8 @@ dependencies:
   connectivity_plus: ^5.0.2  # ✅ Проверка подключения к интернету
   url_launcher: ^6.2.2  # ✅ Для открытия URL и скачивания файлов
   path_provider: ^2.1.5
+  record: ^6.2.0
+  just_audio: ^0.10.5
 
 dev_dependencies:
   flutter_test:

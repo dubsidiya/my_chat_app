@@ -432,9 +432,11 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                   label: Text('Добавить занятие (${_slots.length}/$_maxSlots)'),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Правила: до 10 занятий в день; на одно время — 1 или 2 ученика.',
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
+                  ),
                 ),
               ],
             ),

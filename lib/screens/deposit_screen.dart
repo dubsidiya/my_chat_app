@@ -4,7 +4,7 @@ import '../services/students_service.dart';
 class DepositScreen extends StatefulWidget {
   final int studentId;
 
-  DepositScreen({required this.studentId});
+  const DepositScreen({super.key, required this.studentId});
 
   @override
   _DepositScreenState createState() => _DepositScreenState();
@@ -65,6 +65,7 @@ class _DepositScreenState extends State<DepositScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text('Пополнить баланс'),
@@ -107,12 +108,19 @@ class _DepositScreenState extends State<DepositScreen> {
             ElevatedButton(
               onPressed: _isLoading ? null : _deposit,
               child: _isLoading
-                  ? CircularProgressIndicator()
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
+                      ),
+                    )
                   : Text('Пополнить'),
               style: ElevatedButton.styleFrom(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+                backgroundColor: Colors.green.shade600,
+                foregroundColor: scheme.onPrimary,
               ),
             ),
           ],

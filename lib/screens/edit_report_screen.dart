@@ -103,6 +103,8 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
         title: Text('Редактировать отчет'),
@@ -154,13 +156,13 @@ class _EditReportScreenState extends State<EditReportScreen> {
             Container(
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.shade50,
+                color: Colors.orange.withOpacity(isDark ? 0.16 : 0.10),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
+                border: Border.all(color: Colors.orange.withOpacity(isDark ? 0.50 : 0.35)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning, color: Colors.orange),
+                  Icon(Icons.warning, color: Colors.orange.shade500),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -176,12 +178,19 @@ class _EditReportScreenState extends State<EditReportScreen> {
             ElevatedButton(
               onPressed: _isLoading ? null : _updateReport,
               child: _isLoading
-                  ? CircularProgressIndicator()
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
+                      ),
+                    )
                   : Text('Сохранить изменения'),
               style: ElevatedButton.styleFrom(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+                backgroundColor: Colors.orange.shade600,
+                foregroundColor: scheme.onPrimary,
               ),
             ),
           ],

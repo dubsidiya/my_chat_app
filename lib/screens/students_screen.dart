@@ -74,7 +74,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddStudentScreen(),
+        builder: (_) => const AddStudentScreen(),
       ),
     );
 
@@ -109,14 +109,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
         title: Text(
           'Учет занятий',
           style: TextStyle(
-            color: Colors.grey.shade900,
+            color: scheme.onSurface,
             fontWeight: FontWeight.bold,
             fontSize: 20,
             letterSpacing: 0.3,
@@ -194,7 +194,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade700,
+                            color: scheme.onSurface.withOpacity(0.75),
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -203,7 +203,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           'Добавьте первого ученика или загрузите выписку',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.grey.shade500,
+                            color: scheme.onSurface.withOpacity(0.60),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -307,17 +307,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           return result ?? false;
                         },
                         child: Card(
-                        margin: EdgeInsets.symmetric(vertical: 6),
-                        elevation: 2,
-                        shadowColor: Colors.black.withOpacity(0.08),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                        margin: EdgeInsets.symmetric(vertical: 4),
+                        clipBehavior: Clip.antiAlias,
                         child: ListTile(
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           leading: Container(
-                            width: 52,
-                            height: 52,
+                            width: 46,
+                            height: 46,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 begin: Alignment.topLeft,
@@ -335,14 +331,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 ),
                               ],
                             ),
-                            child: Icon(Icons.person_rounded, color: Colors.white, size: 28),
+                            child: Icon(Icons.person_rounded, color: Colors.white, size: 22),
                           ),
                           title: Text(
                             student.name,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Colors.grey.shade900,
+                              color: scheme.onSurface,
                             ),
                           ),
                           subtitle: student.parentName != null
@@ -350,7 +346,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   padding: EdgeInsets.only(top: 4),
                                   child: Text(
                                     student.parentName!,
-                                    style: TextStyle(color: Colors.grey.shade600),
+                                    style: TextStyle(color: scheme.onSurface.withOpacity(0.65)),
                                   ),
                                 )
                               : null,
@@ -396,7 +392,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         heroTag: "add",
         onPressed: _addStudent,
         child: Icon(Icons.add_rounded),
-        backgroundColor: _accent1,
+        backgroundColor: scheme.primary,
       ),
     );
   }

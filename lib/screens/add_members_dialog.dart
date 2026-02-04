@@ -26,6 +26,9 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final filteredUsers = widget.availableUsers.where((u) {
       final email = (u['email'] ?? '').toString().toLowerCase();
       final id = (u['id'] ?? '').toString().toLowerCase();
@@ -94,21 +97,24 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
             // Поиск
             Container(
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200, width: 1.5),
+                border: Border.all(
+                  color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                  width: 1.2,
+                ),
               ),
               child: TextField(
                 controller: _searchController,
                 onChanged: (v) => setState(() => _query = v),
                 decoration: InputDecoration(
                   hintText: 'Поиск по логину',
-                  hintStyle: TextStyle(color: Colors.grey.shade500),
+                  hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
                   prefixIcon: Icon(Icons.search_rounded, color: _accent1),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
-                          icon: Icon(Icons.close_rounded, color: Colors.grey.shade600),
+                          icon: Icon(Icons.close_rounded, color: scheme.onSurface.withOpacity(0.70)),
                           onPressed: () {
                             setState(() {
                               _query = '';
@@ -183,15 +189,17 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                             return Container(
                               margin: EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
-                                  color: isSelected ? _accent1.withOpacity(0.35) : Colors.grey.shade200,
-                                  width: 1.5,
+                                  color: isSelected
+                                      ? _accent1.withOpacity(0.35)
+                                      : scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                  width: 1.2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.06),
+                                    color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
                                     blurRadius: 10,
                                     offset: Offset(0, 4),
                                   ),
@@ -243,13 +251,15 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.grey.shade900,
+                                            color: scheme.onSurface,
                                           ),
                                         ),
                                       ),
                                       Container(
                                         decoration: BoxDecoration(
-                                          color: isSelected ? _accent1.withOpacity(0.12) : Colors.grey.shade100,
+                                          color: isSelected
+                                              ? _accent1.withOpacity(0.12)
+                                              : (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04)),
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: Checkbox(

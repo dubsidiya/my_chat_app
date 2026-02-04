@@ -11,6 +11,9 @@ import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -70,6 +73,23 @@ class _ChatScreenState extends State<ChatScreen> {
   Message? _replyToMessage; // ✅ Сообщение, на которое отвечаем
   List<Message> _pinnedMessages = []; // ✅ Закрепленные сообщения
   String? _highlightMessageId; // ✅ Подсветка сообщения при прыжке
+
+  // ✅ Voice messages (recording + playback)
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  bool _isRecordingVoice = false;
+  Duration _voiceRecordDuration = Duration.zero;
+  Timer? _voiceRecordTimer;
+  String? _voiceRecordTempPath;
+
+  final AudioPlayer _voicePlayer = AudioPlayer();
+  String? _voicePlayingMessageId;
+  Duration _voicePosition = Duration.zero;
+  Duration? _voiceDuration;
+  bool _voiceIsPlaying = false;
+  ProcessingState _voiceProcessingState = ProcessingState.idle;
+  StreamSubscription<Duration>? _voicePositionSub;
+  StreamSubscription<Duration?>? _voiceDurationSub;
+  StreamSubscription<PlayerState>? _voicePlayerStateSub;
 
   // ✅ Realtime presence/typing
   final Map<String, String> _memberEmailById = {};
@@ -285,6 +305,29 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _chatTitle = widget.chatName;
+
+    // ✅ Voice player streams (single player for whole chat)
+    _voicePositionSub = _voicePlayer.positionStream.listen((pos) {
+      if (!mounted) return;
+      if (_voicePlayingMessageId == null) return;
+      setState(() => _voicePosition = pos);
+    });
+    _voiceDurationSub = _voicePlayer.durationStream.listen((dur) {
+      if (!mounted) return;
+      if (_voicePlayingMessageId == null) return;
+      setState(() => _voiceDuration = dur);
+    });
+    _voicePlayerStateSub = _voicePlayer.playerStateStream.listen((st) {
+      if (!mounted) return;
+      setState(() {
+        _voiceIsPlaying = st.playing;
+        _voiceProcessingState = st.processingState;
+      });
+      if (st.processingState == ProcessingState.completed) {
+        _voicePlayer.seek(Duration.zero);
+        _voicePlayer.pause();
+      }
+    });
 
     // Инициализируем WebSocket асинхронно
     _initWebSocket();
@@ -1516,6 +1559,338 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  bool _looksLikeAudio({String? mime, String? fileName}) {
+    final m = (mime ?? '').toLowerCase().trim();
+    final n = (fileName ?? '').toLowerCase().trim();
+    if (m.startsWith('audio/')) return true;
+    return n.endsWith('.m4a') ||
+        n.endsWith('.aac') ||
+        n.endsWith('.mp3') ||
+        n.endsWith('.ogg') ||
+        n.endsWith('.opus') ||
+        n.endsWith('.wav');
+  }
+
+  bool _isVoiceMessage(Message msg) {
+    if (msg.messageType == 'voice' || msg.messageType == 'text_voice') return true;
+    if (!msg.hasFile) return false;
+    return _looksLikeAudio(mime: msg.fileMime, fileName: msg.fileName);
+  }
+
+  String _formatDuration(Duration d) {
+    final totalSeconds = d.inSeconds;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isUploadingImage || _isUploadingFile) return;
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Голосовые сообщения пока не поддерживаются в веб-версии')),
+      );
+      return;
+    }
+    if (_isRecordingVoice) {
+      await _stopAndSendVoiceRecording();
+    } else {
+      await _startVoiceRecording();
+    }
+  }
+
+  Future<void> _startVoiceRecordingIfNotRecording() async {
+    if (_isRecordingVoice) return;
+    await _startVoiceRecording();
+  }
+
+  Future<void> _stopAndSendVoiceRecordingIfRecording() async {
+    if (!_isRecordingVoice) return;
+    await _stopAndSendVoiceRecording();
+  }
+
+  Future<void> _startVoiceRecording() async {
+    if (!mounted) return;
+    // на всякий: не даём начать при выбранных вложениях
+    if (_selectedImagePath != null ||
+        _selectedImageBytes != null ||
+        _selectedFilePath != null ||
+        _selectedFileBytes != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Сначала отправьте/уберите вложение, затем запишите голосовое')),
+      );
+      return;
+    }
+
+    final hasPermission = await _voiceRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Нет доступа к микрофону. Разрешите доступ в настройках.')),
+      );
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    _voiceRecordTempPath = path;
+
+    await _voiceRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+        numChannels: 1,
+      ),
+      path: path,
+    );
+
+    _voiceRecordTimer?.cancel();
+    setState(() {
+      _isRecordingVoice = true;
+      _voiceRecordDuration = Duration.zero;
+    });
+    _voiceRecordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _voiceRecordDuration += const Duration(seconds: 1);
+      });
+    });
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    _voiceRecordTimer?.cancel();
+    _voiceRecordTimer = null;
+
+    try {
+      await _voiceRecorder.stop();
+    } catch (_) {}
+
+    final tmp = _voiceRecordTempPath;
+    _voiceRecordTempPath = null;
+    if (tmp != null) {
+      try {
+        final f = File(tmp);
+        if (await f.exists()) {
+          await f.delete();
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isRecordingVoice = false;
+      _voiceRecordDuration = Duration.zero;
+    });
+  }
+
+  Future<void> _stopAndSendVoiceRecording() async {
+    _voiceRecordTimer?.cancel();
+    _voiceRecordTimer = null;
+
+    String? recordedPath;
+    try {
+      recordedPath = await _voiceRecorder.stop();
+    } catch (_) {}
+
+    final tmp = recordedPath ?? _voiceRecordTempPath;
+    _voiceRecordTempPath = null;
+
+    if (tmp == null || tmp.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _voiceRecordDuration = Duration.zero;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось сохранить запись')),
+      );
+      return;
+    }
+
+    try {
+      final file = File(tmp);
+      final bytes = await file.readAsBytes();
+      final name = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      // ✅ Убираем режим записи + подставляем файл как вложение и отправляем обычным путём
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _voiceRecordDuration = Duration.zero;
+
+        _selectedFileBytes = bytes;
+        _selectedFileName = name;
+        _selectedFileSize = bytes.length;
+        _selectedFilePath = null;
+      });
+
+      // удаляем временный файл — дальше работаем с bytes
+      try {
+        await file.delete();
+      } catch (_) {}
+
+      await _sendMessage();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _voiceRecordDuration = Duration.zero;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка записи: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleVoicePlayback(Message msg) async {
+    final url = msg.fileUrl;
+    if (url == null || url.isEmpty) return;
+
+    final same = _voicePlayingMessageId == msg.id;
+    try {
+      if (same && _voiceIsPlaying) {
+        await _voicePlayer.pause();
+        return;
+      }
+
+      if (!same) {
+        setState(() {
+          _voicePlayingMessageId = msg.id;
+          _voicePosition = Duration.zero;
+          _voiceDuration = null;
+        });
+        await _voicePlayer.setUrl(url);
+      }
+
+      await _voicePlayer.play();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось воспроизвести аудио: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  Widget _buildVoiceBubble(Message msg, {required bool isMine}) {
+    final isCurrent = _voicePlayingMessageId == msg.id;
+    final dur = isCurrent ? (_voiceDuration ?? Duration.zero) : Duration.zero;
+    final pos = isCurrent ? _voicePosition : Duration.zero;
+
+    final maxMs = dur.inMilliseconds > 0 ? dur.inMilliseconds : 1;
+    final posMs = pos.inMilliseconds.clamp(0, maxMs);
+
+    final isBusy = isCurrent &&
+        (_voiceProcessingState == ProcessingState.loading ||
+            _voiceProcessingState == ProcessingState.buffering);
+    final showPlaying = isCurrent && _voiceIsPlaying;
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: isMine ? Colors.white.withOpacity(0.18) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isMine ? Colors.white.withOpacity(0.25) : Colors.grey.shade200,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isBusy)
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(isMine ? Colors.white : _accent1),
+                ),
+              ),
+            )
+          else
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isMine ? Colors.white.withOpacity(0.22) : Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                iconSize: 18,
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  showPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: isMine ? Colors.white : _accent1,
+                ),
+                onPressed: () => _toggleVoicePlayback(msg),
+                tooltip: showPlaying ? 'Пауза' : 'Воспроизвести',
+              ),
+            ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3,
+                    thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: posMs.toDouble(),
+                    min: 0,
+                    max: maxMs.toDouble(),
+                    onChanged: isCurrent
+                        ? (v) {
+                            setState(() {
+                              _voicePosition = Duration(milliseconds: v.toInt());
+                            });
+                          }
+                        : null,
+                    onChangeEnd: isCurrent
+                        ? (v) async {
+                            try {
+                              await _voicePlayer.seek(Duration(milliseconds: v.toInt()));
+                            } catch (_) {}
+                          }
+                        : null,
+                    activeColor: isMine ? Colors.white : _accent1,
+                    inactiveColor:
+                        isMine ? Colors.white.withOpacity(0.35) : Colors.grey.shade300,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      _formatDuration(pos),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isMine ? Colors.white70 : Colors.grey.shade700,
+                      ),
+                    ),
+                    Spacer(),
+                    Text(
+                      dur == Duration.zero ? '—:—' : _formatDuration(dur),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isMine ? Colors.white70 : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _sendMessage() async {
     print('🔍 _sendMessage called');
     if (!mounted) {
@@ -1623,20 +1998,17 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         List<int> bytes;
         String name;
-
-        if (kIsWeb) {
-          if (_selectedFileBytes == null) {
-            throw Exception('Файл не выбран');
-          }
+        
+        // ✅ Поддержка bytes и на мобилках (нужно для voice-recording)
+        if (_selectedFileBytes != null) {
           bytes = _selectedFileBytes!;
           name = _selectedFileName ?? 'file';
-        } else {
-          if (_selectedFilePath == null) {
-            throw Exception('Файл не выбран');
-          }
+        } else if (_selectedFilePath != null) {
           final f = File(_selectedFilePath!);
           bytes = await f.readAsBytes();
           name = _selectedFileName ?? _selectedFilePath!.split('/').last;
+        } else {
+          throw Exception('Файл не выбран');
         }
 
         final meta = await _messagesService.uploadFile(bytes, name);
@@ -1690,7 +2062,9 @@ class _ChatScreenState extends State<ChatScreen> {
       fileSize: fileSize,
       fileMime: fileMime,
       messageType: fileUrl != null
-          ? (text.isNotEmpty ? 'text_file' : 'file')
+          ? (_looksLikeAudio(mime: fileMime, fileName: fileName)
+              ? (text.isNotEmpty ? 'text_voice' : 'voice')
+              : (text.isNotEmpty ? 'text_file' : 'file'))
           : (imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text'),
       senderEmail: widget.userEmail,
       createdAt: DateTime.now().toIso8601String(),
@@ -1940,52 +2314,116 @@ class _ChatScreenState extends State<ChatScreen> {
     
     final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.reply),
-              title: Text('Ответить'),
-              onTap: () => Navigator.pop(context, 'reply'),
-            ),
-            ListTile(
-              leading: Icon(Icons.forward),
-              title: Text('Переслать'),
-              onTap: () => Navigator.pop(context, 'forward'),
-            ),
-            // ✅ Редактировать можно только свои текстовые сообщения
-            if (isMine && message.hasText && !message.hasImage)
-              ListTile(
-                leading: Icon(Icons.edit),
-                title: Text('Редактировать'),
-                onTap: () => Navigator.pop(context, 'edit'),
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
+        final isDark = theme.brightness == Brightness.dark;
+        final canEdit = isMine && message.hasText && !message.hasImage && !message.hasFile;
+
+        Widget chip({
+          required IconData icon,
+          required String label,
+          required String value,
+        }) {
+          return InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.pop(context, value),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
               ),
-            ListTile(
-              leading: Icon(message.isPinned ? Icons.push_pin : Icons.push_pin_outlined),
-              title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
-              onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
-            ),
-            ListTile(
-              leading: Icon(Icons.emoji_emotions),
-              title: Text('Реакция'),
-              onTap: () => Navigator.pop(context, 'reaction'),
-            ),
-            // ✅ Удалить можно только свои сообщения
-            if (isMine)
-              ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Удалить', style: TextStyle(color: Colors.red)),
-                onTap: () => Navigator.pop(context, 'delete'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 18, color: scheme.onSurface.withOpacity(0.85)),
+                  SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface),
+                  ),
+                ],
               ),
-            ListTile(
-              leading: Icon(Icons.close),
-              title: Text('Отмена'),
-              onTap: () => Navigator.pop(context),
             ),
-          ],
-        ),
-      ),
+          );
+        }
+
+        return SafeArea(
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            padding: EdgeInsets.fromLTRB(14, 8, 14, 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? const [Color(0xFF161A22), Color(0xFF11131A)]
+                    : const [Color(0xFFFFFFFF), Color(0xFFF7F8FF)],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.10)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.40 : 0.12),
+                  blurRadius: 20,
+                  offset: Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 6),
+                  child: Text(
+                    'Действия',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      color: scheme.onSurface.withOpacity(0.65),
+                    ),
+                  ),
+                ),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    chip(icon: Icons.reply_rounded, label: 'Ответить', value: 'reply'),
+                    chip(icon: Icons.forward_rounded, label: 'Переслать', value: 'forward'),
+                    chip(icon: Icons.emoji_emotions_rounded, label: 'Реакция', value: 'reaction'),
+                    if (canEdit) chip(icon: Icons.edit_rounded, label: 'Редакт.', value: 'edit'),
+                  ],
+                ),
+                SizedBox(height: 12),
+                Divider(height: 1, color: scheme.outline.withOpacity(isDark ? 0.20 : 0.12)),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    message.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    color: scheme.onSurface.withOpacity(0.85),
+                  ),
+                  title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
+                  onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
+                ),
+                if (isMine) ...[
+                  Divider(height: 1, color: scheme.outline.withOpacity(isDark ? 0.20 : 0.12)),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400),
+                    title: Text('Удалить', style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.w700)),
+                    onTap: () => Navigator.pop(context, 'delete'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
     
     if (action == 'reply') {
@@ -2389,6 +2827,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _webSocketSubscription?.cancel();
     _typingStopTimer?.cancel();
     _typingCleanupTimer?.cancel();
+    _voiceRecordTimer?.cancel();
+    if (_isRecordingVoice) {
+      // best-effort: остановим запись
+      _voiceRecorder.stop();
+    }
+    _voicePositionSub?.cancel();
+    _voiceDurationSub?.cancel();
+    _voicePlayerStateSub?.cancel();
+    _voicePlayer.dispose();
+    _voiceRecorder.dispose();
     // best-effort: остановим typing и отпишемся
     if (_sentTyping) {
       _sendTyping(false);
@@ -2569,13 +3017,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final pinnedHeight = _getPinnedMessagesHeight();
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: Colors.grey.shade800),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -2584,14 +3032,14 @@ class _ChatScreenState extends State<ChatScreen> {
               _chatTitle,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.grey.shade900,
+                color: scheme.onSurface,
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
             ),
             Text(
               _buildChatStatusLine(),
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.65)),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -2643,7 +3091,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 : SizedBox.shrink(),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade700),
+            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withOpacity(0.75)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -2856,7 +3304,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ],
                                     )
                                   : null,
-                              color: isMine ? null : Colors.white,
+                              color: isMine ? null : Theme.of(context).cardColor,
                               borderRadius: BorderRadius.only(
                                 topLeft: Radius.circular(20),
                                 topRight: Radius.circular(20),
@@ -2876,8 +3324,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               border: isMine
                                   ? null
                                   : Border.all(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
+                                      color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                      width: 1.2,
                                     ),
                             ),
                             child: Column(
@@ -2913,7 +3361,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     decoration: BoxDecoration(
                                       color: isMine 
                                           ? Colors.white.withOpacity(0.2)
-                                          : Colors.grey.shade200,
+                                          : (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04)),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border(
                                         left: BorderSide(
@@ -3159,62 +3607,66 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ],
                                 // ✅ Отображение файла (attachment)
                                 if (msg.hasFile) ...[
-                                  GestureDetector(
-                                    onTap: () async {
-                                      final url = Uri.parse(msg.fileUrl!);
-                                      if (await canLaunchUrl(url)) {
-                                        await launchUrl(url, mode: LaunchMode.externalApplication);
-                                      } else if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Не удалось открыть файл')),
-                                        );
-                                      }
-                                    },
-                                    child: Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isMine ? Colors.white.withOpacity(0.18) : Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: isMine ? Colors.white.withOpacity(0.25) : Colors.grey.shade200,
+                                  if (_isVoiceMessage(msg)) ...[
+                                    _buildVoiceBubble(msg, isMine: isMine),
+                                  ] else ...[
+                                    GestureDetector(
+                                      onTap: () async {
+                                        final url = Uri.parse(msg.fileUrl!);
+                                        if (await canLaunchUrl(url)) {
+                                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                                        } else if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Не удалось открыть файл')),
+                                          );
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: isMine ? Colors.white.withOpacity(0.18) : Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: isMine ? Colors.white.withOpacity(0.25) : Colors.grey.shade200,
+                                          ),
                                         ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.insert_drive_file_rounded, size: 18, color: isMine ? Colors.white : _accent2),
-                                          SizedBox(width: 8),
-                                          Flexible(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  msg.fileName ?? 'Файл',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: isMine ? Colors.white : Colors.grey.shade900,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                if (msg.fileSize != null)
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.insert_drive_file_rounded, size: 18, color: isMine ? Colors.white : _accent2),
+                                            SizedBox(width: 8),
+                                            Flexible(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
                                                   Text(
-                                                    _formatBytes(msg.fileSize!),
+                                                    msg.fileName ?? 'Файл',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
                                                     style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                      color: isMine ? Colors.white : Colors.grey.shade900,
+                                                      fontWeight: FontWeight.w600,
                                                     ),
                                                   ),
-                                              ],
+                                                  if (msg.fileSize != null)
+                                                    Text(
+                                                      _formatBytes(msg.fileSize!),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: isMine ? Colors.white70 : Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                          SizedBox(width: 8),
-                                          Icon(Icons.open_in_new_rounded, size: 16, color: isMine ? Colors.white70 : Colors.grey.shade600),
-                                        ],
+                                            SizedBox(width: 8),
+                                            Icon(Icons.open_in_new_rounded, size: 16, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                                 // Отображение текста
                                 if (msg.hasText) ...[
@@ -3436,11 +3888,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                             child: Container(
                                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                               decoration: BoxDecoration(
-                                                color: Colors.grey.shade50,
+                                                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                                                 borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: Colors.grey.shade200,
-                                                  width: 1,
+                                                  color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                                  width: 1.2,
                                                 ),
                                               ),
                                               child: Row(
@@ -3654,9 +4106,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         margin: EdgeInsets.only(bottom: 8),
                         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
                         ),
                         child: Row(
                           children: [
@@ -3676,7 +4128,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   if (_selectedFileSize != null)
                                     Text(
                                       _formatBytes(_selectedFileSize!),
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.65)),
                                     ),
                                 ],
                               ),
@@ -3697,6 +4149,40 @@ class _ChatScreenState extends State<ChatScreen> {
                           ],
                         ),
                       ),
+                    // ✅ Индикатор записи голосового
+                    if (_isRecordingVoice)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.withOpacity(0.18)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                            ),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Запись: ${_formatDuration(_voiceRecordDuration)}',
+                                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red.shade700),
+                              onPressed: _cancelVoiceRecording,
+                              tooltip: 'Отменить',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                      ),
                     Row(
                       children: [
                         // Кнопка выбора файла
@@ -3707,7 +4193,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           child: IconButton(
                             icon: Icon(Icons.attach_file_rounded, color: _accent2),
-                            onPressed: _pickFile,
+                            onPressed: _isRecordingVoice ? null : _pickFile,
                             tooltip: 'Прикрепить файл',
                           ),
                         ),
@@ -3720,22 +4206,48 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           child: IconButton(
                             icon: Icon(Icons.image_rounded, color: _accent1),
-                            onPressed: _pickImage,
+                            onPressed: _isRecordingVoice ? null : _pickImage,
                             tooltip: 'Прикрепить изображение',
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        // ✅ Кнопка микрофона
+                        Container(
+                          decoration: BoxDecoration(
+                            color: (_isRecordingVoice ? Colors.red : _accent1).withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: GestureDetector(
+                            onLongPressStart: (_) {
+                              if (_isUploadingImage || _isUploadingFile) return;
+                              _startVoiceRecordingIfNotRecording();
+                            },
+                            onLongPressEnd: (_) {
+                              if (_isUploadingImage || _isUploadingFile) return;
+                              _stopAndSendVoiceRecordingIfRecording();
+                            },
+                            child: IconButton(
+                              icon: Icon(
+                                _isRecordingVoice ? Icons.stop_rounded : Icons.mic_rounded,
+                                color: _isRecordingVoice ? Colors.red : _accent1,
+                              ),
+                              onPressed: (_isUploadingImage || _isUploadingFile) ? null : _toggleVoiceRecording,
+                              tooltip: 'Удерживайте для записи. Отпустите, чтобы отправить. Тап — старт/стоп.',
+                            ),
                           ),
                         ),
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
+                              color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                               borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: Colors.grey.shade200),
+                              border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
                             ),
                             child: TextField(
                               controller: _controller,
                               decoration: InputDecoration(
                                 hintText: 'Введите сообщение...',
-                                hintStyle: TextStyle(color: Colors.grey.shade500),
+                                hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 20,
@@ -3783,6 +4295,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               icon: Icon(Icons.send, color: Colors.white),
                               onPressed: () {
                                 print('🔍 Send button pressed!');
+                                if (_isRecordingVoice) return;
                                 _sendMessage();
                               },
                               tooltip: 'Отправить',

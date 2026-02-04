@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/students_service.dart';
 
 class AddStudentScreen extends StatefulWidget {
+  const AddStudentScreen({super.key});
+
   @override
   _AddStudentScreenState createState() => _AddStudentScreenState();
 }
@@ -79,6 +81,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text('Добавить студента'),
@@ -140,7 +143,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             ElevatedButton(
               onPressed: _isLoading ? null : _saveStudent,
               child: _isLoading
-                  ? CircularProgressIndicator()
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
+                      ),
+                    )
                   : Text('Сохранить'),
               style: ElevatedButton.styleFrom(
                 padding: EdgeInsets.symmetric(vertical: 16),

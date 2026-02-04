@@ -197,6 +197,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final isDebtor = _balance < 0;
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -217,11 +219,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             margin: EdgeInsets.all(16),
             padding: EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: isDebtor ? Colors.red.shade50 : Colors.green.shade50,
+              color: isDebtor
+                  ? Colors.red.withOpacity(isDark ? 0.14 : 0.10)
+                  : Colors.green.withOpacity(isDark ? 0.14 : 0.10),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isDebtor ? Colors.red : Colors.green,
-                width: 2,
+                color: (isDebtor ? Colors.red : Colors.green).withOpacity(isDark ? 0.55 : 0.65),
+                width: 1.5,
               ),
             ),
             child: Column(
@@ -230,7 +234,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   'Баланс',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.grey.shade700,
+                    color: scheme.onSurface.withOpacity(0.70),
                   ),
                 ),
                 SizedBox(height: 8),
@@ -239,7 +243,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: isDebtor ? Colors.red : Colors.green,
+                    color: isDebtor ? Colors.red.shade400 : Colors.green.shade500,
                   ),
                 ),
                 if (isDebtor)
@@ -249,7 +253,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                       'Долг',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.red,
+                        color: Colors.red.shade400,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -266,8 +270,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               margin: EdgeInsets.symmetric(horizontal: 16),
               padding: EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +353,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     ? Center(
                         child: Text(
                           'Нет занятий',
-                          style: TextStyle(color: Colors.grey),
+                          style: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
                         ),
                       )
                               : RefreshIndicator(
@@ -403,7 +408,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                       child: Center(
                                         child: Text(
                                           'Нет транзакций',
-                                          style: TextStyle(color: Colors.grey),
+                                          style: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
                                         ),
                                       ),
                                     ),
@@ -500,7 +505,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                   .format(transaction.createdAt),
                                               style: TextStyle(
                                                 fontSize: 11,
-                                                color: Colors.grey.shade600,
+                                                color: scheme.onSurface.withOpacity(0.60),
                                               ),
                                             ),
                                           ],

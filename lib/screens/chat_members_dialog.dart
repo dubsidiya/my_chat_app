@@ -145,6 +145,9 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return AlertDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
@@ -253,12 +256,15 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                         return Container(
                           margin: EdgeInsets.only(bottom: 10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.grey.shade200, width: 1.5),
+                            border: Border.all(
+                              color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                              width: 1.2,
+                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
+                                color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
                                 blurRadius: 10,
                                 offset: Offset(0, 4),
                               ),
@@ -300,7 +306,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
-                                          color: Colors.grey.shade900,
+                                          color: scheme.onSurface,
                                         ),
                                       ),
                                       SizedBox(height: 6),

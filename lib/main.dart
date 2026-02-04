@@ -64,130 +64,172 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    ThemeData buildTheme({required Brightness brightness}) {
+      const seed = Color(0xFF667eea);
+      final isDark = brightness == Brightness.dark;
+      final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
+
+      final surface = isDark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB);
+      final card = isDark ? const Color(0xFF161A22) : Colors.white;
+      final outline = isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.08);
+
+      return ThemeData(
+        brightness: brightness,
+        colorScheme: scheme,
+        primaryColor: scheme.primary,
+        scaffoldBackgroundColor: surface,
+        cardColor: card,
+        dividerColor: outline,
+        visualDensity: VisualDensity.standard,
+        useMaterial3: true,
+        listTileTheme: ListTileThemeData(
+          iconColor: scheme.onSurface.withOpacity(0.80),
+          textColor: scheme.onSurface,
+          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          dense: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+          selectedColor: scheme.primary.withOpacity(0.18),
+          disabledColor: scheme.onSurface.withOpacity(0.08),
+          labelStyle: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
+          secondaryLabelStyle: TextStyle(color: scheme.onSurface),
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+            side: BorderSide(color: outline),
+          ),
+        ),
+        tabBarTheme: TabBarThemeData(
+          labelColor: scheme.primary,
+          unselectedLabelColor: scheme.onSurface.withOpacity(0.55),
+          indicatorColor: scheme.primary,
+          labelStyle: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        appBarTheme: AppBarTheme(
+          elevation: 0,
+          backgroundColor: card,
+          foregroundColor: scheme.onSurface,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+          iconTheme: IconThemeData(color: scheme.onSurface),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          color: card,
+          shadowColor: Colors.black.withOpacity(isDark ? 0.30 : 0.08),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: outline),
+          ),
+          margin: EdgeInsets.zero,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: card,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: outline),
+          ),
+          titleTextStyle: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+          contentTextStyle: TextStyle(
+            fontSize: 14,
+            height: 1.35,
+            color: scheme.onSurface.withOpacity(0.85),
+          ),
+        ),
+        bottomSheetTheme: BottomSheetThemeData(
+          backgroundColor: card,
+          surfaceTintColor: Colors.transparent,
+          modalBackgroundColor: card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            side: BorderSide(color: outline),
+          ),
+          showDragHandle: true,
+          dragHandleColor: scheme.onSurface.withOpacity(0.25),
+        ),
+        popupMenuTheme: PopupMenuThemeData(
+          color: card,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: outline),
+          ),
+          textStyle: TextStyle(color: scheme.onSurface),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: scheme.inverseSurface,
+          contentTextStyle: TextStyle(color: scheme.onInverseSurface),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        progressIndicatorTheme: ProgressIndicatorThemeData(
+          color: scheme.primary,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: outline),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: outline),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: scheme.primary, width: 2),
+          ),
+          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            side: BorderSide(color: outline),
+            foregroundColor: scheme.onSurface,
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp(
       title: 'Chat App',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        primaryColor: Colors.blue.shade700,
-        scaffoldBackgroundColor: Colors.grey.shade50,
-        appBarTheme: AppBarTheme(
-          elevation: 0,
-          backgroundColor: Colors.blue.shade700,
-          foregroundColor: Colors.white,
-          centerTitle: false,
-          titleTextStyle: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.blue.shade700, width: 2),
-          ),
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            elevation: 2,
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            textStyle: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        primaryColor: Colors.blue.shade300,
-        scaffoldBackgroundColor: Colors.grey.shade900,
-        appBarTheme: AppBarTheme(
-          elevation: 0,
-          backgroundColor: Colors.grey.shade800,
-          foregroundColor: Colors.white,
-          centerTitle: false,
-          titleTextStyle: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          color: Colors.grey.shade800,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey.shade800,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade700),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade700),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.blue.shade300, width: 2),
-          ),
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            elevation: 2,
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            textStyle: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
+      theme: buildTheme(brightness: Brightness.light),
+      darkTheme: buildTheme(brightness: Brightness.dark),
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: FutureBuilder<Map<String, String>?>(
         future: StorageService.getUserData(),

@@ -126,7 +126,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
                       labelText: 'Код доступа',
                       errorText: wrong ? 'Неверный код' : null,
                       filled: true,
-                      fillColor: Colors.grey.shade50,
+                      fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -238,6 +238,8 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_isCheckingAccess) {
       return Scaffold(
         body: Center(
@@ -258,7 +260,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withOpacity(isDark ? 0.35 : 0.10),
               blurRadius: 20,
               offset: Offset(0, -5),
             ),
@@ -280,9 +282,9 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
               setState(() => _currentIndex = index);
             },
             type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.white,
+            backgroundColor: scheme.surface,
             selectedItemColor: _accent1,
-            unselectedItemColor: Colors.grey.shade400,
+            unselectedItemColor: scheme.onSurface.withOpacity(0.45),
             selectedLabelStyle: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 12,

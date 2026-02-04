@@ -153,6 +153,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
   }
 
   Widget _lessonTile(Map<String, dynamic> l) {
+    final scheme = Theme.of(context).colorScheme;
     final date = (l['lessonDate'] ?? '').toString();
     final time = (l['lessonTime'] ?? '').toString();
     final price = _money0(l['price']);
@@ -189,7 +190,10 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 6),
-                Text('цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid', style: const TextStyle(color: Colors.black87)),
+                Text(
+                  'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
+                  style: TextStyle(color: scheme.onSurface.withOpacity(0.75)),
+                ),
               ],
             ),
           ),
@@ -475,6 +479,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final totals = _data?['totals'] as Map<String, dynamic>?;
     final teachers = (_data?['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final tree = (_data?['tree'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
@@ -593,7 +599,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Пополнение баланса и выписки доступны только здесь.',
-                    style: TextStyle(color: Colors.grey.shade600),
+                    style: TextStyle(color: scheme.onSurface.withOpacity(0.65)),
                   ),
                 ],
               ),
@@ -684,7 +690,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
           if (_isLoading) const Center(child: CircularProgressIndicator()),
           if (!_isLoading && _error != null)
             Card(
-              color: Colors.red.withAlpha(20),
+              color: Colors.red.withOpacity(isDark ? 0.16 : 0.10),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(_error!, style: TextStyle(color: Colors.red.shade800)),

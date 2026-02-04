@@ -176,6 +176,9 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Загрузка банковской выписки'),
@@ -187,16 +190,16 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.upload_file, size: 64, color: Colors.grey),
+                      Icon(Icons.upload_file, size: 64, color: scheme.onSurface.withOpacity(0.55)),
                       SizedBox(height: 16),
                       Text(
                         'Выберите файл выписки',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                        style: TextStyle(fontSize: 18, color: scheme.onSurface.withOpacity(0.75)),
                       ),
                       SizedBox(height: 8),
                       Text(
                         'Поддерживаются форматы: CSV, Excel (.xlsx, .xls)',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.60)),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 24),
@@ -216,7 +219,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                     // Информация о результатах
                     Container(
                       padding: EdgeInsets.all(16),
-                      color: Colors.blue.shade50,
+                      color: scheme.primary.withOpacity(isDark ? 0.14 : 0.08),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -245,7 +248,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                             'Выбрано для применения: ${_selectedPayments.length}',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
+                              color: scheme.primary,
                             ),
                           ),
                         ],
@@ -265,8 +268,10 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                           return Card(
                             margin: EdgeInsets.symmetric(vertical: 4),
                             color: hasStudent
-                                ? (isSelected ? Colors.green.shade50 : Colors.white)
-                                : Colors.orange.shade50,
+                                ? (isSelected
+                                    ? Colors.green.withOpacity(isDark ? 0.14 : 0.10)
+                                    : Theme.of(context).cardColor)
+                                : Colors.orange.withOpacity(isDark ? 0.14 : 0.10),
                             child: CheckboxListTile(
                               value: isSelected,
                               onChanged: hasStudent
@@ -284,12 +289,12 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                                   if (payment['student'] != null)
                                     Text(
                                       'Студент: ${payment['student']['name']}',
-                                      style: TextStyle(color: Colors.green.shade700),
+                                      style: TextStyle(color: Colors.green.shade500),
                                     )
                                   else
                                     Text(
                                       'Студент не найден',
-                                      style: TextStyle(color: Colors.orange.shade700),
+                                      style: TextStyle(color: Colors.orange.shade500),
                                     ),
                                   SizedBox(height: 4),
                                   Row(
@@ -317,8 +322,8 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                                     ? (isSelected ? Icons.check_circle : Icons.person)
                                     : Icons.warning,
                                 color: hasStudent
-                                    ? (isSelected ? Colors.green : Colors.blue)
-                                    : Colors.orange,
+                                    ? (isSelected ? Colors.green.shade500 : scheme.primary)
+                                    : Colors.orange.shade500,
                               ),
                             ),
                           );
@@ -334,10 +339,10 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                           onPressed: _isLoading ? null : _applyPayments,
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.green,
+                            backgroundColor: Colors.green.shade600,
                           ),
                           child: _isLoading
-                              ? CircularProgressIndicator(color: Colors.white)
+                              ? CircularProgressIndicator(color: scheme.onPrimary)
                               : Text(
                                   'Применить ${_selectedPayments.length} платежей',
                                   style: TextStyle(fontSize: 16),

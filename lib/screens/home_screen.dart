@@ -184,56 +184,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _deleteChat(Chat chat) async {
-    // Показываем диалог подтверждения
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Удалить чат?'),
-        content: Text('Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
-          actions: [
-            TextButton(
-            onPressed: () => Navigator.pop(context, false),
-              child: Text('Отмена'),
-            ),
-            ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      await _chatsService.deleteChat(chat.id, widget.userId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Чат "${chat.name}" удален'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        // Обновляем список чатов
-                  _loadChats();
-      }
-    } catch (e) {
-      print('Ошибка удаления чата: $e');
-      if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-                  );
-                }
-    }
-  }
-
   void _logout() {
     // Показываем диалог подтверждения
     showDialog(
@@ -499,6 +449,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     final q = _query.trim().toLowerCase();
     final filteredChats = _chats.where((c) {
       if (q.isEmpty) return true;
@@ -510,12 +464,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
         title: Text(
           widget.userEmail.isNotEmpty ? widget.userEmail : 'Мои чаты',
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Colors.grey.shade900,
+            color: scheme.onSurface,
             fontWeight: FontWeight.bold,
             fontSize: 20,
             letterSpacing: 0.3,
@@ -571,7 +524,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade700),
+            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withOpacity(0.75)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -595,11 +548,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.1),
+                        color: scheme.primary.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.dark_mode_rounded,
-                          color: Colors.purple, size: 20),
+                      child: Icon(Icons.dark_mode_rounded, color: scheme.primary, size: 20),
                     ),
                     SizedBox(width: 12),
                     Text('Темная тема',
@@ -793,21 +745,24 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey.shade200, width: 1.5),
+                          border: Border.all(
+                            color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                            width: 1.2,
+                          ),
                         ),
                         child: TextField(
                           controller: _searchController,
                           onChanged: (v) => setState(() => _query = v),
                           decoration: InputDecoration(
                             hintText: 'Поиск по чатам',
-                            hintStyle: TextStyle(color: Colors.grey.shade500),
-                            prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF667eea)),
+                            hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                            prefixIcon: Icon(Icons.search_rounded, color: scheme.primary),
                             suffixIcon: _query.isEmpty
                                 ? null
                                 : IconButton(
-                                    icon: Icon(Icons.close_rounded, color: Colors.grey.shade600),
+                                    icon: Icon(Icons.close_rounded, color: scheme.onSurface.withOpacity(0.70)),
                                     onPressed: () {
                                       setState(() {
                                         _query = '';
@@ -916,150 +871,108 @@ class _HomeScreenState extends State<HomeScreen> {
                                       }
                                     },
                                     child: Card(
-                                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                      elevation: 2,
-                                      shadowColor: Colors.black.withOpacity(0.1),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
+                                      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      clipBehavior: Clip.antiAlias,
                                       child: InkWell(
                                         onTap: () => _openChat(chat),
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(20),
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                              colors: [
-                                                Colors.white,
-                                                Colors.grey.shade50,
-                                              ],
-                                            ),
-                                          ),
-                                          child: Padding(
-                                            padding: EdgeInsets.all(18),
-                                            child: Row(
-                                              children: [
-                                                // Аватар с улучшенным дизайном
-                                                Container(
-                                                  width: 64,
-                                                  height: 64,
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      begin: Alignment.topLeft,
-                                                      end: Alignment.bottomRight,
-                                                      colors: chat.isGroup
-                                                          ? [
-                                                              Color(0xFFa855f7),
-                                                              Color(0xFF7c3aed),
-                                                            ]
-                                                          : [
-                                                              Color(0xFF667eea),
-                                                              Color(0xFF764ba2),
-                                                            ],
-                                                    ),
-                                                    borderRadius: BorderRadius.circular(20),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: (chat.isGroup
-                                                                ? Color(0xFFa855f7)
-                                                                : Color(0xFF667eea))
-                                                            .withOpacity(0.4),
-                                                        blurRadius: 12,
-                                                        offset: Offset(0, 6),
-                                                        spreadRadius: 1,
-                                                      ),
-                                                    ],
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 46,
+                                                height: 46,
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                    colors: chat.isGroup
+                                                        ? const [
+                                                            Color(0xFFa855f7),
+                                                            Color(0xFF7c3aed),
+                                                          ]
+                                                        : const [
+                                                            Color(0xFF667eea),
+                                                            Color(0xFF764ba2),
+                                                          ],
                                                   ),
-                                                  child: Icon(
-                                                    chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
-                                                    color: Colors.white,
-                                                    size: 32,
-                                                  ),
+                                                  borderRadius: BorderRadius.circular(16),
                                                 ),
-                                                SizedBox(width: 18),
-                                                // Название + превью
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        chat.name,
-                                                        style: TextStyle(
-                                                          fontSize: 18,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Colors.grey.shade900,
-                                                          letterSpacing: 0.2,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                      SizedBox(height: 6),
-                                                      Text(
-                                                        preview,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          color: Colors.grey.shade600,
-                                                          fontWeight:
-                                                              unread > 0 ? FontWeight.w600 : FontWeight.w400,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
+                                                child: Icon(
+                                                  chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
+                                                  color: Colors.white,
+                                                  size: 22,
                                                 ),
-                                                // Время + unread + меню
-                                                Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                              ),
+                                              SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
                                                   children: [
                                                     Text(
-                                                      lastTime,
+                                                      chat.name,
                                                       style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: unread > 0 ? Color(0xFF667eea) : Colors.grey.shade500,
-                                                        fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                                                        fontSize: 16,
+                                                        fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w700,
+                                                        color: scheme.onSurface,
+                                                        letterSpacing: 0.1,
                                                       ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
                                                     ),
-                                                    SizedBox(height: 8),
-                                                    if (unread > 0)
-                                                      Container(
-                                                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                        decoration: BoxDecoration(
-                                                          color: Color(0xFF667eea),
-                                                          borderRadius: BorderRadius.circular(999),
-                                                        ),
-                                                        child: Text(
-                                                          unread > 99 ? '99+' : unread.toString(),
-                                                          style: TextStyle(
-                                                            color: Colors.white,
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    else
-                                                      SizedBox(height: 28),
-                                                    SizedBox(height: 6),
-                                                    Container(
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.red.shade50,
-                                                        borderRadius: BorderRadius.circular(12),
-                                                      ),
-                                                      child: IconButton(
-                                                        icon: Icon(
-                                                          Icons.delete_outline_rounded,
-                                                          color: Colors.red.shade400,
-                                                        ),
-                                                        onPressed: () => _deleteChat(chat),
-                                                        tooltip: 'Удалить чат',
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      preview,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: scheme.onSurface.withOpacity(0.65),
+                                                        fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
-                                              ],
-                                            ),
+                                              ),
+                                              SizedBox(width: 10),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    lastTime,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: unread > 0
+                                                          ? scheme.primary
+                                                          : scheme.onSurface.withOpacity(0.50),
+                                                      fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  SizedBox(height: 8),
+                                                  if (unread > 0)
+                                                    Container(
+                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                      decoration: BoxDecoration(
+                                                        color: scheme.primary,
+                                                        borderRadius: BorderRadius.circular(999),
+                                                      ),
+                                                      child: Text(
+                                                        unread > 99 ? '99+' : unread.toString(),
+                                                        style: TextStyle(
+                                                          color: scheme.onPrimary,
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    )
+                                                  else
+                                                    SizedBox(height: 20),
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
@@ -1243,7 +1156,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 decoration: InputDecoration(
                   labelText: 'Имя группы',
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,

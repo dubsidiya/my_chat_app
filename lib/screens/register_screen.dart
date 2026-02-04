@@ -245,7 +245,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       fontSize: 12,
                                     ),
                                     filled: true,
-                                    fillColor: Colors.grey.shade50,
+                                    fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(16),
                                       borderSide: BorderSide.none,
@@ -294,7 +294,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       fontWeight: FontWeight.w500,
                                     ),
                                     filled: true,
-                                    fillColor: Colors.grey.shade50,
+                                    fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(16),
                                       borderSide: BorderSide.none,

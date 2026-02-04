@@ -23,7 +23,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   DateTime _selectedDate = DateTime.now();
   
   static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
+  static const Color _accent2 = Color.fromARGB(255, 124, 79, 168);
 
   @override
   void initState() {
@@ -164,14 +164,14 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
         title: Text(
           'Отчеты за день',
           style: TextStyle(
-            color: Colors.grey.shade900,
+            color: scheme.onSurface,
             fontWeight: FontWeight.bold,
             fontSize: 20,
             letterSpacing: 0.3,
@@ -204,7 +204,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           ),
         ],
       ),
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
           // Поле ввода даты
