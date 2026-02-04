@@ -1,5 +1,6 @@
 name: my_chat_app
 description: A new Flutter chat app
+version: 1.0.0+1
 
 publish_to: 'none' # Remove this line if you want to publish to pub.dev
 

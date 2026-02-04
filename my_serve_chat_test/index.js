@@ -33,9 +33,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-// Настройка trust proxy для работы за прокси (Render.com, Cloudflare и т.д.)
-// Это необходимо для правильной работы express-rate-limit
-app.set('trust proxy', true);
+// Настройка trust proxy: 1 = доверять только первому прокси (Render).
+// true запрещён express-rate-limit (позволяет подделку IP). Число 1 даёт корректный client IP и проходит валидацию.
+app.set('trust proxy', 1);
 
 // Базовые security headers (без дополнительных зависимостей)
 app.use((req, res, next) => {
