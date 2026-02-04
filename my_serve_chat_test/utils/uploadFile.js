@@ -17,6 +17,13 @@ const allowedExtensions = new Set([
   '.xlsx',
   '.ppt',
   '.pptx',
+  // audio (voice messages)
+  '.m4a',
+  '.aac',
+  '.mp3',
+  '.ogg',
+  '.opus',
+  '.wav',
 ]);
 
 // Допускаем типы документов/архивов. Если MIME приходит "кривой" (часто на web),
@@ -30,6 +37,8 @@ const allowedMimePrefixes = [
   'application/vnd',
   'application/msword',
   'application/vnd.openxmlformats-officedocument',
+  // audio (voice messages)
+  'audio/',
 ];
 
 const fileFilter = (req, file, cb) => {
@@ -41,7 +50,7 @@ const fileFilter = (req, file, cb) => {
 
   if (okByExt || okByMime) return cb(null, true);
 
-  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP'));
+  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, а также аудио (M4A/AAC/MP3/OGG/OPUS/WAV)'));
 };
 
 export const uploadFile = multer({
