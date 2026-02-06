@@ -24,7 +24,7 @@ export const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: 'Токен доступа отсутствует' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }, (err, user) => {
     if (err) {
       if (process.env.NODE_ENV === 'development') {
         console.error('JWT verification error:', err.message);
@@ -53,7 +53,7 @@ export const generateToken = (userId, username, privateAccess = false) => {
   return jwt.sign(
     { userId, email: username, username: username, privateAccess: privateAccess === true },
     JWT_SECRET,
-    { expiresIn: '7d' } // Токен действителен 7 дней
+    { expiresIn: '7d', algorithm: 'HS256' } // Токен действителен 7 дней; явный алгоритм против alg:none
   );
 };
 
@@ -102,7 +102,7 @@ export const requireSuperuser = (req, res, next) => {
 export const verifyWebSocketToken = (token) => {
   try {
     if (!JWT_SECRET) return null;
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch (err) {
     return null;
   }

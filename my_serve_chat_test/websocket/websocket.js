@@ -219,6 +219,11 @@ export function setupWebSocket(server) {
           if (!chatIdFinal || !content) {
             return;
           }
+          // Лимит длины текста сообщения (защита от DoS)
+          const contentStr = String(content);
+          if (contentStr.length > 65535) {
+            return;
+          }
 
           // Проверяем, является ли пользователь участником чата
           const memberCheck = await pool.query(
@@ -238,7 +243,7 @@ export function setupWebSocket(server) {
             INSERT INTO messages (chat_id, user_id, content)
             VALUES ($1, $2, $3)
             RETURNING id, chat_id, user_id, content, created_at
-          `, [chatIdFinal, userId, content]);
+          `, [chatIdFinal, userId, contentStr]);
 
           // Используем email из токена
           const senderEmailFinal = userEmail;

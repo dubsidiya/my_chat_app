@@ -73,7 +73,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         _selectedDate = picked;
         _dateController.text = DateFormat('dd.MM.yyyy').format(picked);
@@ -141,6 +141,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
     if (confirm != true) return;
 
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {

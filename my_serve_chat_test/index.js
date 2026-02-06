@@ -164,8 +164,11 @@ app.use(cors({
   optionsSuccessStatus: 204
 }));
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Лимит размера тела запроса — защита от DoS большими JSON
+const JSON_LIMIT = '512kb';
+const URLENC_LIMIT = '512kb';
+app.use(bodyParser.json({ limit: JSON_LIMIT }));
+app.use(bodyParser.urlencoded({ extended: true, limit: URLENC_LIMIT }));
 
 // Раздача статических файлов (изображения) - больше не нужна, т.к. файлы в Яндекс Облаке
 // Закомментировано, но можно оставить для обратной совместимости

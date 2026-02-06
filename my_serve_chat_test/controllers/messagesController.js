@@ -3,6 +3,9 @@ import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 
+// Лимит длины текста сообщения (защита от DoS и переполнения БД)
+const MAX_MESSAGE_CONTENT_LENGTH = 65535;
+
 const ensureChatMember = async (chatId, userId) => {
   const chatIdNum = parseInt(chatId, 10);
   if (isNaN(chatIdNum)) return { ok: false, status: 400, message: 'Некорректный chatId' };
@@ -580,6 +583,11 @@ export const sendMessage = async (req, res) => {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url или file_url' });
   }
 
+  const contentStr = content != null ? String(content) : '';
+  if (contentStr.length > MAX_MESSAGE_CONTENT_LENGTH) {
+    return res.status(400).json({ message: `Текст сообщения не более ${MAX_MESSAGE_CONTENT_LENGTH} символов` });
+  }
+
   // Пока упрощаем: нельзя одновременно image и file в одном сообщении (чтобы не плодить message_type)
   if (image_url && file_url) {
     return res.status(400).json({ message: 'Нельзя отправлять изображение и файл в одном сообщении' });
@@ -643,7 +651,7 @@ export const sendMessage = async (req, res) => {
     `, [
       chatIdNum,
       user_id,
-      content || '',
+      contentStr || '',
       image_url || null,
       original_image_url || null,
       file_url || null,
@@ -795,6 +803,11 @@ export const editMessage = async (req, res) => {
   
   if (!content && !image_url) {
     return res.status(400).json({ message: 'Укажите content или image_url для редактирования' });
+  }
+
+  const contentStr = content != null ? String(content) : '';
+  if (contentStr.length > 65535) {
+    return res.status(400).json({ message: 'Текст сообщения не более 65535 символов' });
   }
   
   try {
@@ -1529,9 +1542,8 @@ export const addReaction = async (req, res) => {
     
     if (!tableCheck.rows[0].exists) {
       console.error('❌ Таблица message_reactions не существует!');
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: 'Таблица message_reactions не найдена. Примените миграцию базы данных.',
-        error: 'Table not found'
       });
     }
     
@@ -1580,28 +1592,19 @@ export const addReaction = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка добавления реакции:', error);
-    console.error('Error details:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code
-    });
     
-    // ✅ Более детальная обработка ошибок
+    // ✅ Более детальная обработка ошибок (без утечки stack/message в ответ)
     if (error.code === '23505') { // Unique violation
       return res.status(409).json({ message: 'Реакция уже существует' });
     } else if (error.code === '23503') { // Foreign key violation
       return res.status(404).json({ message: 'Сообщение или пользователь не найдены' });
     } else if (error.code === '42P01') { // Table doesn't exist
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: 'Таблица message_reactions не найдена. Примените миграцию базы данных.',
-        error: 'Migration required'
       });
     }
     
-    res.status(500).json({ 
-      message: 'Ошибка сервера',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -1784,11 +1787,7 @@ export const uploadImage = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка загрузки изображения:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ 
-      message: 'Ошибка загрузки изображения',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Ошибка загрузки изображения' });
   }
 };
 
@@ -1811,9 +1810,6 @@ export const uploadFile = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка загрузки файла:', error);
-    return res.status(500).json({
-      message: 'Ошибка загрузки файла',
-      error: error.message,
-    });
+    return res.status(500).json({ message: 'Ошибка загрузки файла' });
   }
 };

@@ -279,7 +279,6 @@ class _MyAppState extends State<MyApp> {
               userEmail: userIdentifier,
               onThemeChanged: toggleTheme, // ✅ Передаем функцию переключения темы
             );
-          } else {
           }
 
           // Если данных нет - показываем экран входа

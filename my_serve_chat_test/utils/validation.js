@@ -64,12 +64,17 @@ export const validateRegisterData = (username, password) => {
   return { valid: true };
 };
 
-// Валидация данных входа
+// Валидация данных входа (ограничение длины — защита от DoS и перечисления)
 export const validateLoginData = (username, password) => {
   if (!username || !password) {
     return { valid: false, message: 'Логин и пароль обязательны' };
   }
-  
+  if (typeof username !== 'string' || username.length > 255) {
+    return { valid: false, message: 'Некорректный логин' };
+  }
+  if (typeof password !== 'string' || password.length > 128) {
+    return { valid: false, message: 'Некорректный пароль' };
+  }
   return { valid: true };
 };
 

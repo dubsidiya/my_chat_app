@@ -228,14 +228,18 @@ export const createChat = async (req, res) => {
       if (uniqueUserIds.length < 2) {
         return res.status(400).json({ message: "Для группового чата выберите хотя бы одного участника" });
       }
-      if (!name || String(name).trim().isEmpty) {
+      const nameTrimmed = String(name).trim();
+      if (!nameTrimmed) {
         return res.status(400).json({ message: "Укажите имя группового чата" });
+      }
+      if (nameTrimmed.length > 100) {
+        return res.status(400).json({ message: "Имя чата не более 100 символов" });
       }
     }
 
     const isGroup = isGroupRequested === true;
     const finalName = isGroup
-      ? (name && String(name).trim().isNotEmpty ? String(name).trim() : 'Групповой чат')
+      ? (name && String(name).trim().length > 0 ? String(name).trim().slice(0, 100) : 'Групповой чат')
       : 'Личный чат';
 
     // Создаём чат с is_group и created_by

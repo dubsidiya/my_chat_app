@@ -340,7 +340,7 @@ export const processBankStatement = async (req, res) => {
 
   } catch (error) {
     console.error('Ошибка обработки выписки:', error);
-    res.status(500).json({ message: 'Ошибка обработки файла выписки', error: error.message });
+    res.status(500).json({ message: 'Ошибка обработки файла выписки' });
   }
 };
 
@@ -418,7 +418,7 @@ export const applyPayments = async (req, res) => {
 
   } catch (error) {
     console.error('Ошибка применения платежей:', error);
-    res.status(500).json({ message: 'Ошибка применения платежей', error: error.message });
+    res.status(500).json({ message: 'Ошибка применения платежей' });
   }
 };
 
