@@ -2,6 +2,15 @@ import multer from 'multer';
 import path from 'path';
 import { uploadToYandex, deleteFromYandex } from './yandexStorage.js';
 
+// Санитизация имени файла: только basename, без path traversal, макс. длина
+const MAX_ORIGINAL_NAME_LENGTH = 255;
+const sanitizeOriginalName = (name) => {
+  if (!name || typeof name !== 'string') return 'file';
+  const base = path.basename(name.trim()).replace(/\0/g, '');
+  if (base.length > MAX_ORIGINAL_NAME_LENGTH) return base.slice(0, MAX_ORIGINAL_NAME_LENGTH);
+  return base || 'file';
+};
+
 // memory storage: файл в RAM, затем в Object Storage
 const storage = multer.memoryStorage();
 
@@ -74,7 +83,7 @@ export const uploadFileToCloud = async (file, folder = 'files') => {
   return {
     fileUrl: url,
     storedFileName: fileName,
-    originalName: file.originalname || fileName,
+    originalName: sanitizeOriginalName(file.originalname) || fileName,
     size: file.size || file.buffer.length,
     mime: file.mimetype || 'application/octet-stream',
   };

@@ -592,10 +592,28 @@ export const sendMessage = async (req, res) => {
   if (image_url && file_url) {
     return res.status(400).json({ message: 'Нельзя отправлять изображение и файл в одном сообщении' });
   }
+
+  // Лимит длины URL и имени файла (защита от DoS и переполнения БД)
+  const MAX_URL_LENGTH = 2048;
+  const MAX_FILE_NAME_LENGTH = 255;
+  if (image_url && String(image_url).length > MAX_URL_LENGTH) {
+    return res.status(400).json({ message: 'Ссылка на изображение слишком длинная' });
+  }
+  if (original_image_url && String(original_image_url).length > MAX_URL_LENGTH) {
+    return res.status(400).json({ message: 'Ссылка на изображение слишком длинная' });
+  }
+  if (file_url && String(file_url).length > MAX_URL_LENGTH) {
+    return res.status(400).json({ message: 'Ссылка на файл слишком длинная' });
+  }
+  if (file_name && String(file_name).length > MAX_FILE_NAME_LENGTH) {
+    return res.status(400).json({ message: 'Имя файла не более 255 символов' });
+  }
   
-  // ✅ Если пересылка сообщений
+  // ✅ Если пересылка сообщений (лимит числа чатов — защита от DoS)
   if (forward_from_message_id && forward_to_chat_ids && Array.isArray(forward_to_chat_ids)) {
-    return await forwardMessages(req, res, forward_from_message_id, forward_to_chat_ids, user_id);
+    const MAX_FORWARD_CHATS = 20;
+    const toChatIds = forward_to_chat_ids.slice(0, MAX_FORWARD_CHATS);
+    return await forwardMessages(req, res, forward_from_message_id, toChatIds, user_id);
   }
 
   try {
@@ -808,6 +826,9 @@ export const editMessage = async (req, res) => {
   const contentStr = content != null ? String(content) : '';
   if (contentStr.length > 65535) {
     return res.status(400).json({ message: 'Текст сообщения не более 65535 символов' });
+  }
+  if (image_url != null && String(image_url).length > 2048) {
+    return res.status(400).json({ message: 'Ссылка на изображение не более 2048 символов' });
   }
   
   try {

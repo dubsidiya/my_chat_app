@@ -40,7 +40,8 @@ export const exportAccounting = async (req, res) => {
   try {
     const from = (req.query.from || '').toString();
     const to = (req.query.to || '').toString();
-    const format = ((req.query.format || 'json').toString() || 'json').toLowerCase();
+    const formatRaw = ((req.query.format || 'json').toString() || 'json').toLowerCase();
+    const format = formatRaw === 'csv' ? 'csv' : 'json';
 
     if (!isValidISODate(from) || !isValidISODate(to)) {
       return res.status(400).json({ message: 'Параметры from/to обязательны в формате YYYY-MM-DD' });

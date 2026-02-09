@@ -220,6 +220,9 @@ export const getReport = async (req, res) => {
   }
 };
 
+// Лимит длины текста отчёта (защита от DoS)
+const MAX_REPORT_CONTENT_LENGTH = 200000;
+
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
   const userId = req.user.userId;
@@ -228,6 +231,9 @@ export const createReport = async (req, res) => {
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
     return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
+  }
+  if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
+    return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
   }
 
   const client = await pool.connect();
@@ -419,6 +425,9 @@ export const updateReport = async (req, res) => {
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
     return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
+  }
+  if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
+    return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
   }
 
   const client = await pool.connect();

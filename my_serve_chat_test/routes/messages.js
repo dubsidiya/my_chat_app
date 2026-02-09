@@ -24,10 +24,7 @@ router.post('/upload-image', (req, res, next) => {
   ])(req, res, (err) => {
     if (err) {
       console.error('Multer error:', err);
-      return res.status(400).json({ 
-        message: err.message || 'Ошибка загрузки файла',
-        error: err.toString()
-      });
+      return res.status(400).json({ message: 'Ошибка загрузки файла' });
     }
     next();
   });
@@ -38,10 +35,7 @@ router.post('/upload-file', (req, res, next) => {
   uploadFileMiddleware.single('file')(req, res, (err) => {
     if (err) {
       console.error('Multer file error:', err);
-      return res.status(400).json({
-        message: err.message || 'Ошибка загрузки файла',
-        error: err.toString(),
-      });
+      return res.status(400).json({ message: 'Ошибка загрузки файла' });
     }
     next();
   });
