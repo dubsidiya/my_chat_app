@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Проверка DATABASE_URL
+// Значение берётся из: локально — .env (my_serve_chat_test/.env), на Render — Environment → DATABASE_URL.
+// Чтобы убрать предупреждение (node:XX) про SSL, в строке подключения укажите sslmode=verify-full.
 if (!process.env.DATABASE_URL) {
   console.error('❌ ОШИБКА: DATABASE_URL не установлен!');
   console.error('Установите DATABASE_URL в переменных окружения на Render.com');

@@ -43,7 +43,7 @@ ALLOWED_ORIGINS=https://my-chat-app.vercel.app,http://localhost:3000,http://loca
 Укажите URL вашей базы данных (если еще не указан):
 
 ```env
-DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require
+DATABASE_URL=postgresql://user:password@host:port/database?sslmode=verify-full
 ```
 
 ## 📝 Шаг 3: Миграция паролей

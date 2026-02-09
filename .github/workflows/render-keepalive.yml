@@ -1,8 +1,9 @@
+# Держит сервер на Render.com (free tier) от засыпания: пинг каждые 5 минут.
+# Если ваш сервис на другом URL — замените RENDER_URL ниже или задайте в Settings → Secrets and variables → Actions.
 name: render-keepalive
 
 on:
   schedule:
-    # GitHub Actions schedule: минимум раз в 5 минут
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
@@ -10,10 +11,13 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint
+      - name: Ping health endpoint (keep-alive + warm DB)
+        env:
+          RENDER_URL: ${{ vars.RENDER_SERVICE_URL }}
         run: |
+          base="${RENDER_URL:-https://my-server-chat.onrender.com}"
+          url="${base%/}/healthz?warm=1"
           for i in 1 2 3 4 5; do
-            curl -fsS "https://my-server-chat.onrender.com/healthz" >/dev/null
-            # пауза 60 сек между пингами (последний раз можно не ждать)
+            curl -fsS --max-time 30 "$url" >/dev/null && echo "OK $i" || true
             if [ "$i" -lt 5 ]; then sleep 60; fi
           done

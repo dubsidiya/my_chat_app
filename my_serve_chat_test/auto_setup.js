@@ -47,7 +47,7 @@ if (!envContent.includes('PORT=')) {
 
 // DATABASE_URL - только комментарий, так как он должен быть на сервере
 if (!envContent.includes('DATABASE_URL=')) {
-  envContent += `\n# URL базы данных (настройте на сервере Render.com или добавьте здесь для локальной разработки)\n# DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require\n`;
+  envContent += `\n# URL базы данных (настройте на сервере Render.com или добавьте здесь для локальной разработки)\n# DATABASE_URL=postgresql://user:password@host:port/database?sslmode=verify-full\n`;
   updated = true;
   console.log('ℹ️  DATABASE_URL - добавлен комментарий (настройте на сервере)');
 }

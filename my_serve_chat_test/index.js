@@ -16,6 +16,7 @@ import bankStatementRoutes from './routes/bankStatement.js';
 import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
 import { setupWebSocket } from './websocket/websocket.js';
+import pool from './db.js';
 
 dotenv.config();
 
@@ -23,7 +24,12 @@ const app = express();
 const server = http.createServer(app);
 
 // Health check endpoint (для keep-alive пинга на Render free tier)
+// ?warm=1 — дополнительно прогревает соединение с БД, чтобы после пробуждения первый запрос не таймаутил
 app.get('/healthz', (req, res) => {
+  if (req.query.warm === '1') {
+    pool.query('SELECT 1').then(() => res.status(200).send('ok')).catch(() => res.status(200).send('ok'));
+    return;
+  }
   res.status(200).send('ok');
 });
 

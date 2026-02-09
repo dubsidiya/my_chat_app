@@ -69,18 +69,20 @@
 
 ### Render.com PostgreSQL:
 ```
-postgresql://chat_user:password@dpg-xxxxx-a.oregon-postgres.render.com/chat_db?sslmode=require
+postgresql://chat_user:password@dpg-xxxxx-a.oregon-postgres.render.com/chat_db?sslmode=verify-full
 ```
 
 ### Neon:
 ```
-postgresql://user:password@ep-xxxxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+postgresql://user:password@ep-xxxxx.us-east-2.aws.neon.tech/neondb?sslmode=verify-full
 ```
 
 ### Supabase:
 ```
-postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres?sslmode=require
+postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres?sslmode=verify-full
 ```
+
+> **Про предупреждение (node:XX) в консоли:** если в логах видите `SECURITY WARNING: The SSL modes 'prefer', 'require'...`, замените в `DATABASE_URL` параметр на `sslmode=verify-full` (и локально в `.env`, и в Environment на Render.com).
 
 ## Важно
 
