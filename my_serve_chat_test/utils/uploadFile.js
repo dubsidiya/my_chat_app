@@ -26,6 +26,12 @@ const allowedExtensions = new Set([
   '.xlsx',
   '.ppt',
   '.pptx',
+  // код
+  '.py',
+  '.js',
+  '.ts',
+  '.html',
+  '.css',
   // audio (voice messages)
   '.m4a',
   '.aac',
@@ -46,6 +52,12 @@ const allowedMimePrefixes = [
   'application/vnd',
   'application/msword',
   'application/vnd.openxmlformats-officedocument',
+  // код (Python, JS, HTML, CSS и т.д.)
+  'text/x-python',
+  'application/x-python',
+  'text/javascript',
+  'text/html',
+  'text/css',
   // audio (voice messages)
   'audio/',
 ];
@@ -59,13 +71,16 @@ const fileFilter = (req, file, cb) => {
 
   if (okByExt || okByMime) return cb(null, true);
 
-  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, а также аудио (M4A/AAC/MP3/OGG/OPUS/WAV)'));
+  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, код (.py, .js, .ts, .html, .css), а также аудио (M4A/AAC/MP3/OGG/OPUS/WAV)'));
 };
+
+// Лимит размера файла для загрузки в чат (2 GB)
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 
 export const uploadFile = multer({
   storage,
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB
+    fileSize: MAX_FILE_SIZE_BYTES, // 2 GB
     files: 1,
   },
   fileFilter,

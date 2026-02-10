@@ -30,12 +30,15 @@ router.post('/upload-image', (req, res, next) => {
   });
 }, uploadImage); // POST /messages/upload-image
 
-// Upload file (single field: file)
+// Upload file (single field: file). Лимит размера задаётся в utils/uploadFile.js (2 GB).
 router.post('/upload-file', (req, res, next) => {
   uploadFileMiddleware.single('file')(req, res, (err) => {
     if (err) {
       console.error('Multer file error:', err);
-      return res.status(400).json({ message: 'Ошибка загрузки файла' });
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Файл слишком большой. Максимум 2 ГБ'
+        : 'Ошибка загрузки файла';
+      return res.status(400).json({ message: msg });
     }
     next();
   });
