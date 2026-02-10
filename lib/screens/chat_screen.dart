@@ -3714,12 +3714,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                   ],
                                 ],
-                                // Отображение текста
+                                // Отображение текста (входящие — светлый текст в тёмной теме для читаемости)
                                 if (msg.hasText) ...[
                                   Text(
                                     msg.content,
                                     style: TextStyle(
-                                      color: isMine ? Colors.white : Colors.grey.shade900,
+                                      color: isMine
+                                          ? Colors.white
+                                          : (isDark ? Colors.white.withOpacity(0.95) : Colors.grey.shade900),
                                       fontSize: 15,
                                       height: 1.4,
                                     ),

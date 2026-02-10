@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChatsService _chatsService = ChatsService();
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
+  List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
   bool _isLoading = false;
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
@@ -148,9 +149,14 @@ class _HomeScreenState extends State<HomeScreen> {
     
     try {
       final chats = await _chatsService.fetchChats(widget.userId);
+      final order = await StorageService.getChatOrder(widget.userId);
       if (mounted) {
         setState(() {
           _chats = chats;
+          _chatOrder = order;
+          if (_chatOrder.isEmpty && _chats.isNotEmpty) {
+            _chatOrder = _chats.map((c) => c.id).toList();
+          }
         });
       }
     } catch (e) {
@@ -164,6 +170,199 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _isLoading = false);
       }
     }
+  }
+
+  /// Чаты в сохранённом порядке (сначала по _chatOrder, затем остальные по дате последнего сообщения).
+  List<Chat> get _sortedChats {
+    if (_chats.isEmpty) return [];
+    final orderIds = _chatOrder.where((id) => _chats.any((c) => c.id == id)).toList();
+    final rest = _chats.where((c) => !_chatOrder.contains(c.id)).toList();
+    rest.sort((a, b) {
+      final at = a.lastMessageAt ?? '';
+      final bt = b.lastMessageAt ?? '';
+      return bt.compareTo(at);
+    });
+    final List<Chat> out = [];
+    for (final id in orderIds) {
+      final found = _chats.where((c) => c.id == id).toList();
+      if (found.isNotEmpty) out.add(found.first);
+    }
+    out.addAll(rest);
+    return out;
+  }
+
+  void _onReorderChats(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || newIndex < 0 || oldIndex >= _sortedChats.length || newIndex >= _sortedChats.length) return;
+    final sorted = List<Chat>.from(_sortedChats);
+    final item = sorted.removeAt(oldIndex);
+    final insertIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    sorted.insert(insertIndex, item);
+    setState(() {
+      _chatOrder = sorted.map((c) => c.id).toList();
+    });
+    StorageService.saveChatOrder(widget.userId, _chatOrder);
+  }
+
+  Widget _buildChatTile(BuildContext context, Chat chat) {
+    final scheme = Theme.of(context).colorScheme;
+    final lastTime = _formatLastMessageTime(chat.lastMessageAt);
+    final preview = _buildLastMessagePreview(chat);
+    final unread = chat.unreadCount;
+    return Dismissible(
+      key: Key('chat_${chat.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Icon(Icons.delete, color: Colors.white, size: 28),
+      ),
+      confirmDismiss: (direction) async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Удалить чат?'),
+            content: Text(
+                'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Отмена')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: Text('Удалить'),
+              ),
+            ],
+          ),
+        );
+        return confirmed ?? false;
+      },
+      onDismissed: (direction) async {
+        if (!mounted) return;
+        try {
+          await _chatsService.deleteChat(chat.id, widget.userId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Чат "${chat.name}" удален'), duration: const Duration(seconds: 2)),
+            );
+            _loadChats();
+          }
+        } catch (e) {
+          print('Ошибка удаления чата: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            _loadChats();
+          }
+        }
+      },
+      child: Card(
+        margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openChat(chat),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: chat.isGroup
+                          ? const [Color(0xFFa855f7), Color(0xFF7c3aed)]
+                          : const [Color(0xFF667eea), Color(0xFF764ba2)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        chat.name,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w700,
+                          color: scheme.onSurface,
+                          letterSpacing: 0.1,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        preview,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurface.withOpacity(0.65),
+                          fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      lastTime,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: unread > 0 ? scheme.primary : scheme.onSurface.withOpacity(0.50),
+                        fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    if (unread > 0)
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          unread > 99 ? '99+' : unread.toString(),
+                          style: TextStyle(
+                            color: scheme.onPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    else
+                      SizedBox(height: 20),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openChat(Chat chat) {
@@ -454,7 +653,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     final q = _query.trim().toLowerCase();
-    final filteredChats = _chats.where((c) {
+    final sortedChats = _sortedChats;
+    final filteredChats = sortedChats.where((c) {
       if (q.isEmpty) return true;
       final name = c.name.toLowerCase();
       final preview = _buildLastMessagePreview(c).toLowerCase();
@@ -794,192 +994,25 @@ class _HomeScreenState extends State<HomeScreen> {
                           : RefreshIndicator(
                               onRefresh: _loadChats,
                               color: Color(0xFF667eea),
-                              child: ListView.builder(
-                                padding: EdgeInsets.symmetric(vertical: 8),
-                                itemCount: filteredChats.length,
-                                itemBuilder: (context, index) {
-                                  final chat = filteredChats[index];
-                                  final lastTime = _formatLastMessageTime(chat.lastMessageAt);
-                                  final preview = _buildLastMessagePreview(chat);
-                                  final unread = chat.unreadCount;
-                                  return Dismissible(
-                                    key: Key('chat_${chat.id}'),
-                                    direction: DismissDirection.endToStart,
-                                    background: Container(
-                                      alignment: Alignment.centerRight,
-                                      padding: EdgeInsets.only(right: 20),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                      child: Icon(Icons.delete, color: Colors.white, size: 28),
+                              child: _query.isEmpty
+                                  ? ReorderableListView.builder(
+                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      buildDefaultDragHandles: true,
+                                      onReorder: _onReorderChats,
+                                      itemCount: filteredChats.length,
+                                      itemBuilder: (context, index) {
+                                        final chat = filteredChats[index];
+                                        return _buildChatTile(context, chat);
+                                      },
+                                    )
+                                  : ListView.builder(
+                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      itemCount: filteredChats.length,
+                                      itemBuilder: (context, index) {
+                                        final chat = filteredChats[index];
+                                        return _buildChatTile(context, chat);
+                                      },
                                     ),
-                                    confirmDismiss: (direction) async {
-                                      // Показываем диалог подтверждения
-                                      final confirmed = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: Text('Удалить чат?'),
-                                          content: Text(
-                                              'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(context, false),
-                                              child: Text('Отмена'),
-                                            ),
-                                            ElevatedButton(
-                                              onPressed: () => Navigator.pop(context, true),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.red,
-                                              ),
-                                              child: Text('Удалить'),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                      return confirmed ?? false;
-                                    },
-                                    onDismissed: (direction) async {
-                                      // Удаляем чат после подтверждения
-                                      if (!mounted) return;
-                                      try {
-                                        await _chatsService.deleteChat(chat.id, widget.userId);
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Чат "${chat.name}" удален'),
-                                              duration: const Duration(seconds: 2),
-                                            ),
-                                          );
-                                          // Обновляем список чатов
-                                          _loadChats();
-                                        }
-                                      } catch (e) {
-                                        print('Ошибка удаления чата: $e');
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                  'Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-                                              duration: const Duration(seconds: 3),
-                                            ),
-                                          );
-                                          // Восстанавливаем список, так как удаление не удалось
-                                          _loadChats();
-                                        }
-                                      }
-                                    },
-                                    child: Card(
-                                      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: InkWell(
-                                        onTap: () => _openChat(chat),
-                                        borderRadius: BorderRadius.circular(16),
-                                        child: Padding(
-                                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                width: 46,
-                                                height: 46,
-                                                decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    begin: Alignment.topLeft,
-                                                    end: Alignment.bottomRight,
-                                                    colors: chat.isGroup
-                                                        ? const [
-                                                            Color(0xFFa855f7),
-                                                            Color(0xFF7c3aed),
-                                                          ]
-                                                        : const [
-                                                            Color(0xFF667eea),
-                                                            Color(0xFF764ba2),
-                                                          ],
-                                                  ),
-                                                  borderRadius: BorderRadius.circular(16),
-                                                ),
-                                                child: Icon(
-                                                  chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
-                                                  color: Colors.white,
-                                                  size: 22,
-                                                ),
-                                              ),
-                                              SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Text(
-                                                      chat.name,
-                                                      style: TextStyle(
-                                                        fontSize: 16,
-                                                        fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w700,
-                                                        color: scheme.onSurface,
-                                                        letterSpacing: 0.1,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                    SizedBox(height: 4),
-                                                    Text(
-                                                      preview,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: scheme.onSurface.withOpacity(0.65),
-                                                        fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              SizedBox(width: 10),
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.end,
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    lastTime,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: unread > 0
-                                                          ? scheme.primary
-                                                          : scheme.onSurface.withOpacity(0.50),
-                                                      fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                  SizedBox(height: 8),
-                                                  if (unread > 0)
-                                                    Container(
-                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        color: scheme.primary,
-                                                        borderRadius: BorderRadius.circular(999),
-                                                      ),
-                                                      child: Text(
-                                                        unread > 99 ? '99+' : unread.toString(),
-                                                        style: TextStyle(
-                                                          color: scheme.onPrimary,
-                                                          fontSize: 12,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    )
-                                                  else
-                                                    SizedBox(height: 20),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
                             ),
                     ),
                   ],

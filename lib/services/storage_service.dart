@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +9,7 @@ class StorageService {
   static const String _tokenKey = 'auth_token';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
+  static const String _chatOrderPrefix = 'chat_order_';
 
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
@@ -100,6 +102,38 @@ class StorageService {
     }
     if (userId != null) {
       await prefs.remove('$_privateUnlockedPrefix$userId');
+      await prefs.remove('$_chatOrderPrefix$userId');
+    }
+  }
+
+  /// Сохранить порядок чатов (список id чатов).
+  static Future<void> saveChatOrder(String userId, List<String> chatIds) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_chatOrderPrefix$userId', jsonEncode(chatIds));
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.saveChatOrder error: $e');
+      }
+    }
+  }
+
+  /// Загрузить сохранённый порядок чатов.
+  static Future<List<String>> getChatOrder(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_chatOrderPrefix$userId');
+      if (raw == null || raw.isEmpty) return [];
+      final list = jsonDecode(raw);
+      if (list is! List) return [];
+      return list.map((e) => e.toString()).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getChatOrder error: $e');
+      }
+      return [];
     }
   }
 
