@@ -3490,87 +3490,27 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                   SizedBox(height: 4),
                                 ],
-                                // Отображение изображения
+                                // Отображение изображения (открытие в стиле Telegram/WhatsApp)
                                 if (msg.hasImage) ...[
                                   GestureDetector(
                                     onTap: () {
-                                      // Открываем изображение в полноэкранном режиме
-                                      showDialog(
-                                        context: context,
-                                        builder: (context) => Dialog(
-                                          backgroundColor: Colors.transparent,
-                                          child: Stack(
-                                            children: [
-                                              Center(
-                                                child: InteractiveViewer(
-                                                  minScale: 0.5,
-                                                  maxScale: 4.0,
-                                                  child: ConstrainedBox(
-                                                    constraints: BoxConstraints(
-                                                      maxWidth: MediaQuery.of(context).size.width,
-                                                      maxHeight: MediaQuery.of(context).size.height,
-                                                    ),
-                                                    child: Image.network(
-                                                      msg.imageUrl!,
-                                                      fit: BoxFit.contain, // ✅ Сохраняем пропорции
-                                                      // Убираем cacheWidth и cacheHeight для полноэкранного просмотра, чтобы сохранить пропорции
-                                                      // Или используем только cacheWidth для экономии памяти
-                                                      cacheWidth: 1920,  // ✅ Декодируем максимум 1920px ширины (пропорции сохранятся)
-                                                      // cacheHeight не задаем, чтобы сохранить пропорции изображения
-                                                      headers: kIsWeb ? {
-                                                        'Access-Control-Allow-Origin': '*',
-                                                      } : {}, // Для веб добавляем CORS заголовки
-                                                      errorBuilder: (context, error, stackTrace) {
-                                                        print('Full screen image error: $error');
-                                                        print('URL: ${msg.imageUrl}');
-                                                        return Center(
-                                                          child: Column(
-                                                            mainAxisAlignment: MainAxisAlignment.center,
-                                                            children: [
-                                                              Icon(Icons.error, color: Colors.white, size: 48),
-                                                              SizedBox(height: 16),
-                                                              Text('Ошибка загрузки изображения', style: TextStyle(color: Colors.white)),
-                                                              SizedBox(height: 8),
-                                                              Text('${msg.imageUrl}', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                                            ],
-                                                          ),
-                                                        );
-                                                      },
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Positioned(
-                                                top: 40,
-                                                right: 20,
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    // ✅ Кнопка скачивания оригинала (если есть)
-                                                    if (msg.hasOriginalImage || msg.imageUrl != null)
-                                                      IconButton(
-                                                        icon: Icon(Icons.download, color: Colors.white),
-                                                        onPressed: () => _downloadImage(
-                                                          msg.originalImageUrl ?? msg.imageUrl!,
-                                                          msg.imageUrl?.split('/').last ?? 'image.jpg'
-                                                        ),
-                                                        style: IconButton.styleFrom(
-                                                          backgroundColor: Colors.black54,
-                                                        ),
-                                                      ),
-                                                    SizedBox(width: 8),
-                                                    IconButton(
-                                                      icon: Icon(Icons.close, color: Colors.white),
-                                                      onPressed: () => Navigator.pop(context),
-                                                      style: IconButton.styleFrom(
-                                                        backgroundColor: Colors.black54,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                      Navigator.of(context).push(
+                                        PageRouteBuilder(
+                                          opaque: true,
+                                          barrierColor: Colors.black,
+                                          pageBuilder: (_, __, ___) => _FullScreenImageViewer(
+                                            imageUrl: msg.imageUrl!,
+                                            originalImageUrl: msg.originalImageUrl ?? msg.imageUrl,
+                                            fileName: msg.imageUrl?.split('/').last ?? 'image.jpg',
+                                            onDownload: () => _downloadImage(
+                                              msg.originalImageUrl ?? msg.imageUrl!,
+                                              msg.imageUrl?.split('/').last ?? 'image.jpg',
+                                            ),
                                           ),
+                                          transitionsBuilder: (_, animation, __, child) {
+                                            return FadeTransition(opacity: animation, child: child);
+                                          },
+                                          transitionDuration: Duration(milliseconds: 200),
                                         ),
                                       );
                                     },
@@ -4390,6 +4330,114 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Полноэкранный просмотр фото в стиле Telegram/WhatsApp: тёмный фон, зум, тап — закрыть.
+class _FullScreenImageViewer extends StatelessWidget {
+  final String imageUrl;
+  final String? originalImageUrl;
+  final String fileName;
+  final VoidCallback? onDownload;
+
+  const _FullScreenImageViewer({
+    required this.imageUrl,
+    this.originalImageUrl,
+    required this.fileName,
+    this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Тап по области закрывает (как в Telegram)
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            behavior: HitTestBehavior.opaque,
+            child: Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5.0,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  cacheWidth: 1920,
+                  headers: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : {},
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                        color: Colors.white70,
+                        strokeWidth: 2,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline_rounded, color: Colors.white54, size: 56),
+                          SizedBox(height: 16),
+                          Text(
+                            'Не удалось загрузить изображение',
+                            style: TextStyle(color: Colors.white70, fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          // Верхняя панель: назад + скачать (полупрозрачная, как в мессенджерах)
+          SafeArea(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Material(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(24),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(24),
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                      ),
+                    ),
+                  ),
+                  if (onDownload != null)
+                    Material(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: onDownload,
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Icon(Icons.download_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
