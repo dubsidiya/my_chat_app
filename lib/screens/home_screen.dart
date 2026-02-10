@@ -5,6 +5,8 @@ import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
+import 'students_screen.dart';
+import 'reports_chat_screen.dart';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -623,6 +625,146 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  static const Color _privateAccent1 = Color(0xFF667eea);
+  static const Color _privateAccent2 = Color(0xFF764ba2);
+
+  /// Запрос кода доступа для разделов Учет занятий / Отчеты. Возвращает true, если разблокировано.
+  Future<bool> _promptPrivateCode() async {
+    final controller = TextEditingController();
+    bool wrong = false;
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final code = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            return AlertDialog(
+              scrollable: true,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [_privateAccent1, _privateAccent2]),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.lock_rounded, color: Colors.white, size: 22),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Приватный доступ', style: TextStyle(fontWeight: FontWeight.bold))),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Введите код, чтобы открыть “Учет занятий” и “Отчеты”.',
+                    style: TextStyle(color: scheme.onSurface.withOpacity(0.70)),
+                  ),
+                  SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    obscureText: true,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: 'Код доступа',
+                      errorText: wrong ? 'Неверный код' : null,
+                      filled: true,
+                      fillColor: Theme.of(context).inputDecorationTheme.fillColor,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: scheme.outline.withOpacity(isDark ? 0.22 : 0.14), width: 1.5),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: _privateAccent1, width: 2),
+                      ),
+                    ),
+                    onSubmitted: (_) {
+                      if (controller.text.trim().isEmpty) {
+                        setLocal(() => wrong = true);
+                        return;
+                      }
+                      Navigator.pop(ctx, controller.text.trim());
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, null), child: Text('Отмена')),
+                ElevatedButton(
+                  onPressed: () {
+                    if (controller.text.trim().isEmpty) {
+                      setLocal(() => wrong = true);
+                      return;
+                    }
+                    Navigator.pop(ctx, controller.text.trim());
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _privateAccent1,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text('Открыть'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (code == null || code.isEmpty || !mounted) return false;
+    try {
+      await _authService.unlockPrivateAccess(code);
+      await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Приватные разделы открыты'), duration: Duration(seconds: 2), backgroundColor: Colors.green.shade600),
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), duration: Duration(seconds: 3), backgroundColor: Colors.red.shade600),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _openAccounting() async {
+    final unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
+    if (!unlocked) {
+      final ok = await _promptPrivateCode();
+      if (!ok || !mounted) return;
+    }
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => StudentsScreen(userId: widget.userId, userEmail: widget.userEmail)),
+    );
+  }
+
+  Future<void> _openReports() async {
+    final unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
+    if (!unlocked) {
+      final ok = await _promptPrivateCode();
+      if (!ok || !mounted) return;
+    }
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail)),
+    );
+  }
+
   Future<void> _showCreateChatDialog() async {
     final result = await showDialog<bool>(
       context: context,
@@ -730,7 +872,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             elevation: 8,
             onSelected: (value) async {
-              if (value == 'theme') {
+              if (value == 'accounting') {
+                await _openAccounting();
+              } else if (value == 'reports') {
+                await _openReports();
+              } else if (value == 'theme') {
                 _toggleTheme();
               } else if (value == 'logout') {
                 _logout();
@@ -741,6 +887,41 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             itemBuilder: (BuildContext context) => [
+              PopupMenuItem<String>(
+                value: 'accounting',
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF667eea).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.school_rounded, color: Color(0xFF667eea), size: 20),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Учет занятий', style: TextStyle(fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'reports',
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF764ba2).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.description_rounded, color: Color(0xFF764ba2), size: 20),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Отчеты', style: TextStyle(fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+              PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'theme',
                 child: Row(
