@@ -1004,16 +1004,19 @@ class _CreateChatDialog extends StatefulWidget {
 
 class _CreateChatDialogState extends State<_CreateChatDialog> {
   late final TextEditingController _nameController;
+  late final TextEditingController _searchController;
   bool _isCreating = false;
   bool _isGroup = false;
   bool _loadingUsers = true;
   List<Map<String, dynamic>> _users = [];
   final Set<String> _selectedUserIds = {};
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    _searchController = TextEditingController();
     _loadUsers();
   }
 
@@ -1031,9 +1034,20 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
     }
   }
 
+  List<Map<String, dynamic>> get _filteredUsers {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return [];
+    return _users.where((u) {
+      final email = (u['email'] ?? '').toString().toLowerCase();
+      final id = (u['id'] ?? '').toString().toLowerCase();
+      return email.contains(q) || id.contains(q);
+    }).toList();
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -1173,6 +1187,24 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               ),
             ),
             SizedBox(height: 8),
+            TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              enabled: !_loadingUsers && !_isCreating,
+              style: TextStyle(fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'Поиск по email или имени...',
+                prefixIcon: Icon(Icons.search_rounded, size: 22, color: Color(0xFF667eea)),
+                filled: true,
+                fillColor: Theme.of(context).inputDecorationTheme.fillColor,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+            SizedBox(height: 10),
             if (_loadingUsers)
               Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -1183,14 +1215,36 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Нет пользователей для добавления'),
               )
+            else if (_searchQuery.trim().isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text(
+                    'Введите запрос в поле поиска,\nчтобы найти пользователя',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              )
+            else if (_filteredUsers.isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'Никого не найдено',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+              )
             else
               ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: 260),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: _users.length,
+                  itemCount: _filteredUsers.length,
                   itemBuilder: (context, i) {
-                    final u = _users[i];
+                    final u = _filteredUsers[i];
                     final id = (u['id'] ?? '').toString();
                     final email = (u['email'] ?? '').toString();
                     final selected = _selectedUserIds.contains(id);

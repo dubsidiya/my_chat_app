@@ -22,7 +22,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
   static const Color _accent2 = Color(0xFF764ba2);
 
   int _currentIndex = 0;
-  bool _privateUnlocked = false;
   bool _isCheckingAccess = true;
 
   final List<Widget> _screens = [];
@@ -38,7 +37,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
     if (!mounted) return;
 
     setState(() {
-      _privateUnlocked = unlocked;
       _isCheckingAccess = false;
 
       _screens
@@ -49,22 +47,13 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
             userEmail: widget.userEmail,
             onThemeChanged: widget.onThemeChanged,
           ),
-          unlocked
-              ? StudentsScreen(userId: widget.userId, userEmail: widget.userEmail)
-              : _LockedTab(
-                  title: 'Учет занятий',
-                  subtitle: 'Раздел доступен только по коду',
-                  icon: Icons.school_rounded,
-                  onUnlock: _promptPrivateCode,
-                ),
-          unlocked
-              ? ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail)
-              : _LockedTab(
-                  title: 'Отчеты',
-                  subtitle: 'Раздел доступен только по коду',
-                  icon: Icons.description_rounded,
-                  onUnlock: _promptPrivateCode,
-                ),
+          _MoreMenuScreen(
+            userId: widget.userId,
+            userEmail: widget.userEmail,
+            onThemeChanged: widget.onThemeChanged,
+            privateUnlocked: unlocked,
+            onUnlock: _promptPrivateCode,
+          ),
         ]);
     });
   }
@@ -215,9 +204,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       await AuthService().unlockPrivateAccess(code);
       await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
       if (!mounted) return;
-      setState(() {
-        _privateUnlocked = true;
-      });
       await _initAccess();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -279,11 +265,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           child: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: (index) {
-              // Чаты доступны всем. Две другие вкладки — только после кода.
-              if ((index == 1 || index == 2) && !_privateUnlocked) {
-                _promptPrivateCode();
-                return;
-              }
               setState(() => _currentIndex = index);
             },
             type: BottomNavigationBarType.fixed,
@@ -334,128 +315,36 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
                 label: 'Чаты',
               ),
               BottomNavigationBarItem(
-                icon: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: _currentIndex == 1
-                            ? _accent1.withOpacity(0.15)
-                            : Colors.transparent,
-                      ),
-                      child: Icon(
-                        Icons.school_rounded,
-                        size: 24,
-                      ),
-                    ),
-                    if (!_privateUnlocked)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Icon(
-                          Icons.lock_rounded,
-                          size: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                  ],
+                icon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _currentIndex == 1
+                        ? _accent1.withOpacity(0.15)
+                        : Colors.transparent,
+                  ),
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    size: 24,
+                  ),
                 ),
-                activeIcon: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(
-                          colors: [
-                            _accent1.withOpacity(0.2),
-                            _accent2.withOpacity(0.2),
-                          ],
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.school_rounded,
-                        size: 24,
-                      ),
+                activeIcon: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        _accent1.withOpacity(0.2),
+                        _accent2.withOpacity(0.2),
+                      ],
                     ),
-                    if (!_privateUnlocked)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Icon(
-                          Icons.lock_rounded,
-                          size: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                  ],
+                  ),
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    size: 24,
+                  ),
                 ),
-                label: 'Учет занятий',
-              ),
-              BottomNavigationBarItem(
-                icon: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: _currentIndex == 2
-                            ? _accent1.withOpacity(0.15)
-                            : Colors.transparent,
-                      ),
-                      child: Icon(
-                        Icons.description_rounded,
-                        size: 24,
-                      ),
-                    ),
-                    if (!_privateUnlocked)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Icon(
-                          Icons.lock_rounded,
-                          size: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                  ],
-                ),
-                activeIcon: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(
-                          colors: [
-                            _accent1.withOpacity(0.2),
-                            _accent2.withOpacity(0.2),
-                          ],
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.description_rounded,
-                        size: 24,
-                      ),
-                    ),
-                    if (!_privateUnlocked)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Icon(
-                          Icons.lock_rounded,
-                          size: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                  ],
-                ),
-                label: 'Отчеты',
+                label: 'Ещё',
               ),
             ],
           ),
@@ -465,91 +354,78 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
   }
 }
 
-class _LockedTab extends StatelessWidget {
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
-  static const Color _accent3 = Color(0xFFf093fb);
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
+/// Экран «Ещё»: разделы Учет занятий и Отчеты вынесены сюда, чтобы не бросаться в глаза в нижней панели.
+class _MoreMenuScreen extends StatelessWidget {
+  final String userId;
+  final String userEmail;
+  final Function(bool)? onThemeChanged;
+  final bool privateUnlocked;
   final VoidCallback onUnlock;
 
-  const _LockedTab({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
+  const _MoreMenuScreen({
+    required this.userId,
+    required this.userEmail,
+    this.onThemeChanged,
+    required this.privateUnlocked,
     required this.onUnlock,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    _accent1.withOpacity(0.18),
-                    _accent3.withOpacity(0.18),
-                  ],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 60, color: _accent1.withOpacity(0.75)),
-            ),
-            SizedBox(height: 24),
+            SizedBox(height: 8),
             Text(
-              title,
+              'Дополнительно',
               style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface.withOpacity(0.5),
+                letterSpacing: 0.5,
               ),
-              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 12),
+            _MenuItem(
+              icon: Icons.school_rounded,
+              title: 'Учет занятий',
+              subtitle: 'Студенты, занятия, балансы',
+              locked: !privateUnlocked,
+              onTap: () async {
+                if (!privateUnlocked) {
+                  onUnlock();
+                  return;
+                }
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StudentsScreen(userId: userId, userEmail: userEmail),
+                  ),
+                );
+              },
             ),
             SizedBox(height: 10),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 26),
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(colors: [_accent1, _accent2]),
-                boxShadow: [
-                  BoxShadow(
-                    color: _accent1.withOpacity(0.28),
-                    blurRadius: 12,
-                    offset: Offset(0, 6),
+            _MenuItem(
+              icon: Icons.description_rounded,
+              title: 'Отчеты',
+              subtitle: 'Отчеты за день, создание занятий',
+              locked: !privateUnlocked,
+              onTap: () async {
+                if (!privateUnlocked) {
+                  onUnlock();
+                  return;
+                }
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ReportsChatScreen(userId: userId, userEmail: userEmail),
                   ),
-                ],
-              ),
-              child: ElevatedButton.icon(
-                onPressed: onUnlock,
-                icon: Icon(Icons.lock_open_rounded),
-                label: Text(
-                  'Ввести код доступа',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
+                );
+              },
             ),
           ],
         ),
@@ -557,3 +433,86 @@ class _LockedTab extends StatelessWidget {
     );
   }
 }
+
+class _MenuItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool locked;
+  final VoidCallback onTap;
+
+  const _MenuItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.locked,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const accent1 = Color(0xFF667eea);
+
+    return Material(
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: accent1.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: accent1, size: 24),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (locked)
+                Icon(Icons.lock_rounded, size: 20, color: Colors.grey.shade500)
+              else
+                Icon(Icons.chevron_right_rounded, color: scheme.onSurface.withOpacity(0.4)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
