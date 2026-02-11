@@ -183,16 +183,26 @@ app.use(bodyParser.urlencoded({ extended: true, limit: URLENC_LIMIT }));
 // const __dirname = path.dirname(__filename);
 // app.use('/uploads/images', express.static(path.join(__dirname, 'uploads/images')));
 
+// Вспомогательная функция для получения клиентского IP (корректно за Render/Vercel прокси)
+const getClientIp = (req) => {
+  // Trust proxy: 1 — req.ip берётся из X-Forwarded-For. На Render без trust proxy все видят один IP балансировщика.
+  const ip = req.ip || req.get?.('x-forwarded-for')?.split(',')[0]?.trim() || req.connection?.remoteAddress;
+  return ip || 'unknown';
+};
+
 // Rate limiting для защиты от брутфорса
+// Ключ = username + IP: один пользователь с неверным паролем не блокирует остальных (важно при общем IP за прокси)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
-  max: 5, // максимум 5 запросов
+  max: 5, // максимум 5 неудачных попыток
   message: 'Слишком много попыток входа, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
-  // Используем IP из заголовка X-Forwarded-For (когда trust proxy установлен)
+  skipSuccessfulRequests: true, // успешный вход не считается — блокируем только после 5 неудач
   keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress;
+    const username = (req.body?.username || req.body?.email || '').toString().toLowerCase().trim() || 'anon';
+    const ip = getClientIp(req);
+    return `auth_${username}_${ip}`;
   },
 });
 
@@ -203,6 +213,7 @@ const apiLimiter = rateLimit({
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 // Более строгий лимит для загрузок
@@ -212,6 +223,7 @@ const uploadLimiter = rateLimit({
   message: 'Слишком много загрузок, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 // Применяем rate limiting только к эндпоинтам аутентификации
