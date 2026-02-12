@@ -6,34 +6,38 @@ import { uploadToYandex, deleteFromYandex, getImageUrl as getYandexImageUrl } fr
 // Файл будет храниться в памяти, затем загрузим в Яндекс Облако
 const storage = multer.memoryStorage();
 
-// Фильтр файлов - только изображения
+// Фильтр файлов - только изображения (все распространённые форматы фото)
+const ALLOWED_IMAGE_EXT = /\.(jpeg|jpg|jpe|png|gif|webp|heic|heif|bmp|tiff|tif|avif|ico|svg)$/i;
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/x-png',
+  'image/pjpeg',
+  'image/heic',
+  'image/heif',
+  'image/bmp',
+  'image/x-ms-bmp',
+  'image/tiff',
+  'image/avif',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/svg+xml',
+];
+
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const allowedMimeTypes = [
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/x-png', // Альтернативный MIME для PNG
-    'image/pjpeg', // Альтернативный MIME для JPEG
-  ];
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mimetype = (file.mimetype || '').toLowerCase();
 
-  // Проверяем расширение файла
-  const extname = file.originalname 
-    ? allowedTypes.test(path.extname(file.originalname).toLowerCase())
-    : false;
+  const okByExt = ALLOWED_IMAGE_EXT.test(ext);
+  const okByMime = ALLOWED_MIME_TYPES.includes(mimetype);
 
-  // Проверяем MIME-тип (строго по allowlist)
-  const mimetype = file.mimetype ? allowedMimeTypes.includes(file.mimetype.toLowerCase()) : false;
-
-  // Разрешаем, если совпало расширение ИЛИ MIME-тип
-  // (на web MIME иногда приходит неточным, но includes() использовать нельзя — легко обходится)
-  if (extname || mimetype) {
+  if (okByExt || okByMime) {
     return cb(null, true);
-  } else {
-    cb(new Error('Только изображения! Разрешенные форматы: JPEG, JPG, PNG, GIF, WEBP'));
   }
+  cb(new Error('Только изображения! Разрешены: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO, SVG'));
 };
 
 // Настройка multer для загрузки изображений (сжатое + оригинал)

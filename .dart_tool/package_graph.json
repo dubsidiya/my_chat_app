@@ -9,6 +9,7 @@
       "dependencies": [
         "connectivity_plus",
         "cupertino_icons",
+        "desktop_drop",
         "file_picker",
         "flutter",
         "flutter_secure_storage",
@@ -205,6 +206,17 @@
         "async",
         "http_parser",
         "meta"
+      ]
+    },
+    {
+      "name": "desktop_drop",
+      "version": "0.7.0",
+      "dependencies": [
+        "cross_file",
+        "flutter",
+        "flutter_web_plugins",
+        "universal_platform",
+        "web"
       ]
     },
     {
@@ -726,6 +738,11 @@
         "string_scanner",
         "typed_data"
       ]
+    },
+    {
+      "name": "universal_platform",
+      "version": "1.1.0",
+      "dependencies": []
     },
     {
       "name": "cross_file",

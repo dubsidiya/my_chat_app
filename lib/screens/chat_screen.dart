@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -90,6 +91,9 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<Duration>? _voicePositionSub;
   StreamSubscription<Duration?>? _voiceDurationSub;
   StreamSubscription<PlayerState>? _voicePlayerStateSub;
+
+  // ✅ Drag-and-drop файлов (десктоп/веб)
+  bool _isDraggingFile = false;
 
   // ✅ Realtime presence/typing
   final Map<String, String> _memberEmailById = {};
@@ -1388,24 +1392,23 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImage() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom, // Используем custom для указания расширений
+        type: FileType.custom,
         allowMultiple: false,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'], // Явно указываем разрешенные расширения
+        allowedExtensions: ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'avif', 'ico', 'svg'],
       );
 
       if (result != null && result.files.single.size > 0) {
         final file = result.files.single;
         
-        // Проверяем расширение файла на клиенте
         final fileName = file.name.toLowerCase();
-        final allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+        const allowedExtensions = ['.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp', '.tiff', '.tif', '.avif', '.ico', '.svg'];
         final hasValidExtension = allowedExtensions.any((ext) => fileName.endsWith(ext));
         
         if (!hasValidExtension) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Неподдерживаемый формат файла. Используйте: JPEG, JPG, PNG, GIF, WEBP'),
+                content: Text('Неподдерживаемый формат. Используйте: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO, SVG'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -1472,6 +1475,66 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось выбрать файл')),
       );
+    }
+  }
+
+  /// Обработка перетаскивания файлов (drag-and-drop с рабочего стола)
+  Future<void> _handleFilesDropped(DropDoneDetails details) async {
+    if (_isRecordingVoice || _isUploadingImage || _isUploadingFile) return;
+    final items = details.files;
+    if (items.isEmpty) return;
+
+    // Берём первый файл (папки пропускаем)
+    final DropItem? fileItem = items.firstWhere(
+      (item) => item is! DropItemDirectory,
+      orElse: () => items.first,
+    );
+    if (fileItem is DropItemDirectory) return;
+
+    try {
+      final bytes = await fileItem!.readAsBytes();
+      final fileName = fileItem.name;
+      if (bytes.isEmpty) return;
+
+      final parts = fileName.toLowerCase().split('.');
+      final ext = parts.length > 1 ? parts.last : '';
+      final imageExtensions = ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'avif', 'ico', 'svg'];
+
+      if (imageExtensions.contains(ext)) {
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImagePath = null;
+          _selectedImageName = fileName;
+          _selectedFilePath = null;
+          _selectedFileBytes = null;
+          _selectedFileName = null;
+          _selectedFileSize = null;
+        });
+      } else {
+        setState(() {
+          _selectedFileBytes = bytes;
+          _selectedFilePath = null;
+          _selectedFileName = fileName;
+          _selectedFileSize = bytes.length;
+          _selectedImagePath = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+        });
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Файл добавлен: $fileName')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при добавлении файла: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -3195,10 +3258,16 @@ class _ChatScreenState extends State<ChatScreen> {
           SizedBox(width: 6),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoading
+      body: DropTarget(
+        onDragEntered: (_) => setState(() => _isDraggingFile = true),
+        onDragExited: (_) => setState(() => _isDraggingFile = false),
+        onDragDone: _handleFilesDropped,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: _isLoading
                 ? Center(
                     child: CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(_accent1),
@@ -4334,6 +4403,34 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+            if (_isDraggingFile)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    color: _accent1.withOpacity(0.12),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.file_upload_rounded, size: 56, color: _accent1.withOpacity(0.9)),
+                          SizedBox(height: 12),
+                          Text(
+                            'Отпустите файл, чтобы прикрепить',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: scheme.onSurface.withOpacity(0.8),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
