@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../services/storage_service.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
-import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -38,13 +36,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (userData != null && userData['token'] != null) {
-        // Сохраняем данные пользователя и токен для автоматического входа
         final userIdentifier = userData['username'] ?? userData['email'] ?? '';
-        await StorageService.saveUserData(
-          userData['id'].toString(),
-          userIdentifier.toString(),
-          userData['token'].toString(),
-        );
+        final isSuperuser = userData['isSuperuser'] == true;
 
         if (mounted) {
           Navigator.pushReplacement(
@@ -53,6 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
               builder: (_) => MainTabsScreen(
                 userId: userData['id'].toString(),
                 userEmail: userIdentifier.toString(),
+                isSuperuser: isSuperuser,
               ),
             ),
           );
@@ -328,33 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             obscureText: true,
                           ),
                               ),
-                              SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => ForgotPasswordScreen(),
-                                      ),
-                                    );
-                                  },
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    'Забыли пароль?',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF667eea),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: 20),
+                              SizedBox(height: 28),
                           if (_errorMessage != null)
                             Container(
                                   padding: EdgeInsets.all(14),

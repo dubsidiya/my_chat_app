@@ -274,10 +274,12 @@ class _MyAppState extends State<MyApp> {
           if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
             final userData = snapshot.data!;
             final userIdentifier = userData['email'] ?? userData['username'] ?? '';
+            final isSuperuser = userData['isSuperuser'] == 'true';
             return MainTabsScreen(
               userId: userData['id']!,
               userEmail: userIdentifier,
-              onThemeChanged: toggleTheme, // ✅ Передаем функцию переключения темы
+              isSuperuser: isSuperuser,
+              onThemeChanged: toggleTheme,
             );
           }
 

@@ -229,8 +229,6 @@ const uploadLimiter = rateLimit({
 // Применяем rate limiting только к эндпоинтам аутентификации
 app.use('/auth/login', authLimiter);
 app.use('/auth/register', authLimiter);
-app.use('/auth/request-password-reset', authLimiter);
-app.use('/auth/reset-password', authLimiter);
 
 // Общий лимит на основные API
 app.use('/messages', apiLimiter);

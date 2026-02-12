@@ -5,9 +5,10 @@ import 'home_screen.dart';
 class MainTabsScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
-  final Function(bool)? onThemeChanged; // ✅ Callback для переключения темы
+  final bool isSuperuser;
+  final Function(bool)? onThemeChanged;
 
-  MainTabsScreen({required this.userId, required this.userEmail, this.onThemeChanged});
+  MainTabsScreen({required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
 
   @override
   _MainTabsScreenState createState() => _MainTabsScreenState();
@@ -20,6 +21,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       body: HomeScreen(
         userId: widget.userId,
         userEmail: widget.userEmail,
+        isSuperuser: widget.isSuperuser,
         onThemeChanged: widget.onThemeChanged,
       ),
     );

@@ -19,12 +19,13 @@ class AuthService {
         final data = jsonDecode(response.body);
         // Сохраняем токен
         if (data['token'] != null) {
-          // Используем username из ответа, если есть, иначе email (для обратной совместимости)
           final userIdentifier = data['username'] ?? data['email'] ?? '';
+          final isSuperuser = data['isSuperuser'] == true;
           await StorageService.saveUserData(
             data['id'].toString(),
             userIdentifier,
             data['token'],
+            isSuperuser: isSuperuser,
           );
           // При обычном логине приватный доступ не выдаем (требуется отдельная разблокировка)
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), false);
@@ -261,6 +262,33 @@ class AuthService {
       } catch (e) {
         if (e is Exception) rethrow;
         throw Exception('Ошибка запроса сброса пароля');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Ошибка сети: $e');
+    }
+  }
+
+  /// Установить email для восстановления пароля
+  Future<void> setRecoveryEmail(String userId, String email) async {
+    final token = await StorageService.getToken();
+    if (token == null) throw Exception('Требуется авторизация');
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/auth/user/$userId/recovery-email'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'recoveryEmail': email.trim()}),
+      );
+      if (response.statusCode == 200) return;
+      try {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Ошибка');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Ошибка сохранения email');
       }
     } catch (e) {
       if (e is Exception) rethrow;

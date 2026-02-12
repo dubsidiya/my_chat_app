@@ -6,6 +6,19 @@ import 'storage_service.dart';
 class AdminService {
   final String baseUrl = ApiConfig.baseUrl;
 
+  /// Сбросить пароль пользователя (только суперпользователь)
+  Future<void> resetUserPassword(String username, String newPassword) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/reset-user-password'),
+      headers: headers,
+      body: jsonEncode({'username': username.trim(), 'newPassword': newPassword}),
+    );
+    if (response.statusCode == 200) return;
+    final body = _tryDecodeJson(utf8.decode(response.bodyBytes));
+    throw Exception(body?['message'] ?? 'Ошибка сброса пароля (${response.statusCode})');
+  }
+
   Map<String, dynamic>? _tryDecodeJson(String body) {
     if (body.isEmpty) return null;
     try {

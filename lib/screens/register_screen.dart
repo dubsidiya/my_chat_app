@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
-import 'home_screen.dart';
+import 'main_tabs_screen.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -39,12 +39,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // После успешной регистрации получаем данные пользователя
         final userData = await StorageService.getUserData();
         if (userData != null && mounted) {
+          final userIdentifier = userData['email'] ?? userData['username'] ?? '';
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => HomeScreen(
+              builder: (_) => MainTabsScreen(
                 userId: userData['id']!,
-                userEmail: userData['email'] ?? userData['username'] ?? '',
+                userEmail: userIdentifier,
+                isSuperuser: userData['isSuperuser'] == 'true',
               ),
             ),
           );

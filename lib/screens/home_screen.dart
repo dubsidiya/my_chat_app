@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/chat.dart';
 import '../services/chats_service.dart';
 import '../services/auth_service.dart';
+import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
@@ -12,9 +13,10 @@ import 'package:intl/intl.dart';
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
-  final Function(bool)? onThemeChanged; // ✅ Callback для переключения темы
+  final bool isSuperuser;
+  final Function(bool)? onThemeChanged;
 
-  HomeScreen({required this.userId, required this.userEmail, this.onThemeChanged});
+  HomeScreen({required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -527,6 +529,102 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _adminResetPassword() async {
+    final usernameController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Сбросить пароль пользователя'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Введите логин пользователя и новый пароль. Только администратор может сбросить пароль.',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                ),
+                SizedBox(height: 16),
+                TextField(
+                  controller: usernameController,
+                  decoration: InputDecoration(
+                    labelText: 'Логин пользователя',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  autofocus: true,
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: passwordController,
+                  decoration: InputDecoration(
+                    labelText: 'Новый пароль',
+                    prefixIcon: Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  obscureText: true,
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: confirmController,
+                  decoration: InputDecoration(
+                    labelText: 'Повторите пароль',
+                    prefixIcon: Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  obscureText: true,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final username = usernameController.text.trim();
+                final password = passwordController.text;
+                final confirm = confirmController.text;
+                if (username.isEmpty) return;
+                if (password.length < 6) return;
+                if (password != confirm) return;
+                Navigator.pop(ctx, {'username': username, 'newPassword': password});
+              },
+              child: Text('Сбросить пароль'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await AdminService().resetUserPassword(result['username']!, result['newPassword']!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Пароль успешно изменён'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
   Future<void> _deleteAccount() async {
     // Показываем диалог с вводом пароля для подтверждения
     final password = await showDialog<String>(
@@ -882,6 +980,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 _logout();
               } else if (value == 'change_password') {
                 await _changePassword();
+              } else if (value == 'admin_reset_password') {
+                await _adminResetPassword();
               } else if (value == 'delete_account') {
                 await _deleteAccount();
               }
@@ -978,6 +1078,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+              if (widget.isSuperuser)
+                PopupMenuItem<String>(
+                  value: 'admin_reset_password',
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.admin_panel_settings_rounded, color: Colors.teal, size: 20),
+                      ),
+                      SizedBox(width: 12),
+                      Text('Сбросить пароль пользователя',
+                          style: TextStyle(fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
               PopupMenuItem<String>(
                 value: 'delete_account',
                 child: Row(

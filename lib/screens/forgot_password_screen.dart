@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 
@@ -16,20 +15,24 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _confirmController = TextEditingController();
 
   String? _errorMessage;
+  String? _successMessage;
   bool _isLoading = false;
-  String? _resetToken;
+  bool _codeRequested = false;
 
   void _requestCode() async {
     final username = _usernameController.text.trim();
     if (username.isEmpty) {
-      setState(() => _errorMessage = 'Введите логин');
+      setState(() {
+        _errorMessage = 'Введите логин';
+        _successMessage = null;
+      });
       return;
     }
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _resetToken = null;
+      _successMessage = null;
     });
 
     try {
@@ -37,18 +40,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _resetToken = result['resetToken'] as String?;
-        if (_resetToken != null) {
-          _tokenController.text = _resetToken!;
-        } else {
-          _errorMessage = 'Проверьте правильность логина и попробуйте снова';
-        }
+        _codeRequested = true;
+        _successMessage = result['message'] as String? ?? 'Проверьте почту и введите код.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _successMessage = null;
       });
     }
   }
@@ -59,7 +59,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final confirm = _confirmController.text;
 
     if (token.isEmpty) {
-      setState(() => _errorMessage = 'Введите код сброса');
+      setState(() => _errorMessage = 'Введите код из письма');
       return;
     }
     if (password.length < 6) {
@@ -140,7 +140,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Введите логин и получите код',
+                    'Код придёт на email',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.white.withOpacity(0.9),
@@ -172,14 +172,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           SizedBox(
                             height: 48,
                             child: ElevatedButton(
-                              onPressed: _isLoading ? null : _requestCode,
+                              onPressed: _isLoading && !_codeRequested ? null : _requestCode,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Color(0xFF667eea),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: _isLoading && _resetToken == null
+                              child: _isLoading && !_codeRequested
                                   ? SizedBox(
                                       width: 24,
                                       height: 24,
@@ -188,49 +188,39 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                         color: Colors.white,
                                       ),
                                     )
-                                  : Text('Получить код'),
+                                  : Text('Отправить код на почту'),
                             ),
                           ),
-                          if (_resetToken != null) ...[
-                            SizedBox(height: 24),
-                            Text(
-                              'Код сброса (действует 15 минут):',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            GestureDetector(
-                              onLongPress: () {
-                                Clipboard.setData(
-                                    ClipboardData(text: _resetToken ?? ''));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Код скопирован')),
-                                );
-                              },
-                              child: Container(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
+                          if (_codeRequested) ...[
+                            if (_successMessage != null) ...[
+                              SizedBox(height: 20),
+                              Container(
+                                padding: EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
+                                  color: Colors.green.shade50,
                                   borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green.shade200),
                                 ),
-                                child: SelectableText(
-                                  _resetToken!,
-                                  style: TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 14,
-                                  ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.mark_email_read, color: Colors.green.shade700),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _successMessage!,
+                                        style: TextStyle(color: Colors.green.shade800),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
+                            ],
                             SizedBox(height: 20),
                             TextField(
                               controller: _tokenController,
                               decoration: InputDecoration(
-                                labelText: 'Код сброса',
-                                hintText: 'Вставьте или введите код',
+                                labelText: 'Код из письма',
+                                hintText: 'Введите код, который пришёл на почту',
                                 prefixIcon: Icon(Icons.password),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -276,7 +266,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: _isLoading && _resetToken != null
+                                child: _isLoading
                                     ? SizedBox(
                                         width: 24,
                                         height: 24,

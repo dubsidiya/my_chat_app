@@ -7,6 +7,7 @@ class StorageService {
   static const String _userIdKey = 'user_id';
   static const String _userEmailKey = 'user_email';
   static const String _tokenKey = 'auth_token';
+  static const String _isSuperuserKey = 'is_superuser';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
   static const String _chatOrderPrefix = 'chat_order_';
@@ -14,11 +15,12 @@ class StorageService {
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
   // Сохранение данных пользователя
-  static Future<void> saveUserData(String userId, String userEmail, String token) async {
+  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userIdKey, userId);
       await prefs.setString(_userEmailKey, userEmail);
+      await prefs.setBool(_isSuperuserKey, isSuperuser);
       // Токен: на mobile/desktop — secure storage, на web — shared_preferences
       if (kIsWeb) {
         await prefs.setString(_tokenKey, token);
@@ -47,10 +49,12 @@ class StorageService {
       final token = await getToken();
 
       if (userId != null && userEmail != null && token != null) {
+        final isSuperuser = prefs.getBool(_isSuperuserKey) ?? false;
         return {
           'id': userId,
           'email': userEmail,
           'token': token,
+          'isSuperuser': isSuperuser.toString(),
         };
       }
       return null;
@@ -97,6 +101,7 @@ class StorageService {
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_tokenKey);
+    await prefs.remove(_isSuperuserKey);
     if (!kIsWeb) {
       await _secure.delete(key: _tokenKey);
     }
