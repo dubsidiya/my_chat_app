@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -327,7 +328,33 @@ class _LoginScreenState extends State<LoginScreen> {
                             obscureText: true,
                           ),
                               ),
-                              SizedBox(height: 28),
+                              SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ForgotPasswordScreen(),
+                                      ),
+                                    );
+                                  },
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: Text(
+                                    'Забыли пароль?',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF667eea),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: 20),
                           if (_errorMessage != null)
                             Container(
                                   padding: EdgeInsets.all(14),

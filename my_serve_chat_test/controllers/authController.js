@@ -147,6 +147,96 @@ export const login = async (req, res) => {
   }
 };
 
+const RESET_TOKEN_EXPIRY_MINUTES = 15;
+const RESET_TOKEN_BYTES = 16; // 32 hex chars
+
+// Запрос на сброс пароля: создаёт токен, возвращает его пользователю
+export const requestPasswordReset = async (req, res) => {
+  const { username } = req.body || {};
+  const raw = (username || '').toString().trim();
+  if (!raw || raw.length > 255) {
+    return res.status(400).json({ message: 'Укажите логин' });
+  }
+  const normalizedUsername = raw.toLowerCase();
+
+  try {
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE LOWER(TRIM(email)) = $1',
+      [normalizedUsername]
+    );
+    if (userResult.rows.length === 0) {
+      // Не раскрываем существование пользователя
+      return res.status(200).json({
+        message: 'Если аккаунт существует, на этот логин отправлен код сброса',
+        resetToken: null,
+      });
+    }
+    const userId = userResult.rows[0].id;
+
+    const plainToken = crypto.randomBytes(RESET_TOKEN_BYTES).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(plainToken).digest('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+
+    await pool.query(
+      'DELETE FROM password_reset_tokens WHERE user_id = $1',
+      [userId]
+    );
+    await pool.query(
+      'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [userId, tokenHash, expiresAt]
+    );
+
+    return res.status(200).json({
+      message: 'Код сброса создан. Введите его на экране сброса пароля.',
+      resetToken: plainToken,
+    });
+  } catch (error) {
+    console.error('Ошибка requestPasswordReset:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Сброс пароля по токену
+export const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  const rawToken = (token || '').toString().trim();
+  if (!rawToken) {
+    return res.status(400).json({ message: 'Код сброса обязателен' });
+  }
+  const passwordValidation = validatePassword(newPassword);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ message: passwordValidation.message });
+  }
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const result = await pool.query(
+      `SELECT prt.user_id, u.email
+       FROM password_reset_tokens prt
+       JOIN users u ON u.id = prt.user_id
+       WHERE prt.token_hash = $1 AND prt.expires_at > NOW()`,
+      [tokenHash]
+    );
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        message: 'Код сброса недействителен или истёк. Запросите новый код.',
+      });
+    }
+    const { user_id: userId } = result.rows[0];
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, userId]);
+    await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
+
+    return res.status(200).json({
+      message: 'Пароль успешно изменён. Войдите с новым паролем.',
+    });
+  } catch (error) {
+    console.error('Ошибка resetPassword:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // Разблокировка приватного доступа (выдача токена с privateAccess=true)
 export const unlockPrivateAccess = async (req, res) => {
   try {

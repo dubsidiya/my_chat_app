@@ -241,6 +241,57 @@ class AuthService {
     }
   }
 
+  /// Запрос кода сброса пароля (по логину)
+  /// Возвращает resetToken если пользователь найден, иначе null
+  Future<Map<String, dynamic>> requestPasswordReset(String username) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/request-password-reset'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username.trim()}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data;
+      }
+      try {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Ошибка запроса');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Ошибка запроса сброса пароля');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Ошибка сети: $e');
+    }
+  }
+
+  /// Сброс пароля по коду
+  Future<void> resetPassword(String token, String newPassword) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/reset-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'token': token.trim(), 'newPassword': newPassword}),
+      );
+
+      if (response.statusCode == 200) return;
+
+      try {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Ошибка сброса');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Ошибка сброса пароля');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Ошибка сети: $e');
+    }
+  }
+
   /// Запрос на сервер для получения токена с privateAccess=true
   Future<void> unlockPrivateAccess(String code) async {
     final token = await StorageService.getToken();

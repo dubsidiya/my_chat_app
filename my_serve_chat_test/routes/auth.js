@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess } from '../controllers/authController.js';
+import { register, login, requestPasswordReset, resetPassword, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -21,6 +21,8 @@ const unlockLimiter = rateLimit({
 // Публичные эндпоинты (не требуют аутентификации)
 router.post('/register', register);
 router.post('/login', login);
+router.post('/request-password-reset', requestPasswordReset);
+router.post('/reset-password', resetPassword);
 
 // Защищенные эндпоинты (требуют JWT токен)
 router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - получение всех пользователей
