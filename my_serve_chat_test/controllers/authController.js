@@ -46,13 +46,9 @@ export const register = async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const recoveryEmailRaw = (req.body.recoveryEmail || '').toString().trim().toLowerCase();
-    const recoveryEmail = recoveryEmailRaw && recoveryEmailRaw.includes('@') && recoveryEmailRaw.length >= 5 ? recoveryEmailRaw : null;
     const result = await pool.query(
-      recoveryEmail
-        ? 'INSERT INTO users (email, password, recovery_email) VALUES ($1, $2, $3) RETURNING id, email'
-        : 'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
-      recoveryEmail ? [normalizedUsername, hashedPassword, recoveryEmail] : [normalizedUsername, hashedPassword]
+      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+      [normalizedUsername, hashedPassword]
     );
 
     // Генерируем JWT токен (используем логин вместо email)
@@ -224,30 +220,6 @@ export const unlockPrivateAccess = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка unlockPrivateAccess:', error);
-    return res.status(500).json({ message: 'Ошибка сервера' });
-  }
-};
-
-// Установить email для восстановления пароля (только владелец аккаунта)
-export const setRecoveryEmail = async (req, res) => {
-  const userId = req.params.userId;
-  const { recoveryEmail } = req.body || {};
-  const currentUserId = req.user?.userId;
-  if (!currentUserId || currentUserId.toString() !== userId.toString()) {
-    return res.status(403).json({ message: 'Можно изменить только свой email' });
-  }
-  const raw = (recoveryEmail ?? '').toString().trim().toLowerCase();
-  if (!raw || !raw.includes('@') || raw.length < 5) {
-    return res.status(400).json({ message: 'Укажите корректный email' });
-  }
-  try {
-    await pool.query(
-      'UPDATE users SET recovery_email = $1 WHERE id = $2',
-      [raw, userId]
-    );
-    return res.status(200).json({ message: 'Email для восстановления сохранён' });
-  } catch (error) {
-    console.error('Ошибка setRecoveryEmail:', error.message);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
