@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/message.dart';
 
@@ -11,7 +12,10 @@ class LocalMessagesService {
   static Future<void> init() async {
     await Hive.initFlutter();
     _box = await Hive.openBox(_boxName);
-    print('✅ Локальное хранилище сообщений инициализировано');
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('LocalMessagesService: init OK');
+    }
   }
 
   /// Сохранение сообщений чата в кэш
@@ -24,9 +28,15 @@ class LocalMessagesService {
       
       await _box!.put('chat_$chatId', messagesJson);
       await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
-      print('✅ Сохранено ${messages.length} сообщений для чата $chatId');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache saved: ${messages.length} messages for $chatId');
+      }
     } catch (e) {
-      print('❌ Ошибка сохранения сообщений в кэш: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache save error: $e');
+      }
     }
   }
 
@@ -37,7 +47,10 @@ class LocalMessagesService {
     try {
       final messagesJson = _box!.get('chat_$chatId') as List?;
       if (messagesJson == null) {
-        print('⚠️ Кэш для чата $chatId пуст');
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Cache empty for $chatId');
+        }
         return [];
       }
       
@@ -53,10 +66,16 @@ class LocalMessagesService {
         }
         return Message.fromJson(json as Map<String, dynamic>);
       }).toList();
-      print('✅ Загружено ${messages.length} сообщений из кэша для чата $chatId');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache loaded: ${messages.length} for $chatId');
+      }
       return messages;
     } catch (e) {
-      print('❌ Ошибка загрузки сообщений из кэша: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache load error: $e');
+      }
       return [];
     }
   }
@@ -110,9 +129,15 @@ class LocalMessagesService {
       
       await _box!.put('chat_$chatId', messages);
       await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
-      print('✅ Сообщение ${message.id} добавлено/обновлено в кэше');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache: message ${message.id} added/updated');
+      }
     } catch (e) {
-      print('❌ Ошибка добавления сообщения в кэш: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache add error: $e');
+      }
     }
   }
 
@@ -124,9 +149,15 @@ class LocalMessagesService {
       final messages = await getMessages(chatId);
       messages.removeWhere((m) => m.id == messageId);
       await saveMessages(chatId, messages);
-      print('✅ Сообщение $messageId удалено из кэша');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache: message $messageId removed');
+      }
     } catch (e) {
-      print('❌ Ошибка удаления сообщения из кэша: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache remove error: $e');
+      }
     }
   }
 
@@ -162,13 +193,19 @@ class LocalMessagesService {
         
         await _box!.put('chat_$chatId', messages);
         await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
-        print('✅ Сообщение ${message.id} обновлено в кэше');
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Cache: message ${message.id} updated');
+        }
       } else {
         // Если сообщение не найдено, добавляем его
         await addMessage(chatId, message);
       }
     } catch (e) {
-      print('❌ Ошибка обновления сообщения в кэше: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache update error: $e');
+      }
     }
   }
 
@@ -179,9 +216,15 @@ class LocalMessagesService {
     try {
       await _box!.delete('chat_$chatId');
       await _box!.delete('chat_${chatId}_timestamp');
-      print('✅ Кэш чата $chatId очищен');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache cleared for $chatId');
+      }
     } catch (e) {
-      print('❌ Ошибка очистки кэша чата: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache clear error: $e');
+      }
     }
   }
 
@@ -195,7 +238,10 @@ class LocalMessagesService {
         return DateTime.parse(timestamp);
       }
     } catch (e) {
-      print('❌ Ошибка получения времени обновления: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache timestamp error: $e');
+      }
     }
     return null;
   }
@@ -206,9 +252,15 @@ class LocalMessagesService {
     
     try {
       await _box!.clear();
-      print('✅ Весь кэш сообщений очищен');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache: all cleared');
+      }
     } catch (e) {
-      print('❌ Ошибка очистки кэша: $e');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache clearAll error: $e');
+      }
     }
   }
 

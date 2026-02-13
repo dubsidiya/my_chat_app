@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
@@ -23,6 +23,13 @@ import '../services/storage_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
+
+/// Элементы списка сообщений: кнопка «ещё», индикатор загрузки, заголовок даты или сообщение
+class _ListEntry {}
+class _LoadMoreEntry extends _ListEntry {}
+class _LoadingEntry extends _ListEntry {}
+class _DateHeaderEntry extends _ListEntry { final String label; _DateHeaderEntry(this.label); }
+class _MessageEntry extends _ListEntry { final int index; _MessageEntry(this.index); }
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -104,6 +111,60 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sentTyping = false;
   bool _subscribedToChatRealtime = false;
   late String _chatTitle;
+
+  List<_ListEntry> get _listEntries {
+    final list = <_ListEntry>[];
+    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) list.add(_LoadMoreEntry());
+    if (_isLoadingMore) list.add(_LoadingEntry());
+    String? lastDateKey;
+    for (int i = 0; i < _messages.length; i++) {
+      final msg = _messages[i];
+      final dt = DateTime.tryParse(msg.createdAt)?.toLocal();
+      if (dt != null) {
+        final key = '${dt.year}-${dt.month}-${dt.day}';
+        if (key != lastDateKey) {
+          lastDateKey = key;
+          final label = _formatDateHeader(dt);
+          list.add(_DateHeaderEntry(label));
+        }
+      }
+      list.add(_MessageEntry(i));
+    }
+    return list;
+  }
+
+  static String _formatDateHeader(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final d = DateTime(dt.year, dt.month, dt.day);
+    if (d == today) return 'Сегодня';
+    if (d == yesterday) return 'Вчера';
+    return DateFormat('d MMMM', 'ru').format(dt);
+  }
+
+  Widget _buildDateHeader(String label) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _accent1.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _accent1.withOpacity(0.95),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _showInviteDialog() async {
     if (!mounted) return;
@@ -445,7 +506,7 @@ class _ChatScreenState extends State<ChatScreen> {
         String? error;
 
         Future<void> runSearch(StateSetter setModalState, String q) async {
-          final query = q.trim();
+          final query = q.trim().toLowerCase();
           if (query.isEmpty) {
             setModalState(() {
               results = [];
@@ -459,15 +520,27 @@ class _ChatScreenState extends State<ChatScreen> {
             error = null;
           });
           try {
-            final found = await _messagesService.searchMessages(widget.chatId, query, limit: 30);
+            final found = await _messagesService.searchMessages(widget.chatId, q.trim(), limit: 30);
             setModalState(() {
               results = found;
               isLoading = false;
             });
           } catch (e) {
+            // Локальный поиск по уже загруженным сообщениям (офлайн / при ошибке API)
+            final local = _messages.where((m) {
+              final content = (m.content).toLowerCase();
+              final fileName = (m.fileName ?? '').toLowerCase();
+              return content.contains(query) || fileName.contains(query);
+            }).take(30).map((m) => {
+              'message_id': m.id,
+              'sender_email': m.senderEmail,
+              'content_snippet': m.content.length > 80 ? '${m.content.substring(0, 80)}…' : m.content,
+              'created_at': m.createdAt,
+            }).toList();
             setModalState(() {
+              results = local;
               isLoading = false;
-              error = 'Ошибка поиска';
+              error = local.isEmpty ? 'Ничего не найдено' : null;
             });
           }
         }
@@ -2243,7 +2316,10 @@ class _ChatScreenState extends State<ChatScreen> {
     
     try {
       // ✅ Отправляем сообщение и получаем ответ от сервера
-      print('🔍 Calling sendMessage service: chatId=${widget.chatId}, text="$text", imageUrl=$imageUrl, replyToMessageId=$replyToMessageId');
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId');
+      }
       final sentMessage = await _messagesService.sendMessage(
         widget.chatId, 
         text, 
@@ -3286,68 +3362,53 @@ class _ChatScreenState extends State<ChatScreen> {
                           key: ValueKey('messages_list_${widget.chatId}'),
                           controller: _scrollController,
                           reverse: false, // старые сверху, новые снизу
-                          itemCount: _messages.length +
-                              (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty ? 1 : 0) + // кнопка
-                              (_isLoadingMore ? 1 : 0), // индикатор
+                          itemCount: _listEntries.length,
                         itemBuilder: (context, index) {
-                          int cursor = 0;
-
-                          // Кнопка "Загрузить старые"
-                          if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) {
-                            if (index == cursor) {
-                              return Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _loadMoreMessages,
-                                    icon: Icon(Icons.arrow_upward, size: 18),
-                                    label: Text('Загрузить старые сообщения'),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: _accent1,
-                                      side: BorderSide(color: _accent1.withOpacity(0.35), width: 1.5),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
+                          final entry = _listEntries[index];
+                          if (entry is _LoadMoreEntry) {
+                            return Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: OutlinedButton.icon(
+                                  onPressed: _loadMoreMessages,
+                                  icon: Icon(Icons.arrow_upward, size: 18),
+                                  label: Text('Загрузить старые сообщения'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _accent1,
+                                    side: BorderSide(color: _accent1.withOpacity(0.35), width: 1.5),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
                                 ),
-                              );
-                            }
-                            cursor++;
+                              ),
+                            );
                           }
-
-                          // Индикатор подгрузки
-                          if (_isLoadingMore) {
-                            if (index == cursor) {
-                              return Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      CircularProgressIndicator(),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Загрузка сообщений...',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 12,
-                                        ),
+                          if (entry is _LoadingEntry) {
+                            return Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Загрузка сообщений...',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              );
-                            }
-                            cursor++;
+                              ),
+                            );
                           }
-
-                          // Сообщения
-                          final msgIndex = index - cursor;
-                          if (msgIndex < 0 || msgIndex >= _messages.length) {
-                            return SizedBox.shrink();
+                          if (entry is _DateHeaderEntry) {
+                            return _buildDateHeader(entry.label);
                           }
-                          final msg = _messages[msgIndex];
+                          final msg = _messages[(entry as _MessageEntry).index];
                     final isMine = msg.senderEmail == widget.userEmail;
 
                 final isHighlighted = _highlightMessageId == msg.id;
@@ -3615,13 +3676,15 @@ class _ChatScreenState extends State<ChatScreen> {
                                             );
                                           },
                                           errorBuilder: (context, error, stackTrace) {
-                                            print('Image load error: $error');
-                                            print('Image URL: ${msg.imageUrl}');
-                                            print('Is Web: $kIsWeb');
-                                            print('Stack trace: $stackTrace');
-                                            if (kIsWeb) {
-                                              print('⚠️  ВЕБ: Проверьте CORS настройки в Яндекс Облаке');
-                                              print('   Убедитесь, что бакет публичный и CORS настроен');
+                                            if (kDebugMode) {
+                                              // ignore: avoid_print
+                                              print('Image load error: $error');
+                                              // ignore: avoid_print
+                                              print('Image URL: ${msg.imageUrl}');
+                                              if (kIsWeb) {
+                                                // ignore: avoid_print
+                                                print('⚠️ ВЕБ: проверьте CORS в Яндекс Облаке');
+                                              }
                                             }
                                             return Container(
                                               width: 250,
@@ -3637,11 +3700,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                                     style: TextStyle(fontSize: 12),
                                                   ),
                                                   SizedBox(height: 4),
-                                                  Text(
-                                                    'URL: ${msg.imageUrl?.substring(0, 50)}...',
-                                                    style: TextStyle(fontSize: 10, color: Colors.grey),
-                                                    textAlign: TextAlign.center,
-                                                  ),
+                                                  if (kDebugMode && msg.imageUrl != null)
+                                                    Text(
+                                                      'URL: ${msg.imageUrl!.length > 50 ? '${msg.imageUrl!.substring(0, 50)}...' : msg.imageUrl}',
+                                                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                                                      textAlign: TextAlign.center,
+                                                    ),
                                                   if (kIsWeb) ...[
                                                     SizedBox(height: 4),
                                                     Text(
@@ -4017,6 +4081,29 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // ✅ Индикатор очереди офлайн: сообщения будут отправлены при подключении
+                    if (_messages.any((m) => m.id.startsWith('temp_')))
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.withOpacity(0.35)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.cloud_off_rounded, size: 18, color: Colors.orange.shade700),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'В очереди: ${_messages.where((m) => m.id.startsWith('temp_')).length} сообщ. — отправятся при подключении',
+                                style: TextStyle(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     // ✅ Превью ответа на сообщение
                     if (_replyToMessage != null)
                       Container(
@@ -4388,7 +4475,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             child: IconButton(
                               icon: Icon(Icons.send, color: Colors.white),
                               onPressed: () {
-                                print('🔍 Send button pressed!');
                                 if (_isRecordingVoice) return;
                                 _sendMessage();
                               },

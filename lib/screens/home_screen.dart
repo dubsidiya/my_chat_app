@@ -28,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Chat> _chats = [];
   List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
   bool _isLoading = false;
+  String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 
@@ -149,8 +150,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadChats() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
-    
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final chats = await _chatsService.fetchChats(widget.userId);
       final order = await StorageService.getChatOrder(widget.userId);
@@ -158,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _chats = chats;
           _chatOrder = order;
+          _loadError = null;
           if (_chatOrder.isEmpty && _chats.isNotEmpty) {
             _chatOrder = _chats.map((c) => c.id).toList();
           }
@@ -165,13 +169,20 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка при загрузке чатов: $e')),
-      );
+        setState(() => _loadError = e.toString().replaceFirst('Exception: ', ''));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при загрузке чатов'),
+            action: SnackBarAction(
+              label: 'Повторить',
+              onPressed: _loadChats,
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) {
-      setState(() => _isLoading = false);
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -1146,6 +1157,45 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             )
+          : _loadError != null && _chats.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.wifi_off_rounded, size: 64, color: Colors.orange.shade400),
+                        SizedBox(height: 24),
+                        Text(
+                          'Не удалось загрузить чаты',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade800,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          _loadError!,
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: _loadChats,
+                          icon: Icon(Icons.refresh_rounded, size: 20),
+                          label: Text('Повторить'),
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
           : _chats.isEmpty
               ? Center(
                   child: Padding(

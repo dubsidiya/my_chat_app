@@ -40,6 +40,8 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _isDarkMode = false;
+  ThemeData? _lightTheme;
+  ThemeData? _darkTheme;
 
   @override
   void initState() {
@@ -65,10 +67,8 @@ class _MyAppState extends State<MyApp> {
     StorageService.saveThemeMode(isDark);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    ThemeData buildTheme({required Brightness brightness}) {
-      const seed = Color(0xFF667eea);
+  ThemeData _buildTheme(Brightness brightness) {
+    const seed = Color(0xFF667eea);
       final isDark = brightness == Brightness.dark;
       final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
 
@@ -227,13 +227,18 @@ class _MyAppState extends State<MyApp> {
           ),
         ),
       );
-    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _lightTheme ??= _buildTheme(Brightness.light);
+    _darkTheme ??= _buildTheme(Brightness.dark);
 
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Chat App',
-      theme: buildTheme(brightness: Brightness.light),
-      darkTheme: buildTheme(brightness: Brightness.dark),
+      theme: _lightTheme!,
+      darkTheme: _darkTheme!,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: FutureBuilder<Map<String, String>?>(
         future: StorageService.getUserData(),
