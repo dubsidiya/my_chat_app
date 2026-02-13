@@ -15,12 +15,14 @@ import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/chats_service.dart';
 import '../services/storage_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
+import '../services/notification_feedback_service.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 
@@ -112,7 +114,18 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _subscribedToChatRealtime = false;
   late String _chatTitle;
 
+  List<_ListEntry>? _cachedListEntries;
+  int _listEntriesCacheKey = -1;
+
   List<_ListEntry> get _listEntries {
+    final len = _messages.length;
+    final key = len ^ (_hasMoreMessages ? 0x10000 : 0) ^ (_isLoadingMore ? 0x20000 : 0) ^
+        (len > 0 ? _messages.first.id.hashCode : 0) ^
+        (len > 0 ? _messages.last.id.hashCode : 0);
+    if (_cachedListEntries != null && _listEntriesCacheKey == key) {
+      return _cachedListEntries!;
+    }
+    _listEntriesCacheKey = key;
     final list = <_ListEntry>[];
     if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) list.add(_LoadMoreEntry());
     if (_isLoadingMore) list.add(_LoadingEntry());
@@ -130,6 +143,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       list.add(_MessageEntry(i));
     }
+    _cachedListEntries = list;
     return list;
   }
 
@@ -425,7 +439,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     } catch (e) {
       // Не критично — presence/typing просто будет без имён
-      print('Ошибка загрузки участников (для presence/typing): $e');
+      if (kDebugMode) print('Ошибка загрузки участников (для presence/typing): $e');
     }
   }
 
@@ -484,7 +498,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       });
     } catch (e) {
-      print('Ошибка перехода к сообщению: $e');
+      if (kDebugMode) print('Ошибка перехода к сообщению: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось перейти к сообщению')),
@@ -667,7 +681,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-      print('Ошибка загрузки закрепленных сообщений: $e');
+      if (kDebugMode) print('Ошибка загрузки закрепленных сообщений: $e');
     }
   }
   
@@ -676,7 +690,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await _messagesService.markChatAsRead(widget.chatId);
     } catch (e) {
-      print('Ошибка отметки чата как прочитанного: $e');
+      if (kDebugMode) print('Ошибка отметки чата как прочитанного: $e');
       // Не показываем ошибку пользователю, это не критично
     }
   }
@@ -690,9 +704,9 @@ class _ChatScreenState extends State<ChatScreen> {
       (event) {
         if (!mounted) return;
         try {
-          print('WebSocket received: $event');
+          if (kDebugMode) print('WebSocket received: $event');
           final data = jsonDecode(event);
-          print('Parsed WebSocket data: $data');
+          if (kDebugMode) print('Parsed WebSocket data: $data');
           
           // Проверяем тип сообщения
           final messageType = data['type'];
@@ -756,11 +770,11 @@ class _ChatScreenState extends State<ChatScreen> {
             final currentChatId = widget.chatId.toString();
             
             if (chatId == currentChatId && deletedMessageId != null) {
-              print('Message deleted notification: $deletedMessageId');
+              if (kDebugMode) print('Message deleted notification: $deletedMessageId');
               if (mounted) {
                 setState(() {
                   _messages.removeWhere((m) => m.id.toString() == deletedMessageId);
-                  print('Message removed from list. Remaining messages: ${_messages.length}');
+                  if (kDebugMode) print('Message removed from list. Remaining messages: ${_messages.length}');
                 });
                 
                 // ✅ Удаляем сообщение из кэша
@@ -961,13 +975,13 @@ class _ChatScreenState extends State<ChatScreen> {
           final chatId = data['chat_id']?.toString() ?? data['chatId']?.toString();
           final currentChatId = widget.chatId.toString();
           
-          print('WebSocket chat_id: $chatId, current chat_id: $currentChatId');
+          if (kDebugMode) print('WebSocket chat_id: $chatId, current chat_id: $currentChatId');
           
           if (chatId == currentChatId) {
-            print('Message is for current chat');
+            if (kDebugMode) print('Message is for current chat');
             try {
               final message = Message.fromJson(data);
-              print('Parsed message: ${message.id} - ${message.content}');
+              if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               
               if (mounted) {
                 setState(() {
@@ -985,8 +999,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   
                   if (tempIndex != -1) {
                     // ✅ Заменяем временное сообщение на реальное
-                    print('✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}');
-                    print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
+                    if (kDebugMode) print('✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}');
+                    if (kDebugMode) print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
                     
                     // ✅ Создаем новый список для принудительного обновления UI
                     final newMessages = List<Message>.from(_messages);
@@ -1001,7 +1015,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                     
                     _messages = newMessages;
-                    print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
+                    if (kDebugMode) print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
                     
                     // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
                     Future.delayed(Duration(milliseconds: 500), () {
@@ -1025,14 +1039,19 @@ class _ChatScreenState extends State<ChatScreen> {
                       
                       if (hasMatchingTemp) {
                         // ✅ Есть временное сообщение - не добавляем дубликат, оно будет заменено выше
-                        print('⚠️ WebSocket: Found matching temp message, skipping duplicate add');
+                        if (kDebugMode) print('⚠️ WebSocket: Found matching temp message, skipping duplicate add');
                       } else {
                         // ✅ Добавляем сообщение только если нет временного
                         final newMessages = List<Message>.from(_messages);
                         newMessages.insert(0, message); // Добавляем в начало (reverse список)
                         _messages = newMessages;
-                        print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
-                        
+                        if (kDebugMode) {
+                          if (kDebugMode) print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
+                        }
+                        // Звук/вибрация при новом сообщении от другого пользователя
+                        if (message.userId != widget.userId.toString()) {
+                          NotificationFeedbackService.onNewMessage();
+                        }
                         // ✅ Сохраняем новое сообщение в кэш с задержкой
                         Future.delayed(Duration(milliseconds: 500), () {
                           LocalMessagesService.addMessage(widget.chatId, message);
@@ -1053,28 +1072,28 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
                         
                         _messages = newMessages;
-                        print('✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}');
+                        if (kDebugMode) print('✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}');
                       } else {
-                        print('⚠️ WebSocket: Message exists check failed, but index not found');
+                        if (kDebugMode) print('⚠️ WebSocket: Message exists check failed, but index not found');
                       }
                     }
                   }
                 });
               }
             } catch (parseError) {
-              print('Error parsing Message from WebSocket data: $parseError');
-              print('Data: $data');
+              if (kDebugMode) print('Error parsing Message from WebSocket data: $parseError');
+              if (kDebugMode) print('Data: $data');
             }
           } else {
-            print('Message is for different chat: $chatId (current: $currentChatId)');
+            if (kDebugMode) print('Message is for different chat: $chatId (current: $currentChatId)');
           }
         } catch (e) {
-          print('Error processing WebSocket message: $e');
-          print('Raw event: $event');
+          if (kDebugMode) print('Error processing WebSocket message: $e');
+          if (kDebugMode) print('Raw event: $event');
         }
       },
       onError: (error) {
-        print('WebSocket error: $error');
+        if (kDebugMode) print('WebSocket error: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Ошибка WebSocket: $error')),
@@ -1082,7 +1101,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       },
       onDone: () {
-        print('WebSocket connection closed');
+        if (kDebugMode) print('WebSocket connection closed');
       },
     );
 
@@ -1098,7 +1117,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_channel == null) return;
       _channel!.sink.add(jsonEncode(payload));
     } catch (e) {
-      print('Ошибка отправки WS payload: $e');
+      if (kDebugMode) print('Ошибка отправки WS payload: $e');
     }
   }
 
@@ -1248,10 +1267,10 @@ class _ChatScreenState extends State<ChatScreen> {
           // старые сверху, временные (новые) в конце
           _messages = [...cachedMessages, ...uniqueTempMessages];
         });
-        print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
+        if (kDebugMode) print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
       }
     } catch (e) {
-      print('⚠️ Ошибка загрузки из кэша: $e');
+      if (kDebugMode) print('⚠️ Ошибка загрузки из кэша: $e');
     }
     
     // ✅ Затем загружаем с сервера и обновляем
@@ -1293,7 +1312,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-      print('Error loading messages: $e');
+      if (kDebugMode) print('Error loading messages: $e');
       // ✅ Если ошибка, но есть кэш - не показываем ошибку
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1391,7 +1410,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-      print('Error loading more messages: $e');
+      if (kDebugMode) print('Error loading more messages: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1543,7 +1562,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       });
     } catch (e) {
-      print('Ошибка выбора файла: $e');
+      if (kDebugMode) print('Ошибка выбора файла: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось выбрать файл')),
@@ -1633,7 +1652,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // Декодируем изображение
       final originalImage = img.decodeImage(imageBytes);
       if (originalImage == null) {
-        print('⚠️  Не удалось декодировать изображение, возвращаем оригинал');
+        if (kDebugMode) print('⚠️  Не удалось декодировать изображение, возвращаем оригинал');
         return imageBytes;
       }
       
@@ -1655,7 +1674,7 @@ class _ChatScreenState extends State<ChatScreen> {
         
         final savedBytes = imageBytes.length - compressedBytes.length;
         if (savedBytes > 0) {
-          print('📦 Сжатие (качество): ${imageBytes.length} → ${compressedBytes.length} байт (${(savedBytes / imageBytes.length * 100).toStringAsFixed(1)}% меньше)');
+          if (kDebugMode) print('📦 Сжатие (качество): ${imageBytes.length} → ${compressedBytes.length} байт (${(savedBytes / imageBytes.length * 100).toStringAsFixed(1)}% меньше)');
         }
         return compressedBytes;
       }
@@ -1674,11 +1693,11 @@ class _ChatScreenState extends State<ChatScreen> {
       
       final savedBytes = imageBytes.length - compressedBytes.length;
       final savedPercent = (savedBytes / imageBytes.length * 100).toStringAsFixed(1);
-      print('📦 Сжатие изображения: ${imageBytes.length} → ${compressedBytes.length} байт ($savedPercent% меньше, ${originalImage.width}x${originalImage.height} → ${newWidth}x${newHeight})');
+      if (kDebugMode) print('📦 Сжатие изображения: ${imageBytes.length} → ${compressedBytes.length} байт ($savedPercent% меньше, ${originalImage.width}x${originalImage.height} → ${newWidth}x${newHeight})');
       
       return compressedBytes;
     } catch (e) {
-      print('⚠️  Ошибка сжатия изображения: $e, возвращаем оригинал');
+      if (kDebugMode) print('⚠️  Ошибка сжатия изображения: $e, возвращаем оригинал');
       return imageBytes; // Возвращаем оригинал при ошибке
     }
   }
@@ -2074,9 +2093,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage() async {
-    print('🔍 _sendMessage called');
+    if (kDebugMode) print('🔍 _sendMessage called');
     if (!mounted) {
-      print('⚠️ Widget not mounted, returning');
+      if (kDebugMode) print('⚠️ Widget not mounted, returning');
       return;
     }
     
@@ -2084,14 +2103,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
     final hasFile = _selectedFilePath != null || _selectedFileBytes != null;
     
-    print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
+    if (kDebugMode) print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
     
     if (text.isEmpty && !hasImage && !hasFile) {
-      print('⚠️ Text is empty and no attachments, returning');
+      if (kDebugMode) print('⚠️ Text is empty and no attachments, returning');
       return;
     }
     
-    print('✅ Proceeding with message send');
+    if (kDebugMode) print('✅ Proceeding with message send');
 
     // ✅ Останавливаем typing-индикатор перед отправкой
     if (_sentTyping) {
@@ -2273,10 +2292,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     
     if (mounted) {
-      print('🔍 Adding temp message to UI: id=$tempMessageId, content=$text');
-      print('🔍 Current messages count before: ${_messages.length}');
-      print('🔍 Was at bottom before adding: $wasAtBottom');
-      print('🔍 Saved scroll position: $savedScrollPosition');
+      if (kDebugMode) print('🔍 Adding temp message to UI: id=$tempMessageId, content=$text');
+      if (kDebugMode) print('🔍 Current messages count before: ${_messages.length}');
+      if (kDebugMode) print('🔍 Was at bottom before adding: $wasAtBottom');
+      if (kDebugMode) print('🔍 Saved scroll position: $savedScrollPosition');
       setState(() {
         // ✅ Создаем новый список для гарантированного обновления UI
         final newMessages = List<Message>.from(_messages);
@@ -2285,8 +2304,8 @@ class _ChatScreenState extends State<ChatScreen> {
         // Очищаем поле ответа
         _replyToMessage = null;
       });
-      print('✅ Temp message added to UI. New count: ${_messages.length}');
-      print('✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}');
+      if (kDebugMode) print('✅ Temp message added to UI. New count: ${_messages.length}');
+      if (kDebugMode) print('✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}');
       
       // После добавления сообщения нужно скроллить вниз, чтобы остаться внизу
       // (setState может сбросить позицию, поэтому нужно явно скроллить)
@@ -2300,9 +2319,9 @@ class _ChatScreenState extends State<ChatScreen> {
               // Если не был внизу - не скроллим, пользователь сам прокрутит
               if (wasAtBottom) {
                 _scrollController.jumpTo(maxScroll);
-                print('✅ Jumped to bottom (was at bottom, staying there). New maxScroll: $maxScroll');
+                if (kDebugMode) print('✅ Jumped to bottom (was at bottom, staying there). New maxScroll: $maxScroll');
               } else {
-                print('✅ Was not at bottom, keeping current position');
+                if (kDebugMode) print('✅ Was not at bottom, keeping current position');
               }
             }
           }
@@ -2318,7 +2337,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // ✅ Отправляем сообщение и получаем ответ от сервера
       if (kDebugMode) {
         // ignore: avoid_print
-        print('sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId');
+        if (kDebugMode) print('sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId');
       }
       final sentMessage = await _messagesService.sendMessage(
         widget.chatId, 
@@ -2330,7 +2349,7 @@ class _ChatScreenState extends State<ChatScreen> {
         fileSize: fileSize,
         fileMime: fileMime,
       );
-      print('🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}');
+      if (kDebugMode) print('🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}');
       
       if (mounted) {
         _controller.clear();
@@ -2354,20 +2373,20 @@ class _ChatScreenState extends State<ChatScreen> {
         
         // ✅ Если получили сообщение от сервера, обновляем временное сообщение
         if (sentMessage != null) {
-          print('✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}');
-          print('🔍 Looking for temp message with id: $tempMessageId');
-          print('🔍 Current messages count: ${_messages.length}');
-          print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
+          if (kDebugMode) print('✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}');
+          if (kDebugMode) print('🔍 Looking for temp message with id: $tempMessageId');
+          if (kDebugMode) print('🔍 Current messages count: ${_messages.length}');
+          if (kDebugMode) print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
           
           // ✅ Обновляем сразу, без WidgetsBinding, чтобы не потерять сообщение
           final tempIndex = _messages.indexWhere((m) => m.id == tempMessageId);
-          print('🔍 Looking for temp message with id: $tempMessageId');
-          print('🔍 Current messages count: ${_messages.length}');
-          print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
-          print('🔍 Temp message found at index: $tempIndex');
+          if (kDebugMode) print('🔍 Looking for temp message with id: $tempMessageId');
+          if (kDebugMode) print('🔍 Current messages count: ${_messages.length}');
+          if (kDebugMode) print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
+          if (kDebugMode) print('🔍 Temp message found at index: $tempIndex');
           
           if (tempIndex != -1) {
-            print('✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}');
+            if (kDebugMode) print('✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}');
             setState(() {
               // ✅ Создаем новый список для принудительного обновления UI
               final newMessages = List<Message>.from(_messages);
@@ -2382,13 +2401,13 @@ class _ChatScreenState extends State<ChatScreen> {
               
               _messages = newMessages;
             });
-            print('✅ Message updated in UI (new list created). Total messages: ${_messages.length}');
-            print('✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}');
+            if (kDebugMode) print('✅ Message updated in UI (new list created). Total messages: ${_messages.length}');
+            if (kDebugMode) print('✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}');
           } else {
             // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
             final existingIndex = _messages.indexWhere((m) => m.id == sentMessage.id);
             if (existingIndex != -1) {
-              print('⚠️ Message already exists at index $existingIndex');
+              if (kDebugMode) print('⚠️ Message already exists at index $existingIndex');
               // Обновляем сообщение на текущей позиции, без перемещения
               setState(() {
                 final newMessages = List<Message>.from(_messages);
@@ -2402,9 +2421,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 
                 _messages = newMessages;
               });
-              print('✅ Message updated in place at index $existingIndex');
+              if (kDebugMode) print('✅ Message updated in place at index $existingIndex');
             } else {
-              print('⚠️ Temp message not found and message not in list, adding it');
+              if (kDebugMode) print('⚠️ Temp message not found and message not in list, adding it');
               setState(() {
                 // ✅ Создаем новый список для принудительного обновления UI
                 final newMessages = List<Message>.from(_messages);
@@ -2418,7 +2437,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 
                 _messages = newMessages;
               });
-              print('✅ Message added to end. Total: ${_messages.length} (new list created)');
+              if (kDebugMode) print('✅ Message added to end. Total: ${_messages.length} (new list created)');
             }
           }
           
@@ -2434,10 +2453,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   // Используем wasAtBottom из области видимости выше
                   if (wasAtBottom) {
                     _scrollController.jumpTo(maxScroll);
-                    print('✅ Jumped to bottom after message update (was at bottom)');
+                    if (kDebugMode) print('✅ Jumped to bottom after message update (was at bottom)');
                   } else {
                     // Если не был внизу - не скроллим, пользователь сам прокрутит
-                    print('✅ Was not at bottom, keeping current position');
+                    if (kDebugMode) print('✅ Was not at bottom, keeping current position');
                   }
                 }
               }
@@ -2453,7 +2472,7 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           });
         } else {
-          print('⚠️ No message received from server response');
+          if (kDebugMode) print('⚠️ No message received from server response');
         }
         
         // ✅ Fallback: Если через 3 секунды временное сообщение все еще есть,
@@ -2461,7 +2480,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // (сообщение уже обновлено из ответа сервера выше)
         Future.delayed(Duration(seconds: 3), () {
           if (mounted && _messages.any((m) => m.id == tempMessageId)) {
-            print('⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response');
+            if (kDebugMode) print('⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response');
           }
         });
       }
@@ -2470,8 +2489,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // Также будет обновлено через WebSocket (если придет) для синхронизации с другими клиентами
       
     } catch (e, stackTrace) {
-      print('❌ Error sending message: $e');
-      print('❌ Stack trace: $stackTrace');
+      if (kDebugMode) print('❌ Error sending message: $e');
+      if (kDebugMode) print('❌ Stack trace: $stackTrace');
       
       // ✅ Удаляем временное сообщение при ошибке
       if (mounted) {
@@ -2937,7 +2956,7 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } catch (e) {
-      print('Ошибка удаления сообщения: $e');
+      if (kDebugMode) print('Ошибка удаления сообщения: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2993,7 +3012,7 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } catch (e) {
-      print('Ошибка очистки чата: $e');
+      if (kDebugMode) print('Ошибка очистки чата: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3052,7 +3071,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     } catch (e) {
-      print('Ошибка загрузки участников: $e');
+      if (kDebugMode) print('Ошибка загрузки участников: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3105,7 +3124,7 @@ class _ChatScreenState extends State<ChatScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      print('Ошибка выхода из чата: $e');
+      if (kDebugMode) print('Ошибка выхода из чата: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3164,7 +3183,7 @@ class _ChatScreenState extends State<ChatScreen> {
             );
           }
         } catch (e) {
-          print('Ошибка добавления участников: $e');
+          if (kDebugMode) print('Ошибка добавления участников: $e');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -3176,7 +3195,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     } catch (e) {
-      print('Ошибка загрузки пользователей: $e');
+      if (kDebugMode) print('Ошибка загрузки пользователей: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3362,6 +3381,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           key: ValueKey('messages_list_${widget.chatId}'),
                           controller: _scrollController,
                           reverse: false, // старые сверху, новые снизу
+                          cacheExtent: 800, // Предзагрузка элементов для плавного скролла
+                          addAutomaticKeepAlives: false, // Меньше памяти при длинных списках
                           itemCount: _listEntries.length,
                         itemBuilder: (context, index) {
                           final entry = _listEntries[index];
@@ -3412,7 +3433,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     final isMine = msg.senderEmail == widget.userEmail;
 
                 final isHighlighted = _highlightMessageId == msg.id;
-                return AnimatedContainer(
+                return RepaintBoundary(
+                  child: AnimatedContainer(
                   key: _keyForMessage(msg.id),
                   duration: Duration(milliseconds: 220),
                   curve: Curves.easeOut,
@@ -3651,40 +3673,22 @@ class _ChatScreenState extends State<ChatScreen> {
                                           maxWidth: 250, // Максимальная ширина
                                           maxHeight: 400, // Максимальная высота (больше для вертикальных изображений)
                                         ),
-                                        child: Image.network(
-                                          msg.imageUrl!,
-                                          fit: BoxFit.contain, // ✅ Сохраняем пропорции изображения
-                                          cacheWidth: 500,  // ✅ Декодируем максимум 500px ширины (экономия памяти)
-                                          // cacheHeight не задаем, чтобы сохранить пропорции
-                                          headers: kIsWeb ? {
-                                            'Access-Control-Allow-Origin': '*',
-                                          } : {}, // Для веб добавляем CORS заголовки
-                                          loadingBuilder: (context, child, loadingProgress) {
-                                            if (loadingProgress == null) return child;
-                                            return Container(
-                                              width: 250,
-                                              height: 200,
-                                              color: Colors.grey.shade200,
-                                              child: Center(
-                                                child: CircularProgressIndicator(
-                                                  value: loadingProgress.expectedTotalBytes != null
-                                                      ? loadingProgress.cumulativeBytesLoaded /
-                                                          loadingProgress.expectedTotalBytes!
-                                                      : null,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                          errorBuilder: (context, error, stackTrace) {
+                                        child: CachedNetworkImage(
+                                          imageUrl: msg.imageUrl!,
+                                          fit: BoxFit.contain,
+                                          memCacheWidth: 500,
+                                          httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
+                                          placeholder: (_, __) => Container(
+                                            width: 250,
+                                            height: 200,
+                                            color: Colors.grey.shade200,
+                                            child: Center(child: CircularProgressIndicator()),
+                                          ),
+                                          errorWidget: (context, url, error) {
                                             if (kDebugMode) {
-                                              // ignore: avoid_print
                                               print('Image load error: $error');
-                                              // ignore: avoid_print
-                                              print('Image URL: ${msg.imageUrl}');
-                                              if (kIsWeb) {
-                                                // ignore: avoid_print
-                                                print('⚠️ ВЕБ: проверьте CORS в Яндекс Облаке');
-                                              }
+                                              print('Image URL: $url');
+                                              if (kIsWeb) print('⚠️ ВЕБ: проверьте CORS в Яндекс Облаке');
                                             }
                                             return Container(
                                               width: 250,
@@ -3699,13 +3703,16 @@ class _ChatScreenState extends State<ChatScreen> {
                                                     kIsWeb ? 'CORS ошибка?' : 'Ошибка загрузки',
                                                     style: TextStyle(fontSize: 12),
                                                   ),
-                                                  SizedBox(height: 4),
-                                                  if (kDebugMode && msg.imageUrl != null)
+                                                  if (kDebugMode) ...[
+                                                    SizedBox(height: 4),
                                                     Text(
-                                                      'URL: ${msg.imageUrl!.length > 50 ? '${msg.imageUrl!.substring(0, 50)}...' : msg.imageUrl}',
+                                                      'URL: ${url.length > 50 ? '${url.substring(0, 50)}...' : url}',
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
                                                       style: TextStyle(fontSize: 10, color: Colors.grey),
                                                       textAlign: TextAlign.center,
                                                     ),
+                                                  ],
                                                   if (kIsWeb) ...[
                                                     SizedBox(height: 4),
                                                     Text(
@@ -3911,7 +3918,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ],
                   ),
-                );
+                ));
                         },
                       ),
                       ),
@@ -4551,39 +4558,30 @@ class _FullScreenImageViewer extends StatelessWidget {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 5.0,
-                child: Image.network(
-                  imageUrl,
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
                   fit: BoxFit.contain,
-                  cacheWidth: 1920,
-                  headers: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : {},
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
-                        color: Colors.white70,
-                        strokeWidth: 2,
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline_rounded, color: Colors.white54, size: 56),
-                          SizedBox(height: 16),
-                          Text(
-                            'Не удалось загрузить изображение',
-                            style: TextStyle(color: Colors.white70, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                  memCacheWidth: 1920,
+                  httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
+                  placeholder: (_, __) => Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white70,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline_rounded, color: Colors.white54, size: 56),
+                        SizedBox(height: 16),
+                        Text(
+                          'Не удалось загрузить изображение',
+                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),

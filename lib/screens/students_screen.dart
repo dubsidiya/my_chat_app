@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/student.dart';
 import '../services/students_service.dart';
 import 'student_detail_screen.dart';
@@ -41,7 +42,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         });
       }
     } catch (e) {
-      print('Ошибка загрузки студентов: $e');
+      if (kDebugMode) print('Ошибка загрузки студентов: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

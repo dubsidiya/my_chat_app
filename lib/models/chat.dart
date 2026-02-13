@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 class Chat {
   final String id;
   final String name;
@@ -56,8 +58,10 @@ class Chat {
         lastSenderEmail: lastMap?['sender_email']?.toString(),
       );
     } catch (e) {
-      print('Error parsing Chat from JSON: $e');
-      print('JSON: $json');
+      if (kDebugMode) {
+        print('Error parsing Chat from JSON: $e');
+        print('JSON: $json');
+      }
       rethrow;
     }
   }

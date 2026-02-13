@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/lesson.dart';
@@ -52,7 +53,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         });
       }
     } catch (e) {
-      print('Ошибка загрузки данных: $e');
+      if (kDebugMode) print('Ошибка загрузки данных: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -74,7 +75,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         });
       }
     } catch (e) {
-      print('Ошибка обновления данных: $e');
+      if (kDebugMode) print('Ошибка обновления данных: $e');
     }
   }
 
@@ -104,7 +105,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       });
       }
     } catch (e) {
-      print('Ошибка обновления баланса: $e');
+      if (kDebugMode) print('Ошибка обновления баланса: $e');
     }
   }
 

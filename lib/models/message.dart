@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 class Message {
   final String id;
   final String chatId;
@@ -96,8 +98,10 @@ class Message {
         originalChatName: json['original_chat_name'] as String?,
       );
     } catch (e) {
-      print('Error parsing Message from JSON: $e');
-      print('JSON: $json');
+      if (kDebugMode) {
+        print('Error parsing Message from JSON: $e');
+        print('JSON: $json');
+      }
       rethrow;
     }
   }

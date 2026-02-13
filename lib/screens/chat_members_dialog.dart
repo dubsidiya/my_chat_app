@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../services/chats_service.dart';
 
 class ChatMembersDialog extends StatefulWidget {
@@ -127,7 +128,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         );
       }
     } catch (e) {
-      print('Ошибка удаления участника: $e');
+      if (kDebugMode) print('Ошибка удаления участника: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;

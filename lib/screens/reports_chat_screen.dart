@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
 import '../models/report.dart';
 import '../services/reports_service.dart';
@@ -50,7 +51,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         });
       }
     } catch (e) {
-      print('Ошибка загрузки отчетов: $e');
+      if (kDebugMode) print('Ошибка загрузки отчетов: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

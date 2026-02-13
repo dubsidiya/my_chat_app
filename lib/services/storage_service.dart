@@ -9,6 +9,8 @@ class StorageService {
   static const String _tokenKey = 'auth_token';
   static const String _isSuperuserKey = 'is_superuser';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
+  static const String _soundOnNewMessageKey = 'sound_on_new_message';
+  static const String _vibrationOnNewMessageKey = 'vibration_on_new_message';
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
   static const String _chatOrderPrefix = 'chat_order_';
 
@@ -178,6 +180,58 @@ class StorageService {
         print('StorageService.getThemeMode error: $e');
       }
       return false;
+    }
+  }
+
+  /// Звук при новом сообщении (по умолчанию вкл)
+  static Future<void> setSoundOnNewMessage(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_soundOnNewMessageKey, enabled);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.setSoundOnNewMessage error: $e');
+      }
+    }
+  }
+
+  static Future<bool> getSoundOnNewMessage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_soundOnNewMessageKey) ?? true;
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getSoundOnNewMessage error: $e');
+      }
+      return true;
+    }
+  }
+
+  /// Вибрация при новом сообщении (по умолчанию вкл)
+  static Future<void> setVibrationOnNewMessage(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_vibrationOnNewMessageKey, enabled);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.setVibrationOnNewMessage error: $e');
+      }
+    }
+  }
+
+  static Future<bool> getVibrationOnNewMessage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_vibrationOnNewMessageKey) ?? true;
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getVibrationOnNewMessage error: $e');
+      }
+      return true;
     }
   }
 }

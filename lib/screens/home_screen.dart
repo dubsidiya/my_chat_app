@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
 import '../services/chats_service.dart';
 import '../services/auth_service.dart';
@@ -266,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _loadChats();
           }
         } catch (e) {
-          print('Ошибка удаления чата: $e');
+          if (kDebugMode) print('Ошибка удаления чата: $e');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -455,6 +456,68 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _showSettingsSheet() async {
+    bool soundOn = await StorageService.getSoundOnNewMessage();
+    bool vibrationOn = await StorageService.getVibrationOnNewMessage();
+    final scheme = Theme.of(context).colorScheme;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Настройки',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  SwitchListTile(
+                    title: Text('Звук при новом сообщении'),
+                    subtitle: Text('Воспроизводить звук, когда приходит новое сообщение'),
+                    value: soundOn,
+                    onChanged: (v) async {
+                      await StorageService.setSoundOnNewMessage(v);
+                      setModalState(() => soundOn = v);
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text('Вибрация при новом сообщении'),
+                    subtitle: Text('Вибрация при получении нового сообщения'),
+                    value: vibrationOn,
+                    onChanged: (v) async {
+                      await StorageService.setVibrationOnNewMessage(v);
+                      setModalState(() => vibrationOn = v);
+                    },
+                  ),
+                  SizedBox(height: 24),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _changePassword() async {
     // Показываем диалог смены пароля
     final result = await showDialog<Map<String, String>>(
@@ -517,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Navigator.pop(context);
       }
 
-      print('Ошибка смены пароля: $e');
+      if (kDebugMode) print('Ошибка смены пароля: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -721,7 +784,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Navigator.pop(context);
       }
 
-      print('Ошибка удаления аккаунта: $e');
+      if (kDebugMode) print('Ошибка удаления аккаунта: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -985,6 +1048,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 await _openAccounting();
               } else if (value == 'reports') {
                 await _openReports();
+              } else if (value == 'settings') {
+                await _showSettingsSheet();
               } else if (value == 'theme') {
                 _toggleTheme();
               } else if (value == 'logout') {
@@ -1032,6 +1097,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+              PopupMenuItem<String>(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.settings_rounded, color: Colors.amber.shade700, size: 20),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Настройки', style: TextStyle(fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
               PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'theme',
@@ -1043,11 +1125,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: scheme.primary.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.dark_mode_rounded, color: scheme.primary, size: 20),
+                      child: Icon(
+                        isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                        color: scheme.primary,
+                        size: 20,
+                      ),
                     ),
                     SizedBox(width: 12),
-                    Text('Темная тема',
-                        style: TextStyle(fontWeight: FontWeight.w500)),
+                    Text(
+                      isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
                   ],
                 ),
               ),
@@ -1350,17 +1438,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                       buildDefaultDragHandles: true,
                                       onReorder: _onReorderChats,
                                       itemCount: filteredChats.length,
+                                      cacheExtent: 500,
                                       itemBuilder: (context, index) {
                                         final chat = filteredChats[index];
-                                        return _buildChatTile(context, chat);
+                                        return RepaintBoundary(child: _buildChatTile(context, chat));
                                       },
                                     )
                                   : ListView.builder(
                                       padding: EdgeInsets.symmetric(vertical: 8),
                                       itemCount: filteredChats.length,
+                                      cacheExtent: 500,
                                       itemBuilder: (context, index) {
                                         final chat = filteredChats[index];
-                                        return _buildChatTile(context, chat);
+                                        return RepaintBoundary(child: _buildChatTile(context, chat));
                                       },
                                     ),
                             ),
@@ -1454,7 +1544,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
         Navigator.pop(context, true);
       }
     } catch (e) {
-      print('Ошибка создания чата: $e');
+      if (kDebugMode) print('Ошибка создания чата: $e');
       if (mounted) {
         setState(() {
           _isCreating = false;
