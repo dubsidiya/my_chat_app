@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/push_notification_service.dart';
 import 'home_screen.dart';
 
 class MainTabsScreen extends StatefulWidget {
@@ -15,6 +16,14 @@ class MainTabsScreen extends StatefulWidget {
 }
 
 class _MainTabsScreenState extends State<MainTabsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PushNotificationService.sendTokenToBackendIfNeeded();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

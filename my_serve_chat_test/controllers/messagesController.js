@@ -2,6 +2,7 @@ import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
+import { sendPushToTokens } from '../utils/pushNotifications.js';
 
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
@@ -798,6 +799,35 @@ export const sendMessage = async (req, res) => {
     } catch (wsError) {
       console.error('Ошибка отправки через WebSocket:', wsError);
       // Не прерываем выполнение, сообщение уже сохранено в БД
+    }
+
+    // Push-уведомления: участникам чата (кроме отправителя) с сохранённым FCM-токеном
+    try {
+      const otherMemberIds = members.rows
+        .map(r => r.user_id)
+        .filter(id => id !== user_id);
+      if (otherMemberIds.length > 0) {
+        const tokensResult = await pool.query(
+          'SELECT fcm_token FROM users WHERE id = ANY($1) AND fcm_token IS NOT NULL AND fcm_token != \'\'',
+          [otherMemberIds]
+        );
+        const tokens = tokensResult.rows.map(r => r.fcm_token);
+        if (tokens.length > 0) {
+          const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
+          const chatName = chatInfo.rows[0]?.name || 'Чат';
+          const isGroup = chatInfo.rows[0]?.is_group ?? true;
+          const title = 'Новое сообщение';
+          const body = `${senderEmail}: ${(contentStr || '').trim().slice(0, 80)}${(contentStr || '').length > 80 ? '…' : ''}`.trim() || 'Сообщение в чате';
+          await sendPushToTokens(tokens, title, body, {
+            chatId: chatIdNum.toString(),
+            messageId: message.id.toString(),
+            chatName,
+            isGroup: isGroup ? '1' : '0',
+          });
+        }
+      }
+    } catch (pushErr) {
+      console.error('Ошибка отправки push:', pushErr.message);
     }
 
     res.status(201).json(response);

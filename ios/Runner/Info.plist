@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Нужно для записи голосовых сообщений в чате.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Нужно для выбора и отправки фото в чате.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

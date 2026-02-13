@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess } from '../controllers/authController.js';
+import { register, login, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -27,5 +27,6 @@ router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - по�
 router.delete('/user/:userId', authenticateToken, deleteAccount); // DELETE /auth/user/:userId - удаление аккаунта
 router.put('/user/:userId/password', authenticateToken, changePassword); // PUT /auth/user/:userId/password - смена пароля
 router.post('/unlock-private', authenticateToken, unlockLimiter, unlockPrivateAccess); // POST /auth/unlock-private - получить токен с privateAccess=true
+router.post('/fcm-token', authenticateToken, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
 
 export default router;

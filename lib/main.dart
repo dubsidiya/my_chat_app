@@ -4,7 +4,10 @@ import 'dart:async';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
-import 'services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
+import 'services/local_messages_service.dart';
+import 'services/push_notification_service.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   // Обработка ошибок Flutter
@@ -18,9 +21,9 @@ void main() {
 
   // Обработка асинхронных ошибок
   runZonedGuarded(() async {
-    // ✅ Инициализируем локальное хранилище перед запуском приложения
     WidgetsFlutterBinding.ensureInitialized();
     await LocalMessagesService.init();
+    await PushNotificationService.init(navigatorKey);
     runApp(MyApp());
   }, (error, stack) {
     if (kDebugMode) {
@@ -227,6 +230,7 @@ class _MyAppState extends State<MyApp> {
     }
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Chat App',
       theme: buildTheme(brightness: Brightness.light),
       darkTheme: buildTheme(brightness: Brightness.dark),

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
 import '../config/api_config.dart';
@@ -24,6 +23,17 @@ class MessagesPaginationResult {
 
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
+
+  /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
+  Future<bool> _isOnline() async {
+    try {
+      final uri = Uri.parse(baseUrl);
+      await http.get(uri).timeout(const Duration(seconds: 3));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
@@ -52,9 +62,8 @@ class MessagesService {
     String? beforeMessageId,
     bool useCache = true, // ✅ Использовать кэш по умолчанию
   }) async {
-    // ✅ Проверяем подключение к интернету
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult != ConnectivityResult.none;
+    // ✅ Проверяем подключение к интернету (без сторонних плагинов — для соответствия Apple privacy manifest)
+    final isOnline = await _isOnline();
     
     // ✅ Если есть кэш и мы офлайн, возвращаем из кэша
     if (!isOnline && useCache) {
@@ -213,8 +222,7 @@ class MessagesService {
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
   }) async {
     // ✅ Проверяем подключение
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult != ConnectivityResult.none;
+    final isOnline = await _isOnline();
     
     if (!isOnline) {
       // ✅ В офлайн режиме создаем временное сообщение и сохраняем в кэш

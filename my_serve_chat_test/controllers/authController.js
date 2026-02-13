@@ -224,6 +224,32 @@ export const unlockPrivateAccess = async (req, res) => {
   }
 };
 
+// Сохранение FCM-токена для push-уведомлений (требует аутентификации)
+export const saveFcmToken = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+    const { fcmToken } = req.body || {};
+    if (!fcmToken || typeof fcmToken !== 'string') {
+      return res.status(400).json({ message: 'Укажите fcmToken в теле запроса' });
+    }
+    const tokenTrimmed = fcmToken.trim();
+    if (!tokenTrimmed) {
+      return res.status(400).json({ message: 'fcmToken не может быть пустым' });
+    }
+    await pool.query(
+      'UPDATE users SET fcm_token = $1 WHERE id = $2',
+      [tokenTrimmed, userId]
+    );
+    res.status(200).json({ message: 'Токен сохранён' });
+  } catch (error) {
+    console.error('Ошибка saveFcmToken:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // Получение списка всех пользователей (требует аутентификации)
 export const getAllUsers = async (req, res) => {
   try {

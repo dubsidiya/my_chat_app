@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/push_notification_service.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
 
@@ -49,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 isSuperuser: isSuperuser,
               ),
             ),
-          );
+          ).then((_) => PushNotificationService.sendTokenToBackendIfNeeded());
         }
       } else {
         if (mounted) {
