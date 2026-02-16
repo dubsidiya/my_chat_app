@@ -3224,13 +3224,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pinnedHeight = _getPinnedMessagesHeight();
-    final scaffoldBg = isDark ? Theme.of(context).scaffoldBackgroundColor : const Color(0xFFFAFAFA);
+    final scaffoldBg = isDark ? Theme.of(context).scaffoldBackgroundColor : Colors.white;
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         backgroundColor: scaffoldBg,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -3365,7 +3366,9 @@ class _ChatScreenState extends State<ChatScreen> {
             Column(
               children: [
                 Expanded(
-                  child: _isLoading
+                  child: Container(
+                    color: scaffoldBg,
+                    child: _isLoading
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -3379,14 +3382,40 @@ class _ChatScreenState extends State<ChatScreen> {
                           'Загрузка сообщений...',
                           style: TextStyle(
                             fontSize: 15,
-                            color: scheme.onSurface.withValues(alpha:0.7),
+                            color: scheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
                   )
-                : RepaintBoundary(
+                : _listEntries.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.chat_bubble_outline_rounded, size: 64, color: _accent1.withValues(alpha: 0.4)),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Нет сообщений',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Напишите первое сообщение',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: scheme.onSurface.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : RepaintBoundary(
                   child: Stack(
                     children: [
                       // Отступ сверху для закрепленных сообщений
@@ -4087,10 +4116,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   ),
                 ),
+            ),
           ),
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: scaffoldBg,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha:0.06),
