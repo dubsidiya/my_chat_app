@@ -976,8 +976,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
 
     return Scaffold(
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         elevation: 0,
+        backgroundColor: scheme.surface,
         title: Text(
           widget.userEmail.isNotEmpty ? widget.userEmail : 'Мои чаты',
           overflow: TextOverflow.ellipsis,
@@ -1221,7 +1223,8 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(width: 8),
         ],
       ),
-      body: _isLoading
+      body: SafeArea(
+        child: _isLoading
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1433,6 +1436,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+      ),
     );
   }
 }
