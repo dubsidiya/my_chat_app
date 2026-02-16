@@ -1420,7 +1420,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                       cacheExtent: 500,
                                       itemBuilder: (context, index) {
                                         final chat = filteredChats[index];
-                                        return RepaintBoundary(child: _buildChatTile(context, chat));
+                                        // ReorderableListView требует key на ВЕРХНЕМ уровне элемента
+                                        return RepaintBoundary(
+                                          key: ValueKey('chat_tile_${chat.id}'),
+                                          child: _buildChatTile(context, chat),
+                                        );
                                       },
                                     )
                                   : ListView.builder(
@@ -1429,7 +1433,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       cacheExtent: 500,
                                       itemBuilder: (context, index) {
                                         final chat = filteredChats[index];
-                                        return RepaintBoundary(child: _buildChatTile(context, chat));
+                                        return RepaintBoundary(
+                                          key: ValueKey('chat_tile_${chat.id}'),
+                                          child: _buildChatTile(context, chat),
+                                        );
                                       },
                                     ),
                             ),
