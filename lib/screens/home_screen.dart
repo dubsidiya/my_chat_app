@@ -1284,100 +1284,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-          : _chats.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Color(0xFF667eea).withOpacity(0.2),
-                                Color(0xFF764ba2).withOpacity(0.2),
-                              ],
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 60,
-                            color: Color(0xFF667eea).withOpacity(0.6),
-                          ),
-                        ),
-                        SizedBox(height: 32),
-                        Text(
-                          'Нет доступных чатов',
-                          style: TextStyle(
-                            fontSize: 24,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          'Создайте новый чат, нажав на кнопку +',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade500,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 40),
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            gradient: LinearGradient(
-                              colors: [
-                                Color(0xFF667eea),
-                                Color(0xFF764ba2),
-                              ],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0xFF667eea).withOpacity(0.3),
-                                blurRadius: 15,
-                                offset: Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton.icon(
-                            onPressed: _showCreateChatDialog,
-                            icon: Icon(Icons.add_rounded, size: 24),
-                            label: Text(
-                              'Создать чат',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 32,
-                                vertical: 16,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : Column(
+          : Column(
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
@@ -1416,49 +1323,85 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     Expanded(
                       child: filteredChats.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _query.trim().isEmpty
-                                          ? 'Нет чатов'
-                                          : 'По запросу ничего не найдено',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: Colors.grey.shade600,
-                                        fontWeight: FontWeight.w600,
+                          ? RefreshIndicator(
+                              onRefresh: _loadChats,
+                              color: Color(0xFF667eea),
+                              child: SingleChildScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                child: SizedBox(
+                                  height: MediaQuery.of(context).size.height * 0.5,
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_chats.isEmpty)
+                                            Icon(
+                                              Icons.chat_bubble_outline_rounded,
+                                              size: 56,
+                                              color: Color(0xFF667eea).withOpacity(0.5),
+                                            ),
+                                          if (_chats.isEmpty) const SizedBox(height: 16),
+                                          Text(
+                                            _chats.isEmpty
+                                                ? 'Нет чатов'
+                                                : 'По запросу ничего не найдено',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.grey.shade600,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          if (_chats.isEmpty) ...[
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Создайте чат кнопкой + или обновите список',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey.shade500,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 20),
+                                            OutlinedButton.icon(
+                                              onPressed: _showCreateChatDialog,
+                                              icon: const Icon(Icons.add_rounded, size: 20),
+                                              label: const Text('Создать чат'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: Color(0xFF667eea),
+                                              ),
+                                            ),
+                                          ] else ...[
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              'Очистите поиск, чтобы увидеть все чаты',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey.shade500,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 16),
+                                            OutlinedButton.icon(
+                                              onPressed: () {
+                                                setState(() {
+                                                  _query = '';
+                                                  _searchController.clear();
+                                                });
+                                              },
+                                              icon: const Icon(Icons.clear_all_rounded, size: 20),
+                                              label: const Text('Показать все чаты'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: Color(0xFF667eea),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
-                                      textAlign: TextAlign.center,
                                     ),
-                                    if (_query.trim().isNotEmpty) ...[
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'Очистите поиск, чтобы увидеть все чаты',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey.shade500,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      OutlinedButton.icon(
-                                        onPressed: () {
-                                          setState(() {
-                                            _query = '';
-                                            _searchController.clear();
-                                          });
-                                        },
-                                        icon: const Icon(Icons.clear_all_rounded, size: 20),
-                                        label: const Text('Показать все чаты'),
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Color(0xFF667eea),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                  ),
                                 ),
                               ),
                             )
