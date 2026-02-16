@@ -1,6 +1,6 @@
 {
-    "name": "my_chat_app",
-    "short_name": "my_chat_app",
+    "name": "reollity",
+    "short_name": "reollity",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
