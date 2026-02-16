@@ -101,9 +101,6 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<Duration?>? _voiceDurationSub;
   StreamSubscription<PlayerState>? _voicePlayerStateSub;
 
-  // ✅ Drag-and-drop файлов (десктоп/веб)
-  bool _isDraggingFile = false;
-
   // ✅ Realtime presence/typing
   final Map<String, String> _memberEmailById = {};
   final Set<String> _onlineUserIds = <String>{};
@@ -3358,8 +3355,6 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       body: DropTarget(
-        onDragEntered: (_) => setState(() => _isDraggingFile = true),
-        onDragExited: (_) => setState(() => _isDraggingFile = false),
         onDragDone: _handleFilesDropped,
         child: Stack(
           children: [
@@ -4544,31 +4539,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-            if (_isDraggingFile)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(
-                    color: _accent1.withValues(alpha:0.12),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.file_upload_rounded, size: 56, color: _accent1.withValues(alpha:0.9)),
-                          SizedBox(height: 12),
-                          Text(
-                            'Отпустите файл, чтобы прикрепить',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: scheme.onSurface.withValues(alpha:0.8),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
