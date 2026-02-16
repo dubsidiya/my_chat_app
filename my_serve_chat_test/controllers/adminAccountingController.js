@@ -296,30 +296,22 @@ export const exportAccounting = async (req, res) => {
 
     if (format === 'csv') {
       const header = [
-        'lesson_id',
-        'lesson_date',
-        'lesson_time',
-        'teacher_username',
-        'student_id',
-        'student_name',
-        'price',
-        'paid_amount',
-        'unpaid_amount',
-        'is_paid',
+        'дата',
+        'время',
+        'преподаватель',
+        'ученик',
+        'сумма',
+        'статус',
       ];
       const rows = [header];
       for (const l of lessonsInPeriod) {
         rows.push([
-          l.lessonId,
           l.lessonDate,
           l.lessonTime || '',
           l.teacherUsername || '',
-          l.studentId,
           l.studentName || '',
           l.price,
-          l.paidAmount,
-          l.unpaidAmount,
-          l.isPaid ? 'yes' : 'no',
+          l.isPaid ? 'оплачено' : 'долг',
         ]);
       }
       const csv = asCsv(rows);
