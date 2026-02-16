@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/message.dart';
@@ -1563,6 +1564,61 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось выбрать файл')),
       );
+    }
+  }
+
+  /// Обработка перетаскивания файлов (drag-and-drop). Вызывается только onDragDone — без оверлея, чтобы не перекрывать чат.
+  Future<void> _handleFilesDropped(DropDoneDetails details) async {
+    if (_isRecordingVoice || _isUploadingImage || _isUploadingFile) return;
+    final items = details.files;
+    if (items.isEmpty) return;
+    final DropItem? fileItem = items.firstWhere(
+      (item) => item is! DropItemDirectory,
+      orElse: () => items.first,
+    );
+    if (fileItem is DropItemDirectory) return;
+    try {
+      final bytes = await fileItem!.readAsBytes();
+      final fileName = fileItem.name;
+      if (bytes.isEmpty) return;
+      final parts = fileName.toLowerCase().split('.');
+      final ext = parts.length > 1 ? parts.last : '';
+      final imageExtensions = ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'avif', 'ico', 'svg'];
+      if (imageExtensions.contains(ext)) {
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImagePath = null;
+          _selectedImageName = fileName;
+          _selectedFilePath = null;
+          _selectedFileBytes = null;
+          _selectedFileName = null;
+          _selectedFileSize = null;
+        });
+      } else {
+        setState(() {
+          _selectedFileBytes = bytes;
+          _selectedFilePath = null;
+          _selectedFileName = fileName;
+          _selectedFileSize = bytes.length;
+          _selectedImagePath = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+        });
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Файл добавлен: $fileName')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при добавлении файла: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -3293,14 +3349,18 @@ class _ChatScreenState extends State<ChatScreen> {
           SizedBox(width: 6),
         ],
       ),
-      body: Stack(
-        children: [
-            Column(
-              children: [
-                Expanded(
-                  child: Container(
-                    color: scaffoldBg,
-                    child: _isLoading
+      body: Material(
+        color: scaffoldBg,
+        child: DropTarget(
+          onDragDone: _handleFilesDropped,
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  Expanded(
+                    child: Container(
+                      color: scaffoldBg,
+                      child: _isLoading
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -4476,7 +4536,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
                 ],
               ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
