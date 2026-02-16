@@ -65,7 +65,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
             Container(
               padding: EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.12),
+                color: Colors.red.withValues(alpha:0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(Icons.delete_outline_rounded, color: Colors.red, size: 22),
@@ -165,7 +165,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: _accent1.withOpacity(0.25),
+                  color: _accent1.withValues(alpha:0.25),
                   blurRadius: 10,
                   offset: Offset(0, 6),
                 ),
@@ -187,7 +187,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
           Container(
             padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.12),
+              color: _accent1.withValues(alpha:0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Text(
@@ -221,8 +221,8 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  _accent1.withOpacity(0.15),
-                                  _accent3.withOpacity(0.15),
+                                  _accent1.withValues(alpha:0.15),
+                                  _accent3.withValues(alpha:0.15),
                                 ],
                               ),
                               shape: BoxShape.circle,
@@ -230,7 +230,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             child: Icon(
                               Icons.group_off_rounded,
                               size: 42,
-                              color: _accent1.withOpacity(0.7),
+                              color: _accent1.withValues(alpha:0.7),
                             ),
                           ),
                           SizedBox(height: 16),
@@ -260,12 +260,12 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                              color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
                               width: 1.2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+                                color: Colors.black.withValues(alpha:isDark ? 0.25 : 0.06),
                                 blurRadius: 10,
                                 offset: Offset(0, 4),
                               ),
@@ -315,7 +315,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                         Container(
                                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: _accent1.withOpacity(0.12),
+                                            color: _accent1.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Text(
@@ -333,7 +333,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                 if (!isCreator)
                                   Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.10),
+                                      color: Colors.red.withValues(alpha:0.10),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: IconButton(

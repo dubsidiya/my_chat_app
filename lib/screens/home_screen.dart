@@ -332,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,
-                          color: scheme.onSurface.withOpacity(0.65),
+                          color: scheme.onSurface.withValues(alpha: 0.65),
                           fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
                         ),
                       ),
@@ -348,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       lastTime,
                       style: TextStyle(
                         fontSize: 12,
-                        color: unread > 0 ? scheme.primary : scheme.onSurface.withOpacity(0.50),
+                        color: unread > 0 ? scheme.primary : scheme.onSurface.withValues(alpha: 0.50),
                         fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
@@ -836,7 +836,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     'Введите код, чтобы открыть “Учет занятий” и “Отчеты”.',
-                    style: TextStyle(color: scheme.onSurface.withOpacity(0.70)),
+                    style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70)),
                   ),
                   SizedBox(height: 12),
                   TextField(
@@ -851,7 +851,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: scheme.outline.withOpacity(isDark ? 0.22 : 0.14), width: 1.5),
+                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: isDark ? 0.22 : 0.14), width: 1.5),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -994,7 +994,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Color(0xFF667eea).withOpacity(0.1),
+              color: Color(0xFF667eea).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -1006,7 +1006,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.10),
+              color: Colors.green.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -1027,7 +1027,7 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Color(0xFF667eea).withOpacity(0.3),
+                  color: Color(0xFF667eea).withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: Offset(0, 4),
                 ),
@@ -1040,7 +1040,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withOpacity(0.75)),
+            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.75)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -1072,7 +1072,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Color(0xFF667eea).withOpacity(0.1),
+                        color: Color(0xFF667eea).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.school_rounded, color: Color(0xFF667eea), size: 20),
@@ -1089,7 +1089,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Color(0xFF764ba2).withOpacity(0.1),
+                        color: Color(0xFF764ba2).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.description_rounded, color: Color(0xFF764ba2), size: 20),
@@ -1106,7 +1106,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.1),
+                        color: Colors.amber.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.settings_rounded, color: Colors.amber.shade700, size: 20),
@@ -1124,7 +1124,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: scheme.primary.withOpacity(0.10),
+                        color: scheme.primary.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
@@ -1148,7 +1148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.logout_rounded,
@@ -1167,7 +1167,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.lock_outline_rounded,
@@ -1187,7 +1187,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         padding: EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.teal.withOpacity(0.1),
+                          color: Colors.teal.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(Icons.admin_panel_settings_rounded, color: Colors.teal, size: 20),
@@ -1205,7 +1205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.delete_forever_rounded,
@@ -1293,10 +1293,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                            color: scheme.outline.withValues(alpha: isDark ? 0.18 : 0.12),
                             width: 1.2,
                           ),
                         ),
@@ -1305,12 +1305,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           onChanged: (v) => setState(() => _query = v),
                           decoration: InputDecoration(
                             hintText: 'Поиск по чатам',
-                            hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.55)),
                             prefixIcon: Icon(Icons.search_rounded, color: scheme.primary),
                             suffixIcon: _query.isEmpty
                                 ? null
                                 : IconButton(
-                                    icon: Icon(Icons.close_rounded, color: scheme.onSurface.withOpacity(0.70)),
+                                    icon: Icon(Icons.close_rounded, color: scheme.onSurface.withValues(alpha: 0.70)),
                                     onPressed: () {
                                       setState(() {
                                         _query = '';
@@ -1343,7 +1343,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             Icon(
                                               Icons.chat_bubble_outline_rounded,
                                               size: 56,
-                                              color: Color(0xFF667eea).withOpacity(0.5),
+                                              color: Color(0xFF667eea).withValues(alpha: 0.5),
                                             ),
                                           if (_chats.isEmpty) const SizedBox(height: 16),
                                           Text(
@@ -1759,7 +1759,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Color(0xFF667eea).withOpacity(0.3),
+                color: Color(0xFF667eea).withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: Offset(0, 4),
               ),

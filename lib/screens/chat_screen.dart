@@ -164,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: _accent1.withOpacity(0.12),
+            color: _accent1.withValues(alpha:0.12),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -172,7 +172,7 @@ class _ChatScreenState extends State<ChatScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: _accent1.withOpacity(0.95),
+              color: _accent1.withValues(alpha:0.95),
             ),
           ),
         ),
@@ -1435,11 +1435,11 @@ class _ChatScreenState extends State<ChatScreen> {
     switch (status) {
       case MessageStatus.sent:
         icon = Icons.check;
-        color = Colors.white.withOpacity(0.6);
+        color = Colors.white.withValues(alpha:0.6);
         break;
       case MessageStatus.delivered:
         icon = Icons.done_all;
-        color = Colors.white.withOpacity(0.6);
+        color = Colors.white.withValues(alpha:0.6);
         break;
       case MessageStatus.read:
         icon = Icons.done_all;
@@ -1972,21 +1972,21 @@ class _ChatScreenState extends State<ChatScreen> {
     final showPlaying = isCurrent && _voiceIsPlaying;
 
     final playColor = isMine ? Colors.white : _accent1;
-    final trackInactive = isMine ? Colors.white.withOpacity(0.35) : Colors.grey.shade300;
+    final trackInactive = isMine ? Colors.white.withValues(alpha:0.35) : Colors.grey.shade300;
 
     return Container(
       constraints: BoxConstraints(minWidth: 220, maxWidth: 280),
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: isMine ? Colors.white.withOpacity(0.2) : Colors.grey.shade50,
+        color: isMine ? Colors.white.withValues(alpha:0.2) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isMine ? Colors.white.withOpacity(0.3) : Colors.grey.shade200,
+          color: isMine ? Colors.white.withValues(alpha:0.3) : Colors.grey.shade200,
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isMine ? 0.06 : 0.04),
+            color: Colors.black.withValues(alpha:isMine ? 0.06 : 0.04),
             blurRadius: 8,
             offset: Offset(0, 2),
           ),
@@ -2009,7 +2009,7 @@ class _ChatScreenState extends State<ChatScreen> {
             )
           else
             Material(
-              color: isMine ? Colors.white.withOpacity(0.25) : Colors.white,
+              color: isMine ? Colors.white.withValues(alpha:0.25) : Colors.white,
               shape: CircleBorder(),
               elevation: 0,
               shadowColor: Colors.transparent,
@@ -2536,14 +2536,14 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
+                border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 18, color: scheme.onSurface.withOpacity(0.85)),
+                  Icon(icon, size: 18, color: scheme.onSurface.withValues(alpha:0.85)),
                   SizedBox(width: 8),
                   Text(
                     label,
@@ -2568,10 +2568,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     : const [Color(0xFFFFFFFF), Color(0xFFF7F8FF)],
               ),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.10)),
+              border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.10)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(isDark ? 0.40 : 0.12),
+                  color: Colors.black.withValues(alpha:isDark ? 0.40 : 0.12),
                   blurRadius: 20,
                   offset: Offset(0, 12),
                 ),
@@ -2589,7 +2589,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.6,
-                      color: scheme.onSurface.withOpacity(0.65),
+                      color: scheme.onSurface.withValues(alpha:0.65),
                     ),
                   ),
                 ),
@@ -2604,18 +2604,18 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
                 SizedBox(height: 12),
-                Divider(height: 1, color: scheme.outline.withOpacity(isDark ? 0.20 : 0.12)),
+                Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
                     message.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                    color: scheme.onSurface.withOpacity(0.85),
+                    color: scheme.onSurface.withValues(alpha:0.85),
                   ),
                   title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
                   onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
                 ),
                 if (isMine) ...[
-                  Divider(height: 1, color: scheme.outline.withOpacity(isDark ? 0.20 : 0.12)),
+                  Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400),
@@ -3246,7 +3246,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             Text(
               _buildChatStatusLine(),
-              style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.65)),
+              style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.65)),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -3255,7 +3255,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.10),
+              color: _accent1.withValues(alpha:0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -3267,7 +3267,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.10),
+              color: _accent1.withValues(alpha:0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -3283,7 +3283,7 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: _accent1.withOpacity(0.25),
+                  color: _accent1.withValues(alpha:0.25),
                   blurRadius: 8,
                   offset: Offset(0, 4),
                 ),
@@ -3298,7 +3298,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 : SizedBox.shrink(),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withOpacity(0.75)),
+            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha:0.75)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -3379,7 +3379,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           'Загрузка сообщений...',
                           style: TextStyle(
                             fontSize: 15,
-                            color: scheme.onSurface.withOpacity(0.7),
+                            color: scheme.onSurface.withValues(alpha:0.7),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -3413,7 +3413,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   label: Text('Загрузить старые сообщения'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: _accent1,
-                                    side: BorderSide(color: _accent1.withOpacity(0.35), width: 1.5),
+                                    side: BorderSide(color: _accent1.withValues(alpha:0.35), width: 1.5),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(16),
                                     ),
@@ -3458,7 +3458,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isHighlighted ? _accent1.withOpacity(0.10) : Colors.transparent,
+                    color: isHighlighted ? _accent1.withValues(alpha:0.10) : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -3531,7 +3531,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   color: (isMine
                                           ? _accent1
                                           : Colors.grey)
-                                      .withOpacity(0.2),
+                                      .withValues(alpha:0.2),
                                   blurRadius: 8,
                                   offset: Offset(0, 2),
                                 ),
@@ -3539,7 +3539,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               border: isMine
                                   ? null
                                   : Border.all(
-                                      color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                      color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
                                       width: 1.2,
                                     ),
                             ),
@@ -3575,8 +3575,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                     padding: EdgeInsets.all(8),
                                     decoration: BoxDecoration(
                                       color: isMine 
-                                          ? Colors.white.withOpacity(0.2)
-                                          : (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04)),
+                                          ? Colors.white.withValues(alpha:0.2)
+                                          : (isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04)),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border(
                                         left: BorderSide(
@@ -3594,7 +3594,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
                                             color: isMine 
-                                                ? Colors.white.withOpacity(0.9)
+                                                ? Colors.white.withValues(alpha:0.9)
                                                 : _accent1,
                                           ),
                                         ),
@@ -3767,10 +3767,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                       child: Container(
                                         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                                         decoration: BoxDecoration(
-                                          color: isMine ? Colors.white.withOpacity(0.18) : Colors.grey.shade100,
+                                          color: isMine ? Colors.white.withValues(alpha:0.18) : Colors.grey.shade100,
                                           borderRadius: BorderRadius.circular(10),
                                           border: Border.all(
-                                            color: isMine ? Colors.white.withOpacity(0.25) : Colors.grey.shade200,
+                                            color: isMine ? Colors.white.withValues(alpha:0.25) : Colors.grey.shade200,
                                           ),
                                         ),
                                         child: Row(
@@ -3818,7 +3818,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     style: TextStyle(
                                       color: isMine
                                           ? Colors.white
-                                          : (isDark ? Colors.white.withOpacity(0.95) : Colors.grey.shade900),
+                                          : (isDark ? Colors.white.withValues(alpha:0.95) : Colors.grey.shade900),
                                       fontSize: 15,
                                       height: 1.4,
                                     ),
@@ -3837,7 +3837,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
                                             color: isMine 
-                                                ? Colors.white.withOpacity(0.2)
+                                                ? Colors.white.withValues(alpha:0.2)
                                                 : Colors.grey.shade200,
                                             borderRadius: BorderRadius.circular(12),
                                           ),
@@ -3872,7 +3872,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: isMine
-                                            ? Colors.white.withOpacity(0.8)
+                                            ? Colors.white.withValues(alpha:0.8)
                                             : Colors.grey.shade500,
                                       ),
                                     ),
@@ -3890,7 +3890,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           fontSize: 10,
                                           fontStyle: FontStyle.italic,
                                           color: isMine
-                                              ? Colors.white.withOpacity(0.6)
+                                              ? Colors.white.withValues(alpha:0.6)
                                               : Colors.grey.shade400,
                                         ),
                                       ),
@@ -3948,15 +3948,15 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Container(
                             margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.97),
+                              color: Colors.white.withValues(alpha:0.97),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: _accent1.withOpacity(0.18),
+                                color: _accent1.withValues(alpha:0.18),
                                 width: 1.2,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.06),
+                                  color: Colors.black.withValues(alpha:0.06),
                                   blurRadius: 10,
                                   offset: Offset(0, 4),
                                 ),
@@ -3974,7 +3974,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       Icon(
                                         Icons.push_pin,
                                         size: 12,
-                                        color: _accent1.withOpacity(0.8),
+                                        color: _accent1.withValues(alpha:0.8),
                                       ),
                                       SizedBox(width: 6),
                                       Text(
@@ -3989,7 +3989,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       Container(
                                         padding: EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: _accent1.withOpacity(0.12),
+                                          color: _accent1.withValues(alpha:0.12),
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
@@ -4033,10 +4033,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                             child: Container(
                                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                               decoration: BoxDecoration(
-                                                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                                                color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                                                 borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                                  color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
                                                   width: 1.2,
                                                 ),
                                               ),
@@ -4045,7 +4045,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   Icon(
                                                     Icons.push_pin,
                                                     size: 12,
-                                                    color: _accent1.withOpacity(0.6),
+                                                    color: _accent1.withValues(alpha:0.6),
                                                   ),
                                                   SizedBox(width: 8),
                                                   Expanded(
@@ -4093,7 +4093,7 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha:0.06),
                   blurRadius: 10,
                   offset: Offset(0, -2),
                 ),
@@ -4111,9 +4111,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         margin: EdgeInsets.only(bottom: 8),
                         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.12),
+                          color: Colors.orange.withValues(alpha:0.12),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.orange.withOpacity(0.35)),
+                          border: Border.all(color: Colors.orange.withValues(alpha:0.35)),
                         ),
                         child: Row(
                           children: [
@@ -4134,7 +4134,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         margin: EdgeInsets.only(bottom: 8),
                         padding: EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: _accent1.withOpacity(0.10),
+                          color: _accent1.withValues(alpha:0.10),
                           borderRadius: BorderRadius.circular(8),
                           border: Border(
                             left: BorderSide(
@@ -4274,9 +4274,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         margin: EdgeInsets.only(bottom: 8),
                         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                          color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
+                          border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
                         ),
                         child: Row(
                           children: [
@@ -4296,7 +4296,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   if (_selectedFileSize != null)
                                     Text(
                                       _formatBytes(_selectedFileSize!),
-                                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.65)),
+                                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.65)),
                                     ),
                                 ],
                               ),
@@ -4326,16 +4326,16 @@ class _ChatScreenState extends State<ChatScreen> {
                           gradient: LinearGradient(
                             colors: [
                               Colors.red.shade50,
-                              Colors.red.withOpacity(0.06),
+                              Colors.red.withValues(alpha:0.06),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.red.withOpacity(0.2), width: 1),
+                          border: Border.all(color: Colors.red.withValues(alpha:0.2), width: 1),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.red.withOpacity(0.08),
+                              color: Colors.red.withValues(alpha:0.08),
                               blurRadius: 8,
                               offset: Offset(0, 2),
                             ),
@@ -4351,7 +4351,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.red.withOpacity(0.5),
+                                    color: Colors.red.withValues(alpha:0.5),
                                     blurRadius: 6,
                                     spreadRadius: 0,
                                   ),
@@ -4388,7 +4388,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         // Кнопка выбора файла
                         Container(
                           decoration: BoxDecoration(
-                            color: _accent2.withOpacity(0.10),
+                            color: _accent2.withValues(alpha:0.10),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: IconButton(
@@ -4401,7 +4401,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         // Кнопка выбора изображения
                         Container(
                           decoration: BoxDecoration(
-                            color: _accent1.withOpacity(0.10),
+                            color: _accent1.withValues(alpha:0.10),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: IconButton(
@@ -4424,7 +4424,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               _stopAndSendVoiceRecordingIfRecording();
                             },
                             child: Material(
-                              color: (_isRecordingVoice ? Colors.red : _accent1).withOpacity(0.12),
+                              color: (_isRecordingVoice ? Colors.red : _accent1).withValues(alpha:0.12),
                               borderRadius: BorderRadius.circular(14),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(14),
@@ -4444,15 +4444,15 @@ class _ChatScreenState extends State<ChatScreen> {
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                              color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                               borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
+                              border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
                             ),
                             child: TextField(
                               controller: _controller,
                               decoration: InputDecoration(
                                 hintText: 'Введите сообщение...',
-                                hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                                hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 20,
@@ -4490,7 +4490,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: _accent1.withOpacity(0.3),
+                                  color: _accent1.withValues(alpha:0.3),
                                   blurRadius: 8,
                                   offset: Offset(0, 2),
                                 ),
@@ -4518,18 +4518,18 @@ class _ChatScreenState extends State<ChatScreen> {
               Positioned.fill(
                 child: IgnorePointer(
                   child: Container(
-                    color: _accent1.withOpacity(0.12),
+                    color: _accent1.withValues(alpha:0.12),
                     child: Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.file_upload_rounded, size: 56, color: _accent1.withOpacity(0.9)),
+                          Icon(Icons.file_upload_rounded, size: 56, color: _accent1.withValues(alpha:0.9)),
                           SizedBox(height: 12),
                           Text(
                             'Отпустите файл, чтобы прикрепить',
                             style: TextStyle(
                               fontSize: 16,
-                              color: scheme.onSurface.withOpacity(0.8),
+                              color: scheme.onSurface.withValues(alpha:0.8),
                               fontWeight: FontWeight.w500,
                             ),
                           ),

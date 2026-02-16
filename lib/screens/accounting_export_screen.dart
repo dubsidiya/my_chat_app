@@ -192,7 +192,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
-                  style: TextStyle(color: scheme.onSurface.withOpacity(0.75)),
+                  style: TextStyle(color: scheme.onSurface.withValues(alpha:0.75)),
                 ),
               ],
             ),
@@ -664,7 +664,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Пополнение баланса и выписки доступны только здесь.',
-                    style: TextStyle(color: scheme.onSurface.withOpacity(0.65)),
+                    style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
                   ),
                 ],
               ),
@@ -780,7 +780,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
           if (_isLoading) const Center(child: CircularProgressIndicator()),
           if (!_isLoading && _error != null)
             Card(
-              color: Colors.red.withOpacity(isDark ? 0.16 : 0.10),
+              color: Colors.red.withValues(alpha:isDark ? 0.16 : 0.10),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(_error!, style: TextStyle(color: Colors.red.shade800)),

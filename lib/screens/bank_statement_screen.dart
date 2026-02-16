@@ -190,16 +190,16 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.upload_file, size: 64, color: scheme.onSurface.withOpacity(0.55)),
+                      Icon(Icons.upload_file, size: 64, color: scheme.onSurface.withValues(alpha:0.55)),
                       SizedBox(height: 16),
                       Text(
                         'Выберите файл выписки',
-                        style: TextStyle(fontSize: 18, color: scheme.onSurface.withOpacity(0.75)),
+                        style: TextStyle(fontSize: 18, color: scheme.onSurface.withValues(alpha:0.75)),
                       ),
                       SizedBox(height: 8),
                       Text(
                         'Поддерживаются форматы: CSV, Excel (.xlsx, .xls)',
-                        style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.60)),
+                        style: TextStyle(fontSize: 14, color: scheme.onSurface.withValues(alpha:0.60)),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 24),
@@ -219,7 +219,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                     // Информация о результатах
                     Container(
                       padding: EdgeInsets.all(16),
-                      color: scheme.primary.withOpacity(isDark ? 0.14 : 0.08),
+                      color: scheme.primary.withValues(alpha:isDark ? 0.14 : 0.08),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -269,9 +269,9 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                             margin: EdgeInsets.symmetric(vertical: 4),
                             color: hasStudent
                                 ? (isSelected
-                                    ? Colors.green.withOpacity(isDark ? 0.14 : 0.10)
+                                    ? Colors.green.withValues(alpha:isDark ? 0.14 : 0.10)
                                     : Theme.of(context).cardColor)
-                                : Colors.orange.withOpacity(isDark ? 0.14 : 0.10),
+                                : Colors.orange.withValues(alpha:isDark ? 0.14 : 0.10),
                             child: CheckboxListTile(
                               value: isSelected,
                               onChanged: hasStudent

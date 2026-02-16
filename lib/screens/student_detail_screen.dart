@@ -244,11 +244,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             padding: EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: isDebtor
-                  ? Colors.red.withOpacity(isDark ? 0.14 : 0.10)
-                  : Colors.green.withOpacity(isDark ? 0.14 : 0.10),
+                  ? Colors.red.withValues(alpha:isDark ? 0.14 : 0.10)
+                  : Colors.green.withValues(alpha:isDark ? 0.14 : 0.10),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: (isDebtor ? Colors.red : Colors.green).withOpacity(isDark ? 0.55 : 0.65),
+                color: (isDebtor ? Colors.red : Colors.green).withValues(alpha:isDark ? 0.55 : 0.65),
                 width: 1.5,
               ),
             ),
@@ -258,7 +258,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   'Баланс',
                   style: TextStyle(
                     fontSize: 16,
-                    color: scheme.onSurface.withOpacity(0.70),
+                    color: scheme.onSurface.withValues(alpha:0.70),
                   ),
                 ),
                 SizedBox(height: 8),
@@ -295,9 +295,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               margin: EdgeInsets.symmetric(horizontal: 16),
               padding: EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12)),
+                border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +348,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                           _student.payByBankTransfer ? 'Платит на расчётный счёт' : 'Платит наличными',
                           style: TextStyle(
                             fontSize: 13,
-                            color: scheme.onSurface.withOpacity(0.8),
+                            color: scheme.onSurface.withValues(alpha:0.8),
                           ),
                         ),
                       ],
@@ -400,7 +400,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     ? Center(
                         child: Text(
                           'Нет занятий',
-                          style: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                          style: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
                         ),
                       )
                               : RefreshIndicator(
@@ -455,7 +455,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                       child: Center(
                                         child: Text(
                                           'Нет транзакций',
-                                          style: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                                          style: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
                                         ),
                                       ),
                                     ),
@@ -552,7 +552,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                   .format(transaction.createdAt),
                                               style: TextStyle(
                                                 fontSize: 11,
-                                                color: scheme.onSurface.withOpacity(0.60),
+                                                color: scheme.onSurface.withValues(alpha:0.60),
                                               ),
                                             ),
                                           ],

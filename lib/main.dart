@@ -74,7 +74,7 @@ class _MyAppState extends State<MyApp> {
 
       final surface = isDark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB);
       final card = isDark ? const Color(0xFF161A22) : Colors.white;
-      final outline = isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.08);
+      final outline = isDark ? Colors.white.withValues(alpha:0.10) : Colors.black.withValues(alpha:0.08);
 
       return ThemeData(
         brightness: brightness,
@@ -86,16 +86,16 @@ class _MyAppState extends State<MyApp> {
         visualDensity: VisualDensity.standard,
         useMaterial3: true,
         listTileTheme: ListTileThemeData(
-          iconColor: scheme.onSurface.withOpacity(0.80),
+          iconColor: scheme.onSurface.withValues(alpha:0.80),
           textColor: scheme.onSurface,
           contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           dense: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         chipTheme: ChipThemeData(
-          backgroundColor: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
-          selectedColor: scheme.primary.withOpacity(0.18),
-          disabledColor: scheme.onSurface.withOpacity(0.08),
+          backgroundColor: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
+          selectedColor: scheme.primary.withValues(alpha:0.18),
+          disabledColor: scheme.onSurface.withValues(alpha:0.08),
           labelStyle: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
           secondaryLabelStyle: TextStyle(color: scheme.onSurface),
           padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -106,7 +106,7 @@ class _MyAppState extends State<MyApp> {
         ),
         tabBarTheme: TabBarThemeData(
           labelColor: scheme.primary,
-          unselectedLabelColor: scheme.onSurface.withOpacity(0.55),
+          unselectedLabelColor: scheme.onSurface.withValues(alpha:0.55),
           indicatorColor: scheme.primary,
           labelStyle: TextStyle(fontWeight: FontWeight.w700),
         ),
@@ -126,7 +126,7 @@ class _MyAppState extends State<MyApp> {
         cardTheme: CardThemeData(
           elevation: 0,
           color: card,
-          shadowColor: Colors.black.withOpacity(isDark ? 0.30 : 0.08),
+          shadowColor: Colors.black.withValues(alpha:isDark ? 0.30 : 0.08),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(color: outline),
@@ -148,7 +148,7 @@ class _MyAppState extends State<MyApp> {
           contentTextStyle: TextStyle(
             fontSize: 14,
             height: 1.35,
-            color: scheme.onSurface.withOpacity(0.85),
+            color: scheme.onSurface.withValues(alpha:0.85),
           ),
         ),
         bottomSheetTheme: BottomSheetThemeData(
@@ -160,7 +160,7 @@ class _MyAppState extends State<MyApp> {
             side: BorderSide(color: outline),
           ),
           showDragHandle: true,
-          dragHandleColor: scheme.onSurface.withOpacity(0.25),
+          dragHandleColor: scheme.onSurface.withValues(alpha:0.25),
         ),
         popupMenuTheme: PopupMenuThemeData(
           color: card,
@@ -182,7 +182,7 @@ class _MyAppState extends State<MyApp> {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+          fillColor: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide(color: outline),

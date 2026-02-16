@@ -53,7 +53,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: _accent1.withOpacity(0.25),
+                  color: _accent1.withValues(alpha:0.25),
                   blurRadius: 10,
                   offset: Offset(0, 6),
                 ),
@@ -97,10 +97,10 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
             // Поиск
             Container(
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                  color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
                   width: 1.2,
                 ),
               ),
@@ -109,12 +109,12 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                 onChanged: (v) => setState(() => _query = v),
                 decoration: InputDecoration(
                   hintText: 'Поиск по логину',
-                  hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.55)),
+                  hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
                   prefixIcon: Icon(Icons.search_rounded, color: _accent1),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
-                          icon: Icon(Icons.close_rounded, color: scheme.onSurface.withOpacity(0.70)),
+                          icon: Icon(Icons.close_rounded, color: scheme.onSurface.withValues(alpha:0.70)),
                           onPressed: () {
                             setState(() {
                               _query = '';
@@ -141,8 +141,8 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  _accent1.withOpacity(0.15),
-                                  _accent3.withOpacity(0.15),
+                                  _accent1.withValues(alpha:0.15),
+                                  _accent3.withValues(alpha:0.15),
                                 ],
                               ),
                               shape: BoxShape.circle,
@@ -150,7 +150,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                             child: Icon(
                               Icons.group_off_rounded,
                               size: 42,
-                              color: _accent1.withOpacity(0.7),
+                              color: _accent1.withValues(alpha:0.7),
                             ),
                           ),
                           SizedBox(height: 16),
@@ -193,13 +193,13 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                 borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
                                   color: isSelected
-                                      ? _accent1.withOpacity(0.35)
-                                      : scheme.outline.withOpacity(isDark ? 0.18 : 0.12),
+                                      ? _accent1.withValues(alpha:0.35)
+                                      : scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
                                   width: 1.2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+                                    color: Colors.black.withValues(alpha:isDark ? 0.25 : 0.06),
                                     blurRadius: 10,
                                     offset: Offset(0, 4),
                                   ),
@@ -258,8 +258,8 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                       Container(
                                         decoration: BoxDecoration(
                                           color: isSelected
-                                              ? _accent1.withOpacity(0.12)
-                                              : (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04)),
+                                              ? _accent1.withValues(alpha:0.12)
+                                              : (isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04)),
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: Checkbox(
@@ -311,7 +311,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
             gradient: LinearGradient(colors: [_accent1, _accent2]),
             boxShadow: [
               BoxShadow(
-                color: _accent1.withOpacity(0.28),
+                color: _accent1.withValues(alpha:0.28),
                 blurRadius: 12,
                 offset: Offset(0, 6),
               ),

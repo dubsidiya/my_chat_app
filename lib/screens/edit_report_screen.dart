@@ -156,9 +156,9 @@ class _EditReportScreenState extends State<EditReportScreen> {
             Container(
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(isDark ? 0.16 : 0.10),
+                color: Colors.orange.withValues(alpha:isDark ? 0.16 : 0.10),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withOpacity(isDark ? 0.50 : 0.35)),
+                border: Border.all(color: Colors.orange.withValues(alpha:isDark ? 0.50 : 0.35)),
               ),
               child: Row(
                 children: [

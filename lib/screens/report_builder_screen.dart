@@ -435,7 +435,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                 Text(
                   'Правила: до 10 занятий в день; на одно время — 1 или 2 ученика.',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha:0.55),
                   ),
                 ),
               ],

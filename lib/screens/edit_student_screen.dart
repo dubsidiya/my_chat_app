@@ -159,7 +159,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
               title: const Text('Платит на расчётный счёт'),
               subtitle: Text(
                 'Если выключено — оплата наличными',
-                style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.6)),
+                style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.6)),
               ),
               contentPadding: EdgeInsets.zero,
             ),

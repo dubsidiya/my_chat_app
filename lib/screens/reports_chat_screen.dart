@@ -184,7 +184,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.1),
+              color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -196,7 +196,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           Container(
             margin: EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.1),
+              color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -215,7 +215,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
             padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Card(
               elevation: 2,
-              shadowColor: Colors.black.withOpacity(0.08),
+              shadowColor: Colors.black.withValues(alpha:0.08),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
@@ -234,7 +234,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
-                              color: _accent1.withOpacity(0.25),
+                              color: _accent1.withValues(alpha:0.25),
                               blurRadius: 10,
                               offset: Offset(0, 6),
                             ),
@@ -251,7 +251,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               'Дата отчета',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: scheme.onSurface.withOpacity(0.65),
+                                color: scheme.onSurface.withValues(alpha:0.65),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -267,7 +267,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right_rounded, color: scheme.onSurface.withOpacity(isDark ? 0.38 : 0.32)),
+                      Icon(Icons.chevron_right_rounded, color: scheme.onSurface.withValues(alpha:isDark ? 0.38 : 0.32)),
                     ],
                   ),
                 ),
@@ -283,7 +283,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
               children: [
                 Card(
                   elevation: 2,
-                  shadowColor: Colors.black.withOpacity(0.08),
+                  shadowColor: Colors.black.withValues(alpha:0.08),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
@@ -300,7 +300,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               gradient: LinearGradient(colors: [_accent1, _accent2]),
                               boxShadow: [
                                 BoxShadow(
-                                  color: _accent1.withOpacity(0.3),
+                                  color: _accent1.withValues(alpha:0.3),
                                   blurRadius: 12,
                                   offset: Offset(0, 6),
                                 ),
@@ -359,8 +359,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      _accent1.withOpacity(0.2),
-                                      _accent2.withOpacity(0.2),
+                                      _accent1.withValues(alpha:0.2),
+                                      _accent2.withValues(alpha:0.2),
                                     ],
                                   ),
                                   shape: BoxShape.circle,
@@ -368,7 +368,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 child: Icon(
                                   Icons.description_rounded,
                                   size: 60,
-                                  color: _accent1.withOpacity(0.7),
+                                  color: _accent1.withValues(alpha:0.7),
                                 ),
                               ),
                               SizedBox(height: 28),
@@ -377,7 +377,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
-                            color: scheme.onSurface.withOpacity(0.75),
+                            color: scheme.onSurface.withValues(alpha:0.75),
                                 ),
                               ),
                               SizedBox(height: 10),
@@ -385,7 +385,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 'Создайте отчет за день — занятия сформируются автоматически',
                                 style: TextStyle(
                                   fontSize: 16,
-                            color: scheme.onSurface.withOpacity(0.60),
+                            color: scheme.onSurface.withValues(alpha:0.60),
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -403,7 +403,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             return Card(
                               margin: EdgeInsets.symmetric(vertical: 6),
                               elevation: 2,
-                              shadowColor: Colors.black.withOpacity(0.08),
+                              shadowColor: Colors.black.withValues(alpha:0.08),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
@@ -422,7 +422,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                     boxShadow: [
                                       BoxShadow(
                                         color: (report.isEdited ? Colors.orange : _accent1)
-                                            .withOpacity(0.25),
+                                            .withValues(alpha:0.25),
                                         blurRadius: 10,
                                         offset: Offset(0, 6),
                                       ),
@@ -449,7 +449,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       report.content,
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: scheme.onSurface.withOpacity(0.70)),
+                                      style: TextStyle(color: scheme.onSurface.withValues(alpha:0.70)),
                                     ),
                                     SizedBox(height: 4),
                                     if (report.isLate)
@@ -458,7 +458,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         child: Container(
                                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: Colors.red.withOpacity(0.12),
+                                            color: Colors.red.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Text(
@@ -479,7 +479,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                             Container(
                                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
-                                                color: Colors.orange.withOpacity(0.12),
+                                                color: Colors.orange.withValues(alpha:0.12),
                                                 borderRadius: BorderRadius.circular(10),
                                               ),
                                               child: Text(
@@ -495,7 +495,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                             Container(
                                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
-                                                color: _accent1.withOpacity(0.12),
+                                                color: _accent1.withValues(alpha:0.12),
                                                 borderRadius: BorderRadius.circular(10),
                                               ),
                                               child: Text(
@@ -516,7 +516,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         child: Container(
                                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: _accent1.withOpacity(0.12),
+                                            color: _accent1.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Text(

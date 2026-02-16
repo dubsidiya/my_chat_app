@@ -114,13 +114,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 Colors.white,
-                                Colors.white.withOpacity(0.9),
+                                Colors.white.withValues(alpha:0.9),
                               ],
                             ),
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withValues(alpha:0.2),
                                 blurRadius: 30,
                                 offset: Offset(0, 15),
                                 spreadRadius: 5,
@@ -163,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             letterSpacing: 0.5,
                             shadows: [
                               Shadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withValues(alpha:0.2),
                                 blurRadius: 10,
                                 offset: Offset(0, 2),
                               ),
@@ -175,7 +175,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           'Зарегистрируйтесь для начала общения',
                           style: TextStyle(
                             fontSize: 18,
-                            color: Colors.white.withOpacity(0.95),
+                            color: Colors.white.withValues(alpha:0.95),
                             fontWeight: FontWeight.w300,
                             letterSpacing: 0.3,
                           ),
@@ -201,7 +201,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     },
                     child: Card(
                       elevation: 20,
-                      shadowColor: Colors.black.withOpacity(0.3),
+                      shadowColor: Colors.black.withValues(alpha:0.3),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
                       ),
@@ -213,7 +213,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             end: Alignment.bottomRight,
                             colors: [
                               Colors.white,
-                              Colors.white.withOpacity(0.98),
+                              Colors.white.withValues(alpha:0.98),
                             ],
                           ),
                         ),
@@ -228,7 +228,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.blue.withOpacity(0.1),
+                                      color: Colors.blue.withValues(alpha:0.1),
                                       blurRadius: 10,
                                       offset: Offset(0, 4),
                                     ),
@@ -283,7 +283,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.blue.withOpacity(0.1),
+                                      color: Colors.blue.withValues(alpha:0.1),
                                       blurRadius: 10,
                                       offset: Offset(0, 4),
                                     ),
@@ -335,7 +335,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     gradient: LinearGradient(
                                       colors: [
                                         Colors.red.shade50,
-                                        Colors.red.shade100.withOpacity(0.5),
+                                        Colors.red.shade100.withValues(alpha:0.5),
                                       ],
                                     ),
                                     borderRadius: BorderRadius.circular(12),
@@ -386,7 +386,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Color(0xFF667eea).withOpacity(0.4),
+                                              color: Color(0xFF667eea).withValues(alpha:0.4),
                                               blurRadius: 15,
                                               offset: Offset(0, 8),
                                             ),
@@ -466,7 +466,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.5),
+                                color: Colors.white.withValues(alpha:0.5),
                                 width: 1.5,
                               ),
                             ),

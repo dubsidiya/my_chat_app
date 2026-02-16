@@ -127,7 +127,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Colors.deepPurple.withOpacity(0.08),
+              color: Colors.deepPurple.withValues(alpha:0.08),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -144,7 +144,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           Container(
             margin: EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
-              color: _accent1.withOpacity(0.1),
+              color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -177,8 +177,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                _accent1.withOpacity(0.2),
-                                _accent2.withOpacity(0.2),
+                                _accent1.withValues(alpha:0.2),
+                                _accent2.withValues(alpha:0.2),
                               ],
                             ),
                             shape: BoxShape.circle,
@@ -186,7 +186,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           child: Icon(
                             Icons.school_rounded,
                             size: 60,
-                            color: _accent1.withOpacity(0.7),
+                            color: _accent1.withValues(alpha:0.7),
                           ),
                         ),
                         SizedBox(height: 28),
@@ -195,7 +195,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: scheme.onSurface.withOpacity(0.75),
+                            color: scheme.onSurface.withValues(alpha:0.75),
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -204,7 +204,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           'Добавьте первого ученика или загрузите выписку',
                           style: TextStyle(
                             fontSize: 16,
-                            color: scheme.onSurface.withOpacity(0.60),
+                            color: scheme.onSurface.withValues(alpha:0.60),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -222,7 +222,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: _accent1.withOpacity(0.3),
+                                    color: _accent1.withValues(alpha:0.3),
                                     blurRadius: 12,
                                     offset: Offset(0, 6),
                                   ),
@@ -326,7 +326,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: (student.isDebtor ? Colors.red : _accent1).withOpacity(0.25),
+                                  color: (student.isDebtor ? Colors.red : _accent1).withValues(alpha:0.25),
                                   blurRadius: 10,
                                   offset: Offset(0, 6),
                                 ),
@@ -347,7 +347,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   padding: EdgeInsets.only(top: 4),
                                   child: Text(
                                     student.parentName!,
-                                    style: TextStyle(color: scheme.onSurface.withOpacity(0.65)),
+                                    style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
                                   ),
                                 )
                               : null,
@@ -368,7 +368,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 Container(
                                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.12),
+                                    color: Colors.red.withValues(alpha:0.12),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
