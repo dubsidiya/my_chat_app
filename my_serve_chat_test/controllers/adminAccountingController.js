@@ -42,6 +42,7 @@ export const exportAccounting = async (req, res) => {
     const to = (req.query.to || '').toString();
     const formatRaw = ((req.query.format || 'json').toString() || 'json').toLowerCase();
     const format = formatRaw === 'csv' ? 'csv' : 'json';
+    const bankTransferOnly = req.query.bank_transfer_only === '1' || req.query.bank_transfer_only === 'true';
 
     if (!isValidISODate(from) || !isValidISODate(to)) {
       return res.status(400).json({ message: 'Параметры from/to обязательны в формате YYYY-MM-DD' });
@@ -68,13 +69,17 @@ export const exportAccounting = async (req, res) => {
       studentTeachers.get(sid).push({ teacherId: row.teacher_id, teacherUsername: row.teacher_username });
     }
 
-    // 3) Ученики
+    // 3) Ученики (в т.ч. способ оплаты: наличные / расчётный счёт)
     const studentsRes = await pool.query(
-      `SELECT id, name, parent_name, phone, email
+      `SELECT id, name, parent_name, phone, email,
+              COALESCE(pay_by_bank_transfer, false) as pay_by_bank_transfer
        FROM students
        ORDER BY name, id`
     );
     const studentById = new Map(studentsRes.rows.map((s) => [s.id, s]));
+    const studentIdsBankTransfer = new Set(
+      studentsRes.rows.filter((s) => s.pay_by_bank_transfer === true).map((s) => s.id)
+    );
 
     // 4) Кредит (депозиты/рефанды) по ученикам на конец периода
     // created_at <= (to + 1 day) 00:00
@@ -169,6 +174,7 @@ export const exportAccounting = async (req, res) => {
     for (const l of lessonsRes.rows) {
       const d = toIsoDate(l.lesson_date);
       if (d < from || d > to) continue;
+      if (bankTransferOnly && !studentIdsBankTransfer.has(l.student_id)) continue;
       const cov = coverageByLessonId.get(l.id) || { paid: 0, unpaid: toNumber(l.price) };
       const st = studentById.get(l.student_id);
       const row = {
@@ -207,12 +213,17 @@ export const exportAccounting = async (req, res) => {
     }
 
     // Ученики с деталями (для бухгалтерии удобно)
-    const studentsOut = studentsRes.rows.map((s) => ({
+    let studentsFiltered = studentsRes.rows;
+    if (bankTransferOnly) {
+      studentsFiltered = studentsRes.rows.filter((s) => studentIdsBankTransfer.has(s.id));
+    }
+    const studentsOut = studentsFiltered.map((s) => ({
       id: s.id,
       name: s.name,
       parentName: s.parent_name || null,
       phone: s.phone || null,
       email: s.email || null,
+      payByBankTransfer: s.pay_by_bank_transfer === true,
       teachers: studentTeachers.get(s.id) || [],
       depositsInPeriod: depositsInPeriodByStudent.get(s.id) || 0,
       debtAsOfTo: debtByStudent.get(s.id) || 0,
@@ -313,7 +324,8 @@ export const exportAccounting = async (req, res) => {
       }
       const csv = asCsv(rows);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="accounting_${from}_${to}.csv"`);
+      const suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
+      res.setHeader('Content-Disposition', `attachment; filename="accounting_${from}_${to}${suffix}.csv"`);
       return res.status(200).send(csv);
     }
 

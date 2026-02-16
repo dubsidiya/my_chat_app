@@ -63,7 +63,8 @@ export const getAllStudents = async (req, res) => {
 // Создание нового студента (или возврат существующего, если уже есть)
 export const createStudent = async (req, res) => {
   const userId = req.user.userId;
-  const { name, parent_name, phone, email, notes } = req.body;
+  const { name, parent_name, phone, email, notes, pay_by_bank_transfer } = req.body;
+  const payByBank = pay_by_bank_transfer === true || pay_by_bank_transfer === 'true';
 
   if (!name || name.trim() === '') {
     return res.status(400).json({ message: 'Имя студента обязательно' });
@@ -144,6 +145,10 @@ export const createStudent = async (req, res) => {
         updates.push(`notes = $${idx++}`);
         values.push(notes.trim());
       }
+      if (existingStudent.pay_by_bank_transfer !== payByBank) {
+        updates.push(`pay_by_bank_transfer = $${idx++}`);
+        values.push(payByBank);
+      }
 
       let student = existingStudent;
       if (updates.length > 0) {
@@ -164,8 +169,8 @@ export const createStudent = async (req, res) => {
 
     // Создаем нового студента и сразу привязываем к преподавателю
     const created = await client.query(
-      `INSERT INTO students (name, parent_name, phone, email, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO students (name, parent_name, phone, email, notes, pay_by_bank_transfer, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         trimmedName,
@@ -173,6 +178,7 @@ export const createStudent = async (req, res) => {
         trimmedPhone,
         normalizedEmail,
         notes?.trim() || null,
+        payByBank,
         userId,
       ]
     );
@@ -195,7 +201,8 @@ export const updateStudent = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
-    const { name, parent_name, phone, email, notes } = req.body;
+    const { name, parent_name, phone, email, notes, pay_by_bank_transfer } = req.body;
+    const payByBank = pay_by_bank_transfer === true || pay_by_bank_transfer === 'true';
 
     if (!name || !name.toString().trim()) {
       return res.status(400).json({ message: 'Имя студента обязательно' });
@@ -213,8 +220,8 @@ export const updateStudent = async (req, res) => {
 
     const result = await pool.query(
       `UPDATE students 
-       SET name = $1, parent_name = $2, phone = $3, email = $4, notes = $5, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6
+       SET name = $1, parent_name = $2, phone = $3, email = $4, notes = $5, pay_by_bank_transfer = $6, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7
        RETURNING *`,
       [
         name.toString().trim(),
@@ -222,6 +229,7 @@ export const updateStudent = async (req, res) => {
         phone?.trim() || null,
         email ? normalizeEmail(email) : null,
         notes?.trim() || null,
+        payByBank,
         id,
       ]
     );

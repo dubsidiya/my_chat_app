@@ -60,6 +60,7 @@ class StudentsService {
     String? phone,
     String? email,
     String? notes,
+    bool payByBankTransfer = false,
   }) async {
     final headers = await _getAuthHeaders();
     final response = await http.post(
@@ -71,6 +72,7 @@ class StudentsService {
         'phone': phone,
         'email': email,
         'notes': notes,
+        'pay_by_bank_transfer': payByBankTransfer,
       }),
     );
 
@@ -96,6 +98,7 @@ class StudentsService {
     String? phone,
     String? email,
     String? notes,
+    bool payByBankTransfer = false,
   }) async {
     final headers = await _getAuthHeaders();
     final response = await http.put(
@@ -107,6 +110,7 @@ class StudentsService {
         'phone': phone,
         'email': email,
         'notes': notes,
+        'pay_by_bank_transfer': payByBankTransfer,
       }),
     );
 

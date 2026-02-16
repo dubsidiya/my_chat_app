@@ -276,6 +276,29 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
+  Future<void> _copyCsvBankTransfer() async {
+    try {
+      final csv = await _adminService.exportAccountingCsv(
+        from: _fmt(_from),
+        to: _fmt(_to),
+        bankTransferOnly: true,
+      );
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Выписка по расчётному счёту скопирована в буфер'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _downloadCsvFile() async {
     try {
       final csv = await _adminService.exportAccountingCsv(from: _fmt(_from), to: _fmt(_to));
@@ -309,6 +332,48 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _downloadCsvFileBankTransfer() async {
+    try {
+      final csv = await _adminService.exportAccountingCsv(
+        from: _fmt(_from),
+        to: _fmt(_to),
+        bankTransferOnly: true,
+      );
+      final filename = 'accounting_${_fmt(_from)}_${_fmt(_to)}_raschetnyi_schet.csv';
+
+      final okWeb = await downloadTextFile(
+        filename: filename,
+        content: csv,
+        mimeType: 'text/csv; charset=utf-8',
+      );
+      if (okWeb) return;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsString(csv, flush: true);
+
+      if (!mounted) return;
+      final uri = Uri.file(file.path);
+      final can = await canLaunchUrl(uri);
+      if (!mounted) return;
+      if (can) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Выписка по расчётному счёту сохранена: ${file.path}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -673,6 +738,31 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                           onPressed: _isLoading ? null : _downloadCsvFile,
                           icon: const Icon(Icons.download_rounded),
                           label: const Text('CSV файл'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Выписка только по ученикам с оплатой на расчётный счёт:',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _copyCsvBankTransfer,
+                          icon: const Icon(Icons.account_balance_rounded),
+                          label: const Text('Копия (расч. счёт)'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _downloadCsvFileBankTransfer,
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Скачать выписку'),
                         ),
                       ),
                     ],

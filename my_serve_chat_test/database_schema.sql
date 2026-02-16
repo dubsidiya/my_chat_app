@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS students (
     phone VARCHAR(50),
     email VARCHAR(255),
     notes TEXT,
+    pay_by_bank_transfer BOOLEAN NOT NULL DEFAULT false,
     created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

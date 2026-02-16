@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import '../models/student.dart';
 import '../services/students_service.dart';
 
-class AddStudentScreen extends StatefulWidget {
-  const AddStudentScreen({super.key});
+class EditStudentScreen extends StatefulWidget {
+  final Student student;
+
+  const EditStudentScreen({super.key, required this.student});
 
   @override
-  _AddStudentScreenState createState() => _AddStudentScreenState();
+  _EditStudentScreenState createState() => _EditStudentScreenState();
 }
 
-class _AddStudentScreenState extends State<AddStudentScreen> {
+class _EditStudentScreenState extends State<EditStudentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _parentNameController = TextEditingController();
@@ -18,6 +21,17 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _studentsService = StudentsService();
   bool _isLoading = false;
   bool _payByBankTransfer = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = widget.student.name;
+    _parentNameController.text = widget.student.parentName ?? '';
+    _phoneController.text = widget.student.phone ?? '';
+    _emailController.text = widget.student.email ?? '';
+    _notesController.text = widget.student.notes ?? '';
+    _payByBankTransfer = widget.student.payByBankTransfer;
+  }
 
   @override
   void dispose() {
@@ -35,7 +49,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final result = await _studentsService.createStudent(
+      final updated = await _studentsService.updateStudent(
+        id: widget.student.id,
         name: _nameController.text.trim(),
         parentName: _parentNameController.text.trim().isEmpty
             ? null
@@ -53,14 +68,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       );
 
       if (mounted) {
-        Navigator.pop(context, true);
+        Navigator.pop(context, updated);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.wasExisting
-                  ? 'Ученик уже существует — добавлен к вам'
-                  : 'Ученик добавлен',
-            ),
+          const SnackBar(
+            content: Text('Данные ученика сохранены'),
             backgroundColor: Colors.green,
           ),
         );
@@ -86,73 +97,73 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Добавить студента'),
+        title: const Text('Редактировать ученика'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
               controller: _nameController,
-              decoration: InputDecoration(
-                labelText: 'Имя студента *',
+              decoration: const InputDecoration(
+                labelText: 'Имя ученика *',
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'Введите имя студента';
+                  return 'Введите имя';
                 }
                 return null;
               },
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _parentNameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Имя родителя',
                 border: OutlineInputBorder(),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _phoneController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Телефон',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.phone,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _emailController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.emailAddress,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _notesController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Заметки',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             SwitchListTile(
               value: _payByBankTransfer,
               onChanged: (v) => setState(() => _payByBankTransfer = v),
-              title: Text('Платит на расчётный счёт'),
+              title: const Text('Платит на расчётный счёт'),
               subtitle: Text(
                 'Если выключено — оплата наличными',
                 style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.6)),
               ),
               contentPadding: EdgeInsets.zero,
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _isLoading ? null : _saveStudent,
               child: _isLoading
@@ -164,9 +175,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                         valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
                       ),
                     )
-                  : Text('Сохранить'),
+                  : const Text('Сохранить'),
               style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
           ],
@@ -175,4 +186,3 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 }
-

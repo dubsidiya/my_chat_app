@@ -43,9 +43,11 @@ class AdminService {
   Future<Map<String, dynamic>> exportAccountingJson({
     required String from, // YYYY-MM-DD
     required String to, // YYYY-MM-DD
+    bool bankTransferOnly = false,
   }) async {
     final headers = await _getAuthHeaders();
-    final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=json');
+    final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
+    final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=json$bank');
     final response = await http.get(uri, headers: headers);
 
     final bodyText = utf8.decode(response.bodyBytes);
@@ -71,9 +73,11 @@ class AdminService {
   Future<String> exportAccountingCsv({
     required String from, // YYYY-MM-DD
     required String to, // YYYY-MM-DD
+    bool bankTransferOnly = false,
   }) async {
     final headers = await _getAuthHeaders();
-    final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=csv');
+    final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
+    final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=csv$bank');
     final response = await http.get(uri, headers: headers);
 
     if (response.statusCode == 200) {

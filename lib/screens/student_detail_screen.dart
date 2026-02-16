@@ -6,6 +6,7 @@ import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../services/students_service.dart';
 import 'add_lesson_screen.dart';
+import 'edit_student_screen.dart';
 
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
@@ -18,6 +19,7 @@ class StudentDetailScreen extends StatefulWidget {
 
 class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTickerProviderStateMixin {
   final StudentsService _studentsService = StudentsService();
+  late Student _student;
   List<Lesson> _lessons = [];
   List<Transaction> _transactions = [];
   double _balance = 0;
@@ -27,7 +29,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   @override
   void initState() {
     super.initState();
-    _balance = widget.student.balance;
+    _student = widget.student;
+    _balance = _student.balance;
     _tabController = TabController(length: 2, vsync: this);
     _loadData();
   }
@@ -43,8 +46,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     setState(() => _isLoading = true);
 
     try {
-      final lessons = await _studentsService.getStudentLessons(widget.student.id);
-      final transactions = await _studentsService.getStudentTransactions(widget.student.id);
+      final lessons = await _studentsService.getStudentLessons(_student.id);
+      final transactions = await _studentsService.getStudentTransactions(_student.id);
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -65,8 +68,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   Future<void> _refreshData() async {
     if (!mounted) return;
     try {
-      final lessons = await _studentsService.getStudentLessons(widget.student.id);
-      final transactions = await _studentsService.getStudentTransactions(widget.student.id);
+      final lessons = await _studentsService.getStudentLessons(_student.id);
+      final transactions = await _studentsService.getStudentTransactions(_student.id);
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -79,11 +82,26 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  void _editStudent() async {
+    final updated = await Navigator.push<Student>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditStudentScreen(student: _student),
+      ),
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _student = updated;
+        _balance = updated.balance;
+      });
+    }
+  }
+
   void _addLesson() async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddLessonScreen(studentId: widget.student.id),
+        builder: (_) => AddLessonScreen(studentId: _student.id),
       ),
     );
 
@@ -97,7 +115,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     try {
       final students = await _studentsService.getAllStudents();
       final updatedStudent = students.firstWhere(
-        (s) => s.id == widget.student.id,
+        (s) => s.id == _student.id,
       );
       if (mounted) {
       setState(() {
@@ -115,7 +133,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       builder: (context) => AlertDialog(
         title: Text('Удалить ученика?'),
         content: Text(
-          'Вы уверены, что хотите удалить "${widget.student.name}"?\n\n'
+          'Вы уверены, что хотите удалить "${_student.name}"?\n\n'
           'Это действие удалит все связанные данные:\n'
           '• Все занятия (${_lessons.length})\n'
           '• Все транзакции (${_transactions.length})\n'
@@ -138,11 +156,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     if (confirm != true) return;
 
     try {
-      await _studentsService.deleteStudent(widget.student.id);
+      await _studentsService.deleteStudent(_student.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ученик "${widget.student.name}" удален'),
+            content: Text('Ученик "${_student.name}" удален'),
             backgroundColor: Colors.green,
           ),
         );
@@ -203,8 +221,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.student.name),
+        title: Text(_student.name),
         actions: [
+          IconButton(
+            icon: Icon(Icons.edit),
+            onPressed: _editStudent,
+            tooltip: 'Редактировать',
+          ),
           IconButton(
             icon: Icon(Icons.delete),
             onPressed: () => _deleteStudent(),
@@ -264,9 +287,10 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           ),
 
           // Информация о студенте
-          if (widget.student.parentName != null ||
-              widget.student.phone != null ||
-              widget.student.email != null)
+          if (_student.parentName != null ||
+              _student.phone != null ||
+              _student.email != null ||
+              true)
             Container(
               margin: EdgeInsets.symmetric(horizontal: 16),
               padding: EdgeInsets.all(16),
@@ -278,36 +302,58 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.student.parentName != null)
+                  if (_student.parentName != null)
                     Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
                           Icon(Icons.person_outline, size: 16),
                           SizedBox(width: 8),
-                          Text('Родитель: ${widget.student.parentName}'),
+                          Text('Родитель: ${_student.parentName}'),
                         ],
                       ),
                     ),
-                  if (widget.student.phone != null)
+                  if (_student.phone != null)
                     Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
                           Icon(Icons.phone, size: 16),
                           SizedBox(width: 8),
-                          Text(widget.student.phone!),
+                          Text(_student.phone!),
                         ],
                       ),
                     ),
-                  if (widget.student.email != null)
-                    Row(
+                  if (_student.email != null)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.email, size: 16),
+                          SizedBox(width: 8),
+                          Text(_student.email!),
+                        ],
+                      ),
+                    ),
+                  Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Row(
                       children: [
-                        Icon(Icons.email, size: 16),
+                        Icon(
+                          _student.payByBankTransfer ? Icons.account_balance : Icons.payments,
+                          size: 16,
+                        ),
                         SizedBox(width: 8),
-                        Text(widget.student.email!),
+                        Text(
+                          _student.payByBankTransfer ? 'Платит на расчётный счёт' : 'Платит наличными',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface.withOpacity(0.8),
+                          ),
+                        ),
                       ],
                     ),
+                  ),
                 ],
               ),
             ),
