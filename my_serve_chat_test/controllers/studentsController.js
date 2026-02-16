@@ -196,7 +196,7 @@ export const createStudent = async (req, res) => {
   }
 };
 
-// Обновление студента (только владелец)
+// Обновление студента (владелец по teacher_students или суперпользователь — любого)
 export const updateStudent = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -208,14 +208,21 @@ export const updateStudent = async (req, res) => {
       return res.status(400).json({ message: 'Имя студента обязательно' });
     }
 
-    // Проверяем доступ к студенту через связь teacher_students
-    const checkResult = await pool.query(
-      'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
-      [userId, id]
-    );
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Студент не найден' });
+    // Суперпользователь может править любого; иначе — только при наличии связи teacher_students
+    if (!isSuperuser(req.user)) {
+      const checkResult = await pool.query(
+        'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
+        [userId, id]
+      );
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
+    } else {
+      // Суперпользователь: проверяем, что студент вообще есть в базе
+      const exists = await pool.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+      if (exists.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
     }
 
     const result = await pool.query(
@@ -241,7 +248,8 @@ export const updateStudent = async (req, res) => {
   }
 };
 
-// Удаление студента из списка преподавателя (и удаление из БД, если больше ни у кого не привязан)
+// Удаление студента из списка преподавателя (и удаление из БД, если больше ни у кого не привязан).
+// Суперпользователь может удалить любого ученика (в т.ч. без своей связи в teacher_students).
 export const deleteStudent = async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
@@ -250,25 +258,35 @@ export const deleteStudent = async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const hasAccess = await assertTeacherHasStudentAccess(client, userId, id);
+    const isSuper = isSuperuser(req.user);
+    const hasAccess = isSuper || (await assertTeacherHasStudentAccess(client, userId, id));
     if (!hasAccess) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Студент не найден' });
     }
 
-    // Снимаем привязку студент↔преподаватель
-    await client.query(
-      'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
-      [userId, id]
-    );
-
-    // Если больше ни у кого не числится — удаляем полностью
-    const stillLinked = await client.query(
-      'SELECT 1 FROM teacher_students WHERE student_id = $1 LIMIT 1',
-      [id]
-    );
-    if (stillLinked.rows.length === 0) {
+    if (isSuper) {
+      // Суперпользователь: проверяем существование и удаляем студента полностью
+      const studentExists = await client.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+      if (studentExists.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
+      await client.query('DELETE FROM teacher_students WHERE student_id = $1', [id]);
       await client.query('DELETE FROM students WHERE id = $1', [id]);
+    } else {
+      // Обычный преподаватель: снимаем только свою привязку
+      await client.query(
+        'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
+        [userId, id]
+      );
+      const stillLinked = await client.query(
+        'SELECT 1 FROM teacher_students WHERE student_id = $1 LIMIT 1',
+        [id]
+      );
+      if (stillLinked.rows.length === 0) {
+        await client.query('DELETE FROM students WHERE id = $1', [id]);
+      }
     }
 
     await client.query('COMMIT');

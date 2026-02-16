@@ -1,5 +1,3 @@
-import org.gradle.api.tasks.compile.JavaCompile
-
 allprojects {
     repositories {
         google()
@@ -16,16 +14,6 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
-}
-
-subprojects {
-    afterEvaluate {
-        tasks.withType<JavaCompile>().configureEach {
-            sourceCompatibility = JavaVersion.VERSION_11
-            targetCompatibility = JavaVersion.VERSION_11
-            options.compilerArgs.add("-Xlint:-options")
-        }
-    }
 }
 
 tasks.register<Delete>("clean") {
