@@ -1419,13 +1419,46 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? Center(
                               child: Padding(
                                 padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Ничего не найдено',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey.shade600,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _query.trim().isEmpty
+                                          ? 'Нет чатов'
+                                          : 'По запросу ничего не найдено',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    if (_query.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Очистите поиск, чтобы увидеть все чаты',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      OutlinedButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _query = '';
+                                            _searchController.clear();
+                                          });
+                                        },
+                                        icon: const Icon(Icons.clear_all_rounded, size: 20),
+                                        label: const Text('Показать все чаты'),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Color(0xFF667eea),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             )
