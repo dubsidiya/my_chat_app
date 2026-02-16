@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'package:intl/date_symbol_data_local.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
@@ -22,6 +23,8 @@ void main() {
   // Обработка асинхронных ошибок
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    await initializeDateFormatting('ru');
+    await initializeDateFormatting('en_US');
     await LocalMessagesService.init();
     await PushNotificationService.init(navigatorKey);
     runApp(MyApp());
