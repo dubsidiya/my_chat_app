@@ -1,16 +1,33 @@
-# my_chat_app
+# reollity
 
-A new Flutter project.
+Flutter-приложение: чат, учёт учеников, занятия, выписки для бухгалтерии.  
+Клиент для бэкенда (Node.js + PostgreSQL).
 
-## Getting Started
+## Стек
 
-This project is a starting point for a Flutter application.
+- **Клиент:** Flutter (iOS, Android, Web)
+- **Бэкенд:** `my_serve_chat_test/` — Node.js, Express, PostgreSQL, WebSocket
+- **Сервисы:** Firebase (push), Hive (кэш сообщений), secure storage (токен)
 
-A few resources to get you started if this is your first Flutter project:
+## Запуск
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+# Клиент
+flutter pub get
+flutter run
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Бэкенд (из корня проекта)
+cd my_serve_chat_test && npm install && npm run dev
+```
+
+Web: `flutter run -d chrome`. Сборка: `flutter build web` / `flutter build apk` / `flutter build ios`.
+
+## Конфиг
+
+- API: `lib/config/api_config.dart` (или `--dart-define=API_BASE_URL=https://...`).
+- Web-заголовок и PWA: `web/index.html`, `web/manifest.json`.
+
+## Документация
+
+- [Идеи и оптимизация](docs/FUTURE_AND_OPTIMIZATION.md) — что уже сделано и что можно добавить.
+- Остальные гайды в `docs/`.

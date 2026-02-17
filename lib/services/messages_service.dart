@@ -708,6 +708,19 @@ class MessagesService {
     }
   }
 
+  /// Отметить все сообщения чата как прочитанные (при выходе из чата).
+  Future<void> markChatAsRead(String chatId) async {
+    try {
+      final headers = await _getAuthHeaders();
+      await http.post(
+        Uri.parse('$baseUrl/messages/chat/$chatId/read-all'),
+        headers: headers,
+      ).timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // best-effort: не показываем ошибку при закрытии экрана
+    }
+  }
+
   Future<void> clearChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');

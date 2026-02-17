@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "migrate": "node scripts/run-migration.js",
     "migrate-passwords": "node migrate_passwords.js",
     "check-setup": "node check_setup.js",
     "auto-setup": "node auto_setup.js",
