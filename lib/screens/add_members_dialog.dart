@@ -32,10 +32,11 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
 
     final filteredUsers = widget.availableUsers.where((u) {
       final email = (u['email'] ?? '').toString().toLowerCase();
+      final displayName = (u['display_name'] ?? '').toString().toLowerCase();
       final id = (u['id'] ?? '').toString().toLowerCase();
       final q = _query.trim().toLowerCase();
       if (q.isEmpty) return true;
-      return email.contains(q) || id.contains(q);
+      return email.contains(q) || displayName.contains(q) || id.contains(q);
     }).toList();
 
     return AlertDialog(
@@ -185,6 +186,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                             final user = filteredUsers[index];
                             final userId = (user['id'] ?? '').toString();
                             final email = (user['email'] ?? '').toString();
+                            final displayName = (user['display_name'] ?? email).toString();
                             final isSelected = _selectedUserIds.contains(userId);
 
                             return Container(
@@ -234,7 +236,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                         ),
                                         child: Center(
                                           child: Text(
-                                            email.isNotEmpty ? email[0].toUpperCase() : '?',
+                                            displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 16,
@@ -246,7 +248,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
-                                          email,
+                                          displayName,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(

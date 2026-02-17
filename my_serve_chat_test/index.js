@@ -15,6 +15,7 @@ import reportsRoutes from './routes/reports.js';
 import bankStatementRoutes from './routes/bankStatement.js';
 import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
+import moderationRoutes from './routes/moderation.js';
 import { setupWebSocket } from './websocket/websocket.js';
 import pool from './db.js';
 
@@ -252,6 +253,7 @@ app.use('/reports', reportsRoutes);
 app.use('/bank-statement', bankStatementRoutes);
 app.use('/setup', setupRoutes);
 app.use('/admin', adminRoutes);
+app.use('/moderation', moderationRoutes);
 
 // Подключение WebSocket
 setupWebSocket(server);

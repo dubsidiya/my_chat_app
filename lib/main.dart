@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:intl/date_symbol_data_local.dart';
+import 'screens/eula_consent_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
@@ -246,10 +247,14 @@ class _MyAppState extends State<MyApp> {
       theme: _lightTheme!,
       darkTheme: _darkTheme!,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: FutureBuilder<Map<String, String>?>(
-        future: StorageService.getUserData(),
+      home: FutureBuilder<Map<String, dynamic>?>(
+        future: () async {
+          final userData = await StorageService.getUserData();
+          if (userData == null || userData['token'] == null) return null;
+          final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
+          return {'userData': userData, 'eulaAccepted': eulaAccepted};
+        }(),
         builder: (context, snapshot) {
-          // Показываем загрузку пока проверяем сохраненные данные
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Scaffold(
               body: Container(
@@ -285,20 +290,32 @@ class _MyAppState extends State<MyApp> {
             );
           }
 
-          // Если есть сохраненные данные и токен - автоматически входим
-          if (snapshot.hasData && snapshot.data != null && snapshot.data!['token'] != null) {
-            final userData = snapshot.data!;
-            final userIdentifier = userData['email'] ?? userData['username'] ?? '';
+          final data = snapshot.data;
+          if (data != null) {
+            final userData = data['userData'] as Map<String, dynamic>;
+            final eulaAccepted = data['eulaAccepted'] as bool;
+            final userIdentifier = (userData['email'] ?? userData['username'] ?? '') as String;
             final isSuperuser = userData['isSuperuser'] == 'true';
-            return MainTabsScreen(
-              userId: userData['id']!,
+            final displayName = userData['displayName']?.toString();
+            final userId = userData['id'] as String;
+            if (eulaAccepted) {
+              return MainTabsScreen(
+                userId: userId,
+                userEmail: userIdentifier,
+                displayName: displayName,
+                isSuperuser: isSuperuser,
+                onThemeChanged: toggleTheme,
+              );
+            }
+            return EulaConsentScreen(
+              userId: userId,
               userEmail: userIdentifier,
+              displayName: displayName,
               isSuperuser: isSuperuser,
               onThemeChanged: toggleTheme,
             );
           }
 
-          // Если данных нет - показываем экран входа
           return const LoginScreen();
         },
       ),

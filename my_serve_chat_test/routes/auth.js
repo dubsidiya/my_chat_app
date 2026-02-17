@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getMe, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/authController.js';
+import { register, login, getMe, updateProfile, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -23,7 +23,8 @@ router.post('/register', register);
 router.post('/login', login);
 
 // Защищенные эндпоинты (требуют JWT токен)
-router.get('/me', authenticateToken, getMe); // GET /auth/me — текущий пользователь (isSuperuser, privateAccess по списку в env)
+router.get('/me', authenticateToken, getMe);
+router.patch('/me', authenticateToken, updateProfile); // PATCH /auth/me — обновить ник (display_name)
 router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - получение всех пользователей
 router.delete('/user/:userId', authenticateToken, deleteAccount); // DELETE /auth/user/:userId - удаление аккаунта
 router.put('/user/:userId/password', authenticateToken, changePassword); // PUT /auth/user/:userId/password - смена пароля

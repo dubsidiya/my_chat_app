@@ -14,10 +14,11 @@ import 'package:intl/intl.dart';
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
+  final String? displayName;
   final bool isSuperuser;
   final Function(bool)? onThemeChanged;
 
-  const HomeScreen({super.key, required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
+  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.isSuperuser = false, this.onThemeChanged});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -28,6 +29,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChatsService _chatsService = ChatsService();
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
+  String? _displayName;
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.displayName != widget.displayName) _displayName = widget.displayName;
+  }
   List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
   bool _isLoading = false;
   String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
@@ -143,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _displayName = widget.displayName;
     _loadChats();
   }
 
@@ -391,6 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ChatScreen(
           userId: widget.userId,
           userEmail: widget.userEmail,
+          displayName: _displayName,
           chatId: chat.id,
           chatName: chat.name,
           isGroup: chat.isGroup,
@@ -459,11 +469,81 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showMainMenu(BuildContext context, ColorScheme scheme, bool isDark) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _menuTile(ctx, scheme, Icons.school_rounded, const Color(0xFF667eea), 'Учет занятий', () async {
+                Navigator.pop(ctx);
+                await _openAccounting();
+              }),
+              _menuTile(ctx, scheme, Icons.description_rounded, const Color(0xFF764ba2), 'Отчеты', () async {
+                Navigator.pop(ctx);
+                await _openReports();
+              }),
+              _menuTile(ctx, scheme, Icons.settings_rounded, Colors.amber.shade700, 'Настройки', () async {
+                Navigator.pop(ctx);
+                await _showSettingsSheet();
+              }),
+              const Divider(height: 24),
+              _menuTile(ctx, scheme, isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, scheme.primary, isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓', () {
+                Navigator.pop(ctx);
+                _toggleTheme();
+              }),
+              _menuTile(ctx, scheme, Icons.logout_rounded, Colors.blue, 'Выйти', () {
+                Navigator.pop(ctx);
+                _logout();
+              }),
+              _menuTile(ctx, scheme, Icons.lock_outline_rounded, Colors.orange, 'Изменить пароль', () async {
+                Navigator.pop(ctx);
+                await _changePassword();
+              }),
+              if (widget.isSuperuser)
+                _menuTile(ctx, scheme, Icons.admin_panel_settings_rounded, Colors.teal, 'Сбросить пароль пользователя', () async {
+                  Navigator.pop(ctx);
+                  await _adminResetPassword();
+                }),
+              _menuTile(ctx, scheme, Icons.delete_forever_rounded, Colors.red, 'Удалить аккаунт', () async {
+                Navigator.pop(ctx);
+                await _deleteAccount();
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile(BuildContext context, ColorScheme scheme, IconData icon, Color color, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: label == 'Удалить аккаунт' ? Colors.red : scheme.onSurface)),
+      onTap: onTap,
+    );
+  }
+
   Future<void> _showSettingsSheet() async {
     bool soundOn = await StorageService.getSoundOnNewMessage();
     bool vibrationOn = await StorageService.getVibrationOnNewMessage();
     if (!mounted) return;
     final scheme = Theme.of(context).colorScheme;
+    final nickController = TextEditingController(text: _displayName ?? '');
+    String? nickError;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -481,45 +561,97 @@ class _HomeScreenState extends State<HomeScreen> {
                 right: 24,
                 top: 24,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Настройки',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurface,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Настройки',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: scheme.onSurface,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  SwitchListTile(
-                    title: const Text('Звук при новом сообщении'),
-                    subtitle: const Text('Воспроизводить звук, когда приходит новое сообщение'),
-                    value: soundOn,
-                    onChanged: (v) async {
-                      await StorageService.setSoundOnNewMessage(v);
-                      setModalState(() => soundOn = v);
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Вибрация при новом сообщении'),
-                    subtitle: const Text('Вибрация при получении нового сообщения'),
-                    value: vibrationOn,
-                    onChanged: (v) async {
-                      await StorageService.setVibrationOnNewMessage(v);
-                      setModalState(() => vibrationOn = v);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: nickController,
+                      decoration: InputDecoration(
+                        labelText: 'Ник (как вас видят другие)',
+                        hintText: 'Оставьте пустым — будет показан логин',
+                        errorText: nickError,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      maxLength: 255,
+                      onSubmitted: (_) async {
+                        final name = nickController.text.trim();
+                        try {
+                          await _authService.updateProfile(name);
+                          if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
+                            );
+                          }
+                        } catch (e) {
+                          setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final name = nickController.text.trim();
+                          try {
+                            await _authService.updateProfile(name);
+                            if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
+                              );
+                            }
+                          } catch (e) {
+                            setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
+                          }
+                        },
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('Сохранить ник'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('Звук при новом сообщении'),
+                      subtitle: const Text('Воспроизводить звук, когда приходит новое сообщение'),
+                      value: soundOn,
+                      onChanged: (v) async {
+                        await StorageService.setSoundOnNewMessage(v);
+                        setModalState(() => soundOn = v);
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Вибрация при новом сообщении'),
+                      subtitle: const Text('Вибрация при получении нового сообщения'),
+                      value: vibrationOn,
+                      onChanged: (v) async {
+                        await StorageService.setVibrationOnNewMessage(v);
+                        setModalState(() => vibrationOn = v);
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
             );
           },
         );
       },
     );
+    nickController.dispose();
   }
 
   Future<void> _changePassword() async {
@@ -883,7 +1015,7 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         backgroundColor: scheme.surface,
         title: Text(
-          widget.userEmail.isNotEmpty ? widget.userEmail : 'Мои чаты',
+          (_displayName ?? widget.userEmail).isNotEmpty ? (_displayName ?? widget.userEmail) : 'Мои чаты',
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
@@ -941,186 +1073,10 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'Создать чат',
             ),
           ),
-          PopupMenuButton<String>(
+          IconButton(
             icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.75)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 8,
-            onSelected: (value) async {
-              if (value == 'accounting') {
-                await _openAccounting();
-              } else if (value == 'reports') {
-                await _openReports();
-              } else if (value == 'settings') {
-                await _showSettingsSheet();
-              } else if (value == 'theme') {
-                _toggleTheme();
-              } else if (value == 'logout') {
-                _logout();
-              } else if (value == 'change_password') {
-                await _changePassword();
-              } else if (value == 'admin_reset_password') {
-                await _adminResetPassword();
-              } else if (value == 'delete_account') {
-                await _deleteAccount();
-              }
-            },
-            itemBuilder: (BuildContext context) => [
-              PopupMenuItem<String>(
-                value: 'accounting',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF667eea).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.school_rounded, color: Color(0xFF667eea), size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Учет занятий', style: TextStyle(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'reports',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF764ba2).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.description_rounded, color: Color(0xFF764ba2), size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Отчеты', style: TextStyle(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'settings',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(Icons.settings_rounded, color: Colors.amber.shade700, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Настройки', style: TextStyle(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                value: 'theme',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                        color: scheme.primary,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.logout_rounded,
-                          color: Colors.blue, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Выйти',
-                        style: TextStyle(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'change_password',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.lock_outline_rounded,
-                          color: Colors.orange, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Изменить пароль',
-                        style: TextStyle(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              if (widget.isSuperuser)
-                PopupMenuItem<String>(
-                  value: 'admin_reset_password',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.teal, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text('Сбросить пароль пользователя',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
-                    ],
-                  ),
-                ),
-              PopupMenuItem<String>(
-                value: 'delete_account',
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.delete_forever_rounded,
-                          color: Colors.red, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text('Удалить аккаунт',
-                        style: TextStyle(
-                            color: Colors.red, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-            ],
+            onPressed: () => _showMainMenu(context, scheme, isDark),
+            tooltip: 'Меню',
           ),
           const SizedBox(width: 8),
         ],

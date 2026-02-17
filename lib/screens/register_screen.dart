@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'login_screen.dart';
 
@@ -42,15 +43,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // После успешной регистрации получаем данные пользователя
         final userData = await StorageService.getUserData();
         if (userData != null && mounted) {
+          final userId = userData['id']!;
           final userIdentifier = userData['email'] ?? userData['username'] ?? '';
+          final displayName = userData['displayName']?.toString();
+          final isSuperuser = userData['isSuperuser'] == 'true';
+          final eulaAccepted = await StorageService.getEulaAccepted(userId);
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => MainTabsScreen(
-                userId: userData['id']!,
-                userEmail: userIdentifier,
-                isSuperuser: userData['isSuperuser'] == 'true',
-              ),
+              builder: (_) => eulaAccepted
+                  ? MainTabsScreen(
+                      userId: userId,
+                      userEmail: userIdentifier,
+                      displayName: displayName,
+                      isSuperuser: isSuperuser,
+                    )
+                  : EulaConsentScreen(
+                      userId: userId,
+                      userEmail: userIdentifier,
+                      displayName: displayName,
+                      isSuperuser: isSuperuser,
+                    ),
             ),
           );
         } else if (mounted) {

@@ -60,12 +60,12 @@ export const getUserChats = async (req, res) => {
         c.is_group,
         CASE
           WHEN c.is_group = true THEN c.name
-          ELSE COALESCE(ou.email, c.name)
+          ELSE COALESCE(ou.display_name, ou.email, c.name)
         END AS name
       FROM chats c
       JOIN chat_users cu ON c.id = cu.chat_id AND cu.user_id = $1
       LEFT JOIN LATERAL (
-        SELECT u.email
+        SELECT u.email, u.display_name
         FROM chat_users cu2
         JOIN users u ON u.id = cu2.user_id
         WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
@@ -96,12 +96,12 @@ export const getChatsList = async (req, res) => {
           c.is_group,
           CASE
             WHEN c.is_group = true THEN c.name
-            ELSE COALESCE(ou.email, c.name)
+            ELSE COALESCE(ou.display_name, ou.email, c.name)
           END AS name
         FROM chats c
         JOIN chat_users cu ON cu.chat_id = c.id AND cu.user_id = $1
         LEFT JOIN LATERAL (
-          SELECT u.email
+          SELECT u.email, u.display_name
           FROM chat_users cu2
           JOIN users u ON u.id = cu2.user_id
           WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
@@ -121,7 +121,7 @@ export const getChatsList = async (req, res) => {
           m.file_size AS last_message_file_size,
           m.file_mime AS last_message_file_mime,
           m.created_at AS last_message_created_at,
-          u.email AS last_sender_email
+          COALESCE(u.display_name, u.email) AS last_sender_email
         FROM messages m
         JOIN users u ON u.id = m.user_id
         JOIN user_chats uc ON uc.id = m.chat_id
@@ -367,9 +367,9 @@ export const getChatMembers = async (req, res) => {
       return res.status(403).json({ message: "Вы не являетесь участником этого чата" });
     }
 
-    // Получаем участников чата
+    // Получаем участников чата (ник = как видят другие)
     const result = await pool.query(
-      `SELECT u.id, u.email, cu.role
+      `SELECT u.id, u.email, u.display_name, cu.role
        FROM users u
        JOIN chat_users cu ON u.id = cu.user_id
        WHERE cu.chat_id = $1
@@ -379,10 +379,11 @@ export const getChatMembers = async (req, res) => {
       [chatId]
     );
 
-    // Добавляем информацию о том, кто создатель
     const members = result.rows.map(row => ({
       id: row.id,
       email: row.email,
+      display_name: row.display_name ?? null,
+      displayName: row.display_name ?? row.email,
       role: row.role || (row.id?.toString() === creatorId ? 'owner' : 'member'),
       is_creator: row.id?.toString() === creatorId
     }));

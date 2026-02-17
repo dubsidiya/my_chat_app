@@ -22,13 +22,14 @@ class AuthService {
           final userIdentifier = data['username'] ?? data['email'] ?? '';
           final isSuperuser = data['isSuperuser'] == true;
           final privateAccess = data['privateAccess'] == true;
+          final displayName = data['displayName']?.toString();
           await StorageService.saveUserData(
             data['id'].toString(),
             userIdentifier,
             data['token'],
             isSuperuser: isSuperuser,
+            displayName: displayName,
           );
-          // Приватный доступ: по списку на сервере (privateAccess) или по коду (разблокировка отдельно)
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
         }
         return data;
@@ -65,13 +66,14 @@ class AuthService {
         final data = jsonDecode(response.body);
         // Сохраняем токен
         if (data['token'] != null) {
-          // Используем username из ответа, если есть, иначе email (для обратной совместимости)
           final userIdentifier = data['username'] ?? data['email'] ?? '';
           final privateAccess = data['privateAccess'] == true;
+          final displayName = data['displayName']?.toString();
           await StorageService.saveUserData(
             data['userId'].toString(),
             userIdentifier,
             data['token'],
+            displayName: displayName,
           );
           await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
         }
@@ -241,6 +243,25 @@ class AuthService {
       }
       throw Exception('Неожиданная ошибка при смене пароля: $e');
     }
+  }
+
+  /// Обновить ник (как тебя видят другие). Логин не меняется.
+  Future<void> updateProfile(String displayName) async {
+    final token = await StorageService.getToken();
+    if (token == null) throw Exception('Требуется авторизация');
+    final response = await http.patch(
+      Uri.parse('$baseUrl/auth/me'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'display_name': displayName}),
+    );
+    if (response.statusCode != 200) {
+      final err = jsonDecode(response.body);
+      throw Exception(err['message'] ?? 'Ошибка обновления профиля');
+    }
+    await StorageService.setDisplayName(displayName.isEmpty ? null : displayName);
   }
 
   /// Проверка прав текущего пользователя на сервере (privateAccess по списку в env).

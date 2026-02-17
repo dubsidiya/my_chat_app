@@ -19,6 +19,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/chats_service.dart';
+import '../services/moderation_service.dart';
 import '../services/storage_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import '../services/notification_feedback_service.dart';
@@ -39,6 +40,7 @@ class _MessageEntry extends _ListEntry { final int index; _MessageEntry(this.ind
 class ChatScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
+  final String? displayName;
   final String chatId;
   final String chatName;
   final bool isGroup;
@@ -46,6 +48,7 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, 
     required this.userId,
     required this.userEmail,
+    this.displayName,
     required this.chatId,
     required this.chatName,
     required this.isGroup,
@@ -971,7 +974,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   final tempIndex = _messages.indexWhere((m) => 
                     m.id.startsWith('temp_') && 
                     m.userId == widget.userId.toString() &&
-                    m.senderEmail == widget.userEmail &&
                     // Проверяем содержимое (текст или изображение)
                     ((m.content == message.content && m.content.isNotEmpty) ||
                      (m.imageUrl == message.imageUrl && m.imageUrl != null) ||
@@ -1180,7 +1182,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final onlineOthers = _onlineUserIds.where((id) => id != widget.userId.toString()).length;
     if (onlineOthers > 0) return 'Онлайн: $onlineOthers';
 
-    return 'Вы: ${widget.userEmail}';
+    return 'Вы: ${widget.displayName ?? widget.userEmail}';
   }
 
   Future<void> _initWebSocket() async {
@@ -2592,6 +2594,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
                   onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
                 ),
+                if (!isMine) ...[
+                  Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.flag_outlined, color: scheme.onSurface.withValues(alpha: 0.85)),
+                    title: const Text('Пожаловаться'),
+                    onTap: () => Navigator.pop(context, 'report'),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.block_rounded, color: Colors.orange.shade700),
+                    title: Text('Заблокировать пользователя', style: TextStyle(color: Colors.orange.shade700)),
+                    onTap: () => Navigator.pop(context, 'block'),
+                  ),
+                ],
                 if (isMine) ...[
                   Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
                   ListTile(
@@ -2624,6 +2641,68 @@ class _ChatScreenState extends State<ChatScreen> {
       _showReactionPicker(message);
     } else if (action == 'delete') {
       _showDeleteMessageDialog(message);
+    } else if (action == 'report') {
+      _reportMessage(message);
+    } else if (action == 'block') {
+      _blockSender(message);
+    }
+  }
+
+  final ModerationService _moderationService = ModerationService();
+
+  Future<void> _reportMessage(Message message) async {
+    try {
+      await _moderationService.reportMessage(message.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Жалоба отправлена. Модерация рассмотрит в течение 24 часов.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _blockSender(Message message) async {
+    if (message.userId.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Заблокировать пользователя?'),
+        content: Text(
+          'Сообщения от ${message.senderEmail} будут скрыты. Вы сможете разблокировать через настройки.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Заблокировать'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await _moderationService.blockUser(message.userId);
+      if (mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m.userId == message.userId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
     }
   }
   
@@ -3403,7 +3482,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             return ChatDateHeader(label: entry.label, accentColor: _accent1);
                           }
                           final msg = _messages[(entry as _MessageEntry).index];
-                    final isMine = msg.senderEmail == widget.userEmail;
+                    final isMine = msg.userId == widget.userId;
 
                 final isHighlighted = _highlightMessageId == msg.id;
                 return RepaintBoundary(

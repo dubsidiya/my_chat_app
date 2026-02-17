@@ -99,12 +99,14 @@ class PushNotificationService {
       if (userData == null || userData['id'] == null || userData['token'] == null) return;
       final userId = userData['id']!;
       final userEmail = userData['email'] ?? userData['username'] ?? '';
+      final displayName = userData['displayName']?.toString();
 
       navigator.push(
         MaterialPageRoute(
           builder: (_) => _ChatScreenRoute(
             userId: userId,
             userEmail: userEmail,
+            displayName: displayName,
             chatId: chatId,
             chatName: chatName,
             isGroup: isGroup,
@@ -146,6 +148,7 @@ class PushNotificationService {
 class _ChatScreenRoute extends StatelessWidget {
   final String userId;
   final String userEmail;
+  final String? displayName;
   final String chatId;
   final String chatName;
   final bool isGroup;
@@ -153,6 +156,7 @@ class _ChatScreenRoute extends StatelessWidget {
   const _ChatScreenRoute({
     required this.userId,
     required this.userEmail,
+    this.displayName,
     required this.chatId,
     required this.chatName,
     required this.isGroup,
@@ -163,6 +167,7 @@ class _ChatScreenRoute extends StatelessWidget {
     return ChatScreen(
       userId: userId,
       userEmail: userEmail,
+      displayName: displayName,
       chatId: chatId,
       chatName: chatName,
       isGroup: isGroup,

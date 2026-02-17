@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/storage_service.dart';
+import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
 
@@ -40,18 +42,29 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (userData != null && userData['token'] != null) {
+        final userId = userData['id'].toString();
         final userIdentifier = userData['username'] ?? userData['email'] ?? '';
         final isSuperuser = userData['isSuperuser'] == true;
+        final displayName = userData['displayName']?.toString();
+        final eulaAccepted = await StorageService.getEulaAccepted(userId);
 
         if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => MainTabsScreen(
-                userId: userData['id'].toString(),
-                userEmail: userIdentifier.toString(),
-                isSuperuser: isSuperuser,
-              ),
+              builder: (_) => eulaAccepted
+                  ? MainTabsScreen(
+                      userId: userId,
+                      userEmail: userIdentifier.toString(),
+                      displayName: displayName,
+                      isSuperuser: isSuperuser,
+                    )
+                  : EulaConsentScreen(
+                      userId: userId,
+                      userEmail: userIdentifier.toString(),
+                      displayName: displayName,
+                      isSuperuser: isSuperuser,
+                    ),
             ),
           ).then((_) => PushNotificationService.sendTokenToBackendIfNeeded());
         }

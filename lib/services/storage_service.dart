@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class StorageService {
   static const String _userIdKey = 'user_id';
   static const String _userEmailKey = 'user_email';
+  static const String _displayNameKey = 'display_name';
   static const String _tokenKey = 'auth_token';
   static const String _isSuperuserKey = 'is_superuser';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
@@ -13,15 +14,21 @@ class StorageService {
   static const String _vibrationOnNewMessageKey = 'vibration_on_new_message';
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
   static const String _chatOrderPrefix = 'chat_order_';
+  static const String _eulaAcceptedPrefix = 'eula_accepted_';
 
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
-  // Сохранение данных пользователя
-  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false}) async {
+  // Сохранение данных пользователя (userEmail = логин для входа)
+  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false, String? displayName}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userIdKey, userId);
       await prefs.setString(_userEmailKey, userEmail);
+      if (displayName != null) {
+        await prefs.setString(_displayNameKey, displayName);
+      } else {
+        await prefs.remove(_displayNameKey);
+      }
       await prefs.setBool(_isSuperuserKey, isSuperuser);
       // Токен: на mobile/desktop — secure storage, на web — shared_preferences
       if (kIsWeb) {
@@ -52,11 +59,13 @@ class StorageService {
 
       if (userId != null && userEmail != null && token != null) {
         final isSuperuser = prefs.getBool(_isSuperuserKey) ?? false;
+        final displayName = prefs.getString(_displayNameKey);
         return {
           'id': userId,
           'email': userEmail,
           'token': token,
           'isSuperuser': isSuperuser.toString(),
+          if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
         };
       }
       return null;
@@ -102,6 +111,7 @@ class StorageService {
     final userId = prefs.getString(_userIdKey);
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
+    await prefs.remove(_displayNameKey);
     await prefs.remove(_tokenKey);
     await prefs.remove(_isSuperuserKey);
     if (!kIsWeb) {
@@ -110,7 +120,18 @@ class StorageService {
     if (userId != null) {
       await prefs.remove('$_privateUnlockedPrefix$userId');
       await prefs.remove('$_chatOrderPrefix$userId');
+      await prefs.remove('$_eulaAcceptedPrefix$userId');
     }
+  }
+
+  static Future<void> setEulaAccepted(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_eulaAcceptedPrefix$userId', true);
+  }
+
+  static Future<bool> getEulaAccepted(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('$_eulaAcceptedPrefix$userId') ?? false;
   }
 
   /// Сохранить порядок чатов (список id чатов).
@@ -141,6 +162,16 @@ class StorageService {
         print('StorageService.getChatOrder error: $e');
       }
       return [];
+    }
+  }
+
+  /// Ник (как тебя видят другие). null = показывать логин.
+  static Future<void> setDisplayName(String? displayName) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (displayName == null || displayName.isEmpty) {
+      await prefs.remove(_displayNameKey);
+    } else {
+      await prefs.setString(_displayNameKey, displayName);
     }
   }
 

@@ -7,6 +7,12 @@ import { sendPushToTokens } from '../utils/pushNotifications.js';
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
 
+// Как видят отправителя другие (ник или логин)
+const getSenderDisplayName = async (userId) => {
+  const r = await pool.query('SELECT COALESCE(display_name, email) AS n FROM users WHERE id = $1', [userId]);
+  return r.rows[0]?.n ?? null;
+};
+
 const ensureChatMember = async (chatId, userId) => {
   const chatIdNum = parseInt(chatId, 10);
   if (isNaN(chatIdNum)) return { ok: false, status: 400, message: 'Некорректный chatId' };
@@ -33,12 +39,14 @@ export const getMessages = async (req, res) => {
   const beforeMessageId = req.query.before; // ID сообщения, до которого загружать (для cursor-based)
 
   try {
-    // ✅ Проверяем, что chatId валидный и пользователь участник чата
     const membership = await ensureChatMember(chatId, currentUserId);
     if (!membership.ok) {
       return res.status(membership.status).json({ message: membership.message });
     }
     const chatIdNum = membership.chatIdNum;
+
+    const { ensureUserBlocksTable } = await import('./moderationController.js');
+    await ensureUserBlocksTable();
 
     let result;
     let totalCountResult;
@@ -67,15 +75,16 @@ export const getMessages = async (req, res) => {
           messages.delivered_at,
           messages.edited_at,
           messages.reply_to_message_id,
-          users.email AS sender_email,
+          COALESCE(users.display_name, users.email) AS sender_email,
           pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
         LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1 AND messages.id < $2
+        AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = messages.user_id)
         ORDER BY messages.id DESC
         LIMIT $3
-      `, [chatIdNum, beforeIdNum, limit + 1]);
+      `, [chatIdNum, beforeIdNum, limit + 1, currentUserId]);
       
       // Проверяем, есть ли еще сообщения (если получили больше чем limit)
       const hasMoreMessages = result.rows.length > limit;
@@ -118,15 +127,16 @@ export const getMessages = async (req, res) => {
           messages.delivered_at,
           messages.edited_at,
           messages.reply_to_message_id,
-          users.email AS sender_email,
+          COALESCE(users.display_name, users.email) AS sender_email,
           pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
         LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1
+        AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = messages.user_id)
         ORDER BY messages.created_at ASC
         LIMIT $2 OFFSET $3
-      `, [chatIdNum, limit, actualOffset]);
+      `, [chatIdNum, limit, actualOffset, currentUserId]);
     }
     
     const totalCount = parseInt(totalCountResult.rows[0].total);
@@ -151,7 +161,7 @@ export const getMessages = async (req, res) => {
             messages.content,
             messages.image_url,
             messages.user_id,
-            users.email AS sender_email
+            COALESCE(users.display_name, users.email) AS sender_email
           FROM messages
           JOIN users ON messages.user_id = users.id
           WHERE messages.id = $1
@@ -175,7 +185,7 @@ export const getMessages = async (req, res) => {
           message_reactions.user_id,
           message_reactions.reaction,
           message_reactions.created_at,
-          users.email AS user_email
+          COALESCE(users.display_name, users.email) AS user_email
         FROM message_reactions
         JOIN users ON message_reactions.user_id = users.id
         WHERE message_reactions.message_id = $1
@@ -314,7 +324,7 @@ export const searchMessages = async (req, res) => {
         m.message_type,
         m.image_url,
         m.created_at,
-        u.email AS sender_email,
+        COALESCE(u.display_name, u.email) AS sender_email,
         (mr.message_id IS NOT NULL) AS is_read
       FROM messages m
       JOIN users u ON u.id = m.user_id
@@ -380,6 +390,9 @@ export const getMessagesAround = async (req, res) => {
     }
     const chatIdNum = membership.chatIdNum;
 
+    const { ensureUserBlocksTable } = await import('./moderationController.js');
+    await ensureUserBlocksTable();
+
     // Проверяем, что сообщение принадлежит чату
     const msgCheck = await pool.query(
       'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
@@ -409,16 +422,17 @@ export const getMessagesAround = async (req, res) => {
         m.delivered_at,
         m.edited_at,
         m.reply_to_message_id,
-        u.email AS sender_email,
+        COALESCE(u.display_name, u.email) AS sender_email,
         pm.id IS NOT NULL AS is_pinned
       FROM messages m
       JOIN users u ON m.user_id = u.id
       LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
       WHERE m.chat_id = $1 AND m.id < $2
+      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
       ORDER BY m.id DESC
       LIMIT $3
       `,
-      [chatIdNum, messageId, half]
+      [chatIdNum, messageId, half, userId]
     );
 
     const newer = await pool.query(
@@ -439,16 +453,17 @@ export const getMessagesAround = async (req, res) => {
         m.delivered_at,
         m.edited_at,
         m.reply_to_message_id,
-        u.email AS sender_email,
+        COALESCE(u.display_name, u.email) AS sender_email,
         pm.id IS NOT NULL AS is_pinned
       FROM messages m
       JOIN users u ON m.user_id = u.id
       LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
       WHERE m.chat_id = $1 AND m.id >= $2
+      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
       ORDER BY m.id ASC
       LIMIT $3
       `,
-      [chatIdNum, messageId, half + 1]
+      [chatIdNum, messageId, half + 1, userId]
     );
 
     const rows = [...older.rows.reverse(), ...newer.rows];
@@ -470,7 +485,7 @@ export const getMessagesAround = async (req, res) => {
             m.content,
             m.image_url,
             m.user_id,
-            u.email AS sender_email
+            COALESCE(u.display_name, u.email) AS sender_email
           FROM messages m
           JOIN users u ON m.user_id = u.id
           WHERE m.id = $1
@@ -493,7 +508,7 @@ export const getMessagesAround = async (req, res) => {
           mr.user_id,
           mr.reaction,
           mr.created_at,
-          u.email AS user_email
+          COALESCE(u.display_name, u.email) AS user_email
         FROM message_reactions mr
         JOIN users u ON mr.user_id = u.id
         WHERE mr.message_id = $1
@@ -681,10 +696,8 @@ export const sendMessage = async (req, res) => {
       replyToMessageIdNum,
     ]);
 
-    // Используем email из токена
-    const senderEmail = req.user.email;
-
     const message = result.rows[0];
+    const senderEmail = (await getSenderDisplayName(req.user.userId)) || req.user.email;
     
     // ✅ Получаем сообщение, на которое отвечают (если есть)
     let replyToMessage = null;
@@ -695,7 +708,7 @@ export const sendMessage = async (req, res) => {
           messages.content,
           messages.image_url,
           messages.user_id,
-          users.email AS sender_email
+          COALESCE(users.display_name, users.email) AS sender_email
         FROM messages
         JOIN users ON messages.user_id = users.id
         WHERE messages.id = $1
@@ -926,7 +939,8 @@ export const editMessage = async (req, res) => {
     
     const result = await pool.query(updateQuery, updateValues);
     const updatedMessage = result.rows[0];
-    
+    const senderDisplay = (await getSenderDisplayName(req.user.userId)) || req.user.email;
+
     // Отправляем обновленное сообщение через WebSocket всем участникам чата
     try {
       const clients = getWebSocketClients();
@@ -950,7 +964,7 @@ export const editMessage = async (req, res) => {
         message_type: updatedMessage.message_type,
         created_at: updatedMessage.created_at,
         edited_at: updatedMessage.edited_at,
-        sender_email: req.user.email
+        sender_email: senderDisplay
       };
       
       members.rows.forEach(row => {
@@ -977,7 +991,7 @@ export const editMessage = async (req, res) => {
       message_type: updatedMessage.message_type,
       created_at: updatedMessage.created_at,
       edited_at: updatedMessage.edited_at,
-      sender_email: req.user.email
+      sender_email: senderDisplay
     });
   } catch (error) {
     console.error('Ошибка редактирования сообщения:', error);
@@ -1402,7 +1416,7 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
         VALUES ($1, $2, $3, $4)
       `, [newMessage.id, original.original_chat_id, fromMessageId, userId]);
       
-      // Отправляем через WebSocket
+      const senderDisplay = (await getSenderDisplayName(req.user.userId)) || req.user.email;
       const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',
@@ -1421,7 +1435,7 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
         delivered_at: newMessage.delivered_at,
         is_forwarded: true,
         original_chat_name: original.original_chat_name,
-        sender_email: req.user.email
+        sender_email: senderDisplay
       };
       
       members.rows.forEach(row => {
@@ -1431,7 +1445,7 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
         }
       });
       
-      forwardedMessages.push(newMessage);
+      forwardedMessages.push({ ...newMessage, sender_email: senderDisplay });
     }
     
     res.status(201).json({
@@ -1745,7 +1759,7 @@ export const getPinnedMessages = async (req, res) => {
     const result = await pool.query(`
       SELECT 
         messages.*,
-        users.email AS sender_email,
+        COALESCE(users.display_name, users.email) AS sender_email,
         pinned_messages.pinned_at
       FROM pinned_messages
       JOIN messages ON pinned_messages.message_id = messages.id

@@ -47,21 +47,22 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const result = await pool.query(
-      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email, display_name',
       [normalizedUsername, hashedPassword]
     );
 
     const newUser = result.rows[0];
     const privateAccess = hasPrivateAccess({ userId: newUser.id, username: newUser.email });
 
-    // Генерируем JWT токен (используем логин вместо email)
+    // Генерируем JWT токен (логин = email)
     const token = generateToken(newUser.id, newUser.email, privateAccess);
 
     res.status(201).json({
       userId: newUser.id,
-      username: newUser.email, // Возвращаем как username
+      username: newUser.email,
       token: token,
       privateAccess,
+      displayName: newUser.display_name ?? null,
     });
   } catch (error) {
     console.error('Ошибка регистрации:', error.message);
@@ -93,9 +94,9 @@ export const login = async (req, res) => {
     // Нормализуем логин
     const normalizedUsername = username.toLowerCase().trim();
     
-    // Получаем пользователя по логину (используем поле email в БД для хранения логина)
+    // Получаем пользователя по логину (поле email = логин)
     const result = await pool.query(
-      'SELECT id, email, password FROM users WHERE LOWER(TRIM(email)) = $1',
+      'SELECT id, email, password, display_name FROM users WHERE LOWER(TRIM(email)) = $1',
       [normalizedUsername]
     );
 
@@ -149,6 +150,7 @@ export const login = async (req, res) => {
       token: token,
       isSuperuser: isSuperuser({ userId: user.id, username: user.email }),
       privateAccess,
+      displayName: user.display_name ?? null,
     });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
@@ -185,20 +187,52 @@ export const adminResetUserPassword = async (req, res) => {
   }
 };
 
-// Текущий пользователь (для синхронизации privateAccess по списку в env без перелогина)
+// Текущий пользователь (логин, ник, права)
 export const getMe = async (req, res) => {
   try {
     if (!req.user?.userId) {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
+    const row = await pool.query(
+      'SELECT id, email, display_name FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    const u = row.rows[0];
+    if (!u) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
     res.status(200).json({
-      id: req.user.userId,
-      username: req.user.username || req.user.email,
+      id: u.id,
+      username: u.email,
+      displayName: u.display_name ?? null,
       isSuperuser: isSuperuser(req.user),
       privateAccess: req.user.privateAccess === true,
     });
   } catch (error) {
     console.error('Ошибка getMe:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Обновление ника (как тебя видят другие). Логин не меняется.
+export const updateProfile = async (req, res) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+    const displayName = (req.body?.display_name ?? req.body?.displayName ?? '').toString().trim();
+    if (displayName.length > 255) {
+      return res.status(400).json({ message: 'Ник не более 255 символов' });
+    }
+    await pool.query(
+      'UPDATE users SET display_name = $1 WHERE id = $2',
+      [displayName || null, req.user.userId]
+    );
+    res.status(200).json({
+      displayName: displayName || null,
+    });
+  } catch (error) {
+    console.error('Ошибка updateProfile:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
@@ -287,10 +321,14 @@ export const getAllUsers = async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, email FROM users WHERE id != $1 ORDER BY email',
+      'SELECT id, email, display_name FROM users WHERE id != $1 ORDER BY COALESCE(display_name, email)',
       [currentUserId]
     );
-    res.json(result.rows);
+    res.json(result.rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      display_name: r.display_name ?? null,
+    })));
   } catch (error) {
     console.error('Ошибка получения пользователей:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

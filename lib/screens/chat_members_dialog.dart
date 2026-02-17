@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../services/chats_service.dart';
+import '../services/moderation_service.dart';
 
 class ChatMembersDialog extends StatefulWidget {
   final List<Map<String, dynamic>> members;
@@ -27,6 +28,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
 
   List<Map<String, dynamic>> _members = [];
   bool _isLoading = false;
+  final ModerationService _moderationService = ModerationService();
 
   @override
   void initState() {
@@ -145,6 +147,40 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     }
   }
 
+  Future<void> _blockMember(String userId, String displayName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Заблокировать пользователя?'),
+        content: Text('Сообщения от $displayName будут скрыты.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Заблокировать'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await _moderationService.blockUser(userId);
+      if (mounted) {
+        setState(() => _members.removeWhere((m) => m['id'] == userId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -253,6 +289,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                         final member = _members[index];
                         final userId = member['id'] as String;
                         final email = member['email'] as String;
+                        final displayName = (member['displayName'] ?? member['display_name'] ?? email).toString();
                         final isCreator = member['is_creator'] == true || member['is_creator'] == 1;
 
                         return Container(
@@ -287,7 +324,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                   ),
                                   child: Center(
                                     child: Text(
-                                      email.isNotEmpty ? email[0].toUpperCase() : '?',
+                                      displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 16,
@@ -302,7 +339,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        email,
+                                        displayName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -331,6 +368,20 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                     ],
                                   ),
                                 ),
+                                if (userId != widget.currentUserId) ...[
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: IconButton(
+                                      icon: Icon(Icons.block_rounded, color: Colors.orange.shade700),
+                                      onPressed: () => _blockMember(userId, displayName),
+                                      tooltip: 'Заблокировать',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
                                 if (!isCreator)
                                   Container(
                                     decoration: BoxDecoration(
@@ -339,7 +390,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                     ),
                                     child: IconButton(
                                       icon: Icon(Icons.delete_outline_rounded, color: Colors.red.shade500),
-                                      onPressed: () => _removeMember(userId, email),
+                                      onPressed: () => _removeMember(userId, displayName),
                                       tooltip: 'Удалить участника',
                                     ),
                                   ),
