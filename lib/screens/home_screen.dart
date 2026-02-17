@@ -470,52 +470,59 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showMainMenu(BuildContext context, ColorScheme scheme, bool isDark) {
+    final maxH = MediaQuery.of(context).size.height * 0.85;
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _menuTile(ctx, scheme, Icons.school_rounded, const Color(0xFF667eea), 'Учет занятий', () async {
-                Navigator.pop(ctx);
-                await _openAccounting();
-              }),
-              _menuTile(ctx, scheme, Icons.description_rounded, const Color(0xFF764ba2), 'Отчеты', () async {
-                Navigator.pop(ctx);
-                await _openReports();
-              }),
-              _menuTile(ctx, scheme, Icons.settings_rounded, Colors.amber.shade700, 'Настройки', () async {
-                Navigator.pop(ctx);
-                await _showSettingsSheet();
-              }),
-              const Divider(height: 24),
-              _menuTile(ctx, scheme, isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, scheme.primary, isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓', () {
-                Navigator.pop(ctx);
-                _toggleTheme();
-              }),
-              _menuTile(ctx, scheme, Icons.logout_rounded, Colors.blue, 'Выйти', () {
-                Navigator.pop(ctx);
-                _logout();
-              }),
-              _menuTile(ctx, scheme, Icons.lock_outline_rounded, Colors.orange, 'Изменить пароль', () async {
-                Navigator.pop(ctx);
-                await _changePassword();
-              }),
-              if (widget.isSuperuser)
-                _menuTile(ctx, scheme, Icons.admin_panel_settings_rounded, Colors.teal, 'Сбросить пароль пользователя', () async {
-                  Navigator.pop(ctx);
-                  await _adminResetPassword();
-                }),
-              _menuTile(ctx, scheme, Icons.delete_forever_rounded, Colors.red, 'Удалить аккаунт', () async {
-                Navigator.pop(ctx);
-                await _deleteAccount();
-              }),
-            ],
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _menuTile(ctx, scheme, Icons.school_rounded, const Color(0xFF667eea), 'Учет занятий', () async {
+                    Navigator.pop(ctx);
+                    await _openAccounting();
+                  }),
+                  _menuTile(ctx, scheme, Icons.description_rounded, const Color(0xFF764ba2), 'Отчеты', () async {
+                    Navigator.pop(ctx);
+                    await _openReports();
+                  }),
+                  _menuTile(ctx, scheme, Icons.settings_rounded, Colors.amber.shade700, 'Настройки', () async {
+                    Navigator.pop(ctx);
+                    await _showSettingsSheet();
+                  }),
+                  const Divider(height: 24),
+                  _menuTile(ctx, scheme, isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, scheme.primary, isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓', () {
+                    Navigator.pop(ctx);
+                    _toggleTheme();
+                  }),
+                  _menuTile(ctx, scheme, Icons.logout_rounded, Colors.blue, 'Выйти', () {
+                    Navigator.pop(ctx);
+                    _logout();
+                  }),
+                  _menuTile(ctx, scheme, Icons.lock_outline_rounded, Colors.orange, 'Изменить пароль', () async {
+                    Navigator.pop(ctx);
+                    await _changePassword();
+                  }),
+                  if (widget.isSuperuser)
+                    _menuTile(ctx, scheme, Icons.admin_panel_settings_rounded, Colors.teal, 'Сбросить пароль пользователя', () async {
+                      Navigator.pop(ctx);
+                      await _adminResetPassword();
+                    }),
+                  _menuTile(ctx, scheme, Icons.delete_forever_rounded, Colors.red, 'Удалить аккаунт', () async {
+                    Navigator.pop(ctx);
+                    await _deleteAccount();
+                  }),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -586,15 +593,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       maxLength: 255,
                       onSubmitted: (_) async {
                         final name = nickController.text.trim();
+                        final messenger = ScaffoldMessenger.maybeOf(ctx);
                         try {
                           await _authService.updateProfile(name);
                           if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
                           if (ctx.mounted) Navigator.pop(ctx);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
-                            );
-                          }
+                          messenger?.showSnackBar(
+                            SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
+                          );
                         } catch (e) {
                           setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
                         }
@@ -606,15 +612,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: TextButton.icon(
                         onPressed: () async {
                           final name = nickController.text.trim();
+                          final messenger = ScaffoldMessenger.maybeOf(ctx);
                           try {
                             await _authService.updateProfile(name);
                             if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
                             if (ctx.mounted) Navigator.pop(ctx);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
-                              );
-                            }
+                            messenger?.showSnackBar(
+                              SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
+                            );
                           } catch (e) {
                             setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
                           }
