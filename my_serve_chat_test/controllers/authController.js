@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
-import { isSuperuser } from '../middleware/auth.js';
+import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 
@@ -51,13 +51,17 @@ export const register = async (req, res) => {
       [normalizedUsername, hashedPassword]
     );
 
+    const newUser = result.rows[0];
+    const privateAccess = hasPrivateAccess({ userId: newUser.id, username: newUser.email });
+
     // Генерируем JWT токен (используем логин вместо email)
-    const token = generateToken(result.rows[0].id, result.rows[0].email, false);
+    const token = generateToken(newUser.id, newUser.email, privateAccess);
 
     res.status(201).json({
-      userId: result.rows[0].id,
-      username: result.rows[0].email, // Возвращаем как username
+      userId: newUser.id,
+      username: newUser.email, // Возвращаем как username
       token: token,
+      privateAccess,
     });
   } catch (error) {
     console.error('Ошибка регистрации:', error.message);
@@ -130,8 +134,11 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
+    // Доступ к отчётам/учёту занятий: по списку в env или по коду (unlock-private)
+    const privateAccess = hasPrivateAccess({ userId: user.id, username: user.email });
+
     // Генерируем JWT токен (используем логин вместо email)
-    const token = generateToken(user.id, user.email, false);
+    const token = generateToken(user.id, user.email, privateAccess);
 
     // Удаляем пароль из ответа
     delete user.password;
@@ -141,6 +148,7 @@ export const login = async (req, res) => {
       username: user.email,
       token: token,
       isSuperuser: isSuperuser({ userId: user.id, username: user.email }),
+      privateAccess,
     });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
@@ -173,6 +181,24 @@ export const adminResetUserPassword = async (req, res) => {
     return res.status(200).json({ message: 'Пароль успешно изменён' });
   } catch (error) {
     console.error('Ошибка adminResetUserPassword:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Текущий пользователь (для синхронизации privateAccess по списку в env без перелогина)
+export const getMe = async (req, res) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+    res.status(200).json({
+      id: req.user.userId,
+      username: req.user.username || req.user.email,
+      isSuperuser: isSuperuser(req.user),
+      privateAccess: req.user.privateAccess === true,
+    });
+  } catch (error) {
+    console.error('Ошибка getMe:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

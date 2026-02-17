@@ -21,14 +21,15 @@ class AuthService {
         if (data['token'] != null) {
           final userIdentifier = data['username'] ?? data['email'] ?? '';
           final isSuperuser = data['isSuperuser'] == true;
+          final privateAccess = data['privateAccess'] == true;
           await StorageService.saveUserData(
             data['id'].toString(),
             userIdentifier,
             data['token'],
             isSuperuser: isSuperuser,
           );
-          // При обычном логине приватный доступ не выдаем (требуется отдельная разблокировка)
-          await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), false);
+          // Приватный доступ: по списку на сервере (privateAccess) или по коду (разблокировка отдельно)
+          await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
         }
         return data;
       } else if (response.statusCode == 500) {
@@ -66,13 +67,13 @@ class AuthService {
         if (data['token'] != null) {
           // Используем username из ответа, если есть, иначе email (для обратной совместимости)
           final userIdentifier = data['username'] ?? data['email'] ?? '';
+          final privateAccess = data['privateAccess'] == true;
           await StorageService.saveUserData(
             data['userId'].toString(),
             userIdentifier,
             data['token'],
           );
-          // Новые аккаунты не имеют приватного доступа по умолчанию
-          await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), false);
+          await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
         }
         return true;
       } else if (response.statusCode == 400) {
@@ -239,6 +240,24 @@ class AuthService {
         print('AuthService.changePassword unexpected error: $e');
       }
       throw Exception('Неожиданная ошибка при смене пароля: $e');
+    }
+  }
+
+  /// Проверка прав текущего пользователя на сервере (privateAccess по списку в env).
+  /// Возвращает null при ошибке/отсутствии токена.
+  Future<Map<String, dynamic>?> fetchMe() async {
+    final token = await StorageService.getToken();
+    if (token == null) return null;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/auth/me'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      return Map<String, dynamic>.from(data);
+    } catch (_) {
+      return null;
     }
   }
 

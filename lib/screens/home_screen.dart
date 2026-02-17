@@ -915,13 +915,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openAccounting() async {
-    final unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
+  Future<bool> _ensurePrivateAccess() async {
+    bool unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
+    if (!unlocked) {
+      // Сначала проверяем список на сервере (по env): не нужен ввод кода
+      final me = await _authService.fetchMe();
+      if (me != null && me['privateAccess'] == true) {
+        await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
+        unlocked = true;
+      }
+    }
     if (!unlocked) {
       final ok = await _promptPrivateCode();
-      if (!ok || !mounted) return;
+      if (!ok || !mounted) return false;
     }
-    if (!mounted) return;
+    return true;
+  }
+
+  Future<void> _openAccounting() async {
+    if (!await _ensurePrivateAccess() || !mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => StudentsScreen(userId: widget.userId, userEmail: widget.userEmail)),
@@ -929,12 +941,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openReports() async {
-    final unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
-    if (!unlocked) {
-      final ok = await _promptPrivateCode();
-      if (!ok || !mounted) return;
-    }
-    if (!mounted) return;
+    if (!await _ensurePrivateAccess() || !mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail)),

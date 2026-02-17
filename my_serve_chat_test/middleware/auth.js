@@ -34,8 +34,8 @@ export const authenticateToken = (req, res, next) => {
     
     req.user = user; // Сохраняем данные пользователя в запросе
     req.userId = user.userId; // Добавляем userId для удобства
-    // Нормализуем флаг приватного доступа (для старых токенов)
-    req.user.privateAccess = user.privateAccess === true;
+    // Нормализуем флаг приватного доступа: из токена или по списку в env (отчёты/учёт занятий)
+    req.user.privateAccess = (user.privateAccess === true) || hasPrivateAccess(user);
     // email в токене теперь содержит логин
     if (process.env.NODE_ENV === 'development') {
       console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
@@ -80,6 +80,30 @@ export const isSuperuser = (user) => {
     .filter((x) => Number.isFinite(x));
 
   const names = (process.env.SUPERUSER_USERNAMES || '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
+  const byId = typeof userId === 'number' && ids.includes(userId);
+  const byName = username && names.includes(username);
+  return Boolean(byId || byName);
+};
+
+// Утилита: доступ к отчётам и учёту занятий по списку имён в env (как суперпользователь)
+// - PRIVATE_ACCESS_USERNAMES="teacher@example.com,admin"
+// - PRIVATE_ACCESS_USER_IDS="1,2,3"
+export const hasPrivateAccess = (user) => {
+  const username = (user?.username || user?.email || '').toString().trim().toLowerCase();
+  const userId = user?.userId;
+
+  const ids = (process.env.PRIVATE_ACCESS_USER_IDS || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((x) => parseInt(x, 10))
+    .filter((x) => Number.isFinite(x));
+
+  const names = (process.env.PRIVATE_ACCESS_USERNAMES || '')
     .split(',')
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean);
