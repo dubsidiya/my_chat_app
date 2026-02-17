@@ -23,6 +23,10 @@ import '../services/chats_service.dart';
 import '../services/storage_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import '../services/notification_feedback_service.dart';
+import '../widgets/chat_date_header.dart';
+import '../widgets/chat_empty_messages.dart';
+import '../widgets/chat_load_more_button.dart';
+import '../widgets/chat_loading_row.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 
@@ -152,29 +156,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (d == today) return 'Сегодня';
     if (d == yesterday) return 'Вчера';
     return DateFormat('d MMMM', 'ru').format(dt);
-  }
-
-  Widget _buildDateHeader(String label) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: _accent1.withValues(alpha:0.12),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _accent1.withValues(alpha:0.95),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _showInviteDialog() async {
@@ -3382,31 +3363,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   )
                 : _listEntries.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.chat_bubble_outline_rounded, size: 64, color: _accent1.withValues(alpha: 0.4)),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Нет сообщений',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurface.withValues(alpha: 0.7),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Напишите первое сообщение',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: scheme.onSurface.withValues(alpha: 0.5),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? ChatEmptyMessages(accentColor: _accent1)
                     : RepaintBoundary(
                   child: Stack(
                     children: [
@@ -3425,47 +3382,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final entry = _listEntries[index];
                           if (entry is _LoadMoreEntry) {
-                            return Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                child: OutlinedButton.icon(
-                                  onPressed: _loadMoreMessages,
-                                  icon: Icon(Icons.arrow_upward, size: 18),
-                                  label: Text('Загрузить старые сообщения'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _accent1,
-                                    side: BorderSide(color: _accent1.withValues(alpha:0.35), width: 1.5),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            return ChatLoadMoreButton(
+                              onPressed: _loadMoreMessages,
+                              accentColor: _accent1,
                             );
                           }
                           if (entry is _LoadingEntry) {
-                            return Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Загрузка сообщений...',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
+                            return ChatLoadingRow(accentColor: _accent1);
                           }
                           if (entry is _DateHeaderEntry) {
-                            return _buildDateHeader(entry.label);
+                            return ChatDateHeader(label: entry.label, accentColor: _accent1);
                           }
                           final msg = _messages[(entry as _MessageEntry).index];
                     final isMine = msg.senderEmail == widget.userEmail;
