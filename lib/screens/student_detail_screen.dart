@@ -11,9 +11,10 @@ import 'edit_student_screen.dart';
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
 
-  StudentDetailScreen({required this.student});
+  const StudentDetailScreen({super.key, required this.student});
 
   @override
+  // ignore: library_private_types_in_public_api
   _StudentDetailScreenState createState() => _StudentDetailScreenState();
 }
 
@@ -131,7 +132,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Удалить ученика?'),
+        title: const Text('Удалить ученика?'),
         content: Text(
           'Вы уверены, что хотите удалить "${_student.name}"?\n\n'
           'Это действие удалит все связанные данные:\n'
@@ -143,11 +144,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Отмена'),
+            child: const Text('Отмена'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Удалить', style: TextStyle(color: Colors.red)),
+            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -182,16 +183,16 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Удалить занятие?'),
-        content: Text('Это действие нельзя отменить'),
+        title: const Text('Удалить занятие?'),
+        content: const Text('Это действие нельзя отменить'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Отмена'),
+            child: const Text('Отмена'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Удалить', style: TextStyle(color: Colors.red)),
+            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -204,12 +205,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       // Быстрое обновление данных после удаления занятия
       await _refreshData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ошибка: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -224,12 +227,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         title: Text(_student.name),
         actions: [
           IconButton(
-            icon: Icon(Icons.edit),
+            icon: const Icon(Icons.edit),
             onPressed: _editStudent,
             tooltip: 'Редактировать',
           ),
           IconButton(
-            icon: Icon(Icons.delete),
+            icon: const Icon(Icons.delete),
             onPressed: () => _deleteStudent(),
             tooltip: 'Удалить ученика',
           ),
@@ -240,8 +243,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           // Карточка с балансом
           Container(
             width: double.infinity,
-            margin: EdgeInsets.all(16),
-            padding: EdgeInsets.all(20),
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: isDebtor
                   ? Colors.red.withValues(alpha:isDark ? 0.14 : 0.10)
@@ -261,7 +264,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     color: scheme.onSurface.withValues(alpha:0.70),
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
                   '${_balance.toStringAsFixed(0)} ₽',
                   style: TextStyle(
@@ -272,7 +275,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 ),
                 if (isDebtor)
                   Padding(
-                    padding: EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       'Долг',
                       style: TextStyle(
@@ -292,8 +295,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               _student.email != null ||
               true)
             Container(
-              margin: EdgeInsets.symmetric(horizontal: 16),
-              padding: EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
                 borderRadius: BorderRadius.circular(12),
@@ -304,46 +307,46 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 children: [
                   if (_student.parentName != null)
                     Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          Icon(Icons.person_outline, size: 16),
-                          SizedBox(width: 8),
+                          const Icon(Icons.person_outline, size: 16),
+                          const SizedBox(width: 8),
                           Text('Родитель: ${_student.parentName}'),
                         ],
                       ),
                     ),
                   if (_student.phone != null)
                     Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          Icon(Icons.phone, size: 16),
-                          SizedBox(width: 8),
+                          const Icon(Icons.phone, size: 16),
+                          const SizedBox(width: 8),
                           Text(_student.phone!),
                         ],
                       ),
                     ),
                   if (_student.email != null)
                     Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          Icon(Icons.email, size: 16),
-                          SizedBox(width: 8),
+                          const Icon(Icons.email, size: 16),
+                          const SizedBox(width: 8),
                           Text(_student.email!),
                         ],
                       ),
                     ),
                   Padding(
-                    padding: EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.only(top: 4),
                     child: Row(
                       children: [
                         Icon(
                           _student.payByBankTransfer ? Icons.account_balance : Icons.payments,
                           size: 16,
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Text(
                           _student.payByBankTransfer ? 'Платит на расчётный счёт' : 'Платит наличными',
                           style: TextStyle(
@@ -358,25 +361,25 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               ),
             ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Кнопки действий
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _addLesson,
-                    icon: Icon(Icons.event),
-                    label: Text('Добавить занятие'),
+                    icon: const Icon(Icons.event),
+                    label: const Text('Добавить занятие'),
                   ),
                 ),
               ],
             ),
           ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Табы для занятий и транзакций
           Expanded(
@@ -395,7 +398,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     children: [
                       // Вкладка занятий
                       _isLoading
-                ? Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator())
                 : _lessons.isEmpty
                     ? Center(
                         child: Text(
@@ -406,14 +409,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               : RefreshIndicator(
                                   onRefresh: _refreshData,
                                   child: ListView.builder(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         itemCount: _lessons.length,
                         itemBuilder: (context, index) {
                           final lesson = _lessons[index];
                           return Card(
-                            margin: EdgeInsets.only(bottom: 8),
+                            margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
-                              leading: Icon(Icons.event),
+                              leading: const Icon(Icons.event),
                               title: Text(
                                 DateFormat('dd.MM.yyyy')
                                     .format(lesson.lessonDate),
@@ -427,12 +430,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                 children: [
                                   Text(
                                     '${lesson.price.toStringAsFixed(0)} ₽',
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   IconButton(
-                                    icon: Icon(Icons.delete, color: Colors.red),
+                                    icon: const Icon(Icons.delete, color: Colors.red),
                                     onPressed: () => _deleteLesson(lesson),
                                   ),
                                 ],
@@ -444,13 +447,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                 ),
                       // Вкладка транзакций
                       _isLoading
-                          ? Center(child: CircularProgressIndicator())
+                          ? const Center(child: CircularProgressIndicator())
                           : _transactions.isEmpty
                               ? RefreshIndicator(
                                   onRefresh: _refreshData,
                                   child: SingleChildScrollView(
-                                    physics: AlwaysScrollableScrollPhysics(),
-                                    child: Container(
+                                    physics: const AlwaysScrollableScrollPhysics(),
+                                    child: SizedBox(
                                       height: MediaQuery.of(context).size.height * 0.5,
                                       child: Center(
                                         child: Text(
@@ -464,7 +467,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               : RefreshIndicator(
                                   onRefresh: _refreshData,
                                   child: ListView.builder(
-                                    padding: EdgeInsets.symmetric(horizontal: 16),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
                                     itemCount: _transactions.length,
                                     itemBuilder: (context, index) {
                                     final transaction = _transactions[index];
@@ -472,7 +475,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     final isLesson = transaction.type == 'lesson';
                                     
                                     return Card(
-                                      margin: EdgeInsets.only(bottom: 8),
+                                      margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
                                         leading: Icon(
                                           isDeposit 
@@ -492,7 +495,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                               : isLesson 
                                                   ? 'Занятие'
                                                   : 'Возврат',
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -501,8 +504,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                           children: [
                                             if (isDeposit && transaction.depositTypeLabel.isNotEmpty)
                                               Container(
-                                                margin: EdgeInsets.only(top: 4, bottom: 4),
-                                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                margin: const EdgeInsets.only(top: 4, bottom: 4),
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                                 decoration: BoxDecoration(
                                                   color: transaction.isBankDeposit 
                                                       ? Colors.blue.shade50 
@@ -527,7 +530,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                           ? Colors.blue.shade700 
                                                           : Colors.orange.shade700,
                                                     ),
-                                                    SizedBox(width: 4),
+                                                    const SizedBox(width: 4),
                                                     Text(
                                                       transaction.depositTypeLabel,
                                                       style: TextStyle(
@@ -544,9 +547,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                             if (transaction.description != null)
                                               Text(
                                                 transaction.description!,
-                                                style: TextStyle(fontSize: 12),
+                                                style: const TextStyle(fontSize: 12),
                                               ),
-                                            SizedBox(height: 4),
+                                            const SizedBox(height: 4),
                                             Text(
                                               DateFormat('dd.MM.yyyy HH:mm')
                                                   .format(transaction.createdAt),

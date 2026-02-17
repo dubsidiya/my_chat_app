@@ -5,6 +5,7 @@ class AddStudentScreen extends StatefulWidget {
   const AddStudentScreen({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _AddStudentScreenState createState() => _AddStudentScreenState();
 }
 
@@ -86,16 +87,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Добавить студента'),
+        title: const Text('Добавить студента'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
               controller: _nameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Имя студента *',
                 border: OutlineInputBorder(),
               ),
@@ -106,55 +107,58 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 return null;
               },
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _parentNameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Имя родителя',
                 border: OutlineInputBorder(),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _phoneController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Телефон',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.phone,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _emailController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.emailAddress,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _notesController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Заметки',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             SwitchListTile(
               value: _payByBankTransfer,
               onChanged: (v) => setState(() => _payByBankTransfer = v),
-              title: Text('Платит на расчётный счёт'),
+              title: const Text('Платит на расчётный счёт'),
               subtitle: Text(
                 'Если выключено — оплата наличными',
                 style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.6)),
               ),
               contentPadding: EdgeInsets.zero,
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _isLoading ? null : _saveStudent,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
               child: _isLoading
                   ? SizedBox(
                       width: 18,
@@ -164,10 +168,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                         valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
                       ),
                     )
-                  : Text('Сохранить'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16),
-              ),
+                  : const Text('Сохранить'),
             ),
           ],
         ),

@@ -10,9 +10,10 @@ class StudentsScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
 
-  StudentsScreen({required this.userId, required this.userEmail});
+  const StudentsScreen({super.key, required this.userId, required this.userEmail});
 
   @override
+  // ignore: library_private_types_in_public_api
   _StudentsScreenState createState() => _StudentsScreenState();
 }
 
@@ -125,13 +126,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
         ),
         actions: [
           Container(
-            margin: EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
               color: Colors.deepPurple.withValues(alpha:0.08),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
+              icon: const Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
               onPressed: () async {
                 await Navigator.push(
                   context,
@@ -142,13 +143,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
             ),
           ),
           Container(
-            margin: EdgeInsets.only(right: 12),
+            margin: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
               color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: _accent1),
+              icon: const Icon(Icons.refresh_rounded, color: _accent1),
               onPressed: _loadStudents,
               tooltip: 'Обновить',
             ),
@@ -156,7 +157,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         ],
       ),
       body: _isLoading
-          ? Center(
+          ? const Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                 strokeWidth: 3,
@@ -165,7 +166,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           : _students.isEmpty
               ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -189,7 +190,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             color: _accent1.withValues(alpha:0.7),
                           ),
                         ),
-                        SizedBox(height: 28),
+                        const SizedBox(height: 28),
                         Text(
                           'Нет студентов',
                           style: TextStyle(
@@ -199,7 +200,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             letterSpacing: 0.3,
                           ),
                         ),
-                        SizedBox(height: 10),
+                        const SizedBox(height: 10),
                         Text(
                           'Добавьте первого ученика или загрузите выписку',
                           style: TextStyle(
@@ -208,7 +209,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        SizedBox(height: 28),
+                        const SizedBox(height: 28),
                         Wrap(
                           spacing: 12,
                           runSpacing: 12,
@@ -217,28 +218,28 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
-                                gradient: LinearGradient(
+                                gradient: const LinearGradient(
                                   colors: [_accent1, _accent2],
                                 ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: _accent1.withValues(alpha:0.3),
                                     blurRadius: 12,
-                                    offset: Offset(0, 6),
+                                    offset: const Offset(0, 6),
                                   ),
                                 ],
                               ),
                               child: ElevatedButton.icon(
                                 onPressed: _addStudent,
-                                icon: Icon(Icons.add_rounded),
-                                label: Text(
+                                icon: const Icon(Icons.add_rounded),
+                                label: const Text(
                                   'Добавить',
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
-                                  padding: EdgeInsets.symmetric(
+                                  padding: const EdgeInsets.symmetric(
                                     horizontal: 20,
                                     vertical: 14,
                                   ),
@@ -258,7 +259,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   onRefresh: _loadStudents,
                   child: ListView.builder(
                     itemCount: _students.length,
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemBuilder: (context, index) {
                       final student = _students[index];
                       return Dismissible(
@@ -266,12 +267,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         direction: DismissDirection.endToStart,
                         background: Container(
                           alignment: Alignment.centerRight,
-                          padding: EdgeInsets.only(right: 20),
+                          padding: const EdgeInsets.only(right: 20),
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Icon(
+                          child: const Icon(
                             Icons.delete_outline_rounded,
                             color: Colors.white,
                             size: 32,
@@ -281,7 +282,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           final result = await showDialog<bool>(
                             context: context,
                             builder: (context) => AlertDialog(
-                              title: Text('Удалить ученика?'),
+                              title: const Text('Удалить ученика?'),
                               content: Text(
                                 'Вы уверены, что хотите удалить "${student.name}"?\n\n'
                                 'Это действие удалит все связанные данные:\n'
@@ -293,11 +294,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, false),
-                                  child: Text('Отмена'),
+                                  child: const Text('Отмена'),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, true),
-                                  child: Text('Удалить', style: TextStyle(color: Colors.red)),
+                                  child: const Text('Удалить', style: TextStyle(color: Colors.red)),
                                 ),
                               ],
                             ),
@@ -308,10 +309,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           return result ?? false;
                         },
                         child: Card(
-                        margin: EdgeInsets.symmetric(vertical: 4),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
                         clipBehavior: Clip.antiAlias,
                         child: ListTile(
-                          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           leading: Container(
                             width: 46,
                             height: 46,
@@ -328,11 +329,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 BoxShadow(
                                   color: (student.isDebtor ? Colors.red : _accent1).withValues(alpha:0.25),
                                   blurRadius: 10,
-                                  offset: Offset(0, 6),
+                                  offset: const Offset(0, 6),
                                 ),
                               ],
                             ),
-                            child: Icon(Icons.person_rounded, color: Colors.white, size: 22),
+                            child: const Icon(Icons.person_rounded, color: Colors.white, size: 22),
                           ),
                           title: Text(
                             student.name,
@@ -344,7 +345,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           ),
                           subtitle: student.parentName != null
                               ? Padding(
-                                  padding: EdgeInsets.only(top: 4),
+                                  padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     student.parentName!,
                                     style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
@@ -363,10 +364,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   color: student.isDebtor ? Colors.red : Colors.green.shade700,
                                 ),
                               ),
-                              SizedBox(height: 4),
+                              const SizedBox(height: 4),
                               if (student.isDebtor)
                                 Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
                                     color: Colors.red.withValues(alpha:0.12),
                                     borderRadius: BorderRadius.circular(10),
@@ -392,8 +393,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
       floatingActionButton: FloatingActionButton(
         heroTag: "add",
         onPressed: _addStudent,
-        child: Icon(Icons.add_rounded),
         backgroundColor: scheme.primary,
+        child: const Icon(Icons.add_rounded),
       ),
     );
   }

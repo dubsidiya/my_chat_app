@@ -6,9 +6,10 @@ import '../services/students_service.dart';
 class BankStatementScreen extends StatefulWidget {
   final Function()? onSuccess;
 
-  BankStatementScreen({this.onSuccess});
+  const BankStatementScreen({super.key, this.onSuccess});
 
   @override
+  // ignore: library_private_types_in_public_api
   _BankStatementScreenState createState() => _BankStatementScreenState();
 }
 
@@ -96,7 +97,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
   Future<void> _applyPayments() async {
     if (_selectedPayments.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Выберите платежи для применения'),
           backgroundColor: Colors.orange,
         ),
@@ -117,7 +118,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
               'Успешно применено: ${result['success']}, ошибок: ${result['failed']}',
             ),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
 
@@ -181,34 +182,34 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Загрузка банковской выписки'),
+        title: const Text('Загрузка банковской выписки'),
       ),
       body: _isLoading && _previewData == null
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : _previewData == null
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.upload_file, size: 64, color: scheme.onSurface.withValues(alpha:0.55)),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       Text(
                         'Выберите файл выписки',
                         style: TextStyle(fontSize: 18, color: scheme.onSurface.withValues(alpha:0.75)),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
                         'Поддерживаются форматы: CSV, Excel (.xlsx, .xls)',
                         style: TextStyle(fontSize: 14, color: scheme.onSurface.withValues(alpha:0.60)),
                         textAlign: TextAlign.center,
                       ),
-                      SizedBox(height: 24),
+                      const SizedBox(height: 24),
                       ElevatedButton.icon(
                         onPressed: _pickFile,
-                        icon: Icon(Icons.folder_open),
-                        label: Text('Выбрать файл'),
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('Выбрать файл'),
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         ),
                       ),
                     ],
@@ -218,19 +219,19 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                   children: [
                     // Информация о результатах
                     Container(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       color: scheme.primary.withValues(alpha:isDark ? 0.14 : 0.08),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Результаты обработки',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text('Всего строк: ${_previewData!['totalRows']}'),
                           Text(
                             'Найдено платежей: ${_previewData!['processedPayments'].length}',
@@ -243,7 +244,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                                   : Colors.green,
                             ),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text(
                             'Выбрано для применения: ${_selectedPayments.length}',
                             style: TextStyle(
@@ -258,7 +259,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                     // Список платежей
                     Expanded(
                       child: ListView.builder(
-                        padding: EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
                         itemCount: _previewData!['processedPayments'].length,
                         itemBuilder: (context, index) {
                           final payment = _previewData!['processedPayments'][index];
@@ -266,7 +267,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                           final hasStudent = payment['student'] != null;
 
                           return Card(
-                            margin: EdgeInsets.symmetric(vertical: 4),
+                            margin: const EdgeInsets.symmetric(vertical: 4),
                             color: hasStudent
                                 ? (isSelected
                                     ? Colors.green.withValues(alpha:isDark ? 0.14 : 0.10)
@@ -296,21 +297,21 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                                       'Студент не найден',
                                       style: TextStyle(color: Colors.orange.shade500),
                                     ),
-                                  SizedBox(height: 4),
+                                  const SizedBox(height: 4),
                                   Row(
                                     children: [
                                       Text(
                                         '${payment['amount'].toStringAsFixed(2)} ₽',
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,
                                         ),
                                       ),
                                       if (payment['date'] != null) ...[
-                                        SizedBox(width: 16),
+                                        const SizedBox(width: 16),
                                         Text(
                                           'Дата: ${payment['date']}',
-                                          style: TextStyle(fontSize: 12),
+                                          style: const TextStyle(fontSize: 12),
                                         ),
                                       ],
                                     ],
@@ -334,18 +335,18 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
                     // Кнопка применения
                     if (_selectedPayments.isNotEmpty)
                       Container(
-                        padding: EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(16),
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _applyPayments,
                           style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             backgroundColor: Colors.green.shade600,
                           ),
                           child: _isLoading
                               ? CircularProgressIndicator(color: scheme.onPrimary)
                               : Text(
                                   'Применить ${_selectedPayments.length} платежей',
-                                  style: TextStyle(fontSize: 16),
+                                  style: const TextStyle(fontSize: 16),
                                 ),
                         ),
                       ),

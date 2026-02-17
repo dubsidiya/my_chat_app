@@ -11,7 +11,7 @@ import 'package:my_chat_app/screens/login_screen.dart';
 
 void main() {
   testWidgets('Login screen smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(home: LoginScreen()));
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
     await tester.pumpAndSettle();
 
     expect(find.text('Логин'), findsOneWidget);

@@ -8,6 +8,7 @@ class EditStudentScreen extends StatefulWidget {
   const EditStudentScreen({super.key, required this.student});
 
   @override
+  // ignore: library_private_types_in_public_api
   _EditStudentScreenState createState() => _EditStudentScreenState();
 }
 
@@ -166,6 +167,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _isLoading ? null : _saveStudent,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
               child: _isLoading
                   ? SizedBox(
                       width: 18,
@@ -176,9 +180,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                       ),
                     )
                   : const Text('Сохранить'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
             ),
           ],
         ),

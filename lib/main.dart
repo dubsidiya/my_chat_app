@@ -27,7 +27,7 @@ void main() {
     await initializeDateFormatting('en_US');
     await LocalMessagesService.init();
     await PushNotificationService.init(navigatorKey);
-    runApp(MyApp());
+    runApp(const MyApp());
   }, (error, stack) {
     if (kDebugMode) {
       print('Uncaught error: $error');
@@ -37,7 +37,10 @@ void main() {
 }
 
 class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
+  // ignore: library_private_types_in_public_api
   _MyAppState createState() => _MyAppState();
 }
 
@@ -91,7 +94,7 @@ class _MyAppState extends State<MyApp> {
         listTileTheme: ListTileThemeData(
           iconColor: scheme.onSurface.withValues(alpha:0.80),
           textColor: scheme.onSurface,
-          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           dense: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
@@ -101,7 +104,7 @@ class _MyAppState extends State<MyApp> {
           disabledColor: scheme.onSurface.withValues(alpha:0.08),
           labelStyle: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
           secondaryLabelStyle: TextStyle(color: scheme.onSurface),
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(999),
             side: BorderSide(color: outline),
@@ -111,7 +114,7 @@ class _MyAppState extends State<MyApp> {
           labelColor: scheme.primary,
           unselectedLabelColor: scheme.onSurface.withValues(alpha:0.55),
           indicatorColor: scheme.primary,
-          labelStyle: TextStyle(fontWeight: FontWeight.w700),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
         appBarTheme: AppBarTheme(
           elevation: 0,
@@ -159,7 +162,7 @@ class _MyAppState extends State<MyApp> {
           surfaceTintColor: Colors.transparent,
           modalBackgroundColor: card,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             side: BorderSide(color: outline),
           ),
           showDragHandle: true,
@@ -198,16 +201,16 @@ class _MyAppState extends State<MyApp> {
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide(color: scheme.primary, width: 2),
           ),
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             elevation: 0,
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            textStyle: TextStyle(
+            textStyle: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
@@ -215,7 +218,7 @@ class _MyAppState extends State<MyApp> {
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             side: BorderSide(color: outline),
             foregroundColor: scheme.onSurface,
@@ -223,7 +226,7 @@ class _MyAppState extends State<MyApp> {
         ),
         textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -260,7 +263,7 @@ class _MyAppState extends State<MyApp> {
                     ],
                   ),
                 ),
-                child: Center(
+                child: const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -296,7 +299,7 @@ class _MyAppState extends State<MyApp> {
           }
 
           // Если данных нет - показываем экран входа
-          return LoginScreen();
+          return const LoginScreen();
         },
       ),
     );

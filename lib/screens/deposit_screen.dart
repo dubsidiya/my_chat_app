@@ -7,6 +7,7 @@ class DepositScreen extends StatefulWidget {
   const DepositScreen({super.key, required this.studentId});
 
   @override
+  // ignore: library_private_types_in_public_api
   _DepositScreenState createState() => _DepositScreenState();
 }
 
@@ -41,7 +42,7 @@ class _DepositScreenState extends State<DepositScreen> {
       if (mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Баланс пополнен'),
             backgroundColor: Colors.green,
           ),
@@ -68,16 +69,16 @@ class _DepositScreenState extends State<DepositScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Пополнить баланс'),
+        title: const Text('Пополнить баланс'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
               controller: _amountController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Сумма (₽) *',
                 border: OutlineInputBorder(),
                 prefixText: '+ ',
@@ -94,19 +95,24 @@ class _DepositScreenState extends State<DepositScreen> {
                 return null;
               },
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _descriptionController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Описание (опционально)',
                 border: OutlineInputBorder(),
                 hintText: 'Например: Оплата за месяц',
               ),
               maxLines: 2,
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _isLoading ? null : _deposit,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.green.shade600,
+                foregroundColor: scheme.onPrimary,
+              ),
               child: _isLoading
                   ? SizedBox(
                       width: 18,
@@ -116,12 +122,7 @@ class _DepositScreenState extends State<DepositScreen> {
                         valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
                       ),
                     )
-                  : Text('Пополнить'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: scheme.onPrimary,
-              ),
+                  : const Text('Пополнить'),
             ),
           ],
         ),

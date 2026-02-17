@@ -15,6 +15,7 @@ class AccountingExportScreen extends StatefulWidget {
   const AccountingExportScreen({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   State<AccountingExportScreen> createState() => _AccountingExportScreenState();
 }
 
@@ -85,8 +86,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     required int unpaidCount,
     required double unpaidSum,
   }) {
-    final accent1 = const Color(0xFF667eea);
-    final accent2 = const Color(0xFF764ba2);
+    const accent1 = Color(0xFF667eea);
+    const accent2 = Color(0xFF764ba2);
     final debtColor = Colors.red.shade700;
     final okColor = Colors.green.shade700;
 
@@ -527,7 +528,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
   Future<void> _openBankStatementFromAccounting() async {
     final ok = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => BankStatementScreen()),
+      MaterialPageRoute(builder: (_) => const BankStatementScreen()),
     );
     if (ok == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

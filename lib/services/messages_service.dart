@@ -119,7 +119,7 @@ class MessagesService {
             // ✅ Сохраняем сообщения в кэш только если useCache = true
             if (useCache && isOnline) {
               // Используем задержку, чтобы не триггерить перезагрузку UI
-              Future.delayed(Duration(milliseconds: 100), () {
+              Future.delayed(const Duration(milliseconds: 100), () {
                 LocalMessagesService.saveMessages(chatId, messages);
               });
             }
@@ -326,7 +326,7 @@ class MessagesService {
       // ✅ Если есть оригинал, отправляем его отдельно
       if (originalBytes != null) {
         // Генерируем имя для оригинала
-        final originalFileName = 'original-${fileName}';
+        final originalFileName = 'original-$fileName';
         request.files.add(
           http.MultipartFile.fromBytes(
             'original',

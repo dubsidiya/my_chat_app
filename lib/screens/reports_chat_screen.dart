@@ -10,9 +10,10 @@ class ReportsChatScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
 
-  ReportsChatScreen({required this.userId, required this.userEmail});
+  const ReportsChatScreen({super.key, required this.userId, required this.userEmail});
 
   @override
+  // ignore: library_private_types_in_public_api
   _ReportsChatScreenState createState() => _ReportsChatScreenState();
 }
 
@@ -123,18 +124,18 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Удалить отчет?'),
-        content: Text(
+        title: const Text('Удалить отчет?'),
+        content: const Text(
           'Это удалит отчет и все связанные занятия. Действие нельзя отменить.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Отмена'),
+            child: const Text('Отмена'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Удалить', style: TextStyle(color: Colors.red)),
+            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -182,25 +183,25 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         ),
         actions: [
           Container(
-            margin: EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
               color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.add_rounded, color: _accent1),
+              icon: const Icon(Icons.add_rounded, color: _accent1),
               onPressed: _openBuilder,
               tooltip: 'Новый отчет',
             ),
           ),
           Container(
-            margin: EdgeInsets.only(right: 12),
+            margin: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
               color: _accent1.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: _accent1),
+              icon: const Icon(Icons.refresh_rounded, color: _accent1),
               onPressed: _loadReports,
               tooltip: 'Обновить',
             ),
@@ -212,7 +213,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         children: [
           // Поле ввода даты
           Container(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Card(
               elevation: 2,
               shadowColor: Colors.black.withValues(alpha:0.08),
@@ -223,26 +224,26 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                 onTap: _selectDate,
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [_accent1, _accent2]),
+                          gradient: const LinearGradient(colors: [_accent1, _accent2]),
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
                               color: _accent1.withValues(alpha:0.25),
                               blurRadius: 10,
-                              offset: Offset(0, 6),
+                              offset: const Offset(0, 6),
                             ),
                           ],
                         ),
-                        child: Icon(Icons.calendar_today_rounded, color: Colors.white),
+                        child: const Icon(Icons.calendar_today_rounded, color: Colors.white),
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,7 +256,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            SizedBox(height: 6),
+                            const SizedBox(height: 6),
                             Text(
                               _dateController.text,
                               style: TextStyle(
@@ -277,7 +278,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
           // Поле ввода отчета
           Container(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -288,7 +289,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
                         SizedBox(
@@ -297,19 +298,19 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
-                              gradient: LinearGradient(colors: [_accent1, _accent2]),
+                              gradient: const LinearGradient(colors: [_accent1, _accent2]),
                               boxShadow: [
                                 BoxShadow(
                                   color: _accent1.withValues(alpha:0.3),
                                   blurRadius: 12,
-                                  offset: Offset(0, 6),
+                                  offset: const Offset(0, 6),
                                 ),
                               ],
                             ),
                             child: ElevatedButton.icon(
                               onPressed: _isLoading ? null : _openBuilder,
-                              icon: Icon(Icons.playlist_add_check_rounded),
-                              label: Text(
+                              icon: const Icon(Icons.playlist_add_check_rounded),
+                              label: const Text(
                                 'Сформировать отчет',
                                 style: TextStyle(
                                   fontSize: 16,
@@ -335,12 +336,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
             ),
           ),
 
-          Divider(height: 1),
+          const Divider(height: 1),
 
           // Список отчетов
           Expanded(
             child: _isLoading && _reports.isEmpty
-                ? Center(
+                ? const Center(
                     child: CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                       strokeWidth: 3,
@@ -349,7 +350,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                 : _reports.isEmpty
                     ? Center(
                         child: Padding(
-                          padding: EdgeInsets.all(32),
+                          padding: const EdgeInsets.all(32),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -371,7 +372,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   color: _accent1.withValues(alpha:0.7),
                                 ),
                               ),
-                              SizedBox(height: 28),
+                              const SizedBox(height: 28),
                               Text(
                                 'Нет отчетов',
                                 style: TextStyle(
@@ -380,7 +381,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             color: scheme.onSurface.withValues(alpha:0.75),
                                 ),
                               ),
-                              SizedBox(height: 10),
+                              const SizedBox(height: 10),
                               Text(
                                 'Создайте отчет за день — занятия сформируются автоматически',
                                 style: TextStyle(
@@ -396,19 +397,19 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                     : RefreshIndicator(
                         onRefresh: _loadReports,
                         child: ListView.builder(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           itemCount: _reports.length,
                           itemBuilder: (context, index) {
                             final report = _reports[index];
                             return Card(
-                              margin: EdgeInsets.symmetric(vertical: 6),
+                              margin: const EdgeInsets.symmetric(vertical: 6),
                               elevation: 2,
                               shadowColor: Colors.black.withValues(alpha:0.08),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: ListTile(
-                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 leading: Container(
                                   width: 48,
                                   height: 48,
@@ -424,11 +425,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         color: (report.isEdited ? Colors.orange : _accent1)
                                             .withValues(alpha:0.25),
                                         blurRadius: 10,
-                                        offset: Offset(0, 6),
+                                        offset: const Offset(0, 6),
                                       ),
                                     ],
                                   ),
-                                  child: Icon(
+                                  child: const Icon(
                                     Icons.description_rounded,
                                     color: Colors.white,
                                   ),
@@ -444,19 +445,19 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    SizedBox(height: 6),
+                                    const SizedBox(height: 6),
                                     Text(
                                       report.content,
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(color: scheme.onSurface.withValues(alpha:0.70)),
                                     ),
-                                    SizedBox(height: 4),
+                                    const SizedBox(height: 4),
                                     if (report.isLate)
                                       Padding(
-                                        padding: EdgeInsets.only(top: 6),
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Container(
-                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: Colors.red.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
@@ -473,11 +474,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       ),
                                     if (report.isEdited)
                                       Padding(
-                                        padding: EdgeInsets.only(top: 6),
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Row(
                                           children: [
                                             Container(
-                                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
                                                 color: Colors.orange.withValues(alpha:0.12),
                                                 borderRadius: BorderRadius.circular(10),
@@ -491,16 +492,16 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                                 ),
                                               ),
                                             ),
-                                            SizedBox(width: 8),
+                                            const SizedBox(width: 8),
                                             Container(
-                                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
                                                 color: _accent1.withValues(alpha:0.12),
                                                 borderRadius: BorderRadius.circular(10),
                                               ),
                                               child: Text(
                                                 'Занятий: ${report.lessonsCount ?? 0}',
-                                                style: TextStyle(
+                                                style: const TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: _accent1,
@@ -512,16 +513,16 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       )
                                     else
                                       Padding(
-                                        padding: EdgeInsets.only(top: 6),
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Container(
-                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: _accent1.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Text(
                                             'Занятий: ${report.lessonsCount ?? 0}',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
                                               color: _accent1,
@@ -536,7 +537,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                   itemBuilder: (context) => [
-                                    PopupMenuItem(
+                                    const PopupMenuItem(
                                       value: 'edit',
                                       child: Row(
                                         children: [
@@ -546,7 +547,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         ],
                                       ),
                                     ),
-                                    PopupMenuItem(
+                                    const PopupMenuItem(
                                       value: 'edit_text',
                                       child: Row(
                                         children: [
@@ -556,7 +557,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         ],
                                       ),
                                     ),
-                                    PopupMenuItem(
+                                    const PopupMenuItem(
                                       value: 'delete',
                                       child: Row(
                                         children: [

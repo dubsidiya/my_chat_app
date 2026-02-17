@@ -9,9 +9,10 @@ class MainTabsScreen extends StatefulWidget {
   final bool isSuperuser;
   final Function(bool)? onThemeChanged;
 
-  MainTabsScreen({required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
+  const MainTabsScreen({super.key, required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
 
   @override
+  // ignore: library_private_types_in_public_api
   _MainTabsScreenState createState() => _MainTabsScreenState();
 }
 

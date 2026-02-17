@@ -17,9 +17,10 @@ class HomeScreen extends StatefulWidget {
   final bool isSuperuser;
   final Function(bool)? onThemeChanged;
 
-  HomeScreen({required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
+  const HomeScreen({super.key, required this.userId, required this.userEmail, this.isSuperuser = false, this.onThemeChanged});
 
   @override
+  // ignore: library_private_types_in_public_api
   _HomeScreenState createState() => _HomeScreenState();
 }
 
@@ -86,12 +87,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 isLoading = true;
                 error = null;
               });
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(dialogContext);
               try {
                 await _chatsService.joinByInviteCode(code);
                 if (!mounted) return;
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(content: Text('Готово: вы вступили в чат')),
+                navigator.pop();
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Готово: вы вступили в чат')),
                 );
                 _loadChats();
               } catch (e) {
@@ -103,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
 
             return AlertDialog(
-              title: Text('Вступить по коду'),
+              title: const Text('Вступить по коду'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -121,13 +124,13 @@ class _HomeScreenState extends State<HomeScreen> {
               actions: [
                 TextButton(
                   onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
-                  child: Text('Отмена'),
+                  child: const Text('Отмена'),
                 ),
                 ElevatedButton(
                   onPressed: isLoading ? null : doJoin,
                   child: isLoading
-                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text('Вступить'),
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Вступить'),
                 ),
               ],
             );
@@ -173,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _loadError = e.toString().replaceFirst('Exception: ', ''));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при загрузке чатов'),
+            content: const Text('Ошибка при загрузке чатов'),
             action: SnackBarAction(
               label: 'Повторить',
               onPressed: _loadChats,
@@ -229,27 +232,27 @@ class _HomeScreenState extends State<HomeScreen> {
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: EdgeInsets.only(right: 20),
+        padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
           color: Colors.red,
           borderRadius: BorderRadius.circular(12),
         ),
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Icon(Icons.delete, color: Colors.white, size: 28),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
       confirmDismiss: (direction) async {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: Text('Удалить чат?'),
+            title: const Text('Удалить чат?'),
             content: Text(
                 'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Отмена')),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: Text('Удалить'),
+                child: const Text('Удалить'),
               ),
             ],
           ),
@@ -257,11 +260,11 @@ class _HomeScreenState extends State<HomeScreen> {
         return confirmed ?? false;
       },
       onDismissed: (direction) async {
-        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
         try {
           await _chatsService.deleteChat(chat.id, widget.userId);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
               SnackBar(content: Text('Чат "${chat.name}" удален'), duration: const Duration(seconds: 2)),
             );
             _loadChats();
@@ -269,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
         } catch (e) {
           if (kDebugMode) print('Ошибка удаления чата: $e');
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
               SnackBar(
                 content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
                 duration: const Duration(seconds: 3),
@@ -280,13 +283,13 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Card(
-        margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _openChat(chat),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 Container(
@@ -308,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     size: 22,
                   ),
                 ),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         preview,
                         maxLines: 1,
@@ -339,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
@@ -352,10 +355,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     if (unread > 0)
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: scheme.primary,
                           borderRadius: BorderRadius.circular(999),
@@ -370,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       )
                     else
-                      SizedBox(height: 20),
+                      const SizedBox(height: 20),
                   ],
                 ),
               ],
@@ -404,23 +407,23 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Выйти из аккаунта?'),
-        content: Text('Вы уверены, что хотите выйти?'),
+        title: const Text('Выйти из аккаунта?'),
+        content: const Text('Вы уверены, что хотите выйти?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Отмена'),
+            child: const Text('Отмена'),
           ),
           ElevatedButton(
             onPressed: () async {
+              final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
               // Очищаем сохраненные данные
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
               if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => LoginScreen()),
+                navigator.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
                   (route) => false, // Удаляем все предыдущие маршруты
                 );
               }
@@ -428,7 +431,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: Text('Выйти'),
+            child: const Text('Выйти'),
           ),
         ],
       ),
@@ -459,12 +462,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _showSettingsSheet() async {
     bool soundOn = await StorageService.getSoundOnNewMessage();
     bool vibrationOn = await StorageService.getVibrationOnNewMessage();
+    if (!mounted) return;
     final scheme = Theme.of(context).colorScheme;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
@@ -489,10 +493,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: scheme.onSurface,
                     ),
                   ),
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
                   SwitchListTile(
-                    title: Text('Звук при новом сообщении'),
-                    subtitle: Text('Воспроизводить звук, когда приходит новое сообщение'),
+                    title: const Text('Звук при новом сообщении'),
+                    subtitle: const Text('Воспроизводить звук, когда приходит новое сообщение'),
                     value: soundOn,
                     onChanged: (v) async {
                       await StorageService.setSoundOnNewMessage(v);
@@ -500,15 +504,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   SwitchListTile(
-                    title: Text('Вибрация при новом сообщении'),
-                    subtitle: Text('Вибрация при получении нового сообщения'),
+                    title: const Text('Вибрация при новом сообщении'),
+                    subtitle: const Text('Вибрация при получении нового сообщения'),
                     value: vibrationOn,
                     onChanged: (v) async {
                       await StorageService.setVibrationOnNewMessage(v);
                       setModalState(() => vibrationOn = v);
                     },
                   ),
-                  SizedBox(height: 24),
+                  const SizedBox(height: 24),
                 ],
               ),
             );
@@ -544,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Center(
+        builder: (context) => const Center(
           child: CircularProgressIndicator(),
         ),
       );
@@ -561,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         // Показываем сообщение об успехе
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Row(
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
@@ -570,7 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+            duration: Duration(seconds: 3),
           ),
         );
       }
@@ -586,8 +590,8 @@ class _HomeScreenState extends State<HomeScreen> {
           SnackBar(
             content: Row(
               children: [
-                Icon(Icons.error_outline, color: Colors.white),
-                SizedBox(width: 8),
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Ошибка при смене пароля: ${e.toString().replaceFirst('Exception: ', '')}',
@@ -611,7 +615,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Сбросить пароль пользователя'),
+          title: const Text('Сбросить пароль пользователя'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -621,32 +625,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   'Введите логин пользователя и новый пароль. Только администратор может сбросить пароль.',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 TextField(
                   controller: usernameController,
                   decoration: InputDecoration(
                     labelText: 'Логин пользователя',
-                    prefixIcon: Icon(Icons.person_outline),
+                    prefixIcon: const Icon(Icons.person_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   autofocus: true,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 TextField(
                   controller: passwordController,
                   decoration: InputDecoration(
                     labelText: 'Новый пароль',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    prefixIcon: const Icon(Icons.lock_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   obscureText: true,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 TextField(
                   controller: confirmController,
                   decoration: InputDecoration(
                     labelText: 'Повторите пароль',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    prefixIcon: const Icon(Icons.lock_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   obscureText: true,
@@ -657,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Отмена'),
+              child: const Text('Отмена'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -669,7 +673,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (password != confirm) return;
                 Navigator.pop(ctx, {'username': username, 'newPassword': password});
               },
-              child: Text('Сбросить пароль'),
+              child: const Text('Сбросить пароль'),
             ),
           ],
         ),
@@ -680,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await AdminService().resetUserPassword(result['username']!, result['newPassword']!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
@@ -717,22 +721,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final finalConfirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Последнее предупреждение!'),
-        content: Text(
+        title: const Text('Последнее предупреждение!'),
+        content: const Text(
           'Вы действительно хотите удалить аккаунт? Это действие нельзя отменить!',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Отмена'),
+            child: const Text('Отмена'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: Text('Да, удалить'),
+            child: const Text('Да, удалить'),
           ),
         ],
       ),
@@ -745,7 +749,7 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Center(
+        builder: (context) => const Center(
           child: CircularProgressIndicator(),
         ),
       );
@@ -765,16 +769,16 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         // Показываем сообщение об успехе
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Аккаунт успешно удален'),
-            duration: const Duration(seconds: 2),
+            duration: Duration(seconds: 2),
           ),
         );
 
         // Возвращаемся на экран входа
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => LoginScreen()),
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
         );
       }
@@ -819,15 +823,15 @@ class _HomeScreenState extends State<HomeScreen> {
               title: Row(
                 children: [
                   Container(
-                    padding: EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [_privateAccent1, _privateAccent2]),
+                      gradient: const LinearGradient(colors: [_privateAccent1, _privateAccent2]),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Icon(Icons.lock_rounded, color: Colors.white, size: 22),
+                    child: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
                   ),
-                  SizedBox(width: 12),
-                  Expanded(child: Text('Приватный доступ', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const SizedBox(width: 12),
+                  const Expanded(child: Text('Приватный доступ', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
               ),
               content: Column(
@@ -838,7 +842,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     'Введите код, чтобы открыть “Учет занятий” и “Отчеты”.',
                     style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70)),
                   ),
-                  SizedBox(height: 12),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: controller,
                     obscureText: true,
@@ -855,7 +859,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: _privateAccent1, width: 2),
+                        borderSide: const BorderSide(color: _privateAccent1, width: 2),
                       ),
                     ),
                     onSubmitted: (_) {
@@ -869,7 +873,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, null), child: Text('Отмена')),
+                TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Отмена')),
                 ElevatedButton(
                   onPressed: () {
                     if (controller.text.trim().isEmpty) {
@@ -882,7 +886,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     backgroundColor: _privateAccent1,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  child: Text('Открыть'),
+                  child: const Text('Открыть'),
                 ),
               ],
             );
@@ -897,14 +901,14 @@ class _HomeScreenState extends State<HomeScreen> {
       await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Приватные разделы открыты'), duration: Duration(seconds: 2), backgroundColor: Colors.green.shade600),
+          SnackBar(content: const Text('Приватные разделы открыты'), duration: const Duration(seconds: 2), backgroundColor: Colors.green.shade600),
         );
       }
       return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), duration: Duration(seconds: 3), backgroundColor: Colors.red.shade600),
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), duration: const Duration(seconds: 3), backgroundColor: Colors.red.shade600),
         );
       }
       return false;
@@ -992,19 +996,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           Container(
-            margin: EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Color(0xFF667eea).withValues(alpha: 0.1),
+              color: const Color(0xFF667eea).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: Color(0xFF667eea)),
+              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF667eea)),
               onPressed: _loadChats,
               tooltip: 'Обновить',
             ),
           ),
           Container(
-            margin: EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
               color: Colors.green.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
@@ -1016,9 +1020,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Container(
-            margin: EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 colors: [
                   Color(0xFF667eea),
                   Color(0xFF764ba2),
@@ -1027,14 +1031,14 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Color(0xFF667eea).withValues(alpha: 0.3),
+                  color: const Color(0xFF667eea).withValues(alpha: 0.3),
                   blurRadius: 8,
-                  offset: Offset(0, 4),
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: IconButton(
-              icon: Icon(Icons.add_rounded, color: Colors.white),
+              icon: const Icon(Icons.add_rounded, color: Colors.white),
               onPressed: _showCreateChatDialog,
               tooltip: 'Создать чат',
             ),
@@ -1070,15 +1074,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Color(0xFF667eea).withValues(alpha: 0.1),
+                        color: const Color(0xFF667eea).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.school_rounded, color: Color(0xFF667eea), size: 20),
+                      child: const Icon(Icons.school_rounded, color: Color(0xFF667eea), size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Учет занятий', style: TextStyle(fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 12),
+                    const Text('Учет занятий', style: TextStyle(fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
@@ -1087,15 +1091,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Color(0xFF764ba2).withValues(alpha: 0.1),
+                        color: const Color(0xFF764ba2).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.description_rounded, color: Color(0xFF764ba2), size: 20),
+                      child: const Icon(Icons.description_rounded, color: Color(0xFF764ba2), size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Отчеты', style: TextStyle(fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 12),
+                    const Text('Отчеты', style: TextStyle(fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
@@ -1104,25 +1108,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.amber.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(Icons.settings_rounded, color: Colors.amber.shade700, size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Настройки', style: TextStyle(fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 12),
+                    const Text('Настройки', style: TextStyle(fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
-              PopupMenuDivider(),
+              const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'theme',
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(8),
@@ -1133,10 +1137,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         size: 20,
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Text(
                       isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓',
-                      style: TextStyle(fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
@@ -1146,16 +1150,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.logout_rounded,
+                      child: const Icon(Icons.logout_rounded,
                           color: Colors.blue, size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Выйти',
+                    const SizedBox(width: 12),
+                    const Text('Выйти',
                         style: TextStyle(fontWeight: FontWeight.w500)),
                   ],
                 ),
@@ -1165,16 +1169,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.lock_outline_rounded,
+                      child: const Icon(Icons.lock_outline_rounded,
                           color: Colors.orange, size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Изменить пароль',
+                    const SizedBox(width: 12),
+                    const Text('Изменить пароль',
                         style: TextStyle(fontWeight: FontWeight.w500)),
                   ],
                 ),
@@ -1185,15 +1189,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     children: [
                       Container(
-                        padding: EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: Colors.teal.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(Icons.admin_panel_settings_rounded, color: Colors.teal, size: 20),
+                        child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.teal, size: 20),
                       ),
-                      SizedBox(width: 12),
-                      Text('Сбросить пароль пользователя',
+                      const SizedBox(width: 12),
+                      const Text('Сбросить пароль пользователя',
                           style: TextStyle(fontWeight: FontWeight.w500)),
                     ],
                   ),
@@ -1203,16 +1207,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.delete_forever_rounded,
+                      child: const Icon(Icons.delete_forever_rounded,
                           color: Colors.red, size: 20),
                     ),
-                    SizedBox(width: 12),
-                    Text('Удалить аккаунт',
+                    const SizedBox(width: 12),
+                    const Text('Удалить аккаунт',
                         style: TextStyle(
                             color: Colors.red, fontWeight: FontWeight.w600)),
                   ],
@@ -1220,7 +1224,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
@@ -1229,13 +1233,13 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(
+                  const CircularProgressIndicator(
                     valueColor: AlwaysStoppedAnimation<Color>(
                       Color(0xFF667eea),
                     ),
                     strokeWidth: 3,
                   ),
-                  SizedBox(height: 24),
+                  const SizedBox(height: 24),
                   Text(
                     'Загрузка чатов...',
                     style: TextStyle(
@@ -1251,12 +1255,12 @@ class _HomeScreenState extends State<HomeScreen> {
           : _loadError != null && _chats.isEmpty
               ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.wifi_off_rounded, size: 64, color: Colors.orange.shade400),
-                        SizedBox(height: 24),
+                        const SizedBox(height: 24),
                         Text(
                           'Не удалось загрузить чаты',
                           style: TextStyle(
@@ -1266,7 +1270,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Text(
                           _loadError!,
                           style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
@@ -1274,13 +1278,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        SizedBox(height: 24),
+                        const SizedBox(height: 24),
                         ElevatedButton.icon(
                           onPressed: _loadChats,
-                          icon: Icon(Icons.refresh_rounded, size: 20),
-                          label: Text('Повторить'),
+                          icon: const Icon(Icons.refresh_rounded, size: 20),
+                          label: const Text('Повторить'),
                           style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                           ),
                         ),
                       ],
@@ -1319,7 +1323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     },
                                   ),
                             border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           ),
                         ),
                       ),
@@ -1328,7 +1332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: filteredChats.isEmpty
                           ? RefreshIndicator(
                               onRefresh: _loadChats,
-                              color: Color(0xFF667eea),
+                              color: const Color(0xFF667eea),
                               child: SingleChildScrollView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 child: SizedBox(
@@ -1343,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             Icon(
                                               Icons.chat_bubble_outline_rounded,
                                               size: 56,
-                                              color: Color(0xFF667eea).withValues(alpha: 0.5),
+                                              color: const Color(0xFF667eea).withValues(alpha: 0.5),
                                             ),
                                           if (_chats.isEmpty) const SizedBox(height: 16),
                                           Text(
@@ -1373,7 +1377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               icon: const Icon(Icons.add_rounded, size: 20),
                                               label: const Text('Создать чат'),
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: Color(0xFF667eea),
+                                                foregroundColor: const Color(0xFF667eea),
                                               ),
                                             ),
                                           ] else ...[
@@ -1397,7 +1401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               icon: const Icon(Icons.clear_all_rounded, size: 20),
                                               label: const Text('Показать все чаты'),
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: Color(0xFF667eea),
+                                                foregroundColor: const Color(0xFF667eea),
                                               ),
                                             ),
                                           ],
@@ -1410,10 +1414,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                           : RefreshIndicator(
                               onRefresh: _loadChats,
-                              color: Color(0xFF667eea),
+                              color: const Color(0xFF667eea),
                               child: _query.isEmpty
                                   ? ReorderableListView.builder(
-                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
                                       buildDefaultDragHandles: true,
                                       onReorder: _onReorderChats,
                                       itemCount: filteredChats.length,
@@ -1428,7 +1432,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       },
                                     )
                                   : ListView.builder(
-                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
                                       itemCount: filteredChats.length,
                                       cacheExtent: 500,
                                       itemBuilder: (context, index) {
@@ -1516,7 +1520,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
     if (_selectedUserIds.isEmpty) return;
     if (_isGroup && name.isEmpty) return;
     if (!_isGroup && _selectedUserIds.length != 1) return;
-    if (_isGroup && _selectedUserIds.length < 1) return;
+    if (_isGroup && _selectedUserIds.isEmpty) return;
 
     setState(() {
       _isCreating = true;
@@ -1556,9 +1560,9 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
       title: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(10),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 colors: [
                   Color(0xFF667eea),
                   Color(0xFF764ba2),
@@ -1566,10 +1570,10 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               ),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 24),
+            child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 24),
           ),
-          SizedBox(width: 12),
-          Text(
+          const SizedBox(width: 12),
+          const Text(
             'Создать чат',
             style: TextStyle(
               fontWeight: FontWeight.bold,
@@ -1580,7 +1584,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
         ],
       ),
       content: Container(
-        padding: EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1588,7 +1592,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               children: [
                 Expanded(
                   child: ChoiceChip(
-                    label: Text('1-на-1'),
+                    label: const Text('1-на-1'),
                     selected: !_isGroup,
                     onSelected: _isCreating
                         ? null
@@ -1606,10 +1610,10 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                           },
                   ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: ChoiceChip(
-                    label: Text('Групповой'),
+                    label: const Text('Групповой'),
                     selected: _isGroup,
                     onSelected: _isCreating
                         ? null
@@ -1622,11 +1626,11 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 ),
               ],
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             if (_isGroup)
               TextField(
                 controller: _nameController,
-                style: TextStyle(fontSize: 16),
+                style: const TextStyle(fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Имя группы',
                   filled: true,
@@ -1638,46 +1642,46 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 ),
                 enabled: !_isCreating,
               ),
-            if (_isGroup) SizedBox(height: 12),
+            if (_isGroup) const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 _isGroup ? 'Участники' : 'Выберите человека',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             TextField(
               controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v),
               enabled: !_loadingUsers && !_isCreating,
-              style: TextStyle(fontSize: 15),
+              style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
-                prefixIcon: Icon(Icons.search_rounded, size: 22, color: Color(0xFF667eea)),
+                prefixIcon: const Icon(Icons.search_rounded, size: 22, color: Color(0xFF667eea)),
                 filled: true,
                 fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             if (_loadingUsers)
-              Padding(
+              const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               )
             else if (_users.isEmpty)
-              Padding(
+              const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Нет пользователей для добавления'),
               )
             else if (_searchQuery.trim().isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
+                padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Center(
                   child: Text(
                     'Введите запрос в поле поиска,\nчтобы найти пользователя',
@@ -1691,7 +1695,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               )
             else if (_filteredUsers.isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   'Никого не найдено',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
@@ -1699,7 +1703,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               )
             else
               ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: 260),
+                constraints: const BoxConstraints(maxHeight: 260),
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: _filteredUsers.length,
@@ -1744,7 +1748,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                   Navigator.pop(context, false);
                 },
           style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
           child: Text(
             'Отмена',
@@ -1758,7 +1762,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               colors: [
                 Color(0xFF667eea),
                 Color(0xFF764ba2),
@@ -1766,9 +1770,9 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Color(0xFF667eea).withValues(alpha: 0.3),
+                color: const Color(0xFF667eea).withValues(alpha: 0.3),
                 blurRadius: 10,
-                offset: Offset(0, 4),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -1785,13 +1789,13 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.transparent,
               shadowColor: Colors.transparent,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
             child: _isCreating
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
@@ -1799,7 +1803,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
-                : Text(
+                : const Text(
                     'Создать',
                     style: TextStyle(
                       fontSize: 16,
@@ -1838,24 +1842,24 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Удалить аккаунт?'),
+      title: const Text('Удалить аккаунт?'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Это действие необратимо! Все ваши данные будут удалены:',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 8),
-            Text('• Все ваши сообщения'),
-            Text('• Все чаты, где вы создатель'),
-            Text('• Ваше участие во всех чатах'),
-            SizedBox(height: 16),
+            const SizedBox(height: 8),
+            const Text('• Все ваши сообщения'),
+            const Text('• Все чаты, где вы создатель'),
+            const Text('• Ваше участие во всех чатах'),
+            const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Введите пароль для подтверждения',
                 border: OutlineInputBorder(),
               ),
@@ -1870,7 +1874,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           onPressed: () {
             Navigator.pop(context, null);
           },
-          child: Text('Отмена'),
+          child: const Text('Отмена'),
         ),
         ElevatedButton(
           onPressed: () {
@@ -1882,7 +1886,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
           ),
-          child: Text('Удалить аккаунт'),
+          child: const Text('Удалить аккаунт'),
         ),
       ],
     );
@@ -1925,7 +1929,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     
     if (newPassword.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Новый пароль должен содержать минимум 4 символа'),
           backgroundColor: Colors.red,
         ),
@@ -1935,7 +1939,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     
     if (newPassword != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Пароли не совпадают'),
           backgroundColor: Colors.red,
         ),
@@ -1952,8 +1956,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       title: Row(
         children: [
           Icon(Icons.lock_outline, color: Colors.blue.shade700),
-          SizedBox(width: 8),
-          Text('Изменить пароль'),
+          const SizedBox(width: 8),
+          const Text('Изменить пароль'),
         ],
       ),
       content: SingleChildScrollView(
@@ -1965,12 +1969,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               'Введите текущий пароль и новый пароль',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _oldPasswordController,
               decoration: InputDecoration(
                 labelText: 'Текущий пароль',
-                prefixIcon: Icon(Icons.lock_outlined),
+                prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscureOldPassword ? Icons.visibility : Icons.visibility_off,
@@ -1985,12 +1989,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               obscureText: _obscureOldPassword,
               autofocus: true,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _newPasswordController,
               decoration: InputDecoration(
                 labelText: 'Новый пароль',
-                prefixIcon: Icon(Icons.lock_outlined),
+                prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscureNewPassword ? Icons.visibility : Icons.visibility_off,
@@ -2005,12 +2009,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               ),
               obscureText: _obscureNewPassword,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             TextField(
               controller: _confirmPasswordController,
               decoration: InputDecoration(
                 labelText: 'Подтвердите новый пароль',
-                prefixIcon: Icon(Icons.lock_outlined),
+                prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
@@ -2032,7 +2036,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
           onPressed: () {
             Navigator.pop(context, null);
           },
-          child: Text('Отмена'),
+          child: const Text('Отмена'),
         ),
         ElevatedButton(
           onPressed: () {
@@ -2040,7 +2044,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                 _newPasswordController.text.trim().isEmpty ||
                 _confirmPasswordController.text.trim().isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
+                const SnackBar(
                   content: Text('Заполните все поля'),
                   backgroundColor: Colors.red,
                 ),
@@ -2064,7 +2068,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
             backgroundColor: Colors.blue.shade700,
             foregroundColor: Colors.white,
           ),
-          child: Text('Изменить'),
+          child: const Text('Изменить'),
         ),
       ],
     );

@@ -6,9 +6,10 @@ import '../services/reports_service.dart';
 class EditReportScreen extends StatefulWidget {
   final Report report;
 
-  EditReportScreen({required this.report});
+  const EditReportScreen({super.key, required this.report});
 
   @override
+  // ignore: library_private_types_in_public_api
   _EditReportScreenState createState() => _EditReportScreenState();
 }
 
@@ -56,7 +57,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
     final content = _contentController.text.trim();
     if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Введите содержание отчета'),
           backgroundColor: Colors.orange,
         ),
@@ -81,7 +82,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
               'Отчет обновлен! Создано занятий: ${report.lessonsCount ?? 0}',
             ),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -107,18 +108,18 @@ class _EditReportScreenState extends State<EditReportScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Редактировать отчет'),
+        title: const Text('Редактировать отчет'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           children: [
             // Дата
             InkWell(
               onTap: _selectDate,
               child: InputDecorator(
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Дата отчета *',
                   border: OutlineInputBorder(),
                 ),
@@ -126,17 +127,17 @@ class _EditReportScreenState extends State<EditReportScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_dateController.text),
-                    Icon(Icons.calendar_today),
+                    const Icon(Icons.calendar_today),
                   ],
                 ),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Содержание
             TextFormField(
               controller: _contentController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Содержание отчета *',
                 border: OutlineInputBorder(),
                 helperText: 'Формат: дата, затем время и ученики с ценами (2.0 = 2000₽)',
@@ -150,11 +151,11 @@ class _EditReportScreenState extends State<EditReportScreen> {
                 return null;
               },
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
 
             // Предупреждение
             Container(
-              padding: EdgeInsets.all(12),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.orange.withValues(alpha:isDark ? 0.16 : 0.10),
                 borderRadius: BorderRadius.circular(8),
@@ -163,8 +164,8 @@ class _EditReportScreenState extends State<EditReportScreen> {
               child: Row(
                 children: [
                   Icon(Icons.warning, color: Colors.orange.shade500),
-                  SizedBox(width: 8),
-                  Expanded(
+                  const SizedBox(width: 8),
+                  const Expanded(
                     child: Text(
                       'При сохранении старые занятия будут удалены и созданы новые на основе обновленного текста.',
                       style: TextStyle(fontSize: 12),
@@ -173,10 +174,15 @@ class _EditReportScreenState extends State<EditReportScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
 
             ElevatedButton(
               onPressed: _isLoading ? null : _updateReport,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.orange.shade600,
+                foregroundColor: scheme.onPrimary,
+              ),
               child: _isLoading
                   ? SizedBox(
                       width: 18,
@@ -186,12 +192,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
                         valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
                       ),
                     )
-                  : Text('Сохранить изменения'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.orange.shade600,
-                foregroundColor: scheme.onPrimary,
-              ),
+                  : const Text('Сохранить изменения'),
             ),
           ],
         ),

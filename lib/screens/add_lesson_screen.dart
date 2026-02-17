@@ -9,6 +9,7 @@ class AddLessonScreen extends StatefulWidget {
   const AddLessonScreen({super.key, required this.studentId});
 
   @override
+  // ignore: library_private_types_in_public_api
   _AddLessonScreenState createState() => _AddLessonScreenState();
 }
 
@@ -64,7 +65,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
       if (mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Занятие добавлено'),
             backgroundColor: Colors.green,
           ),
@@ -91,18 +92,18 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Добавить занятие'),
+        title: const Text('Добавить занятие'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           children: [
             // Дата
             InkWell(
               onTap: _selectDate,
               child: InputDecorator(
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Дата занятия *',
                   border: OutlineInputBorder(),
                 ),
@@ -112,17 +113,17 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                     Text(
                       DateFormat('dd.MM.yyyy').format(_selectedDate),
                     ),
-                    Icon(Icons.calendar_today),
+                    const Icon(Icons.calendar_today),
                   ],
                 ),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Время
             TextFormField(
               controller: _timeController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Время (опционально, формат: ЧЧ:ММ)',
                 border: OutlineInputBorder(),
                 hintText: 'Например: 14:30',
@@ -144,12 +145,12 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                 return null;
               },
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Цена
             TextFormField(
               controller: _priceController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Стоимость занятия (₽) *',
                 border: OutlineInputBorder(),
               ),
@@ -165,21 +166,24 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                 return null;
               },
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Заметки
             TextFormField(
               controller: _notesController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Заметки',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
 
             ElevatedButton(
               onPressed: _isLoading ? null : _saveLesson,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
               child: _isLoading
                   ? SizedBox(
                       width: 18,
@@ -189,10 +193,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                         valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
                       ),
                     )
-                  : Text('Сохранить'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 16),
-              ),
+                  : const Text('Сохранить'),
             ),
           ],
         ),
@@ -226,7 +227,7 @@ class _TimeTextInputFormatter extends TextInputFormatter {
         // Вставляем двоеточие после второй цифры
         return newValue.copyWith(
           text: '${digitsOnly.substring(0, 2)}:${digitsOnly.substring(2)}',
-          selection: TextSelection.collapsed(offset: 4),
+          selection: const TextSelection.collapsed(offset: 4),
         );
       } else {
         // Форматируем как ЧЧ:ММ
@@ -234,7 +235,7 @@ class _TimeTextInputFormatter extends TextInputFormatter {
         final minutes = digitsOnly.substring(2, 4);
         return newValue.copyWith(
           text: '$hours:$minutes',
-          selection: TextSelection.collapsed(offset: 5),
+          selection: const TextSelection.collapsed(offset: 5),
         );
       }
     }
@@ -249,7 +250,7 @@ class _TimeTextInputFormatter extends TextInputFormatter {
         // Форматируем как ЧЧ:ММ
         return newValue.copyWith(
           text: '${parts[0].substring(0, 2)}:${parts[0].substring(2, 4)}',
-          selection: TextSelection.collapsed(offset: 5),
+          selection: const TextSelection.collapsed(offset: 5),
         );
       }
     } else {

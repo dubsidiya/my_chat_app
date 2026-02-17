@@ -12,6 +12,7 @@ class ReportBuilderScreen extends StatefulWidget {
   const ReportBuilderScreen({super.key, this.initialDate, this.reportId});
 
   @override
+  // ignore: library_private_types_in_public_api
   State<ReportBuilderScreen> createState() => _ReportBuilderScreenState();
 }
 
@@ -204,7 +205,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     }
     if (_slots.length > _maxSlots) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Максимум $_maxSlots занятий в день'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Максимум $_maxSlots занятий в день'), backgroundColor: Colors.orange),
       );
       return;
     }

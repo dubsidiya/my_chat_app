@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 class AddMembersDialog extends StatefulWidget {
   final List<Map<String, dynamic>> availableUsers;
 
-  const AddMembersDialog({required this.availableUsers});
+  const AddMembersDialog({super.key, required this.availableUsers});
 
   @override
+  // ignore: library_private_types_in_public_api
   State<AddMembersDialog> createState() => _AddMembersDialogState();
 }
 
@@ -41,33 +42,33 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
       ),
-      titlePadding: EdgeInsets.fromLTRB(20, 18, 20, 0),
-      contentPadding: EdgeInsets.fromLTRB(20, 12, 20, 12),
-      actionsPadding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       title: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(10),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_accent1, _accent2]),
+              gradient: const LinearGradient(colors: [_accent1, _accent2]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
                   color: _accent1.withValues(alpha:0.25),
                   blurRadius: 10,
-                  offset: Offset(0, 6),
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            child: Icon(Icons.person_add_rounded, color: Colors.white, size: 22),
+            child: const Icon(Icons.person_add_rounded, color: Colors.white, size: 22),
           ),
-          SizedBox(width: 12),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
+                const Text(
                   'Добавить участников',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
@@ -75,7 +76,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                     letterSpacing: 0.2,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'Выбрано: ${_selectedUserIds.length}',
                   style: TextStyle(
@@ -110,7 +111,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                 decoration: InputDecoration(
                   hintText: 'Поиск по логину',
                   hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
-                  prefixIcon: Icon(Icons.search_rounded, color: _accent1),
+                  prefixIcon: const Icon(Icons.search_rounded, color: _accent1),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
@@ -123,15 +124,15 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                           },
                         ),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Flexible(
               child: widget.availableUsers.isEmpty
                   ? Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
+                      padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -153,7 +154,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                               color: _accent1.withValues(alpha:0.7),
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           Text(
                             'Нет доступных пользователей',
                             style: TextStyle(
@@ -167,7 +168,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                     )
                   : filteredUsers.isEmpty
                       ? Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
+                          padding: const EdgeInsets.symmetric(vertical: 24),
                           child: Text(
                             'Ничего не найдено',
                             style: TextStyle(
@@ -187,7 +188,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                             final isSelected = _selectedUserIds.contains(userId);
 
                             return Container(
-                              margin: EdgeInsets.only(bottom: 10),
+                              margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
                                 color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.circular(18),
@@ -201,7 +202,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                   BoxShadow(
                                     color: Colors.black.withValues(alpha:isDark ? 0.25 : 0.06),
                                     blurRadius: 10,
-                                    offset: Offset(0, 4),
+                                    offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
@@ -217,7 +218,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                   });
                                 },
                                 child: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                   child: Row(
                                     children: [
                                       Container(
@@ -234,7 +235,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                         child: Center(
                                           child: Text(
                                             email.isNotEmpty ? email[0].toUpperCase() : '?',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
@@ -242,7 +243,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                                           ),
                                         ),
                                       ),
-                                      SizedBox(width: 12),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
                                           email,
@@ -294,7 +295,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context, null),
           style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           ),
           child: Text(
             'Отмена',
@@ -308,12 +309,12 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(colors: [_accent1, _accent2]),
+            gradient: const LinearGradient(colors: [_accent1, _accent2]),
             boxShadow: [
               BoxShadow(
                 color: _accent1.withValues(alpha:0.28),
                 blurRadius: 12,
-                offset: Offset(0, 6),
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -322,12 +323,12 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.transparent,
               shadowColor: Colors.transparent,
-              padding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
             child: Text(
               'Добавить (${_selectedUserIds.length})',
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.2,

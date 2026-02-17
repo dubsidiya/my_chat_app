@@ -8,7 +8,7 @@ class ChatMembersDialog extends StatefulWidget {
   final String chatId;
   final ChatsService chatsService;
 
-  const ChatMembersDialog({
+  const ChatMembersDialog({super.key, 
     required this.members,
     required this.currentUserId,
     required this.chatId,
@@ -16,6 +16,7 @@ class ChatMembersDialog extends StatefulWidget {
   });
 
   @override
+  // ignore: library_private_types_in_public_api
   State<ChatMembersDialog> createState() => _ChatMembersDialogState();
 }
 
@@ -45,9 +46,9 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     // Не позволяем удалить создателя чата
     if (isCreator) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Нельзя удалить создателя чата'),
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
       return;
@@ -63,15 +64,15 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         title: Row(
           children: [
             Container(
-              padding: EdgeInsets.all(10),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.red.withValues(alpha:0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(Icons.delete_outline_rounded, color: Colors.red, size: 22),
+              child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 22),
             ),
-            SizedBox(width: 12),
-            Expanded(
+            const SizedBox(width: 12),
+            const Expanded(
               child: Text(
                 'Удалить участника?',
                 style: TextStyle(fontWeight: FontWeight.bold),
@@ -96,9 +97,9 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            child: Text('Удалить'),
+            child: const Text('Удалить'),
           ),
         ],
       ),
@@ -153,28 +154,28 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
       ),
-      titlePadding: EdgeInsets.fromLTRB(20, 18, 20, 0),
-      contentPadding: EdgeInsets.fromLTRB(20, 12, 20, 12),
-      actionsPadding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       title: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(10),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_accent1, _accent2]),
+              gradient: const LinearGradient(colors: [_accent1, _accent2]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
                   color: _accent1.withValues(alpha:0.25),
                   blurRadius: 10,
-                  offset: Offset(0, 6),
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            child: Icon(Icons.groups_rounded, color: Colors.white, size: 22),
+            child: const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
           ),
-          SizedBox(width: 12),
-          Expanded(
+          const SizedBox(width: 12),
+          const Expanded(
             child: Text(
               'Участники чата',
               style: TextStyle(
@@ -185,14 +186,14 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
             ),
           ),
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: _accent1.withValues(alpha:0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Text(
               '${_members.length}',
-              style: TextStyle(
+              style: const TextStyle(
                 color: _accent1,
                 fontWeight: FontWeight.bold,
               ),
@@ -201,7 +202,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         ],
       ),
       content: _isLoading
-          ? Center(
+          ? const Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                 strokeWidth: 3,
@@ -211,7 +212,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
               width: double.maxFinite,
               child: _members.isEmpty
                   ? Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
+                      padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -233,7 +234,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                               color: _accent1.withValues(alpha:0.7),
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           Text(
                             'Нет участников',
                             style: TextStyle(
@@ -255,7 +256,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                         final isCreator = member['is_creator'] == true || member['is_creator'] == 1;
 
                         return Container(
-                          margin: EdgeInsets.only(bottom: 10),
+                          margin: const EdgeInsets.only(bottom: 10),
                           decoration: BoxDecoration(
                             color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(18),
@@ -267,12 +268,12 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                               BoxShadow(
                                 color: Colors.black.withValues(alpha:isDark ? 0.25 : 0.06),
                                 blurRadius: 10,
-                                offset: Offset(0, 4),
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),
                           child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             child: Row(
                               children: [
                                 Container(
@@ -287,7 +288,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                   child: Center(
                                     child: Text(
                                       email.isNotEmpty ? email[0].toUpperCase() : '?',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
@@ -295,7 +296,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 12),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,15 +311,15 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                           color: scheme.onSurface,
                                         ),
                                       ),
-                                      SizedBox(height: 6),
+                                      const SizedBox(height: 6),
                                       if (isCreator)
                                         Container(
-                                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: _accent1.withValues(alpha:0.12),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
-                                          child: Text(
+                                          child: const Text(
                                             'Создатель чата',
                                             style: TextStyle(
                                               fontSize: 12,
@@ -353,7 +354,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           ),
           child: Text(
             'Закрыть',
