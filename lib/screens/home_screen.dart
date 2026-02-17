@@ -801,135 +801,26 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  static const Color _privateAccent1 = Color(0xFF667eea);
-  static const Color _privateAccent2 = Color(0xFF764ba2);
-
-  /// Запрос кода доступа для разделов Учет занятий / Отчеты. Возвращает true, если разблокировано.
-  Future<bool> _promptPrivateCode() async {
-    final controller = TextEditingController();
-    bool wrong = false;
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final code = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            return AlertDialog(
-              scrollable: true,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [_privateAccent1, _privateAccent2]),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(child: Text('Приватный доступ', style: TextStyle(fontWeight: FontWeight.bold))),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Введите код, чтобы открыть “Учет занятий” и “Отчеты”.',
-                    style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70)),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    obscureText: true,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: 'Код доступа',
-                      errorText: wrong ? 'Неверный код' : null,
-                      filled: true,
-                      fillColor: Theme.of(context).inputDecorationTheme.fillColor,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: isDark ? 0.22 : 0.14), width: 1.5),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: _privateAccent1, width: 2),
-                      ),
-                    ),
-                    onSubmitted: (_) {
-                      if (controller.text.trim().isEmpty) {
-                        setLocal(() => wrong = true);
-                        return;
-                      }
-                      Navigator.pop(ctx, controller.text.trim());
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Отмена')),
-                ElevatedButton(
-                  onPressed: () {
-                    if (controller.text.trim().isEmpty) {
-                      setLocal(() => wrong = true);
-                      return;
-                    }
-                    Navigator.pop(ctx, controller.text.trim());
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _privateAccent1,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: const Text('Открыть'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (code == null || code.isEmpty || !mounted) return false;
-    try {
-      await _authService.unlockPrivateAccess(code);
-      await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Приватные разделы открыты'), duration: const Duration(seconds: 2), backgroundColor: Colors.green.shade600),
-        );
-      }
-      return true;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), duration: const Duration(seconds: 3), backgroundColor: Colors.red.shade600),
-        );
-      }
-      return false;
-    }
-  }
-
+  /// Доступ к «Учет занятий» и «Отчеты» только по списку в env на сервере (Render). Без имени в списке не пропускаем.
   Future<bool> _ensurePrivateAccess() async {
-    bool unlocked = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
-    if (!unlocked) {
-      // Сначала проверяем список на сервере (по env): не нужен ввод кода
-      final me = await _authService.fetchMe();
-      if (me != null && me['privateAccess'] == true) {
-        await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
-        unlocked = true;
-      }
+    final me = await _authService.fetchMe();
+    final allowed = me != null && me['privateAccess'] == true;
+    if (allowed) {
+      await StorageService.setPrivateFeaturesUnlocked(widget.userId, true);
+      return true;
     }
-    if (!unlocked) {
-      final ok = await _promptPrivateCode();
-      if (!ok || !mounted) return false;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Доступ к разделам «Учет занятий» и «Отчеты» только по списку. Обратитесь к администратору.',
+          ),
+          duration: const Duration(seconds: 4),
+          backgroundColor: Colors.orange.shade700,
+        ),
+      );
     }
-    return true;
+    return false;
   }
 
   Future<void> _openAccounting() async {

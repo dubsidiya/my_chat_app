@@ -34,8 +34,8 @@ export const authenticateToken = (req, res, next) => {
     
     req.user = user; // Сохраняем данные пользователя в запросе
     req.userId = user.userId; // Добавляем userId для удобства
-    // Нормализуем флаг приватного доступа: из токена или по списку в env (отчёты/учёт занятий)
-    req.user.privateAccess = (user.privateAccess === true) || hasPrivateAccess(user);
+    // Доступ к отчётам и учёту занятий только по списку в env (PRIVATE_ACCESS_USERNAMES/IDS). Код не даёт доступа.
+    req.user.privateAccess = hasPrivateAccess(user);
     // email в токене теперь содержит логин
     if (process.env.NODE_ENV === 'development') {
       console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
