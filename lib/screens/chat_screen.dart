@@ -40,6 +40,7 @@ class ChatScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
   final String? displayName;
+  final String? myAvatarUrl;
   final String chatId;
   final String chatName;
   final bool isGroup;
@@ -48,6 +49,7 @@ class ChatScreen extends StatefulWidget {
     required this.userId,
     required this.userEmail,
     this.displayName,
+    this.myAvatarUrl,
     required this.chatId,
     required this.chatName,
     required this.isGroup,
@@ -62,6 +64,27 @@ class _ChatScreenState extends State<ChatScreen> {
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
   static const Color _accent3 = AppColors.accent;
+
+  Widget _myAvatarPlaceholder() {
+    final initial = widget.userEmail.isNotEmpty ? widget.userEmail[0].toUpperCase() : '?';
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_accent1, _accent2],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
 
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -691,6 +714,17 @@ class _ChatScreenState extends State<ChatScreen> {
           
           // Проверяем тип сообщения
           final messageType = data['type'];
+
+          // ✅ Переподключение WebSocket — заново подписываемся на чат
+          if (messageType == '_ws_reconnected') {
+            if (mounted) {
+              _subscribedToChatRealtime = false;
+              _subscribeToChatRealtime();
+            }
+            return;
+          }
+
+          // ✅ Новое сообщение (realtime) — type == 'message' просто не возвращаемся, идём к обработке chat_id ниже
 
           // ✅ Presence: начальное состояние
           if (messageType == 'presence_state') {
@@ -3912,33 +3946,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       if (isMine) ...[
                         const SizedBox(width: 8),
-                        // Аватар отправителя (для своих сообщений)
+                        // Аватар текущего пользователя (для своих сообщений)
                         Container(
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                _accent1,
-                                _accent2,
-                              ],
-                            ),
                             shape: BoxShape.circle,
                             boxShadow: AppColors.neonGlowSoft,
                           ),
-                          child: Center(
-                            child: Text(
-                              widget.userEmail.isNotEmpty
-                                  ? widget.userEmail[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: ClipOval(
+                            child: widget.myAvatarUrl != null && widget.myAvatarUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: widget.myAvatarUrl!,
+                                    fit: BoxFit.cover,
+                                    width: 32,
+                                    height: 32,
+                                    placeholder: (_, __) => _myAvatarPlaceholder(),
+                                    errorWidget: (_, __, ___) => _myAvatarPlaceholder(),
+                                  )
+                                : _myAvatarPlaceholder(),
                           ),
                         ),
                       ],

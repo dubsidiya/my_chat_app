@@ -10,6 +10,7 @@ class StorageService {
   static const String _tokenKey = 'auth_token';
   static const String _isSuperuserKey = 'is_superuser';
   static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
+  static const String _avatarUrlKey = 'avatar_url';
   static const String _soundOnNewMessageKey = 'sound_on_new_message';
   static const String _vibrationOnNewMessageKey = 'vibration_on_new_message';
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
@@ -19,7 +20,7 @@ class StorageService {
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
   // Сохранение данных пользователя (userEmail = логин для входа)
-  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false, String? displayName}) async {
+  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false, String? displayName, String? avatarUrl}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userIdKey, userId);
@@ -28,6 +29,11 @@ class StorageService {
         await prefs.setString(_displayNameKey, displayName);
       } else {
         await prefs.remove(_displayNameKey);
+      }
+      if (avatarUrl != null && avatarUrl.isNotEmpty) {
+        await prefs.setString(_avatarUrlKey, avatarUrl);
+      } else {
+        await prefs.remove(_avatarUrlKey);
       }
       await prefs.setBool(_isSuperuserKey, isSuperuser);
       // Токен: на mobile/desktop — secure storage, на web — shared_preferences
@@ -60,12 +66,14 @@ class StorageService {
       if (userId != null && userEmail != null && token != null) {
         final isSuperuser = prefs.getBool(_isSuperuserKey) ?? false;
         final displayName = prefs.getString(_displayNameKey);
+        final avatarUrl = prefs.getString(_avatarUrlKey);
         return {
           'id': userId,
           'email': userEmail,
           'token': token,
           'isSuperuser': isSuperuser.toString(),
           if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
+          if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatarUrl': avatarUrl,
         };
       }
       return null;
@@ -105,6 +113,21 @@ class StorageService {
     }
   }
 
+  /// URL аватара текущего пользователя (кэш)
+  static Future<void> setAvatarUrl(String? url) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (url == null || url.isEmpty) {
+      await prefs.remove(_avatarUrlKey);
+    } else {
+      await prefs.setString(_avatarUrlKey, url);
+    }
+  }
+
+  static Future<String?> getAvatarUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_avatarUrlKey);
+  }
+
   // Очистка данных пользователя (при выходе)
   static Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -112,6 +135,7 @@ class StorageService {
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_displayNameKey);
+    await prefs.remove(_avatarUrlKey);
     await prefs.remove(_tokenKey);
     await prefs.remove(_isSuperuserKey);
     if (!kIsWeb) {

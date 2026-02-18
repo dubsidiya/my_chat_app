@@ -9,6 +9,7 @@ import 'screens/main_tabs_screen.dart';
 import 'services/storage_service.dart';
 import 'services/local_messages_service.dart';
 import 'services/push_notification_service.dart';
+import 'services/websocket_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -46,7 +47,7 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _isDarkMode = false;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
@@ -54,7 +55,21 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadThemePreference();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WebSocketService.instance.connectIfNeeded();
+    }
   }
 
   Future<void> _loadThemePreference() async {
@@ -335,12 +350,14 @@ class _MyAppState extends State<MyApp> {
             final userIdentifier = (userData['email'] ?? userData['username'] ?? '') as String;
             final isSuperuser = userData['isSuperuser'] == 'true';
             final displayName = userData['displayName']?.toString();
+            final avatarUrl = userData['avatarUrl']?.toString();
             final userId = userData['id'] as String;
             if (eulaAccepted) {
               return MainTabsScreen(
                 userId: userId,
                 userEmail: userIdentifier,
                 displayName: displayName,
+                avatarUrl: avatarUrl,
                 isSuperuser: isSuperuser,
                 onThemeChanged: toggleTheme,
               );
@@ -349,6 +366,7 @@ class _MyAppState extends State<MyApp> {
               userId: userId,
               userEmail: userIdentifier,
               displayName: displayName,
+              avatarUrl: avatarUrl,
               isSuperuser: isSuperuser,
               onThemeChanged: toggleTheme,
             );

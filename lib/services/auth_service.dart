@@ -23,12 +23,14 @@ class AuthService {
           final isSuperuser = data['isSuperuser'] == true;
           final privateAccess = data['privateAccess'] == true;
           final displayName = data['displayName']?.toString();
+          final avatarUrl = data['avatarUrl'] ?? data['avatar_url']?.toString();
           await StorageService.saveUserData(
             data['id'].toString(),
             userIdentifier,
             data['token'],
             isSuperuser: isSuperuser,
             displayName: displayName,
+            avatarUrl: avatarUrl != null && avatarUrl.isNotEmpty ? avatarUrl : null,
           );
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
         }
@@ -262,6 +264,38 @@ class AuthService {
       throw Exception(err['message'] ?? 'Ошибка обновления профиля');
     }
     await StorageService.setDisplayName(displayName.isEmpty ? null : displayName);
+  }
+
+  /// Загрузить аватар (байты изображения + имя файла). Возвращает новый URL аватара.
+  Future<String> uploadAvatarBytes(List<int> bytes, String filename) async {
+    final token = await StorageService.getToken();
+    if (token == null) throw Exception('Требуется авторизация');
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/auth/me/avatar'),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(http.MultipartFile.fromBytes(
+      'avatar',
+      bytes,
+      filename: filename.isEmpty ? 'avatar.jpg' : filename,
+    ));
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 200) {
+      try {
+        final err = jsonDecode(response.body);
+        throw Exception(err['message'] ?? 'Ошибка загрузки аватара');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Ошибка загрузки аватара (${response.statusCode})');
+      }
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = (data['avatarUrl'] ?? data['avatar_url'])?.toString();
+    if (url == null || url.isEmpty) throw Exception('Сервер не вернул URL аватара');
+    await StorageService.setAvatarUrl(url);
+    return url;
   }
 
   /// Проверка прав текущего пользователя на сервере (privateAccess по списку в env).

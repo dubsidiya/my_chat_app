@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
+import { uploadToCloud } from '../utils/uploadImage.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 
@@ -96,7 +97,7 @@ export const login = async (req, res) => {
     
     // Получаем пользователя по логину (поле email = логин)
     const result = await pool.query(
-      'SELECT id, email, password, display_name FROM users WHERE LOWER(TRIM(email)) = $1',
+      'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
       [normalizedUsername]
     );
 
@@ -151,6 +152,7 @@ export const login = async (req, res) => {
       isSuperuser: isSuperuser({ userId: user.id, username: user.email }),
       privateAccess,
       displayName: user.display_name ?? null,
+      avatarUrl: user.avatar_url ?? null,
     });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
@@ -194,7 +196,7 @@ export const getMe = async (req, res) => {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
     const row = await pool.query(
-      'SELECT id, email, display_name FROM users WHERE id = $1',
+      'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
       [req.user.userId]
     );
     const u = row.rows[0];
@@ -205,6 +207,7 @@ export const getMe = async (req, res) => {
       id: u.id,
       username: u.email,
       displayName: u.display_name ?? null,
+      avatarUrl: u.avatar_url ?? null,
       isSuperuser: isSuperuser(req.user),
       privateAccess: req.user.privateAccess === true,
     });
@@ -307,6 +310,27 @@ export const saveFcmToken = async (req, res) => {
   } catch (error) {
     console.error('Ошибка saveFcmToken:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Загрузка аватара (multipart/form-data, поле avatar)
+export const uploadAvatar = async (req, res) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ message: 'Выберите изображение для аватара' });
+    }
+    const { imageUrl } = await uploadToCloud(req.file, 'avatars');
+    await pool.query(
+      'UPDATE users SET avatar_url = $1 WHERE id = $2',
+      [imageUrl, req.user.userId]
+    );
+    res.status(200).json({ avatarUrl: imageUrl });
+  } catch (error) {
+    console.error('Ошибка uploadAvatar:', error);
+    res.status(500).json({ message: error.message || 'Ошибка загрузки аватара' });
   }
 };
 

@@ -8,6 +8,7 @@ class EulaConsentScreen extends StatelessWidget {
   final String userId;
   final String userEmail;
   final String? displayName;
+  final String? avatarUrl;
   final bool isSuperuser;
   final Function(bool)? onThemeChanged;
 
@@ -16,6 +17,7 @@ class EulaConsentScreen extends StatelessWidget {
     required this.userId,
     required this.userEmail,
     this.displayName,
+    this.avatarUrl,
     required this.isSuperuser,
     this.onThemeChanged,
   });
@@ -78,6 +80,7 @@ class EulaConsentScreen extends StatelessWidget {
                         userId: userId,
                         userEmail: userEmail,
                         displayName: displayName,
+                        avatarUrl: avatarUrl,
                         isSuperuser: isSuperuser,
                         onThemeChanged: onThemeChanged,
                       ),

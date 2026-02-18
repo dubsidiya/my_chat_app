@@ -12,16 +12,19 @@ import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
 import 'reports_chat_screen.dart';
+import 'profile_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
   final String? displayName;
+  final String? avatarUrl;
   final bool isSuperuser;
   final Function(bool)? onThemeChanged;
 
-  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.isSuperuser = false, this.onThemeChanged});
+  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.avatarUrl, this.isSuperuser = false, this.onThemeChanged});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -33,11 +36,22 @@ class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
   String? _displayName;
+  String? _avatarUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayName = widget.displayName;
+    _avatarUrl = widget.avatarUrl;
+    _loadChats();
+    _subscribeToNewMessages();
+  }
 
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.displayName != widget.displayName) _displayName = widget.displayName;
+    if (oldWidget.avatarUrl != widget.avatarUrl) _avatarUrl = widget.avatarUrl;
   }
   List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
   bool _isLoading = false;
@@ -45,6 +59,24 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   StreamSubscription<dynamic>? _wsSubscription;
+
+  Widget _avatarInitial(String initial) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.primary, AppColors.primaryDeep],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
 
   String _formatLastMessageTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -152,12 +184,42 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _displayName = widget.displayName;
-    _loadChats();
-    _subscribeToNewMessages();
+  Future<void> _openProfile() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          userId: widget.userId,
+          userEmail: widget.userEmail,
+          displayName: _displayName,
+          avatarUrl: _avatarUrl,
+          isSuperuser: widget.isSuperuser,
+          onThemeChanged: widget.onThemeChanged,
+          onProfileUpdated: () async {
+            final me = await _authService.fetchMe();
+            if (me != null && mounted) {
+              setState(() {
+                _displayName = me['displayName']?.toString();
+                _avatarUrl = me['avatarUrl'] ?? me['avatar_url']?.toString();
+              });
+            }
+          },
+          onChangePassword: _changePassword,
+          onAdminResetPassword: _adminResetPassword,
+          onDeleteAccount: _deleteAccount,
+          onLogout: _logout,
+        ),
+      ),
+    );
+    if (mounted) {
+      final userData = await StorageService.getUserData();
+      if (userData != null) {
+        setState(() {
+          _displayName = userData['displayName']?.toString();
+          _avatarUrl = userData['avatarUrl']?.toString();
+        });
+      }
+    }
   }
 
   void _subscribeToNewMessages() {
@@ -420,6 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
           userId: widget.userId,
           userEmail: widget.userEmail,
           displayName: _displayName,
+          myAvatarUrl: _avatarUrl,
           chatId: chat.id,
           chatName: chat.name,
           isGroup: chat.isGroup,
@@ -468,28 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ✅ Переключение темы
-  Future<void> _toggleTheme() async {
-    final currentTheme = await StorageService.getThemeMode();
-    final newTheme = !currentTheme;
-    await StorageService.saveThemeMode(newTheme);
-    
-    // Обновляем тему через callback
-    if (widget.onThemeChanged != null) {
-      widget.onThemeChanged!(newTheme);
-    }
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(newTheme ? 'Темная тема включена' : 'Светлая тема включена'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  void _showMainMenu(BuildContext context, ColorScheme scheme, bool isDark) {
+  void _showMainMenu(BuildContext context, ColorScheme scheme) {
     final maxH = MediaQuery.of(context).size.height * 0.85;
     showModalBottomSheet<void>(
       context: context,
@@ -506,6 +548,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _menuTile(ctx, scheme, Icons.person_rounded, AppColors.primaryGlow, 'Профиль', () async {
+                    Navigator.pop(ctx);
+                    await _openProfile();
+                  }),
                   _menuTile(ctx, scheme, Icons.school_rounded, AppColors.primary, 'Учет занятий', () async {
                     Navigator.pop(ctx);
                     await _openAccounting();
@@ -514,31 +560,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.pop(ctx);
                     await _openReports();
                   }),
-                  _menuTile(ctx, scheme, Icons.settings_rounded, Colors.amber.shade700, 'Настройки', () async {
-                    Navigator.pop(ctx);
-                    await _showSettingsSheet();
-                  }),
                   const Divider(height: 24),
-                  _menuTile(ctx, scheme, isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, scheme.primary, isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓', () {
-                    Navigator.pop(ctx);
-                    _toggleTheme();
-                  }),
                   _menuTile(ctx, scheme, Icons.logout_rounded, Colors.blue, 'Выйти', () {
                     Navigator.pop(ctx);
                     _logout();
-                  }),
-                  _menuTile(ctx, scheme, Icons.lock_outline_rounded, Colors.orange, 'Изменить пароль', () async {
-                    Navigator.pop(ctx);
-                    await _changePassword();
-                  }),
-                  if (widget.isSuperuser)
-                    _menuTile(ctx, scheme, Icons.admin_panel_settings_rounded, Colors.teal, 'Сбросить пароль пользователя', () async {
-                      Navigator.pop(ctx);
-                      await _adminResetPassword();
-                    }),
-                  _menuTile(ctx, scheme, Icons.delete_forever_rounded, Colors.red, 'Удалить аккаунт', () async {
-                    Navigator.pop(ctx);
-                    await _deleteAccount();
                   }),
                 ],
               ),
@@ -559,124 +584,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Icon(icon, color: color, size: 20),
       ),
-      title: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: label == 'Удалить аккаунт' ? Colors.red : scheme.onSurface)),
+      title: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface)),
       onTap: onTap,
     );
-  }
-
-  Future<void> _showSettingsSheet() async {
-    bool soundOn = await StorageService.getSoundOnNewMessage();
-    bool vibrationOn = await StorageService.getVibrationOnNewMessage();
-    if (!mounted) return;
-    final scheme = Theme.of(context).colorScheme;
-    final nickController = TextEditingController(text: _displayName ?? '');
-    String? nickError;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                left: 24,
-                right: 24,
-                top: 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Настройки',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: nickController,
-                      decoration: InputDecoration(
-                        labelText: 'Ник (как вас видят другие)',
-                        hintText: 'Оставьте пустым — будет показан логин',
-                        errorText: nickError,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      maxLength: 255,
-                      onSubmitted: (_) async {
-                        final name = nickController.text.trim();
-                        final messenger = ScaffoldMessenger.maybeOf(ctx);
-                        try {
-                          await _authService.updateProfile(name);
-                          if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          messenger?.showSnackBar(
-                            SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
-                          );
-                        } catch (e) {
-                          setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          final name = nickController.text.trim();
-                          final messenger = ScaffoldMessenger.maybeOf(ctx);
-                          try {
-                            await _authService.updateProfile(name);
-                            if (mounted) setState(() => _displayName = name.isEmpty ? null : name);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            messenger?.showSnackBar(
-                              SnackBar(content: Text(name.isEmpty ? 'Ник сброшен' : 'Ник сохранён')),
-                            );
-                          } catch (e) {
-                            setModalState(() => nickError = e.toString().replaceFirst('Exception: ', ''));
-                          }
-                        },
-                        icon: const Icon(Icons.check, size: 18),
-                        label: const Text('Сохранить ник'),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SwitchListTile(
-                      title: const Text('Звук при новом сообщении'),
-                      subtitle: const Text('Воспроизводить звук, когда приходит новое сообщение'),
-                      value: soundOn,
-                      onChanged: (v) async {
-                        await StorageService.setSoundOnNewMessage(v);
-                        setModalState(() => soundOn = v);
-                      },
-                    ),
-                    SwitchListTile(
-                      title: const Text('Вибрация при новом сообщении'),
-                      subtitle: const Text('Вибрация при получении нового сообщения'),
-                      value: vibrationOn,
-                      onChanged: (v) async {
-                        await StorageService.setVibrationOnNewMessage(v);
-                        setModalState(() => vibrationOn = v);
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    nickController.dispose();
   }
 
   Future<void> _changePassword() async {
@@ -1034,13 +944,43 @@ class _HomeScreenState extends State<HomeScreen> {
       return name.contains(q) || preview.contains(q);
     }).toList();
 
+    final displayLabel = (_displayName ?? widget.userEmail).trim().isEmpty ? widget.userEmail : (_displayName ?? widget.userEmail);
+    final initial = displayLabel.isNotEmpty ? displayLabel[0].toUpperCase() : '?';
+
     return Scaffold(
       backgroundColor: scheme.surface,
       appBar: AppBar(
         elevation: 0,
         backgroundColor: scheme.surface,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: GestureDetector(
+            onTap: _openProfile,
+            child: Center(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: AppColors.neonGlowSoft,
+                  border: Border.all(color: AppColors.primaryGlow.withValues(alpha: 0.5), width: 1),
+                ),
+                child: ClipOval(
+                  child: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: _avatarUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _avatarInitial(initial),
+                          errorWidget: (_, __, ___) => _avatarInitial(initial),
+                        )
+                      : _avatarInitial(initial),
+                ),
+              ),
+            ),
+          ),
+        ),
         title: Text(
-          (_displayName ?? widget.userEmail).isNotEmpty ? (_displayName ?? widget.userEmail) : 'Мои чаты',
+          displayLabel,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
@@ -1094,7 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(
             icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.75)),
-            onPressed: () => _showMainMenu(context, scheme, isDark),
+            onPressed: () => _showMainMenu(context, scheme),
             tooltip: 'Меню',
           ),
           const SizedBox(width: 8),

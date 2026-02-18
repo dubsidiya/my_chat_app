@@ -47,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final userIdentifier = userData['username'] ?? userData['email'] ?? '';
         final isSuperuser = userData['isSuperuser'] == true;
         final displayName = userData['displayName']?.toString();
+        final avatarUrl = userData['avatarUrl'] ?? userData['avatar_url']?.toString();
         final eulaAccepted = await StorageService.getEulaAccepted(userId);
 
         if (mounted) {
@@ -58,12 +59,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       userId: userId,
                       userEmail: userIdentifier.toString(),
                       displayName: displayName,
+                      avatarUrl: avatarUrl?.toString(),
                       isSuperuser: isSuperuser,
                     )
                   : EulaConsentScreen(
                       userId: userId,
                       userEmail: userIdentifier.toString(),
                       displayName: displayName,
+                      avatarUrl: avatarUrl?.toString(),
                       isSuperuser: isSuperuser,
                     ),
             ),
