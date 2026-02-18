@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import '../services/websocket_service.dart';
+import '../theme/app_colors.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
@@ -328,9 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: chat.isGroup
-                          ? const [Color(0xFFa855f7), Color(0xFF7c3aed)]
-                          : const [Color(0xFF667eea), Color(0xFF764ba2)],
+                      colors: const [AppColors.primary, AppColors.primaryDeep],
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -507,11 +506,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _menuTile(ctx, scheme, Icons.school_rounded, const Color(0xFF667eea), 'Учет занятий', () async {
+                  _menuTile(ctx, scheme, Icons.school_rounded, AppColors.primary, 'Учет занятий', () async {
                     Navigator.pop(ctx);
                     await _openAccounting();
                   }),
-                  _menuTile(ctx, scheme, Icons.description_rounded, const Color(0xFF764ba2), 'Отчеты', () async {
+                  _menuTile(ctx, scheme, Icons.description_rounded, AppColors.primaryGlow, 'Отчеты', () async {
                     Navigator.pop(ctx);
                     await _openReports();
                   }),
@@ -1054,11 +1053,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF667eea).withValues(alpha: 0.1),
+              color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF667eea)),
+              icon: Icon(Icons.refresh_rounded, color: AppColors.primary),
               onPressed: _loadChats,
               tooltip: 'Обновить',
             ),
@@ -1080,18 +1079,12 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [
-                  Color(0xFF667eea),
-                  Color(0xFF764ba2),
+                  AppColors.primary,
+                  AppColors.primaryGlow,
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF667eea).withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              boxShadow: AppColors.neonGlow,
             ),
             child: IconButton(
               icon: const Icon(Icons.add_rounded, color: Colors.white),
@@ -1115,7 +1108,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const CircularProgressIndicator(
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      Color(0xFF667eea),
+                      AppColors.primary,
                     ),
                     strokeWidth: 3,
                   ),
@@ -1212,7 +1205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: filteredChats.isEmpty
                           ? RefreshIndicator(
                               onRefresh: _loadChats,
-                              color: const Color(0xFF667eea),
+                              color: AppColors.primary,
                               child: SingleChildScrollView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 child: SizedBox(
@@ -1227,7 +1220,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             Icon(
                                               Icons.chat_bubble_outline_rounded,
                                               size: 56,
-                                              color: const Color(0xFF667eea).withValues(alpha: 0.5),
+                                              color: AppColors.primary.withValues(alpha: 0.5),
                                             ),
                                           if (_chats.isEmpty) const SizedBox(height: 16),
                                           Text(
@@ -1257,7 +1250,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               icon: const Icon(Icons.add_rounded, size: 20),
                                               label: const Text('Создать чат'),
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: const Color(0xFF667eea),
+                                                foregroundColor: AppColors.primary,
                                               ),
                                             ),
                                           ] else ...[
@@ -1281,7 +1274,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               icon: const Icon(Icons.clear_all_rounded, size: 20),
                                               label: const Text('Показать все чаты'),
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: const Color(0xFF667eea),
+                                                foregroundColor: AppColors.primary,
                                               ),
                                             ),
                                           ],
@@ -1294,7 +1287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                           : RefreshIndicator(
                               onRefresh: _loadChats,
-                              color: const Color(0xFF667eea),
+                              color: AppColors.primary,
                               child: _query.isEmpty
                                   ? ReorderableListView.builder(
                                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1444,11 +1437,12 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [
-                  Color(0xFF667eea),
-                  Color(0xFF764ba2),
+                  AppColors.primary,
+                  AppColors.primaryGlow,
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
+              boxShadow: AppColors.neonGlowSoft,
             ),
             child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 24),
           ),
@@ -1538,7 +1532,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
-                prefixIcon: const Icon(Icons.search_rounded, size: 22, color: Color(0xFF667eea)),
+                prefixIcon: const Icon(Icons.search_rounded, size: 22, color: AppColors.primary),
                 filled: true,
                 fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
@@ -1644,17 +1638,11 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             borderRadius: BorderRadius.circular(16),
             gradient: const LinearGradient(
               colors: [
-                Color(0xFF667eea),
-                Color(0xFF764ba2),
+                AppColors.primary,
+                AppColors.primaryGlow,
               ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF667eea).withValues(alpha: 0.3),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: AppColors.neonGlowStrong,
           ),
           child: ElevatedButton(
             onPressed: _isCreating

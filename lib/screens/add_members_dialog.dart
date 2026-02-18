@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 class AddMembersDialog extends StatefulWidget {
   final List<Map<String, dynamic>> availableUsers;
@@ -11,9 +12,9 @@ class AddMembersDialog extends StatefulWidget {
 }
 
 class _AddMembersDialogState extends State<AddMembersDialog> {
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
-  static const Color _accent3 = Color(0xFFf093fb);
+  static const Color _accent1 = AppColors.primary;
+  static const Color _accent2 = AppColors.primaryGlow;
+  static const Color _accent3 = AppColors.accent;
 
   final Set<String> _selectedUserIds = {};
   final TextEditingController _searchController = TextEditingController();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 /// Кнопка «Загрузить старые сообщения» в списке чата.
 class ChatLoadMoreButton extends StatelessWidget {
@@ -11,7 +12,7 @@ class ChatLoadMoreButton extends StatelessWidget {
     this.accentColor,
   });
 
-  static const Color _defaultAccent = Color(0xFF667eea);
+  static const Color _defaultAccent = AppColors.primaryGlow;
 
   @override
   Widget build(BuildContext context) {

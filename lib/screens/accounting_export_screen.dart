@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import '../theme/app_colors.dart';
 import '../services/admin_service.dart';
 import '../services/students_service.dart';
 import '../models/student.dart';
@@ -86,8 +87,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     required int unpaidCount,
     required double unpaidSum,
   }) {
-    const accent1 = Color(0xFF667eea);
-    const accent2 = Color(0xFF764ba2);
+    const accent1 = AppColors.primary;
+    const accent2 = AppColors.primaryGlow;
     final debtColor = Colors.red.shade700;
     final okColor = Colors.green.shade700;
 
@@ -105,7 +106,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF667eea), Color(0xFF764ba2)]),
+              gradient: const LinearGradient(colors: [AppColors.primary, AppColors.primaryGlow]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
@@ -903,7 +904,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                     _chip(
                                       icon: Icons.event_note_rounded,
                                       label: 'занятий: ${lessons.length}',
-                                      color: const Color(0xFF667eea),
+                                      color: AppColors.primary,
                                     ),
                                     _chip(
                                       icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,

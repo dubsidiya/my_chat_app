@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:intl/date_symbol_data_local.dart';
+import 'theme/app_colors.dart';
 import 'screens/eula_consent_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
@@ -75,15 +76,39 @@ class _MyAppState extends State<MyApp> {
   }
 
   ThemeData _buildTheme(Brightness brightness) {
-    const seed = Color(0xFF667eea);
-      final isDark = brightness == Brightness.dark;
-      final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
+    final isDark = brightness == Brightness.dark;
+    final scheme = isDark
+        ? ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: AppColors.onSurfaceDark,
+            primaryContainer: AppColors.cardElevatedDark,
+            onPrimaryContainer: AppColors.accent,
+            secondary: AppColors.primaryGlow,
+            onSecondary: AppColors.backgroundDark,
+            surface: AppColors.surfaceDark,
+            onSurface: AppColors.onSurfaceDark,
+            onSurfaceVariant: AppColors.onSurfaceVariantDark,
+            outline: AppColors.borderDark,
+            surfaceContainerHighest: AppColors.cardDark,
+          )
+        : ColorScheme.light(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+            primaryContainer: AppColors.cardLight,
+            onPrimaryContainer: AppColors.onSurfaceLight,
+            secondary: AppColors.primaryGlow,
+            onSecondary: AppColors.backgroundLight,
+            surface: AppColors.surfaceLight,
+            onSurface: AppColors.onSurfaceLight,
+            onSurfaceVariant: AppColors.onSurfaceVariantLight,
+            outline: AppColors.borderLight,
+          );
 
-      final surface = isDark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB);
-      final card = isDark ? const Color(0xFF161A22) : Colors.white;
-      final outline = isDark ? Colors.white.withValues(alpha:0.10) : Colors.black.withValues(alpha:0.08);
+    final surface = isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
+    final card = isDark ? AppColors.cardDark : AppColors.cardLight;
+    final outline = isDark ? AppColors.borderDark : AppColors.borderLight;
 
-      return ThemeData(
+    return ThemeData(
         brightness: brightness,
         colorScheme: scheme,
         primaryColor: scheme.primary,
@@ -93,16 +118,16 @@ class _MyAppState extends State<MyApp> {
         visualDensity: VisualDensity.standard,
         useMaterial3: true,
         listTileTheme: ListTileThemeData(
-          iconColor: scheme.onSurface.withValues(alpha:0.80),
+          iconColor: scheme.onSurface.withValues(alpha: 0.85),
           textColor: scheme.onSurface,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         chipTheme: ChipThemeData(
-          backgroundColor: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
-          selectedColor: scheme.primary.withValues(alpha:0.18),
-          disabledColor: scheme.onSurface.withValues(alpha:0.08),
+          backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+          selectedColor: AppColors.primary.withValues(alpha: 0.28),
+          disabledColor: scheme.onSurface.withValues(alpha: 0.08),
           labelStyle: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
           secondaryLabelStyle: TextStyle(color: scheme.onSurface),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -112,9 +137,9 @@ class _MyAppState extends State<MyApp> {
           ),
         ),
         tabBarTheme: TabBarThemeData(
-          labelColor: scheme.primary,
-          unselectedLabelColor: scheme.onSurface.withValues(alpha:0.55),
-          indicatorColor: scheme.primary,
+          labelColor: AppColors.accent,
+          unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.6),
+          indicatorColor: AppColors.primaryGlow,
           labelStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
         appBarTheme: AppBarTheme(
@@ -125,37 +150,39 @@ class _MyAppState extends State<MyApp> {
           centerTitle: false,
           titleTextStyle: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
             color: scheme.onSurface,
+            letterSpacing: 0.5,
           ),
           iconTheme: IconThemeData(color: scheme.onSurface),
         ),
         cardTheme: CardThemeData(
-          elevation: 0,
+          elevation: 8,
           color: card,
-          shadowColor: Colors.black.withValues(alpha:isDark ? 0.30 : 0.08),
+          shadowColor: AppColors.primaryGlow.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: outline),
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: outline.withValues(alpha: 0.6)),
           ),
           margin: EdgeInsets.zero,
         ),
         dialogTheme: DialogThemeData(
+          elevation: 16,
           backgroundColor: card,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: BorderSide(color: outline),
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.primaryGlow.withValues(alpha: 0.4)),
           ),
           titleTextStyle: TextStyle(
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
             color: scheme.onSurface,
           ),
           contentTextStyle: TextStyle(
             fontSize: 14,
             height: 1.35,
-            color: scheme.onSurface.withValues(alpha:0.85),
+            color: scheme.onSurface.withValues(alpha: 0.9),
           ),
         ),
         bottomSheetTheme: BottomSheetThemeData(
@@ -163,64 +190,71 @@ class _MyAppState extends State<MyApp> {
           surfaceTintColor: Colors.transparent,
           modalBackgroundColor: card,
           shape: RoundedRectangleBorder(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             side: BorderSide(color: outline),
           ),
           showDragHandle: true,
-          dragHandleColor: scheme.onSurface.withValues(alpha:0.25),
+          dragHandleColor: AppColors.primaryGlow.withValues(alpha: 0.6),
         ),
         popupMenuTheme: PopupMenuThemeData(
           color: card,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             side: BorderSide(color: outline),
           ),
           textStyle: TextStyle(color: scheme.onSurface),
         ),
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
-          backgroundColor: scheme.inverseSurface,
-          contentTextStyle: TextStyle(color: scheme.onInverseSurface),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 12,
+          backgroundColor: AppColors.cardElevatedDark,
+          contentTextStyle: TextStyle(color: AppColors.onSurfaceDark),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: AppColors.primaryGlow.withValues(alpha: 0.5)),
+          ),
         ),
         progressIndicatorTheme: ProgressIndicatorThemeData(
-          color: scheme.primary,
+          color: AppColors.primaryGlow,
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: isDark ? Colors.white.withValues(alpha:0.06) : Colors.black.withValues(alpha:0.04),
+          fillColor: AppColors.primary.withValues(alpha: 0.08),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: outline),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: outline),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: scheme.primary, width: 2),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            elevation: 0,
+            elevation: 8,
+            shadowColor: AppColors.primaryGlow.withValues(alpha: 0.6),
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.onSurfaceDark,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             textStyle: const TextStyle(
               fontSize: 15,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             side: BorderSide(color: outline),
             foregroundColor: scheme.onSurface,
           ),
@@ -231,6 +265,7 @@ class _MyAppState extends State<MyApp> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
+            foregroundColor: AppColors.primaryGlow,
           ),
         ),
       );
@@ -258,29 +293,32 @@ class _MyAppState extends State<MyApp> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Scaffold(
               body: Container(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.blue.shade700,
-                      Colors.blue.shade500,
+                      AppColors.backgroundDark,
+                      AppColors.surfaceDark,
+                      AppColors.primaryDeep,
                     ],
+                    stops: [0.0, 0.5, 1.0],
                   ),
                 ),
-                child: const Center(
+                child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       Text(
                         'Загрузка...',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.onSurfaceDark.withValues(alpha: 0.9),
                           fontSize: 16,
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ],

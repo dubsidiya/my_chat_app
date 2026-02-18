@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import 'eula_consent_screen.dart';
@@ -96,15 +97,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-              Color(0xFFf093fb),
+              AppColors.backgroundDark,
+              AppColors.surfaceDark,
+              AppColors.primaryDeep,
+              AppColors.primary,
             ],
-            stops: [0.0, 0.5, 1.0],
+            stops: [0.0, 0.35, 0.7, 1.0],
           ),
         ),
         child: SafeArea(
@@ -147,7 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: const Icon(
                             Icons.person_add_rounded,
                             size: 60,
-                            color: Color(0xFF667eea),
+                            color: AppColors.primary,
                           ),
                         ),
                       );
@@ -259,7 +261,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     labelText: 'Логин',
                                     prefixIcon: const Icon(
                                       Icons.person_outlined,
-                                      color: Color(0xFF667eea),
+                                      color: AppColors.primary,
                                     ),
                                     labelStyle: TextStyle(
                                       color: Colors.grey.shade600,
@@ -286,7 +288,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     focusedBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(16),
                                       borderSide: const BorderSide(
-                                        color: Color(0xFF667eea),
+                                        color: AppColors.primary,
                                         width: 2,
                                       ),
                                     ),
@@ -313,7 +315,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     labelText: 'Пароль',
                                     prefixIcon: const Icon(
                                       Icons.lock_outlined,
-                                      color: Color(0xFF667eea),
+                                      color: AppColors.primary,
                                     ),
                                     labelStyle: TextStyle(
                                       color: Colors.grey.shade600,
@@ -335,7 +337,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     focusedBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(16),
                                       borderSide: const BorderSide(
-                                        color: Color(0xFF667eea),
+                                        color: AppColors.primary,
                                         width: 2,
                                       ),
                                     ),
@@ -388,7 +390,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     ? const Center(
                                         child: CircularProgressIndicator(
                                           valueColor: AlwaysStoppedAnimation<Color>(
-                                            Color(0xFF667eea),
+                                            AppColors.primary,
                                           ),
                                         ),
                                       )
@@ -397,13 +399,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           borderRadius: BorderRadius.circular(16),
                                           gradient: const LinearGradient(
                                             colors: [
-                                              Color(0xFF667eea),
-                                              Color(0xFF764ba2),
+                                              AppColors.primary,
+                                              AppColors.primaryGlow,
                                             ],
                                           ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: const Color(0xFF667eea).withValues(alpha:0.4),
+                                              color: AppColors.primary.withValues(alpha: 0.4),
                                               blurRadius: 15,
                                               offset: const Offset(0, 8),
                                             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
+import '../theme/app_colors.dart';
 import '../models/report.dart';
 import '../services/reports_service.dart';
 import 'edit_report_screen.dart';
@@ -24,8 +25,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now();
   
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color.fromARGB(255, 124, 79, 168);
+  static const Color _accent1 = AppColors.primary;
+  static const Color _accent2 = AppColors.primaryGlow;
 
   @override
   void initState() {

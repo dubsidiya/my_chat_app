@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import '../theme/app_colors.dart';
 import '../models/student.dart';
 import '../services/students_service.dart';
 import 'student_detail_screen.dart';
@@ -22,8 +23,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
   List<Student> _students = [];
   bool _isLoading = false;
   
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
+  static const Color _accent1 = AppColors.primary;
+  static const Color _accent2 = AppColors.primaryGlow;
 
   @override
   void initState() {

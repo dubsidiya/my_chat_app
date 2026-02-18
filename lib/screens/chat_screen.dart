@@ -21,6 +21,7 @@ import '../services/moderation_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import '../services/notification_feedback_service.dart';
 import '../services/websocket_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
@@ -58,9 +59,9 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
-  static const Color _accent3 = Color(0xFFf093fb);
+  static const Color _accent1 = AppColors.primary;
+  static const Color _accent2 = AppColors.primaryGlow;
+  static const Color _accent3 = AppColors.accent;
 
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -4500,13 +4501,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ],
                               ),
                               shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _accent1.withValues(alpha:0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                              boxShadow: AppColors.neonGlow,
                             ),
                             child: IconButton(
                               icon: const Icon(Icons.send, color: Colors.white),

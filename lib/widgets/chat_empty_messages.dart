@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 /// Заглушка «Нет сообщений» в пустом чате.
 class ChatEmptyMessages extends StatelessWidget {
@@ -6,7 +7,7 @@ class ChatEmptyMessages extends StatelessWidget {
 
   const ChatEmptyMessages({super.key, this.accentColor});
 
-  static const Color _defaultAccent = Color(0xFF667eea);
+  static const Color _defaultAccent = AppColors.primaryGlow;
 
   @override
   Widget build(BuildContext context) {

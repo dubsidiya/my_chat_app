@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import '../theme/app_colors.dart';
 import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
 
@@ -22,9 +23,9 @@ class ChatMembersDialog extends StatefulWidget {
 }
 
 class _ChatMembersDialogState extends State<ChatMembersDialog> {
-  static const Color _accent1 = Color(0xFF667eea);
-  static const Color _accent2 = Color(0xFF764ba2);
-  static const Color _accent3 = Color(0xFFf093fb);
+  static const Color _accent1 = AppColors.primary;
+  static const Color _accent2 = AppColors.primaryGlow;
+  static const Color _accent3 = AppColors.accent;
 
   List<Map<String, dynamic>> _members = [];
   bool _isLoading = false;

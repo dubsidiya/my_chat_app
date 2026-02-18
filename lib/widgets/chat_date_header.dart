@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 /// Заголовок даты в списке сообщений чата («Сегодня», «Вчера», «15 февраля»).
 class ChatDateHeader extends StatelessWidget {
@@ -11,7 +12,7 @@ class ChatDateHeader extends StatelessWidget {
     this.accentColor,
   });
 
-  static const Color _defaultAccent = Color(0xFF667eea);
+  static const Color _defaultAccent = AppColors.primaryGlow;
 
   @override
   Widget build(BuildContext context) {
