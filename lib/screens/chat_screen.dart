@@ -137,6 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _typingCleanupTimer;
   bool _sentTyping = false;
   bool _subscribedToChatRealtime = false;
+  Timer? _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
   late String _chatTitle;
 
   List<_ListEntry>? _cachedListEntries;
@@ -422,10 +423,43 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
     
+    // Резервный опрос новых сообщений (если WebSocket не доставил)
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (mounted) _pollForNewMessages();
+    });
+    
     // ✅ Отмечаем все сообщения как прочитанные при открытии чата
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
     });
+  }
+
+  /// Опрос последних сообщений с сервера — подхватывает то, что не пришло по WebSocket.
+  Future<void> _pollForNewMessages() async {
+    if (!mounted || _isLoading) return;
+    try {
+      final result = await _messagesService.fetchMessagesPaginated(
+        widget.chatId,
+        limit: 25,
+        offset: 0,
+        useCache: false,
+      );
+      if (!mounted) return;
+      final existingIds = _messages.map((m) => m.id).toSet();
+      final toAdd = <Message>[];
+      for (final msg in result.messages) {
+        if (!existingIds.contains(msg.id)) {
+          toAdd.add(msg);
+          existingIds.add(msg.id);
+        }
+      }
+      if (toAdd.isEmpty) return;
+      final fromOthers = toAdd.any((m) => m.userId != widget.userId);
+      setState(() {
+        _messages = List<Message>.from(_messages)..addAll(toAdd);
+      });
+      if (fromOthers) NotificationFeedbackService.onNewMessage();
+    } catch (_) {}
   }
 
   Future<void> _loadChatMembers() async {
@@ -3094,6 +3128,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _webSocketSubscription?.cancel();
     _typingStopTimer?.cancel();
     _typingCleanupTimer?.cancel();
+    _pollTimer?.cancel();
     _voiceRecordTimer?.cancel();
     if (_isRecordingVoice) {
       // best-effort: остановим запись

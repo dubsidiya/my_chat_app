@@ -757,25 +757,26 @@ export const sendMessage = async (req, res) => {
         [chatIdNum]
       );
 
+      // Гарантируем строки и отсутствие null для надёжной доставки на клиент
       const wsMessage = {
-        type: 'message', // явный тип для realtime-доставки другим участникам
+        type: 'message',
         id: message.id,
-        chat_id: message.chat_id.toString(),
+        chat_id: String(message.chat_id),
         user_id: message.user_id,
-        content: message.content,
-        image_url: message.image_url,
-        original_image_url: message.original_image_url,
-        file_url: message.file_url,
-        file_name: message.file_name,
-        file_size: message.file_size,
-        file_mime: message.file_mime,
-        message_type: message.message_type,
-        created_at: message.created_at,
-        delivered_at: message.delivered_at,
+        content: message.content != null ? String(message.content) : '',
+        image_url: message.image_url ?? null,
+        original_image_url: message.original_image_url ?? null,
+        file_url: message.file_url ?? null,
+        file_name: message.file_name ?? null,
+        file_size: message.file_size ?? null,
+        file_mime: message.file_mime ?? null,
+        message_type: message.message_type || 'text',
+        created_at: message.created_at instanceof Date ? message.created_at.toISOString() : String(message.created_at ?? ''),
+        delivered_at: message.delivered_at != null ? (message.delivered_at instanceof Date ? message.delivered_at.toISOString() : String(message.delivered_at)) : null,
         edited_at: null,
         is_read: false,
         read_at: null,
-        sender_email: senderEmail
+        sender_email: senderEmail || ''
       };
 
       if (process.env.NODE_ENV === 'development') {

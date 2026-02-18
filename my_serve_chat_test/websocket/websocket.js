@@ -248,13 +248,15 @@ export function setupWebSocket(server) {
           // Используем email из токена
           const senderEmailFinal = userEmail;
 
+          const row = result.rows[0];
           const fullMessage = {
-            id: result.rows[0].id,
-            chat_id: result.rows[0].chat_id,
-            user_id: result.rows[0].user_id,
-            content: result.rows[0].content,
-            created_at: result.rows[0].created_at,
-            sender_email: senderEmailFinal,
+            type: 'message',
+            id: row.id,
+            chat_id: String(row.chat_id),
+            user_id: row.user_id,
+            content: row.content != null ? String(row.content) : '',
+            created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ''),
+            sender_email: senderEmailFinal || '',
           };
 
           // Используем chat_users (как в схеме БД) вместо chat_members
