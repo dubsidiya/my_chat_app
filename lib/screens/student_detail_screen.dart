@@ -477,6 +477,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     return Card(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
+                                        isThreeLine: true,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                         leading: Icon(
                                           isDeposit 
                                               ? Icons.add_circle 
@@ -500,12 +502,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                           ),
                                         ),
                                         subtitle: Column(
+                                          mainAxisSize: MainAxisSize.min,
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             if (isDeposit && transaction.depositTypeLabel.isNotEmpty)
-                                              Container(
-                                                margin: const EdgeInsets.only(top: 4, bottom: 4),
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4, bottom: 2),
+                                                child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                 decoration: BoxDecoration(
                                                   color: transaction.isBankDeposit 
                                                       ? Colors.blue.shade50 
@@ -544,12 +548,17 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                   ],
                                                 ),
                                               ),
+                                            ),
                                             if (transaction.description != null)
-                                              Text(
-                                                transaction.description!,
-                                                style: const TextStyle(fontSize: 12),
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 2),
+                                                child: Text(
+                                                  transaction.description!,
+                                                  style: const TextStyle(fontSize: 12),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
                                               ),
-                                            const SizedBox(height: 4),
                                             Text(
                                               DateFormat('dd.MM.yyyy HH:mm')
                                                   .format(transaction.createdAt),

@@ -353,9 +353,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   ),
                                 )
                               : null,
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               Text(
                                 '${student.balance.toStringAsFixed(0)} ₽',
@@ -365,23 +365,24 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   color: student.isDebtor ? Colors.red : Colors.green.shade700,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              if (student.isDebtor)
+                              if (student.isDebtor) ...[
+                                const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: Colors.red.withValues(alpha:0.12),
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     'Долг',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.red.shade700,
                                     ),
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                           onTap: () => _openStudentDetail(student),
