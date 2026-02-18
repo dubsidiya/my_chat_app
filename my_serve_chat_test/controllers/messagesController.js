@@ -758,8 +758,9 @@ export const sendMessage = async (req, res) => {
       );
 
       const wsMessage = {
+        type: 'message', // явный тип для realtime-доставки другим участникам
         id: message.id,
-        chat_id: message.chat_id.toString(), // Убеждаемся, что это строка
+        chat_id: message.chat_id.toString(),
         user_id: message.user_id,
         content: message.content,
         image_url: message.image_url,

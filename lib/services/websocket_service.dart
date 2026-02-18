@@ -15,6 +15,8 @@ class WebSocketService {
   final StreamController<dynamic> _streamController = StreamController<dynamic>.broadcast();
   String? _currentToken;
   bool _connecting = false;
+  bool _wasDisconnected = false;
+  static const String _reconnectedEventType = '_ws_reconnected';
 
   Stream<dynamic> get stream => _streamController.stream;
 
@@ -47,6 +49,17 @@ class WebSocketService {
         );
       }
 
+      void onDisconnect() {
+        final hadChannel = _channel != null;
+        _channel = null;
+        if (hadChannel) {
+          _wasDisconnected = true;
+          Future.delayed(const Duration(seconds: 2), () {
+            connectIfNeeded();
+          });
+        }
+      }
+
       _channel!.stream.listen(
         (data) {
           try {
@@ -58,16 +71,25 @@ class WebSocketService {
         },
         onError: (error) {
           if (kDebugMode) print('WebSocketService error: $error');
-          _channel = null;
+          onDisconnect();
         },
         onDone: () {
-          _channel = null;
+          if (kDebugMode) print('WebSocketService connection closed');
+          onDisconnect();
         },
         cancelOnError: false,
       );
+
+      if (_wasDisconnected) {
+        _wasDisconnected = false;
+        _streamController.add(<String, dynamic>{'type': _reconnectedEventType});
+      }
     } catch (e) {
       if (kDebugMode) print('WebSocketService connect error: $e');
       _channel = null;
+      Future.delayed(const Duration(seconds: 3), () {
+        connectIfNeeded();
+      });
     } finally {
       _connecting = false;
     }
