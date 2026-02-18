@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
@@ -5,6 +6,7 @@ import '../services/chats_service.dart';
 import '../services/auth_service.dart';
 import '../services/admin_service.dart';
 import '../services/storage_service.dart';
+import '../services/websocket_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
@@ -41,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  StreamSubscription<dynamic>? _wsSubscription;
 
   String _formatLastMessageTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -153,10 +156,27 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _displayName = widget.displayName;
     _loadChats();
+    _subscribeToNewMessages();
+  }
+
+  void _subscribeToNewMessages() {
+    WebSocketService.instance.connectIfNeeded();
+    _wsSubscription?.cancel();
+    _wsSubscription = WebSocketService.instance.stream.listen((event) {
+      if (!mounted) return;
+      // Новое сообщение в любой чат: обновляем список чатов
+      if (event is Map && event['chat_id'] != null && event['id'] != null) {
+        final type = event['type']?.toString();
+        if (type == null || type.isEmpty || type == 'message') {
+          _loadChats();
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _wsSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -428,6 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
+              WebSocketService.instance.disconnect();
               // Очищаем сохраненные данные
               await StorageService.clearUserData();
               // Возвращаемся на экран входа

@@ -4,8 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
@@ -20,9 +18,9 @@ import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
-import '../services/storage_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import '../services/notification_feedback_service.dart';
+import '../services/websocket_service.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
@@ -68,7 +66,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollController = ScrollController();
   final _messagesService = MessagesService();
   final _chatsService = ChatsService();
-  WebSocketChannel? _channel;
   StreamSubscription? _webSocketSubscription;
   final Map<String, GlobalKey> _messageKeys = {};
 
@@ -682,14 +679,14 @@ class _ChatScreenState extends State<ChatScreen> {
   // (функция была неиспользуемой; при необходимости можно вернуть и вызывать при отображении сообщения)
 
   void _setupWebSocketListener() {
-    if (_channel == null) return;
-    _webSocketSubscription = _channel!.stream.listen(
+    _webSocketSubscription?.cancel();
+    _webSocketSubscription = WebSocketService.instance.stream.listen(
       (event) {
         if (!mounted) return;
         try {
-          if (kDebugMode) print('WebSocket received: $event');
-          final data = jsonDecode(event);
-          if (kDebugMode) print('Parsed WebSocket data: $data');
+          final data = event is Map ? event as Map<String, dynamic> : (event is String ? jsonDecode(event) as Map<String, dynamic>? : null);
+          if (data == null) return;
+          if (kDebugMode) print('WebSocket received: $data');
           
           // Проверяем тип сообщения
           final messageType = data['type'];
@@ -1026,7 +1023,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       } else {
                         // ✅ Добавляем сообщение только если нет временного
                         final newMessages = List<Message>.from(_messages);
-                        newMessages.insert(0, message); // Добавляем в начало (reverse список)
+                        newMessages.add(message); // В конец: список "старые сверху, новые снизу"
                         _messages = newMessages;
                         if (kDebugMode) {
                           if (kDebugMode) print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
@@ -1097,8 +1094,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _sendWsJson(Map<String, dynamic> payload) {
     try {
-      if (_channel == null) return;
-      _channel!.sink.add(jsonEncode(payload));
+      WebSocketService.instance.send(payload);
     } catch (e) {
       if (kDebugMode) print('Ошибка отправки WS payload: $e');
     }
@@ -1106,7 +1102,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _subscribeToChatRealtime() {
     if (_subscribedToChatRealtime) return;
-    if (_channel == null) return;
     _subscribedToChatRealtime = true;
     _sendWsJson({
       'type': 'subscribe',
@@ -1187,26 +1182,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _initWebSocket() async {
     try {
-      final token = await StorageService.getToken();
-      if (token == null) {
-        return;
-      }
-
-      // Подключаемся к WebSocket:
-      // - web: через query param (нет возможности поставить Authorization header)
-      // - mobile/desktop: через Authorization header (не светим токен в URL)
-      if (kIsWeb) {
-        _channel = WebSocketChannel.connect(
-          Uri.parse('wss://my-server-chat.onrender.com?token=$token'),
-        );
-      } else {
-        _channel = IOWebSocketChannel.connect(
-          Uri.parse('wss://my-server-chat.onrender.com'),
-          headers: {'Authorization': 'Bearer $token'},
-        );
-      }
-      
-      // Настраиваем слушатель после подключения
+      await WebSocketService.instance.connectIfNeeded();
       if (mounted) {
         _setupWebSocketListener();
       }
@@ -3106,7 +3082,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _sendTyping(false);
     }
     _sendWsJson({'type': 'unsubscribe', 'chat_id': widget.chatId});
-    _channel?.sink.close();
     _controller.dispose();
     super.dispose();
   }
