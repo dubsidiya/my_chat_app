@@ -459,6 +459,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages = List<Message>.from(_messages)..addAll(toAdd);
       });
       if (fromOthers) NotificationFeedbackService.onNewMessage();
+      _scrollToBottom();
     } catch (_) {}
   }
 
@@ -483,6 +484,50 @@ class _ChatScreenState extends State<ChatScreen> {
 
   GlobalKey _keyForMessage(String id) {
     return _messageKeys.putIfAbsent(id, () => GlobalKey());
+  }
+
+  /// Сливает пришедшее по WebSocket сообщение с уже имеющимся: не затираем непустой контент пустым
+  /// (на части устройств/сетей WS может прийти с пустым content).
+  Message _mergeMessageKeepContent(Message existing, Message incoming) {
+    if (incoming.content.isNotEmpty || (incoming.imageUrl ?? '').isNotEmpty || (incoming.fileUrl ?? '').isNotEmpty) return incoming;
+    return Message(
+      id: incoming.id,
+      chatId: incoming.chatId,
+      userId: incoming.userId,
+      content: incoming.content.isNotEmpty ? incoming.content : existing.content,
+      imageUrl: (incoming.imageUrl ?? '').isNotEmpty ? incoming.imageUrl : existing.imageUrl,
+      originalImageUrl: (incoming.originalImageUrl ?? '').isNotEmpty ? incoming.originalImageUrl : existing.originalImageUrl,
+      fileUrl: (incoming.fileUrl ?? '').isNotEmpty ? incoming.fileUrl : existing.fileUrl,
+      fileName: incoming.fileName ?? existing.fileName,
+      fileSize: incoming.fileSize ?? existing.fileSize,
+      fileMime: incoming.fileMime ?? existing.fileMime,
+      messageType: incoming.messageType,
+      senderEmail: incoming.senderEmail.isNotEmpty ? incoming.senderEmail : existing.senderEmail,
+      createdAt: incoming.createdAt.isNotEmpty ? incoming.createdAt : existing.createdAt,
+      deliveredAt: incoming.deliveredAt ?? existing.deliveredAt,
+      editedAt: incoming.editedAt ?? existing.editedAt,
+      isRead: incoming.isRead,
+      readAt: incoming.readAt ?? existing.readAt,
+      replyToMessageId: incoming.replyToMessageId ?? existing.replyToMessageId,
+      replyToMessage: incoming.replyToMessage ?? existing.replyToMessage,
+      isPinned: incoming.isPinned,
+      reactions: incoming.reactions ?? existing.reactions,
+      isForwarded: incoming.isForwarded,
+      originalChatName: incoming.originalChatName ?? existing.originalChatName,
+    );
+  }
+
+  /// Прокрутить список к самому низу (к новым сообщениям).
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients && _messages.isNotEmpty) {
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        if (maxScroll > 0) {
+          _scrollController.jumpTo(maxScroll);
+        }
+      }
+    });
   }
 
   Future<void> _scrollToMessage(String messageId) async {
@@ -1047,14 +1092,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   );
                   
                   if (tempIndex != -1) {
-                    // ✅ Заменяем временное сообщение на реальное
+                    // ✅ Заменяем временное сообщение на реальное (но не перезаписываем контент пустым — на части устройств WS приходит с пустым content)
                     if (kDebugMode) print('✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}');
                     if (kDebugMode) print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
+                    final existing = _messages[tempIndex];
+                    final merged = _mergeMessageKeepContent(existing, message);
                     
                     // ✅ Создаем новый список для принудительного обновления UI
                     final newMessages = List<Message>.from(_messages);
                     final tempId = newMessages[tempIndex].id; // Сохраняем ID временного сообщения
-                    newMessages[tempIndex] = message;
+                    newMessages[tempIndex] = merged;
                     
                     // ✅ Удаляем все остальные временные сообщения от этого пользователя
                     newMessages.removeWhere((m) => 
@@ -1068,7 +1115,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     
                     // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
                     Future.delayed(const Duration(milliseconds: 500), () {
-                      LocalMessagesService.updateMessage(widget.chatId, message);
+                      LocalMessagesService.updateMessage(widget.chatId, merged);
                     });
                   } else {
                     // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
@@ -1090,6 +1137,17 @@ class _ChatScreenState extends State<ChatScreen> {
                         // ✅ Есть временное сообщение - не добавляем дубликат, оно будет заменено выше
                         if (kDebugMode) print('⚠️ WebSocket: Found matching temp message, skipping duplicate add');
                       } else {
+                        // ⚠️ Защита: на части устройств/сетей может прийти WS-эвент с пустым content для СВОЕГО сообщения.
+                        // В этом случае не добавляем "пустышку" — своё сообщение корректно придёт из HTTP-ответа и/или будет заменено.
+                        final isSelf = message.userId == widget.userId.toString();
+                        final isEmptyTextOnly = message.content.trim().isEmpty &&
+                            (message.imageUrl == null || message.imageUrl!.isEmpty) &&
+                            (message.fileUrl == null || message.fileUrl!.isEmpty);
+                        if (isSelf && isEmptyTextOnly) {
+                          if (kDebugMode) print('⚠️ WebSocket: Skip empty self message (id=${message.id})');
+                          return;
+                        }
+
                         // ✅ Добавляем сообщение только если нет временного
                         final newMessages = List<Message>.from(_messages);
                         newMessages.add(message); // В конец: список "старые сверху, новые снизу"
@@ -1105,19 +1163,20 @@ class _ChatScreenState extends State<ChatScreen> {
                         Future.delayed(const Duration(milliseconds: 500), () {
                           LocalMessagesService.addMessage(widget.chatId, message);
                         });
+                        _scrollToBottom();
                       }
                     } else {
-                      // ✅ Если сообщение уже есть, обновляем его и перемещаем в начало
+                      // ✅ Если сообщение уже есть, обновляем (не затираем непустой контент пустым из WS)
                       final existingIndex = _messages.indexWhere((m) => m.id == message.id);
                       if (existingIndex != -1) {
-                        // ✅ Обновляем сообщение на месте (может быть обновлена информация)
+                        final existing = _messages[existingIndex];
+                        final merged = _mergeMessageKeepContent(existing, message);
                         final newMessages = List<Message>.from(_messages);
-                        newMessages[existingIndex] = message;
+                        newMessages[existingIndex] = merged;
                         
                         if (existingIndex != 0) {
-                          // Перемещаем в начало только если не в начале
                           newMessages.removeAt(existingIndex);
-                          newMessages.insert(0, message);
+                          newMessages.insert(0, merged);
                         }
                         
                         _messages = newMessages;
@@ -2416,6 +2475,16 @@ class _ChatScreenState extends State<ChatScreen> {
               // ✅ Создаем новый список для принудительного обновления UI
               final newMessages = List<Message>.from(_messages);
               newMessages[tempIndex] = sentMessage;
+
+              // ✅ Если WebSocket успел добавить это же сообщение раньше, убираем дубликаты по id.
+              // Оставляем только ту запись, которую мы сейчас поставили на место tempIndex.
+              final realId = sentMessage.id;
+              for (int i = newMessages.length - 1; i >= 0; i--) {
+                if (i == tempIndex) continue;
+                if (newMessages[i].id == realId) {
+                  newMessages.removeAt(i);
+                }
+              }
               
               // ✅ Удаляем все старые временные сообщения от этого пользователя (кроме только что замененного)
               newMessages.removeWhere((m) => 
@@ -2437,6 +2506,15 @@ class _ChatScreenState extends State<ChatScreen> {
               setState(() {
                 final newMessages = List<Message>.from(_messages);
                 newMessages[existingIndex] = sentMessage;
+
+                // ✅ Убираем возможные дубликаты по id (оставляем updated на existingIndex)
+                final realId = sentMessage.id;
+                for (int i = newMessages.length - 1; i >= 0; i--) {
+                  if (i == existingIndex) continue;
+                  if (newMessages[i].id == realId) {
+                    newMessages.removeAt(i);
+                  }
+                }
                 
                 // Удаляем временные сообщения
                 newMessages.removeWhere((m) => 
@@ -2453,6 +2531,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 // ✅ Создаем новый список для принудительного обновления UI
                 final newMessages = List<Message>.from(_messages);
                 newMessages.add(sentMessage); // добавляем в конец, новые снизу
+
+                // ✅ Убираем возможные дубликаты по id (если WS уже добавил)
+                final realId = sentMessage.id;
+                for (int i = newMessages.length - 2; i >= 0; i--) {
+                  if (newMessages[i].id == realId) {
+                    newMessages.removeAt(i);
+                  }
+                }
                 
                 // ✅ Удаляем все старые временные сообщения от этого пользователя
                 newMessages.removeWhere((m) => 

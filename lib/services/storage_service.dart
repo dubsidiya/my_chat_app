@@ -9,7 +9,6 @@ class StorageService {
   static const String _displayNameKey = 'display_name';
   static const String _tokenKey = 'auth_token';
   static const String _isSuperuserKey = 'is_superuser';
-  static const String _themeModeKey = 'theme_mode'; // ✅ Ключ для темы
   static const String _avatarUrlKey = 'avatar_url';
   static const String _soundOnNewMessageKey = 'sound_on_new_message';
   static const String _vibrationOnNewMessageKey = 'vibration_on_new_message';
@@ -209,33 +208,6 @@ class StorageService {
   static Future<bool> isPrivateFeaturesUnlocked(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('$_privateUnlockedPrefix$userId') ?? false;
-  }
-  
-  // ✅ Сохранение режима темы
-  static Future<void> saveThemeMode(bool isDark) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_themeModeKey, isDark);
-    } catch (e) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('StorageService.saveThemeMode error: $e');
-      }
-    }
-  }
-  
-  // ✅ Получение режима темы
-  static Future<bool> getThemeMode() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_themeModeKey) ?? false; // По умолчанию светлая тема
-    } catch (e) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('StorageService.getThemeMode error: $e');
-      }
-      return false;
-    }
   }
 
   /// Звук при новом сообщении (по умолчанию вкл)

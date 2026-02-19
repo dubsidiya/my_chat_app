@@ -13,7 +13,6 @@ class ProfileScreen extends StatefulWidget {
   final String? displayName;
   final String? avatarUrl;
   final bool isSuperuser;
-  final Function(bool)? onThemeChanged;
   final VoidCallback? onProfileUpdated;
   final VoidCallback? onChangePassword;
   final VoidCallback? onAdminResetPassword;
@@ -27,7 +26,6 @@ class ProfileScreen extends StatefulWidget {
     this.displayName,
     this.avatarUrl,
     this.isSuperuser = false,
-    this.onThemeChanged,
     this.onProfileUpdated,
     this.onChangePassword,
     this.onAdminResetPassword,
@@ -177,7 +175,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -342,19 +339,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   );
                 },
               ),
-            ),
-            _sectionTitle(context, 'Внешний вид'),
-            _listTile(
-              context,
-              icon: isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-              title: isDark ? 'Тёмная тема ✓' : 'Светлая тема ✓',
-              onTap: () async {
-                final current = await StorageService.getThemeMode();
-                final next = !current;
-                await StorageService.saveThemeMode(next);
-                widget.onThemeChanged?.call(next);
-                if (mounted) setState(() {});
-              },
             ),
             _sectionTitle(context, 'Аккаунт'),
             _listTile(

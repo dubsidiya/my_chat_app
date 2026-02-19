@@ -10,7 +10,6 @@ class EulaConsentScreen extends StatelessWidget {
   final String? displayName;
   final String? avatarUrl;
   final bool isSuperuser;
-  final Function(bool)? onThemeChanged;
 
   const EulaConsentScreen({
     super.key,
@@ -19,7 +18,6 @@ class EulaConsentScreen extends StatelessWidget {
     this.displayName,
     this.avatarUrl,
     required this.isSuperuser,
-    this.onThemeChanged,
   });
 
   static const String _eulaText = '''
@@ -82,7 +80,6 @@ class EulaConsentScreen extends StatelessWidget {
                         displayName: displayName,
                         avatarUrl: avatarUrl,
                         isSuperuser: isSuperuser,
-                        onThemeChanged: onThemeChanged,
                       ),
                     ),
                   );

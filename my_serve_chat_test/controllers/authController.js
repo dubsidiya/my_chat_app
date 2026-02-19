@@ -8,6 +8,46 @@ import { uploadToCloud } from '../utils/uploadImage.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 
+async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
+  try {
+    return await pool.query(
+      'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
+      [normalizedUsername]
+    );
+  } catch (error) {
+    // Если БД ещё не мигрирована (нет колонки avatar_url) — делаем фоллбек без неё,
+    // чтобы логин не падал с 500.
+    if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
+      const fallback = await pool.query(
+        'SELECT id, email, password, display_name FROM users WHERE LOWER(TRIM(email)) = $1',
+        [normalizedUsername]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null }));
+      return fallback;
+    }
+    throw error;
+  }
+}
+
+async function queryUserWithOptionalAvatarById(userId) {
+  try {
+    return await pool.query(
+      'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
+      [userId]
+    );
+  } catch (error) {
+    if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
+      const fallback = await pool.query(
+        'SELECT id, email, display_name FROM users WHERE id = $1',
+        [userId]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null }));
+      return fallback;
+    }
+    throw error;
+  }
+}
+
 export const register = async (req, res) => {
   const { username, password } = req.body;
 
@@ -96,10 +136,7 @@ export const login = async (req, res) => {
     const normalizedUsername = username.toLowerCase().trim();
     
     // Получаем пользователя по логину (поле email = логин)
-    const result = await pool.query(
-      'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
-      [normalizedUsername]
-    );
+    const result = await queryUserWithOptionalAvatarByEmail(normalizedUsername);
 
     if (result.rows.length === 0) {
       // Не раскрываем, существует ли пользователь (защита от перечисления)
@@ -195,10 +232,7 @@ export const getMe = async (req, res) => {
     if (!req.user?.userId) {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
-    const row = await pool.query(
-      'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
-      [req.user.userId]
-    );
+    const row = await queryUserWithOptionalAvatarById(req.user.userId);
     const u = row.rows[0];
     if (!u) {
       return res.status(404).json({ message: 'Пользователь не найден' });
@@ -323,10 +357,19 @@ export const uploadAvatar = async (req, res) => {
       return res.status(400).json({ message: 'Выберите изображение для аватара' });
     }
     const { imageUrl } = await uploadToCloud(req.file, 'avatars');
-    await pool.query(
-      'UPDATE users SET avatar_url = $1 WHERE id = $2',
-      [imageUrl, req.user.userId]
-    );
+    try {
+      await pool.query(
+        'UPDATE users SET avatar_url = $1 WHERE id = $2',
+        [imageUrl, req.user.userId]
+      );
+    } catch (error) {
+      if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
+        return res.status(500).json({
+          message: 'База данных не обновлена: отсутствует колонка avatar_url. Примените миграцию migrations/add_avatar_url.sql',
+        });
+      }
+      throw error;
+    }
     res.status(200).json({ avatarUrl: imageUrl });
   } catch (error) {
     console.error('Ошибка uploadAvatar:', error);

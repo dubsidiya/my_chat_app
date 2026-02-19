@@ -48,15 +48,12 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  bool _isDarkMode = false;
-  ThemeData? _lightTheme;
   ThemeData? _darkTheme;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadThemePreference();
   }
 
   @override
@@ -70,24 +67,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       WebSocketService.instance.connectIfNeeded();
     }
-  }
-
-  Future<void> _loadThemePreference() async {
-    final isDark = await StorageService.getThemeMode();
-    if (mounted) {
-      setState(() {
-        _isDarkMode = isDark;
-      });
-    }
-  }
-
-  void toggleTheme(bool isDark) {
-    if (mounted) {
-      setState(() {
-        _isDarkMode = isDark;
-      });
-    }
-    StorageService.saveThemeMode(isDark);
   }
 
   ThemeData _buildTheme(Brightness brightness) {
@@ -288,15 +267,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    _lightTheme ??= _buildTheme(Brightness.light);
     _darkTheme ??= _buildTheme(Brightness.dark);
 
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Chat App',
-      theme: _lightTheme!,
+      theme: _darkTheme!,
       darkTheme: _darkTheme!,
-      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: ThemeMode.dark,
       home: FutureBuilder<Map<String, dynamic>?>(
         future: () async {
           final userData = await StorageService.getUserData();
@@ -359,7 +337,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 displayName: displayName,
                 avatarUrl: avatarUrl,
                 isSuperuser: isSuperuser,
-                onThemeChanged: toggleTheme,
               );
             }
             return EulaConsentScreen(
@@ -368,7 +345,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               displayName: displayName,
               avatarUrl: avatarUrl,
               isSuperuser: isSuperuser,
-              onThemeChanged: toggleTheme,
             );
           }
 

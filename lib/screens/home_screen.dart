@@ -22,9 +22,8 @@ class HomeScreen extends StatefulWidget {
   final String? displayName;
   final String? avatarUrl;
   final bool isSuperuser;
-  final Function(bool)? onThemeChanged;
 
-  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.avatarUrl, this.isSuperuser = false, this.onThemeChanged});
+  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.avatarUrl, this.isSuperuser = false});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -194,7 +193,6 @@ class _HomeScreenState extends State<HomeScreen> {
           displayName: _displayName,
           avatarUrl: _avatarUrl,
           isSuperuser: widget.isSuperuser,
-          onThemeChanged: widget.onThemeChanged,
           onProfileUpdated: () async {
             final me = await _authService.fetchMe();
             if (me != null && mounted) {
