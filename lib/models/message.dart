@@ -13,6 +13,7 @@ class Message {
   final String? fileMime; // ✅ MIME-тип файла
   final String messageType; // 'text', 'image', 'text_image'
   final String senderEmail;
+  final String? senderAvatarUrl; // аватар отправителя (для отображения в чате)
   final String createdAt;
   final String? deliveredAt; // ✅ Время доставки
   final String? editedAt; // ✅ Время редактирования
@@ -38,6 +39,7 @@ class Message {
     this.fileMime,
     this.messageType = 'text',
     required this.senderEmail,
+    this.senderAvatarUrl,
     required this.createdAt,
     this.deliveredAt,
     this.editedAt,
@@ -81,6 +83,7 @@ class Message {
         fileMime: json['file_mime'] as String?,
         messageType: json['message_type'] ?? 'text',
         senderEmail: (json['sender_email'] ?? '').toString(),
+        senderAvatarUrl: (json['sender_avatar_url'] ?? json['senderAvatarUrl'])?.toString(),
         createdAt: json['created_at']?.toString() ?? '',
         deliveredAt: json['delivered_at']?.toString(),
         editedAt: json['edited_at']?.toString(),
@@ -120,6 +123,7 @@ class Message {
       'file_mime': fileMime,
       'message_type': messageType,
       'sender_email': senderEmail,
+      'sender_avatar_url': senderAvatarUrl,
       'created_at': createdAt,
       'delivered_at': deliveredAt,
       'edited_at': editedAt,

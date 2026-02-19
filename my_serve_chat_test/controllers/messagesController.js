@@ -76,6 +76,7 @@ export const getMessages = async (req, res) => {
           messages.edited_at,
           messages.reply_to_message_id,
           COALESCE(users.display_name, users.email) AS sender_email,
+          users.avatar_url AS sender_avatar_url,
           pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
@@ -128,6 +129,7 @@ export const getMessages = async (req, res) => {
           messages.edited_at,
           messages.reply_to_message_id,
           COALESCE(users.display_name, users.email) AS sender_email,
+          users.avatar_url AS sender_avatar_url,
           pinned_messages.id IS NOT NULL AS is_pinned
         FROM messages
         JOIN users ON messages.user_id = users.id
@@ -241,7 +243,8 @@ export const getMessages = async (req, res) => {
         reactions: reactions,
         is_forwarded: isForwarded,
         original_chat_name: originalChatName,
-        sender_email: row.sender_email
+        sender_email: row.sender_email,
+        sender_avatar_url: row.sender_avatar_url ?? null
       };
     }));
 
@@ -423,6 +426,7 @@ export const getMessagesAround = async (req, res) => {
         m.edited_at,
         m.reply_to_message_id,
         COALESCE(u.display_name, u.email) AS sender_email,
+        u.avatar_url AS sender_avatar_url,
         pm.id IS NOT NULL AS is_pinned
       FROM messages m
       JOIN users u ON m.user_id = u.id
@@ -454,6 +458,7 @@ export const getMessagesAround = async (req, res) => {
         m.edited_at,
         m.reply_to_message_id,
         COALESCE(u.display_name, u.email) AS sender_email,
+        u.avatar_url AS sender_avatar_url,
         pm.id IS NOT NULL AS is_pinned
       FROM messages m
       JOIN users u ON m.user_id = u.id
@@ -563,7 +568,8 @@ export const getMessagesAround = async (req, res) => {
         reactions: reactions,
         is_forwarded: isForwarded,
         original_chat_name: originalChatName,
-        sender_email: row.sender_email
+        sender_email: row.sender_email,
+        sender_avatar_url: row.sender_avatar_url ?? null
       };
     }));
 
@@ -698,7 +704,12 @@ export const sendMessage = async (req, res) => {
 
     const message = result.rows[0];
     const senderEmail = (await getSenderDisplayName(req.user.userId)) || req.user.email;
-    
+    let senderAvatarUrl = null;
+    try {
+      const avatarRow = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [message.user_id]);
+      senderAvatarUrl = avatarRow.rows[0]?.avatar_url ?? null;
+    } catch (_) { /* колонка avatar_url может отсутствовать до миграции */ }
+
     // ✅ Получаем сообщение, на которое отвечают (если есть)
     let replyToMessage = null;
     if (message.reply_to_message_id) {
@@ -746,7 +757,8 @@ export const sendMessage = async (req, res) => {
       is_pinned: false,
       reactions: [],
       is_forwarded: false,
-      sender_email: senderEmail
+      sender_email: senderEmail,
+      sender_avatar_url: senderAvatarUrl
     };
 
     // Отправляем сообщение через WebSocket всем участникам чата
@@ -776,7 +788,8 @@ export const sendMessage = async (req, res) => {
         edited_at: null,
         is_read: false,
         read_at: null,
-        sender_email: senderEmail || ''
+        sender_email: senderEmail || '',
+        sender_avatar_url: senderAvatarUrl ?? null
       };
 
       if (process.env.NODE_ENV === 'development') {

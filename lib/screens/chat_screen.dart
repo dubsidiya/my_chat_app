@@ -87,6 +87,27 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _otherAvatarPlaceholder(String senderEmail) {
+    final initial = senderEmail.trim().isNotEmpty ? senderEmail.trim()[0].toUpperCase() : '?';
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_accent3, _accent2],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _messagesService = MessagesService();
@@ -504,6 +525,7 @@ class _ChatScreenState extends State<ChatScreen> {
       fileMime: incoming.fileMime ?? existing.fileMime,
       messageType: incoming.messageType,
       senderEmail: incoming.senderEmail.isNotEmpty ? incoming.senderEmail : existing.senderEmail,
+      senderAvatarUrl: (incoming.senderAvatarUrl ?? '').trim().isNotEmpty ? incoming.senderAvatarUrl : existing.senderAvatarUrl,
       createdAt: incoming.createdAt.isNotEmpty ? incoming.createdAt : existing.createdAt,
       deliveredAt: incoming.deliveredAt ?? existing.deliveredAt,
       editedAt: incoming.editedAt ?? existing.editedAt,
@@ -902,6 +924,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     fileMime: msg.fileMime,
                     messageType: msg.messageType,
                     senderEmail: msg.senderEmail,
+                    senderAvatarUrl: msg.senderAvatarUrl,
                     createdAt: msg.createdAt,
                     deliveredAt: msg.deliveredAt,
                     editedAt: msg.editedAt,
@@ -941,6 +964,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       fileMime: msg.fileMime,
                       messageType: msg.messageType,
                       senderEmail: msg.senderEmail,
+                      senderAvatarUrl: msg.senderAvatarUrl,
                       createdAt: msg.createdAt,
                       deliveredAt: msg.deliveredAt,
                       editedAt: msg.editedAt,
@@ -978,6 +1002,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     fileSize: data['file_size'] ?? msg.fileSize,
                     fileMime: data['file_mime'] as String? ?? msg.fileMime,
                     messageType: data['message_type'] ?? msg.messageType,
+                    senderAvatarUrl: data['sender_avatar_url'] ?? msg.senderAvatarUrl,
                     senderEmail: msg.senderEmail,
                     createdAt: msg.createdAt,
                     deliveredAt: msg.deliveredAt,
@@ -1045,6 +1070,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     fileMime: msg.fileMime,
                     messageType: msg.messageType,
                     senderEmail: msg.senderEmail,
+                    senderAvatarUrl: msg.senderAvatarUrl,
                     createdAt: msg.createdAt,
                     deliveredAt: msg.deliveredAt,
                     editedAt: msg.editedAt,
@@ -2353,6 +2379,7 @@ class _ChatScreenState extends State<ChatScreen> {
               : (text.isNotEmpty ? 'text_file' : 'file'))
           : (imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text'),
       senderEmail: widget.userEmail,
+      senderAvatarUrl: widget.myAvatarUrl,
       createdAt: DateTime.now().toIso8601String(),
       isRead: false,
       replyToMessageId: replyToMessageId,
@@ -3076,6 +3103,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 originalImageUrl: message.originalImageUrl,
                 messageType: message.messageType,
                 senderEmail: message.senderEmail,
+                senderAvatarUrl: message.senderAvatarUrl,
                 createdAt: message.createdAt,
                 deliveredAt: message.deliveredAt,
                 editedAt: DateTime.now().toIso8601String(),
@@ -3644,28 +3672,27 @@ class _ChatScreenState extends State<ChatScreen> {
                             width: 32,
                             height: 32,
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  _accent3,
-                                  _accent2,
-                                ],
-                              ),
+                              gradient: (msg.senderAvatarUrl == null || msg.senderAvatarUrl!.trim().isEmpty)
+                                  ? const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [_accent3, _accent2],
+                                    )
+                                  : null,
                               shape: BoxShape.circle,
                               boxShadow: AppColors.neonGlowSoft,
                             ),
-                            child: Center(
-                              child: Text(
-                                msg.senderEmail.isNotEmpty
-                                    ? msg.senderEmail[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                            child: ClipOval(
+                              child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
+                                  ? CachedNetworkImage(
+                                      imageUrl: msg.senderAvatarUrl!,
+                                      width: 32,
+                                      height: 32,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, __) => _otherAvatarPlaceholder(msg.senderEmail),
+                                      errorWidget: (_, __, ___) => _otherAvatarPlaceholder(msg.senderEmail),
+                                    )
+                                  : _otherAvatarPlaceholder(msg.senderEmail),
                             ),
                           ),
                         ),
