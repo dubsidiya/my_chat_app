@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // Тёмная тема (готика)
+  // Готическая ультрафиолетовая палитра приложения
   static const Color backgroundDark = Color(0xFF0D0221);
   static const Color surfaceDark = Color(0xFF1a0a2e);
   static const Color cardDark = Color(0xFF1e1035);
@@ -62,12 +62,4 @@ class AppColors {
           offset: Offset.zero,
         ),
       ];
-
-  // Светлая тема (сумеречная готика)
-  static const Color backgroundLight = Color(0xFF1a0a2e);
-  static const Color surfaceLight = Color(0xFF251538);
-  static const Color cardLight = Color(0xFF2d1b4e);
-  static const Color borderLight = Color(0xFF4a3a6e);
-  static const Color onSurfaceLight = Color(0xFFE8E0F0);
-  static const Color onSurfaceVariantLight = Color(0xFFB8A8D0);
 }

@@ -48,7 +48,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  ThemeData? _darkTheme;
+  ThemeData? _appTheme;
 
   @override
   void initState() {
@@ -69,41 +69,27 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  ThemeData _buildTheme(Brightness brightness) {
-    final isDark = brightness == Brightness.dark;
-    final scheme = isDark
-        ? ColorScheme.dark(
-            primary: AppColors.primary,
-            onPrimary: AppColors.onSurfaceDark,
-            primaryContainer: AppColors.cardElevatedDark,
-            onPrimaryContainer: AppColors.accent,
-            secondary: AppColors.primaryGlow,
-            onSecondary: AppColors.backgroundDark,
-            surface: AppColors.surfaceDark,
-            onSurface: AppColors.onSurfaceDark,
-            onSurfaceVariant: AppColors.onSurfaceVariantDark,
-            outline: AppColors.borderDark,
-            surfaceContainerHighest: AppColors.cardDark,
-          )
-        : ColorScheme.light(
-            primary: AppColors.primary,
-            onPrimary: Colors.white,
-            primaryContainer: AppColors.cardLight,
-            onPrimaryContainer: AppColors.onSurfaceLight,
-            secondary: AppColors.primaryGlow,
-            onSecondary: AppColors.backgroundLight,
-            surface: AppColors.surfaceLight,
-            onSurface: AppColors.onSurfaceLight,
-            onSurfaceVariant: AppColors.onSurfaceVariantLight,
-            outline: AppColors.borderLight,
-          );
+  ThemeData _buildTheme() {
+    const scheme = ColorScheme.dark(
+      primary: AppColors.primary,
+      onPrimary: AppColors.onSurfaceDark,
+      primaryContainer: AppColors.cardElevatedDark,
+      onPrimaryContainer: AppColors.accent,
+      secondary: AppColors.primaryGlow,
+      onSecondary: AppColors.backgroundDark,
+      surface: AppColors.surfaceDark,
+      onSurface: AppColors.onSurfaceDark,
+      onSurfaceVariant: AppColors.onSurfaceVariantDark,
+      outline: AppColors.borderDark,
+      surfaceContainerHighest: AppColors.cardDark,
+    );
 
-    final surface = isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
-    final card = isDark ? AppColors.cardDark : AppColors.cardLight;
-    final outline = isDark ? AppColors.borderDark : AppColors.borderLight;
+    const surface = AppColors.surfaceDark;
+    const card = AppColors.cardDark;
+    const outline = AppColors.borderDark;
 
     return ThemeData(
-        brightness: brightness,
+        brightness: Brightness.dark,
         colorScheme: scheme,
         primaryColor: scheme.primary,
         scaffoldBackgroundColor: surface,
@@ -267,14 +253,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    _darkTheme ??= _buildTheme(Brightness.dark);
+    _appTheme ??= _buildTheme();
 
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Chat App',
-      theme: _darkTheme!,
-      darkTheme: _darkTheme!,
-      themeMode: ThemeMode.dark,
+      theme: _appTheme!,
       home: FutureBuilder<Map<String, dynamic>?>(
         future: () async {
           final userData = await StorageService.getUserData();

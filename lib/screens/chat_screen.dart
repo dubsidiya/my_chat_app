@@ -2634,7 +2634,6 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context) {
         final theme = Theme.of(context);
         final scheme = theme.colorScheme;
-        final isDark = theme.brightness == Brightness.dark;
         final canEdit = isMine && message.hasText && !message.hasImage && !message.hasFile;
 
         Widget chip({
@@ -2650,7 +2649,7 @@ class _ChatScreenState extends State<ChatScreen> {
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
+                border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -2708,7 +2707,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
+                Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
@@ -2719,7 +2718,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
                 ),
                 if (!isMine) ...[
-                  Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
+                  Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.flag_outlined, color: scheme.onSurface.withValues(alpha: 0.85)),
@@ -2734,7 +2733,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ],
                 if (isMine) ...[
-                  Divider(height: 1, color: scheme.outline.withValues(alpha:isDark ? 0.20 : 0.12)),
+                  Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400),
@@ -3420,7 +3419,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final pinnedHeight = _getPinnedMessagesHeight();
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
@@ -3695,7 +3693,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ],
                                     )
                                   : null,
-                              color: isMine ? null : Theme.of(context).cardColor,
+                              color: isMine ? null : AppColors.cardElevatedDark,
                               borderRadius: BorderRadius.only(
                                 topLeft: const Radius.circular(20),
                                 topRight: const Radius.circular(20),
@@ -3714,7 +3712,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               border: isMine
                                   ? null
                                   : Border.all(
-                                      color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
+                                      color: scheme.outline.withValues(alpha: 0.18),
                                       width: 1.2,
                                     ),
                             ),
@@ -4001,7 +3999,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     style: TextStyle(
                                       color: isMine
                                           ? Colors.white
-                                          : (isDark ? Colors.white.withValues(alpha:0.95) : Colors.grey.shade900),
+                                          : AppColors.onSurfaceDark,
                                       fontSize: 15,
                                       height: 1.4,
                                     ),
@@ -4212,7 +4210,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 color: AppColors.primary.withValues(alpha: 0.08),
                                                 borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
+                                                  color: scheme.outline.withValues(alpha: 0.18),
                                                   width: 1.2,
                                                 ),
                                               ),
@@ -4454,7 +4452,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12)),
+                          border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
                         ),
                         child: Row(
                           children: [
