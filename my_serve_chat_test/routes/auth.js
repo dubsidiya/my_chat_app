@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getMe, updateProfile, uploadAvatar, getAllUsers, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/authController.js';
+import { register, login, getMe, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage } from '../utils/uploadImage.js';
 
@@ -28,6 +28,7 @@ router.get('/me', authenticateToken, getMe);
 router.patch('/me', authenticateToken, updateProfile); // PATCH /auth/me — обновить ник (display_name)
 router.post('/me/avatar', authenticateToken, uploadImage.single('avatar'), uploadAvatar); // POST /auth/me/avatar — загрузить аватар
 router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - получение всех пользователей
+router.get('/users/:userId', authenticateToken, getUserById); // GET /auth/users/:userId - профиль пользователя (аватар/ник)
 router.delete('/user/:userId', authenticateToken, deleteAccount); // DELETE /auth/user/:userId - удаление аккаунта
 router.put('/user/:userId/password', authenticateToken, changePassword); // PUT /auth/user/:userId/password - смена пароля
 router.post('/unlock-private', authenticateToken, unlockLimiter, unlockPrivateAccess); // POST /auth/unlock-private - получить токен с privateAccess=true

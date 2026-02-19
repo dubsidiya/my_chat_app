@@ -377,6 +377,28 @@ export const uploadAvatar = async (req, res) => {
   }
 };
 
+// Публичный профиль пользователя (для отображения аватара/ника у других)
+export const getUserById = async (req, res) => {
+  try {
+    const userId = (req.params?.userId ?? '').toString().trim();
+    if (!userId) return res.status(400).json({ message: 'Укажите userId' });
+
+    const row = await queryUserWithOptionalAvatarById(userId);
+    const u = row.rows[0];
+    if (!u) return res.status(404).json({ message: 'Пользователь не найден' });
+
+    return res.status(200).json({
+      id: u.id,
+      username: u.email,
+      displayName: u.display_name ?? null,
+      avatarUrl: u.avatar_url ?? null,
+    });
+  } catch (error) {
+    console.error('Ошибка getUserById:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // Получение списка всех пользователей (требует аутентификации)
 export const getAllUsers = async (req, res) => {
   try {

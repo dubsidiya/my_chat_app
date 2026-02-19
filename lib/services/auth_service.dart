@@ -316,6 +316,45 @@ class AuthService {
     }
   }
 
+  /// Профиль другого пользователя (аватар/ник). Требует авторизацию.
+  Future<Map<String, dynamic>> fetchUserById(String userId) async {
+    final token = await StorageService.getToken();
+    if (token == null) throw Exception('Требуется авторизация');
+    final id = userId.trim();
+    if (id.isEmpty) throw Exception('Некорректный userId');
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/auth/users/$id'),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Таймаут при загрузке профиля'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return Map<String, dynamic>.from(data);
+      }
+      if (response.statusCode == 404) {
+        throw Exception('Пользователь не найден');
+      }
+      if (response.statusCode == 401) {
+        throw Exception('Требуется авторизация');
+      }
+      try {
+        final err = jsonDecode(response.body);
+        throw Exception(err['message'] ?? 'Ошибка загрузки профиля');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Ошибка загрузки профиля (${response.statusCode})');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Ошибка сети: $e');
+    }
+  }
+
   /// Запрос на сервер для получения токена с privateAccess=true
   Future<void> unlockPrivateAccess(String code) async {
     final token = await StorageService.getToken();

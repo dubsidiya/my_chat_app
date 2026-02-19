@@ -28,6 +28,7 @@ import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
+import 'user_profile_screen.dart';
 
 /// Элементы списка сообщений: кнопка «ещё», индикатор загрузки, заголовок даты или сообщение
 class _ListEntry {}
@@ -3391,6 +3392,19 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _openUserProfile(Message msg) {
+    final otherId = msg.userId.toString().trim();
+    if (otherId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId: otherId,
+          fallbackLabel: msg.senderEmail,
+        ),
+      ),
+    );
+  }
+
   // ✅ Вычисляем высоту блока закрепленных сообщений
   double _getPinnedMessagesHeight() {
     if (_pinnedMessages.isEmpty) return 0.0;
@@ -3626,30 +3640,33 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       if (!isMine) ...[
                         // Аватар отправителя (только для чужих сообщений)
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                _accent3,
-                                _accent2,
-                              ],
+                        GestureDetector(
+                          onTap: () => _openUserProfile(msg),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  _accent3,
+                                  _accent2,
+                                ],
+                              ),
+                              shape: BoxShape.circle,
+                              boxShadow: AppColors.neonGlowSoft,
                             ),
-                            shape: BoxShape.circle,
-                            boxShadow: AppColors.neonGlowSoft,
-                          ),
-                          child: Center(
-                            child: Text(
-                              msg.senderEmail.isNotEmpty
-                                  ? msg.senderEmail[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
+                            child: Center(
+                              child: Text(
+                                msg.senderEmail.isNotEmpty
+                                    ? msg.senderEmail[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -3807,12 +3824,15 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ],
                                 // Показываем отправителя только если это не ваше сообщение
                                 if (!isMine) ...[
-                                  Text(
-                                    msg.senderEmail,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: isMine ? Colors.white70 : _accent1,
+                                  GestureDetector(
+                                    onTap: () => _openUserProfile(msg),
+                                    child: Text(
+                                      msg.senderEmail,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isMine ? Colors.white70 : _accent1,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 4),
