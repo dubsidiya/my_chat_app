@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
 import '../services/auth_service.dart';
+import 'photo_viewer_screen.dart';
 
 /// Просмотр профиля другого пользователя (read-only).
 class UserProfileScreen extends StatefulWidget {
@@ -121,26 +122,40 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   child: Column(
                     children: [
                       const SizedBox(height: 24),
-                      Container(
-                        width: 132,
-                        height: 132,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: AppColors.neonGlowSoft,
-                          border: Border.all(
-                            color: AppColors.primaryGlow.withValues(alpha: 0.6),
-                            width: 2,
+                      GestureDetector(
+                        onTap: (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty)
+                            ? () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => PhotoViewerScreen(
+                                      imageUrl: _avatarUrl!,
+                                      title: _label,
+                                    ),
+                                  ),
+                                );
+                              }
+                            : null,
+                        child: Container(
+                          width: 132,
+                          height: 132,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: AppColors.neonGlowSoft,
+                            border: Border.all(
+                              color: AppColors.primaryGlow.withValues(alpha: 0.6),
+                              width: 2,
+                            ),
                           ),
-                        ),
-                        child: ClipOval(
-                          child: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
-                              ? CachedNetworkImage(
-                                  imageUrl: _avatarUrl!,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, __) => _avatarPlaceholder(),
-                                  errorWidget: (_, __, ___) => _avatarPlaceholder(),
-                                )
-                              : _avatarPlaceholder(),
+                          child: ClipOval(
+                            child: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                                ? CachedNetworkImage(
+                                    imageUrl: _avatarUrl!,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => _avatarPlaceholder(),
+                                    errorWidget: (_, __, ___) => _avatarPlaceholder(),
+                                  )
+                                : _avatarPlaceholder(),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),

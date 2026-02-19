@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
 import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
+import 'user_profile_screen.dart';
 
 class ChatMembersDialog extends StatefulWidget {
   final List<Map<String, dynamic>> members;
@@ -61,6 +62,19 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         fit: BoxFit.cover,
         placeholder: (_, __) => placeholder,
         errorWidget: (_, __, ___) => placeholder,
+      ),
+    );
+  }
+
+  void _openUserProfile(String userId, String label) {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId: id,
+          fallbackLabel: label,
+        ),
       ),
     );
   }
@@ -348,40 +362,46 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             child: Row(
                               children: [
-                                _memberAvatar(member, displayName, isCreator),
+                                GestureDetector(
+                                  onTap: () => _openUserProfile(userId, displayName),
+                                  child: _memberAvatar(member, displayName, isCreator),
+                                ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        displayName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: scheme.onSurface,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      if (isCreator)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: _accent1.withValues(alpha:0.12),
-                                            borderRadius: BorderRadius.circular(10),
+                                  child: GestureDetector(
+                                    onTap: () => _openUserProfile(userId, displayName),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          displayName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: scheme.onSurface,
                                           ),
-                                          child: const Text(
-                                            'Создатель чата',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: _accent1,
+                                        ),
+                                        const SizedBox(height: 6),
+                                        if (isCreator)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: _accent1.withValues(alpha:0.12),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Text(
+                                              'Создатель чата',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: _accent1,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 if (userId != widget.currentUserId) ...[

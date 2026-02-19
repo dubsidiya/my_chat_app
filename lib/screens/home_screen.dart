@@ -13,6 +13,7 @@ import 'login_screen.dart';
 import 'students_screen.dart';
 import 'reports_chat_screen.dart';
 import 'profile_screen.dart';
+import 'user_profile_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 
@@ -403,33 +404,36 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [AppColors.primary, AppColors.primaryDeep],
-                          )
-                        : null,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: chat.isGroup
-                        ? const Icon(Icons.group_rounded, color: Colors.white, size: 22)
-                        : (chat.otherUserAvatarUrl != null && chat.otherUserAvatarUrl!.trim().isNotEmpty)
-                            ? CachedNetworkImage(
-                                imageUrl: chat.otherUserAvatarUrl!,
-                                width: 46,
-                                height: 46,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => _chatAvatarPlaceholder(chat.name),
-                                errorWidget: (_, __, ___) => _chatAvatarPlaceholder(chat.name),
-                              )
-                            : _chatAvatarPlaceholder(chat.name),
+                GestureDetector(
+                  onTap: () => _openChatUserProfile(chat),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
+                          ? const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [AppColors.primary, AppColors.primaryDeep],
+                            )
+                          : null,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: chat.isGroup
+                          ? const Icon(Icons.group_rounded, color: Colors.white, size: 22)
+                          : (chat.otherUserAvatarUrl != null && chat.otherUserAvatarUrl!.trim().isNotEmpty)
+                              ? CachedNetworkImage(
+                                  imageUrl: chat.otherUserAvatarUrl!,
+                                  width: 46,
+                                  height: 46,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => _chatAvatarPlaceholder(chat.name),
+                                  errorWidget: (_, __, ___) => _chatAvatarPlaceholder(chat.name),
+                                )
+                              : _chatAvatarPlaceholder(chat.name),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -500,6 +504,20 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _openChatUserProfile(Chat chat) {
+    if (chat.isGroup) return;
+    final otherId = (chat.otherUserId ?? '').trim();
+    if (otherId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId: otherId,
+          fallbackLabel: chat.name,
         ),
       ),
     );

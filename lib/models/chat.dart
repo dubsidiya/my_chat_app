@@ -4,6 +4,8 @@ class Chat {
   final String id;
   final String name;
   final bool isGroup;
+  /// ID собеседника (для личных чатов)
+  final String? otherUserId;
   /// Аватар собеседника (для личных чатов)
   final String? otherUserAvatarUrl;
   final String? lastMessageId;
@@ -22,6 +24,7 @@ class Chat {
     required this.id,
     required this.name,
     required this.isGroup,
+    this.otherUserId,
     this.otherUserAvatarUrl,
     this.lastMessageId,
     this.lastMessageText,
@@ -46,6 +49,7 @@ class Chat {
         id: (json['id'] ?? '').toString(),
         name: json['name'] ?? '',
         isGroup: _parseBool(json['is_group']),
+        otherUserId: (json['other_user_id'] ?? json['otherUserId'])?.toString(),
         otherUserAvatarUrl: (json['other_user_avatar_url'] ?? json['otherUserAvatarUrl'])?.toString(),
         unreadCount: _parseInt(json['unread_count']),
         lastMessageId: lastMap?['id']?.toString(),

@@ -98,11 +98,12 @@ export const getChatsList = async (req, res) => {
             WHEN c.is_group = true THEN c.name
             ELSE COALESCE(ou.display_name, ou.email, c.name)
           END AS name,
-          ou.avatar_url AS other_user_avatar_url
+          CASE WHEN c.is_group = true THEN NULL ELSE ou.id END AS other_user_id,
+          CASE WHEN c.is_group = true THEN NULL ELSE ou.avatar_url END AS other_user_avatar_url
         FROM chats c
         JOIN chat_users cu ON cu.chat_id = c.id AND cu.user_id = $1
         LEFT JOIN LATERAL (
-          SELECT u.email, u.display_name, u.avatar_url
+          SELECT u.id, u.email, u.display_name, u.avatar_url
           FROM chat_users cu2
           JOIN users u ON u.id = cu2.user_id
           WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
@@ -144,6 +145,7 @@ export const getChatsList = async (req, res) => {
         uc.id,
         uc.name,
         uc.is_group,
+        uc.other_user_id,
         uc.other_user_avatar_url,
         COALESCE(ucnt.unread_count, 0) AS unread_count,
         CASE
