@@ -179,6 +179,11 @@ class ChatsService {
             members.add({
               'id': user['id'].toString(),
               'email': user['email'] ?? '',
+              'display_name': user['display_name'],
+              'displayName': user['displayName'] ?? user['display_name'] ?? user['email'] ?? '',
+              'avatar_url': user['avatar_url'],
+              'role': user['role'],
+              'is_creator': user['is_creator'] == true || user['is_creator'] == 1,
             });
           }
           return members;

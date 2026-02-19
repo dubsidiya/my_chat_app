@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
 import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
@@ -30,6 +31,39 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
   List<Map<String, dynamic>> _members = [];
   bool _isLoading = false;
   final ModerationService _moderationService = ModerationService();
+
+  Widget _memberAvatar(Map<String, dynamic> member, String displayName, bool isCreator) {
+    final avatarUrl = (member['avatar_url'] ?? member['avatarUrl'])?.toString();
+    final hasAvatar = avatarUrl != null && avatarUrl.trim().isNotEmpty;
+    Widget placeholder = Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isCreator ? [_accent1, _accent2] : [_accent3, _accent2],
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Center(
+        child: Text(
+          displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
+          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+    if (!hasAvatar) return placeholder;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: CachedNetworkImage(
+        imageUrl: avatarUrl,
+        width: 42,
+        height: 42,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => placeholder,
+        errorWidget: (_, __, ___) => placeholder,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -314,26 +348,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             child: Row(
                               children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: isCreator ? [_accent1, _accent2] : [_accent3, _accent2],
-                                    ),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                                _memberAvatar(member, displayName, isCreator),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(

@@ -97,11 +97,12 @@ export const getChatsList = async (req, res) => {
           CASE
             WHEN c.is_group = true THEN c.name
             ELSE COALESCE(ou.display_name, ou.email, c.name)
-          END AS name
+          END AS name,
+          ou.avatar_url AS other_user_avatar_url
         FROM chats c
         JOIN chat_users cu ON cu.chat_id = c.id AND cu.user_id = $1
         LEFT JOIN LATERAL (
-          SELECT u.email, u.display_name
+          SELECT u.email, u.display_name, u.avatar_url
           FROM chat_users cu2
           JOIN users u ON u.id = cu2.user_id
           WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
@@ -143,6 +144,7 @@ export const getChatsList = async (req, res) => {
         uc.id,
         uc.name,
         uc.is_group,
+        uc.other_user_avatar_url,
         COALESCE(ucnt.unread_count, 0) AS unread_count,
         CASE
           WHEN lm.last_message_id IS NULL THEN NULL
@@ -367,9 +369,9 @@ export const getChatMembers = async (req, res) => {
       return res.status(403).json({ message: "Вы не являетесь участником этого чата" });
     }
 
-    // Получаем участников чата (ник = как видят другие)
+    // Получаем участников чата (ник = как видят другие, аватар)
     const result = await pool.query(
-      `SELECT u.id, u.email, u.display_name, cu.role
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, cu.role
        FROM users u
        JOIN chat_users cu ON u.id = cu.user_id
        WHERE cu.chat_id = $1
@@ -384,6 +386,7 @@ export const getChatMembers = async (req, res) => {
       email: row.email,
       display_name: row.display_name ?? null,
       displayName: row.display_name ?? row.email,
+      avatar_url: row.avatar_url ?? null,
       role: row.role || (row.id?.toString() === creatorId ? 'owner' : 'member'),
       is_creator: row.id?.toString() === creatorId
     }));

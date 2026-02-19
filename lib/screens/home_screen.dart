@@ -77,6 +77,27 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _chatAvatarPlaceholder(String chatName) {
+    final letter = chatName.trim().isNotEmpty ? chatName.trim()[0].toUpperCase() : '?';
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.primary, AppColors.primaryDeep],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          letter,
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
   String _formatLastMessageTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
     try {
@@ -386,17 +407,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: const [AppColors.primary, AppColors.primaryDeep],
-                    ),
+                    gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [AppColors.primary, AppColors.primaryDeep],
+                          )
+                        : null,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(
-                    chat.isGroup ? Icons.group_rounded : Icons.person_rounded,
-                    color: Colors.white,
-                    size: 22,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: chat.isGroup
+                        ? const Icon(Icons.group_rounded, color: Colors.white, size: 22)
+                        : (chat.otherUserAvatarUrl != null && chat.otherUserAvatarUrl!.trim().isNotEmpty)
+                            ? CachedNetworkImage(
+                                imageUrl: chat.otherUserAvatarUrl!,
+                                width: 46,
+                                height: 46,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => _chatAvatarPlaceholder(chat.name),
+                                errorWidget: (_, __, ___) => _chatAvatarPlaceholder(chat.name),
+                              )
+                            : _chatAvatarPlaceholder(chat.name),
                   ),
                 ),
                 const SizedBox(width: 12),
