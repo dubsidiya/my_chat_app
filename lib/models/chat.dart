@@ -4,6 +4,8 @@ class Chat {
   final String id;
   final String name;
   final bool isGroup;
+  /// Папка/метка для текущего пользователя: work/personal/archive или null
+  final String? folder;
   /// ID собеседника (для личных чатов)
   final String? otherUserId;
   /// Аватар собеседника (для личных чатов)
@@ -24,6 +26,7 @@ class Chat {
     required this.id,
     required this.name,
     required this.isGroup,
+    this.folder,
     this.otherUserId,
     this.otherUserAvatarUrl,
     this.lastMessageId,
@@ -49,6 +52,7 @@ class Chat {
         id: (json['id'] ?? '').toString(),
         name: json['name'] ?? '',
         isGroup: _parseBool(json['is_group']),
+        folder: (json['folder'])?.toString(),
         otherUserId: (json['other_user_id'] ?? json['otherUserId'])?.toString(),
         otherUserAvatarUrl: (json['other_user_avatar_url'] ?? json['otherUserAvatarUrl'])?.toString(),
         unreadCount: _parseInt(json['unread_count']),

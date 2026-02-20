@@ -26,8 +26,11 @@ import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
+import '../widgets/chat_input_bar.dart';
+import '../widgets/chat_message_tile.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
+import 'chat_gallery_screen.dart';
 import 'user_profile_screen.dart';
 
 /// Элементы списка сообщений: кнопка «ещё», индикатор загрузки, заголовок даты или сообщение
@@ -153,6 +156,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ✅ Realtime presence/typing
   final Map<String, String> _memberEmailById = {};
+  List<Map<String, dynamic>> _chatMembers = [];
+  final Map<String, Map<String, String>> _memberByHandle = {}; // handle -> {id,email,label}
   final Set<String> _onlineUserIds = <String>{};
   final Map<String, DateTime> _typingUntilByUserId = <String, DateTime>{};
   Timer? _typingStopTimer;
@@ -161,6 +166,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _subscribedToChatRealtime = false;
   Timer? _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
   late String _chatTitle;
+
+  // ✅ Mentions (@handle)
+  int _mentionStart = -1;
+  String _mentionQuery = '';
+  List<Map<String, String>> _mentionSuggestions = [];
 
   List<_ListEntry>? _cachedListEntries;
   int _listEntriesCacheKey = -1;
@@ -490,6 +500,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final members = await _chatsService.getChatMembers(widget.chatId);
       if (!mounted) return;
       setState(() {
+        _chatMembers = members;
         _memberEmailById
           ..clear()
           ..addEntries(members.map((m) {
@@ -497,6 +508,16 @@ class _ChatScreenState extends State<ChatScreen> {
             final email = (m['email'] ?? '').toString();
             return MapEntry(id, email);
           }).where((e) => e.key.isNotEmpty));
+
+        _memberByHandle
+          ..clear()
+          ..addEntries(members.map((m) {
+            final id = (m['id'] ?? '').toString();
+            final email = (m['email'] ?? '').toString();
+            final label = (m['displayName'] ?? m['display_name'] ?? email).toString();
+            final handle = _handleFromEmail(email);
+            return MapEntry(handle, {'id': id, 'email': email, 'label': label});
+          }).where((e) => e.key.isNotEmpty && (e.value['id'] ?? '').isNotEmpty));
       });
     } catch (e) {
       // Не критично — presence/typing просто будет без имён
@@ -775,6 +796,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
     debounce?.cancel();
     controller.dispose();
+  }
+
+  void _openGallery() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatGalleryScreen(
+          chatId: widget.chatId,
+          chatName: widget.chatName,
+        ),
+      ),
+    );
   }
   
   // ✅ Загрузить закрепленные сообщения
@@ -1309,6 +1341,267 @@ class _ChatScreenState extends State<ChatScreen> {
         if (_sentTyping) _sendTyping(false);
       });
     }
+
+    _updateMentionSuggestions(text);
+  }
+
+  String _handleFromEmail(String email) {
+    final e = email.trim();
+    final at = e.indexOf('@');
+    final local = (at >= 1 ? e.substring(0, at) : e).trim().toLowerCase();
+    if (local.isEmpty) return '';
+    // ограничим безопасным набором, чтобы handle был стабильным
+    final cleaned = local.replaceAll(RegExp(r'[^a-z0-9._-]'), '');
+    return cleaned;
+  }
+
+  void _updateMentionSuggestions(String text) {
+    final sel = _controller.selection;
+    int cursor = sel.baseOffset;
+    if (cursor < 0 || cursor > text.length) cursor = text.length;
+
+    final prefix = text.substring(0, cursor);
+    final at = prefix.lastIndexOf('@');
+    if (at == -1) {
+      if (_mentionSuggestions.isNotEmpty || _mentionStart != -1) {
+        setState(() {
+          _mentionStart = -1;
+          _mentionQuery = '';
+          _mentionSuggestions = [];
+        });
+      }
+      return;
+    }
+
+    // '@' должно начинать токен (после пробела/переноса/начала)
+    if (at > 0) {
+      final prev = prefix[at - 1];
+      if (!RegExp(r'\s').hasMatch(prev)) {
+        return;
+      }
+    }
+
+    final q = prefix.substring(at + 1);
+    if (q.contains(RegExp(r'\s')) || q.contains('/')) {
+      // закрываем overlay, если завершили токен
+      if (_mentionSuggestions.isNotEmpty || _mentionStart != -1) {
+        setState(() {
+          _mentionStart = -1;
+          _mentionQuery = '';
+          _mentionSuggestions = [];
+        });
+      }
+      return;
+    }
+
+    final query = q.toLowerCase();
+    final suggestions = <Map<String, String>>[];
+    final seen = <String>{};
+    for (final m in _chatMembers) {
+      final id = (m['id'] ?? '').toString();
+      final email = (m['email'] ?? '').toString();
+      if (id.isEmpty || email.isEmpty) continue;
+      final handle = _handleFromEmail(email);
+      if (handle.isEmpty) continue;
+      if (seen.contains(handle)) continue;
+      final label = (m['displayName'] ?? m['display_name'] ?? email).toString();
+
+      if (query.isNotEmpty) {
+        if (!handle.contains(query) && !label.toLowerCase().contains(query) && !email.toLowerCase().contains(query)) {
+          continue;
+        }
+      }
+
+      suggestions.add({'id': id, 'email': email, 'label': label, 'handle': handle});
+      seen.add(handle);
+      if (suggestions.length >= 8) break;
+    }
+
+    final changed = _mentionStart != at || _mentionQuery != query || suggestions.length != _mentionSuggestions.length;
+    if (!changed) return;
+    setState(() {
+      _mentionStart = at;
+      _mentionQuery = query;
+      _mentionSuggestions = suggestions;
+    });
+  }
+
+  void _insertMention(String handle) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    int cursor = sel.baseOffset;
+    if (cursor < 0 || cursor > text.length) cursor = text.length;
+    if (_mentionStart < 0 || _mentionStart >= text.length || _mentionStart > cursor) return;
+    final before = text.substring(0, _mentionStart);
+    final after = text.substring(cursor);
+    final insert = '@$handle ';
+    final next = '$before$insert$after';
+    final nextCursor = (before.length + insert.length);
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: nextCursor),
+    );
+    setState(() {
+      _mentionStart = -1;
+      _mentionQuery = '';
+      _mentionSuggestions = [];
+    });
+  }
+
+  void _openUserProfileById(String userId, {String? fallbackLabel}) {
+    final otherId = userId.toString().trim();
+    if (otherId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId: otherId,
+          fallbackLabel: fallbackLabel,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMentions() async {
+    final myHandle = _handleFromEmail(widget.userEmail);
+    if (myHandle.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Не удалось определить ваш handle')));
+      return;
+    }
+    final query = '@$myHandle';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        List<Map<String, dynamic>> results = [];
+        bool isLoading = true;
+        String? error;
+        bool started = false;
+
+        Future<void> load(StateSetter setModalState) async {
+          setModalState(() {
+            isLoading = true;
+            error = null;
+          });
+          try {
+            final found = await _messagesService.searchMessages(widget.chatId, query, limit: 50);
+            setModalState(() {
+              results = found;
+              isLoading = false;
+            });
+          } catch (e) {
+            // fallback: локальный поиск в уже загруженных сообщениях
+            final local = _messages.where((m) => m.content.toLowerCase().contains(query.toLowerCase())).take(50).map((m) => {
+              'message_id': m.id,
+              'sender_email': m.senderEmail,
+              'content_snippet': m.content.length > 80 ? '${m.content.substring(0, 80)}…' : m.content,
+              'created_at': m.createdAt,
+            }).toList();
+            setModalState(() {
+              results = local;
+              error = e.toString().replaceFirst('Exception: ', '');
+              isLoading = false;
+            });
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (!started) {
+              started = true;
+              scheduleMicrotask(() => load(setModalState));
+            }
+            final scheme = Theme.of(context).colorScheme;
+            return SafeArea(
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: scheme.outline.withValues(alpha: 0.25)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.alternate_email_rounded),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Упоминания $query',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: isLoading ? null : () => load(setModalState),
+                            icon: const Icon(Icons.refresh_rounded),
+                            tooltip: 'Обновить',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow)),
+                      )
+                    else if (results.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Упоминаний пока нет',
+                          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: results.length,
+                          separatorBuilder: (_, __) => Divider(height: 1, color: scheme.outline.withValues(alpha: 0.18)),
+                          itemBuilder: (context, index) {
+                            final r = results[index];
+                            final mid = (r['message_id'] ?? r['id'] ?? '').toString();
+                            final sender = (r['sender_email'] ?? '').toString();
+                            final snippet = (r['content_snippet'] ?? r['content'] ?? '').toString();
+                            return ListTile(
+                              title: Text(snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
+                              subtitle: sender.isEmpty ? null : Text(sender, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              onTap: mid.isEmpty
+                                  ? null
+                                  : () async {
+                                      Navigator.pop(sheetContext);
+                                      await _jumpToMessage(mid);
+                                    },
+                            );
+                          },
+                        ),
+                      ),
+                    if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          error!,
+                          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.55), fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   String _buildChatStatusLine() {
@@ -3432,6 +3725,30 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _openImageViewer(Message msg) {
+    final url = (msg.imageUrl ?? '').trim();
+    if (url.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: true,
+        barrierColor: Colors.black,
+        pageBuilder: (_, __, ___) => _FullScreenImageViewer(
+          imageUrl: url,
+          originalImageUrl: (msg.originalImageUrl ?? url),
+          fileName: url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
+          onDownload: () => _downloadImage(
+            (msg.originalImageUrl ?? url),
+            url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
+          ),
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+      ),
+    );
+  }
+
   // ✅ Вычисляем высоту блока закрепленных сообщений
   double _getPinnedMessagesHeight() {
     if (_pinnedMessages.isEmpty) return 0.0;
@@ -3528,12 +3845,34 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.circular(16),
             ),
             onSelected: (value) {
+              if (value == 'gallery') _openGallery();
+              if (value == 'mentions') _openMentions();
               if (value == 'clear') _clearChat();
               if (value == 'leave') _leaveChat();
               if (value == 'invite' && widget.isGroup) _showInviteDialog();
               if (value == 'rename' && widget.isGroup) _renameGroupChatDialog();
             },
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'gallery',
+                child: Row(
+                  children: [
+                    Icon(Icons.photo_library_rounded, color: Colors.purple.shade300, size: 20),
+                    const SizedBox(width: 10),
+                    const Text('Медиа'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'mentions',
+                child: Row(
+                  children: [
+                    Icon(Icons.alternate_email_rounded, color: Colors.blue.shade300, size: 20),
+                    const SizedBox(width: 10),
+                    const Text('Упоминания'),
+                  ],
+                ),
+              ),
               if (widget.isGroup)
                 PopupMenuItem(
                   value: 'rename',
@@ -3648,495 +3987,31 @@ class _ChatScreenState extends State<ChatScreen> {
                     final isMine = msg.userId == widget.userId;
 
                 final isHighlighted = _highlightMessageId == msg.id;
-                return RepaintBoundary(
-                  child: AnimatedContainer(
+                return ChatMessageTile(
                   key: _keyForMessage(msg.id),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isHighlighted ? _accent1.withValues(alpha:0.10) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment:
-                        isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (!isMine) ...[
-                        // Аватар отправителя (только для чужих сообщений)
-                        GestureDetector(
-                          onTap: () => _openUserProfile(msg),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              gradient: (msg.senderAvatarUrl == null || msg.senderAvatarUrl!.trim().isEmpty)
-                                  ? const LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [_accent3, _accent2],
-                                    )
-                                  : null,
-                              shape: BoxShape.circle,
-                              boxShadow: AppColors.neonGlowSoft,
-                            ),
-                            child: ClipOval(
-                              child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
-                                  ? CachedNetworkImage(
-                                      imageUrl: msg.senderAvatarUrl!,
-                                      width: 32,
-                                      height: 32,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => _otherAvatarPlaceholder(msg.senderEmail),
-                                      errorWidget: (_, __, ___) => _otherAvatarPlaceholder(msg.senderEmail),
-                                    )
-                                  : _otherAvatarPlaceholder(msg.senderEmail),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Flexible(
-                        child: GestureDetector(
-                          onLongPress: () => _showMessageMenu(msg, isMine: isMine),
-                          child: Container(
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.of(context).size.width * 0.75,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: isMine
-                                  ? const LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        _accent1,
-                                        _accent2,
-                                      ],
-                                    )
-                                  : null,
-                              color: isMine ? null : AppColors.cardElevatedDark,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(20),
-                                topRight: const Radius.circular(20),
-                                bottomLeft: Radius.circular(isMine ? 20 : 4),
-                                bottomRight: Radius.circular(isMine ? 4 : 20),
-                              ),
-                              boxShadow: isMine
-                                  ? AppColors.neonGlowSoft
-                                  : [
-                                      BoxShadow(
-                                        color: scheme.outline.withValues(alpha: 0.2),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                              border: isMine
-                                  ? null
-                                  : Border.all(
-                                      color: scheme.outline.withValues(alpha: 0.18),
-                                      width: 1.2,
-                                    ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // ✅ Показываем иконку закрепления
-                                if (msg.isPinned) ...[
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.push_pin,
-                                        size: 14,
-                                        color: isMine ? Colors.white70 : Colors.amber.shade700,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Закреплено',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontStyle: FontStyle.italic,
-                                          color: isMine ? Colors.white70 : Colors.amber.shade700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                                // ✅ Отображение ответа на сообщение (если есть)
-                                if (msg.replyToMessage != null) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: isMine 
-                                          ? Colors.white.withValues(alpha: 0.2)
-                                          : AppColors.primary.withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border(
-                                        left: BorderSide(
-                                          color: isMine ? Colors.white : _accent1,
-                                          width: 3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          msg.replyToMessage!.senderEmail,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: isMine 
-                                                ? Colors.white.withValues(alpha:0.9)
-                                                : _accent1,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        if (msg.replyToMessage!.hasFile)
-                                          Row(
-                                            children: [
-                                              Icon(Icons.insert_drive_file_rounded, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                msg.replyToMessage!.fileName ?? 'Файл',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ],
-                                          )
-                                        else if (msg.replyToMessage!.hasImage)
-                                          Row(
-                                            children: [
-                                              Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Фото',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        else
-                                          Text(
-                                            msg.replyToMessage!.content.length > 50
-                                                ? '${msg.replyToMessage!.content.substring(0, 50)}...'
-                                                : msg.replyToMessage!.content,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                // Показываем отправителя только если это не ваше сообщение
-                                if (!isMine) ...[
-                                  GestureDetector(
-                                    onTap: () => _openUserProfile(msg),
-                                    child: Text(
-                                      msg.senderEmail,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: isMine ? Colors.white70 : _accent1,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                                // Отображение изображения (открытие в стиле Telegram/WhatsApp)
-                                if (msg.hasImage) ...[
-                                  GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        PageRouteBuilder(
-                                          opaque: true,
-                                          barrierColor: Colors.black,
-                                          pageBuilder: (_, __, ___) => _FullScreenImageViewer(
-                                            imageUrl: msg.imageUrl!,
-                                            originalImageUrl: msg.originalImageUrl ?? msg.imageUrl,
-                                            fileName: msg.imageUrl?.split('/').last ?? 'image.jpg',
-                                            onDownload: () => _downloadImage(
-                                              msg.originalImageUrl ?? msg.imageUrl!,
-                                              msg.imageUrl?.split('/').last ?? 'image.jpg',
-                                            ),
-                                          ),
-                                          transitionsBuilder: (_, animation, __, child) {
-                                            return FadeTransition(opacity: animation, child: child);
-                                          },
-                                          transitionDuration: const Duration(milliseconds: 200),
-                                        ),
-                                      );
-                                    },
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          maxWidth: 250, // Максимальная ширина
-                                          maxHeight: 400, // Максимальная высота (больше для вертикальных изображений)
-                                        ),
-                                        child: CachedNetworkImage(
-                                          imageUrl: msg.imageUrl!,
-                                          fit: BoxFit.contain,
-                                          memCacheWidth: 500,
-                                          httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
-                                          placeholder: (_, __) => Container(
-                                            width: 250,
-                                            height: 200,
-                                            color: Colors.grey.shade200,
-                                            child: const Center(child: CircularProgressIndicator()),
-                                          ),
-                                          errorWidget: (context, url, error) {
-                                            if (kDebugMode) {
-                                              print('Image load error: $error');
-                                              print('Image URL: $url');
-                                              if (kIsWeb) print('⚠️ ВЕБ: проверьте CORS в Яндекс Облаке');
-                                            }
-                                            return Container(
-                                              width: 250,
-                                              height: 200,
-                                              color: Colors.grey.shade200,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  const Icon(Icons.error, color: Colors.red),
-                                                  const SizedBox(height: 8),
-                                                  const Text(
-                                                    kIsWeb ? 'CORS ошибка?' : 'Ошибка загрузки',
-                                                    style: TextStyle(fontSize: 12),
-                                                  ),
-                                                  if (kDebugMode) ...[
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      'URL: ${url.length > 50 ? '${url.substring(0, 50)}...' : url}',
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                                                      textAlign: TextAlign.center,
-                                                    ),
-                                                  ],
-                                                  if (kIsWeb) ...[
-                                                    const SizedBox(height: 4),
-                                                    const Text(
-                                                      'Проверьте CORS',
-                                                      style: TextStyle(fontSize: 9, color: Colors.orange),
-                                                      textAlign: TextAlign.center,
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  if (msg.hasText || msg.hasFile) const SizedBox(height: 8),
-                                ],
-                                // ✅ Отображение файла (attachment)
-                                if (msg.hasFile) ...[
-                                  if (_isVoiceMessage(msg)) ...[
-                                    _buildVoiceBubble(msg, isMine: isMine),
-                                  ] else ...[
-                                    GestureDetector(
-                                      onTap: () async {
-                                        final messenger = ScaffoldMessenger.of(context);
-                                        final url = Uri.parse(msg.fileUrl!);
-                                        if (await canLaunchUrl(url)) {
-                                          await launchUrl(url, mode: LaunchMode.externalApplication);
-                                        } else if (mounted) {
-                                          messenger.showSnackBar(
-                                            const SnackBar(content: Text('Не удалось открыть файл')),
-                                          );
-                                        }
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: isMine
-                                              ? Colors.white.withValues(alpha: 0.18)
-                                              : AppColors.primary.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(
-                                            color: isMine
-                                                ? Colors.white.withValues(alpha: 0.25)
-                                                : AppColors.borderDark,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.insert_drive_file_rounded, size: 18, color: isMine ? Colors.white : _accent2),
-                                            const SizedBox(width: 8),
-                                            Flexible(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    msg.fileName ?? 'Файл',
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      color: isMine ? Colors.white : AppColors.onSurfaceDark,
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                  if (msg.fileSize != null)
-                                                    Text(
-                                                      _formatBytes(msg.fileSize!),
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Icon(Icons.open_in_new_rounded, size: 16, color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                                // Отображение текста (входящие — светлый текст в тёмной теме для читаемости)
-                                if (msg.hasText) ...[
-                                  Text(
-                                    msg.content,
-                                    style: TextStyle(
-                                      color: isMine
-                                          ? Colors.white
-                                          : AppColors.onSurfaceDark,
-                                      fontSize: 15,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                                // ✅ Отображение реакций
-                                if (msg.reactions != null && msg.reactions!.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 4,
-                                    runSpacing: 4,
-                                    children: msg.reactions!.map((reaction) {
-                                      return GestureDetector(
-                                        onTap: () => _showReactionPicker(msg),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: isMine
-                                                ? Colors.white.withValues(alpha: 0.2)
-                                                : AppColors.primary.withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                reaction.reaction,
-                                                style: const TextStyle(fontSize: 14),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                '1', // TODO: Подсчитывать количество одинаковых реакций
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ],
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _formatDate(msg.createdAt),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isMine
-                                            ? Colors.white.withValues(alpha:0.8)
-                                            : Colors.grey.shade500,
-                                      ),
-                                    ),
-                                    // ✅ Отображаем статус сообщения только для своих сообщений
-                                    if (isMine) ...[
-                                      const SizedBox(width: 4),
-                                      _buildMessageStatus(msg),
-                                    ],
-                                    // ✅ Показываем метку "Отредактировано", если сообщение было отредактировано
-                                    if (msg.isEdited) ...[
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'отредактировано',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontStyle: FontStyle.italic,
-                                          color: isMine
-                                              ? Colors.white.withValues(alpha:0.6)
-                                              : Colors.grey.shade400,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (isMine) ...[
-                        const SizedBox(width: 8),
-                        // Аватар текущего пользователя (для своих сообщений)
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: AppColors.neonGlowSoft,
-                          ),
-                          child: ClipOval(
-                            child: widget.myAvatarUrl != null && widget.myAvatarUrl!.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: widget.myAvatarUrl!,
-                                    fit: BoxFit.cover,
-                                    width: 32,
-                                    height: 32,
-                                    placeholder: (_, __) => _myAvatarPlaceholder(),
-                                    errorWidget: (_, __, ___) => _myAvatarPlaceholder(),
-                                  )
-                                : _myAvatarPlaceholder(),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ));
+                  msg: msg,
+                  isMine: isMine,
+                  isHighlighted: isHighlighted,
+                  scheme: scheme,
+                  accent1: _accent1,
+                  accent2: _accent2,
+                  accent3: _accent3,
+                  myUserId: widget.userId,
+                  myAvatarUrl: widget.myAvatarUrl,
+                  myAvatarPlaceholder: _myAvatarPlaceholder(),
+                  otherAvatarPlaceholder: _otherAvatarPlaceholder(msg.senderEmail),
+                  memberByHandle: _memberByHandle,
+                  onOpenSenderProfile: () => _openUserProfile(msg),
+                  onShowMessageMenu: () => _showMessageMenu(msg, isMine: isMine),
+                  onOpenImage: () => _openImageViewer(msg),
+                  buildVoiceBubble: () => _buildVoiceBubble(msg, isMine: isMine),
+                  isVoiceMessage: () => _isVoiceMessage(msg),
+                  formatBytes: _formatBytes,
+                  formatDate: _formatDate,
+                  buildMessageStatus: _buildMessageStatus(msg),
+                  onShowReactionPicker: () => _showReactionPicker(msg),
+                  onOpenUserProfileById: (uid, label) => _openUserProfileById(uid, fallbackLabel: label),
+                );
                         },
                       ),
                       ),
@@ -4521,188 +4396,25 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     // ✅ Индикатор записи голосового
-                    if (_isRecordingVoice)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.red.shade50,
-                              Colors.red.withValues(alpha:0.06),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.red.withValues(alpha:0.2), width: 1),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.red.withValues(alpha:0.08),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade400,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.red.withValues(alpha:0.5),
-                                    blurRadius: 6,
-                                    spreadRadius: 0,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Запись: ${_formatDuration(_voiceRecordDuration)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.red.shade800,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: _cancelVoiceRecording,
-                                borderRadius: BorderRadius.circular(20),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Icon(Icons.close_rounded, size: 22, color: Colors.red.shade700),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    Row(
-                      children: [
-                        // Кнопка выбора файла
-                        Container(
-                          decoration: BoxDecoration(
-                            color: _accent2.withValues(alpha:0.10),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.attach_file_rounded, color: _accent2),
-                            onPressed: _isRecordingVoice ? null : _pickFile,
-                            tooltip: 'Прикрепить файл',
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Кнопка выбора изображения
-                        Container(
-                          decoration: BoxDecoration(
-                            color: _accent1.withValues(alpha:0.10),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.image_rounded, color: _accent1),
-                            onPressed: _isRecordingVoice ? null : _pickImage,
-                            tooltip: 'Прикрепить изображение',
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // ✅ Кнопка микрофона
-                        Tooltip(
-                          message: 'Удерживайте для записи. Отпустите — отправить. Тап — старт/стоп.',
-                          child: GestureDetector(
-                            onLongPressStart: (_) {
-                              if (_isUploadingImage || _isUploadingFile) return;
-                              _startVoiceRecordingIfNotRecording();
-                            },
-                            onLongPressEnd: (_) {
-                              if (_isUploadingImage || _isUploadingFile) return;
-                              _stopAndSendVoiceRecordingIfRecording();
-                            },
-                            child: Material(
-                              color: (_isRecordingVoice ? Colors.red : _accent1).withValues(alpha:0.12),
-                              borderRadius: BorderRadius.circular(14),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(14),
-                                onTap: (_isUploadingImage || _isUploadingFile) ? null : _toggleVoiceRecording,
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  child: Icon(
-                                    _isRecordingVoice ? Icons.stop_rounded : Icons.mic_rounded,
-                                    color: _isRecordingVoice ? Colors.red.shade700 : _accent1,
-                                    size: 24,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: AppColors.borderDark),
-                            ),
-                            child: TextField(
-                              controller: _controller,
-                              decoration: InputDecoration(
-                                hintText: 'Введите сообщение...',
-                                hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 12,
-                                ),
-                              ),
-                              maxLines: null,
-                              textCapitalization: TextCapitalization.sentences,
-                              onChanged: _handleComposerChanged,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Кнопка отправки
-                        if (_isUploadingImage || _isUploadingFile)
-                          const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        else
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  _accent1,
-                                  _accent2,
-                                ],
-                              ),
-                              shape: BoxShape.circle,
-                              boxShadow: AppColors.neonGlow,
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.send, color: Colors.white),
-                              onPressed: () {
-                                if (_isRecordingVoice) return;
-                                _sendMessage();
-                              },
-                              tooltip: 'Отправить',
-                            ),
-                          ),
-                      ],
+                    ChatInputBar(
+                      scheme: scheme,
+                      accent1: _accent1,
+                      accent2: _accent2,
+                      controller: _controller,
+                      isUploadingImage: _isUploadingImage,
+                      isUploadingFile: _isUploadingFile,
+                      isRecordingVoice: _isRecordingVoice,
+                      voiceRecordDuration: _voiceRecordDuration,
+                      onCancelVoiceRecording: _cancelVoiceRecording,
+                      onPickFile: _pickFile,
+                      onPickImage: _pickImage,
+                      onToggleVoiceRecording: _toggleVoiceRecording,
+                      onVoiceLongPressStart: _startVoiceRecordingIfNotRecording,
+                      onVoiceLongPressEnd: _stopAndSendVoiceRecordingIfRecording,
+                      onSend: _sendMessage,
+                      onChanged: _handleComposerChanged,
+                      mentionSuggestions: _mentionSuggestions,
+                      onSelectMention: _insertMention,
                     ),
                   ],
                 ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
+import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart'; // ✅ Импорт сервиса кэширования
@@ -648,6 +649,28 @@ class MessagesService {
       return messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
     }
     throw Exception('Ошибка загрузки контекста: ${response.statusCode}');
+  }
+
+  Future<List<ChatMediaItem>> fetchChatMedia(String chatId, {String? beforeMessageId, int limit = 60}) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse('$baseUrl/messages/chat/$chatId/media').replace(
+      queryParameters: {
+        'limit': limit.toString(),
+        if (beforeMessageId != null && beforeMessageId.trim().isNotEmpty) 'before': beforeMessageId.trim(),
+      },
+    );
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List<dynamic>? ?? []);
+      return items.map((e) => ChatMediaItem.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    String msg = 'Ошибка загрузки медиа';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
   }
 
   // ✅ Добавить реакцию

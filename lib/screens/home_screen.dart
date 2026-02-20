@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChatsService _chatsService = ChatsService();
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
+  String? _folderFilter; // null = all, work/personal/archive
   String? _displayName;
   String? _avatarUrl;
 
@@ -399,6 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _openChat(chat),
+          onLongPress: () => _showChatFolderPicker(chat),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -453,6 +455,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if ((chat.folder ?? '').trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          _folderLabel(chat.folder),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.primary.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Text(
                         preview,
@@ -506,6 +521,114 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  String _folderLabel(String? value) {
+    final v = (value ?? '').trim().toLowerCase();
+    switch (v) {
+      case 'work':
+        return 'Работа';
+      case 'personal':
+        return 'Личное';
+      case 'archive':
+        return 'Архив';
+      default:
+        return v.isEmpty ? '' : v;
+    }
+  }
+
+  Future<void> _showChatFolderPicker(Chat chat) async {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = (chat.folder ?? '').trim().toLowerCase();
+    final maxH = MediaQuery.of(context).size.height * 0.6;
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                title: Text(chat.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: const Text('Переместить в папку'),
+              ),
+              const Divider(height: 1),
+              _folderTile(ctx, scheme, 'Без папки', '__none__', selected.isEmpty),
+              _folderTile(ctx, scheme, 'Работа', 'work', selected == 'work'),
+              _folderTile(ctx, scheme, 'Личное', 'personal', selected == 'personal'),
+              _folderTile(ctx, scheme, 'Архив', 'archive', selected == 'archive'),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (result == null) return;
+    final folder = result == '__none__' ? null : result;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _chatsService.setChatFolder(chat.id, folder: folder);
+      if (!mounted) return;
+      setState(() {
+        _chats = _chats
+            .map((c) => c.id == chat.id
+                ? Chat(
+                    id: c.id,
+                    name: c.name,
+                    isGroup: c.isGroup,
+                    folder: folder,
+                    otherUserId: c.otherUserId,
+                    otherUserAvatarUrl: c.otherUserAvatarUrl,
+                    lastMessageId: c.lastMessageId,
+                    lastMessageText: c.lastMessageText,
+                    lastMessageType: c.lastMessageType,
+                    lastMessageImageUrl: c.lastMessageImageUrl,
+                    lastMessageFileUrl: c.lastMessageFileUrl,
+                    lastMessageFileName: c.lastMessageFileName,
+                    lastMessageFileSize: c.lastMessageFileSize,
+                    lastMessageFileMime: c.lastMessageFileMime,
+                    lastMessageAt: c.lastMessageAt,
+                    lastSenderEmail: c.lastSenderEmail,
+                    unreadCount: c.unreadCount,
+                  )
+                : c)
+            .toList();
+      });
+      messenger.showSnackBar(const SnackBar(content: Text('Папка обновлена')));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Widget _folderTile(BuildContext ctx, ColorScheme scheme, String label, String? value, bool selected) {
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.check_circle_rounded : Icons.folder_rounded,
+        color: selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7),
+      ),
+      title: Text(label),
+      onTap: () => Navigator.pop(ctx, value),
     );
   }
 
@@ -986,7 +1109,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final q = _query.trim().toLowerCase();
     final sortedChats = _sortedChats;
+    final folder = (_folderFilter ?? '').trim().toLowerCase();
     final filteredChats = sortedChats.where((c) {
+      if (folder.isNotEmpty) {
+        final cf = (c.folder ?? '').trim().toLowerCase();
+        if (cf != folder) return false;
+      }
       if (q.isEmpty) return true;
       final name = c.name.toLowerCase();
       final preview = _buildLastMessagePreview(c).toLowerCase();
@@ -1190,6 +1318,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _folderChip(scheme, 'Все', null, Icons.all_inbox_rounded),
+                            const SizedBox(width: 8),
+                            _folderChip(scheme, 'Работа', 'work', Icons.work_rounded),
+                            const SizedBox(width: 8),
+                            _folderChip(scheme, 'Личное', 'personal', Icons.person_rounded),
+                            const SizedBox(width: 8),
+                            _folderChip(scheme, 'Архив', 'archive', Icons.archive_rounded),
+                          ],
+                        ),
+                      ),
+                    ),
                     Expanded(
                       child: filteredChats.isEmpty
                           ? RefreshIndicator(
@@ -1310,6 +1455,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
       ),
+    );
+  }
+
+  Widget _folderChip(ColorScheme scheme, String label, String? value, IconData icon) {
+    final selected = (_folderFilter == value) || (_folderFilter == null && value == null);
+    return ChoiceChip(
+      selected: selected,
+      label: Text(label),
+      avatar: Icon(icon, size: 18, color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.75)),
+      selectedColor: scheme.primary,
+      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      labelStyle: TextStyle(
+        color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.9),
+        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+      ),
+      onSelected: (_) => setState(() => _folderFilter = value),
     );
   }
 }

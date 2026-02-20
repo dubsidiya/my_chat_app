@@ -1,5 +1,5 @@
 import express from 'express';
-import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, uploadFile, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages, searchMessages, getMessagesAround } from '../controllers/messagesController.js';
+import { getMessages, sendMessage, deleteMessage, clearChat, uploadImage, uploadFile, markMessageAsRead, markMessagesAsRead, editMessage, pinMessage, unpinMessage, addReaction, removeReaction, getPinnedMessages, searchMessages, getMessagesAround, getChatMedia } from '../controllers/messagesController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage as uploadImageMiddleware } from '../utils/uploadImage.js';
 import { uploadFile as uploadFileMiddleware } from '../utils/uploadFile.js';
@@ -12,6 +12,7 @@ router.use(authenticateToken);
 // Search & jump-to-message must be before generic /:chatId
 router.get('/chat/:chatId/search', searchMessages); // GET /messages/chat/:chatId/search?q=...
 router.get('/chat/:chatId/around/:messageId', getMessagesAround); // GET /messages/chat/:chatId/around/:messageId
+router.get('/chat/:chatId/media', getChatMedia); // GET /messages/chat/:chatId/media?limit=..&before=..
 
 router.get('/:chatId', getMessages);
 router.post('/', sendMessage);

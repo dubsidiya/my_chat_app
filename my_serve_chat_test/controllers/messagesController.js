@@ -27,6 +27,104 @@ const ensureChatMember = async (chatId, userId) => {
   return { ok: true, chatIdNum };
 };
 
+export const getChatMedia = async (req, res) => {
+  const chatId = req.params.chatId;
+  const currentUserId = req.user.userId;
+
+  const requestedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 60, 1), 200);
+  const before = req.query.before; // message id cursor
+
+  try {
+    const membership = await ensureChatMember(chatId, currentUserId);
+    if (!membership.ok) {
+      return res.status(membership.status).json({ message: membership.message });
+    }
+    const chatIdNum = membership.chatIdNum;
+
+    const { ensureUserBlocksTable } = await import('./moderationController.js');
+    await ensureUserBlocksTable();
+
+    let beforeIdNum = null;
+    if (before !== undefined && before !== null && String(before).trim().length > 0) {
+      const n = parseInt(String(before), 10);
+      if (isNaN(n)) return res.status(400).json({ message: 'Некорректный параметр before' });
+      beforeIdNum = n;
+    }
+
+    const args = [chatIdNum];
+    let whereBefore = '';
+    if (beforeIdNum !== null) {
+      args.push(beforeIdNum);
+      whereBefore = ` AND m.id < $${args.length} `;
+    }
+    args.push(currentUserId);
+    const currentUserArgPos = args.length;
+    args.push(limit);
+    const limitArgPos = args.length;
+
+    const result = await pool.query(
+      `
+      SELECT
+        m.id,
+        m.chat_id,
+        m.user_id,
+        m.content,
+        m.image_url,
+        m.original_image_url,
+        m.file_url,
+        m.file_name,
+        m.file_size,
+        m.file_mime,
+        m.message_type,
+        m.created_at
+      FROM messages m
+      WHERE m.chat_id = $1
+        ${whereBefore}
+        AND (
+          (m.image_url IS NOT NULL AND m.image_url <> '')
+          OR (
+            (m.file_url IS NOT NULL AND m.file_url <> '')
+            AND (
+              LOWER(COALESCE(m.file_mime, '')) LIKE 'video/%'
+              OR LOWER(COALESCE(m.file_name, '')) ~ '\\\\.(mp4|mov|m4v|webm|mkv)$'
+            )
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.blocker_id = $${currentUserArgPos}
+            AND ub.blocked_id = m.user_id
+        )
+      ORDER BY m.id DESC
+      LIMIT $${limitArgPos}
+      `,
+      args
+    );
+
+    const items = result.rows.map((r) => ({
+      id: r.id?.toString(),
+      chat_id: r.chat_id?.toString(),
+      user_id: r.user_id?.toString(),
+      content: r.content ?? '',
+      image_url: r.image_url ?? null,
+      original_image_url: r.original_image_url ?? null,
+      file_url: r.file_url ?? null,
+      file_name: r.file_name ?? null,
+      file_size: r.file_size ?? null,
+      file_mime: r.file_mime ?? null,
+      message_type: r.message_type ?? 'text',
+      created_at: r.created_at,
+    }));
+
+    const nextBefore = items.length > 0 ? items[items.length - 1].id : null;
+    return res.status(200).json({ items, next_before: nextBefore });
+  } catch (error) {
+    console.error('Ошибка getChatMedia:', error);
+    return res.status(500).json({ message: 'Ошибка получения медиа' });
+  }
+};
+
 export const getMessages = async (req, res) => {
   const chatId = req.params.chatId;
   const currentUserId = req.user.userId;

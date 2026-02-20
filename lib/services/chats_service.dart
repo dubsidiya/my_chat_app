@@ -432,5 +432,37 @@ class ChatsService {
     } catch (_) {}
     throw Exception('$msg (${response.statusCode})');
   }
+
+  Future<String?> setChatFolder(String chatId, {String? folder}) async {
+    try {
+      final headers = await _getAuthHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/chats/$chatId/folder'),
+        headers: headers,
+        body: jsonEncode({'folder': folder}),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Таймаут при обновлении папки/метки'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['folder'] != null) return data['folder']?.toString();
+        return folder;
+      }
+
+      String errorMessage = 'Не удалось обновить папку/метку';
+      try {
+        final errorData = jsonDecode(response.body);
+        if (errorData is Map && errorData['message'] != null) {
+          errorMessage = errorData['message'];
+        }
+      } catch (_) {}
+      throw Exception('$errorMessage (${response.statusCode})');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Неожиданная ошибка при обновлении папки/метки: $e');
+    }
+  }
 }
 
