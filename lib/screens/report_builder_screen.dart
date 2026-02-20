@@ -18,19 +18,23 @@ class ReportBuilderScreen extends StatefulWidget {
 
 class _SlotDraft {
   final TextEditingController startController = TextEditingController();
-  final TextEditingController priceController = TextEditingController();
+  final TextEditingController price1Controller = TextEditingController();
+  final TextEditingController price2Controller = TextEditingController();
 
   int durationMinutes = 60;
-  int? studentId;
+  int? student1Id;
+  int? student2Id;
 
   void dispose() {
     startController.dispose();
-    priceController.dispose();
+    price1Controller.dispose();
+    price2Controller.dispose();
   }
 }
 
 class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   static const int _maxSlots = 10;
+  static const int _maxStudentsPerSlot = 2;
 
   final StudentsService _studentsService = StudentsService();
   final ReportsService _reportsService = ReportsService();
@@ -63,21 +67,44 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
         final lessons = report.lessons ?? const [];
         final slotDrafts = <_SlotDraft>[];
+        final grouped = <String, List<Map<String, dynamic>>>{};
         for (final l in lessons) {
           final timeRaw = (l['lesson_time'] ?? '').toString();
           final start = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
           final duration = (l['duration_minutes'] ?? 60) is int
               ? (l['duration_minutes'] as int)
               : int.tryParse(l['duration_minutes'].toString()) ?? 60;
+          final key = '$start|$duration';
+          grouped.putIfAbsent(key, () => []).add(l);
+        }
 
-          final slot = _SlotDraft();
-          slot.startController.text = start;
-          slot.durationMinutes = duration;
-          slot.studentId = int.tryParse(l['student_id'].toString());
+        for (final entry in grouped.entries) {
+          final parts = entry.key.split('|');
+          final start = parts[0];
+          final duration = int.tryParse(parts[1]) ?? 60;
+          final items = entry.value;
 
-          final p = l['price'];
-          slot.priceController.text = p is num ? p.toString() : (double.tryParse(p.toString())?.toString() ?? '');
-          slotDrafts.add(slot);
+          // В одном слоте максимум 2 ученика — если больше, разбиваем на несколько слотов
+          for (int i = 0; i < items.length; i += _maxStudentsPerSlot) {
+            final chunk = items.skip(i).take(_maxStudentsPerSlot).toList();
+            final slot = _SlotDraft();
+            slot.startController.text = start;
+            slot.durationMinutes = duration;
+
+            if (chunk.isNotEmpty) {
+              slot.student1Id = int.tryParse(chunk[0]['student_id'].toString());
+              final p1 = chunk[0]['price'];
+              slot.price1Controller.text =
+                  p1 is num ? p1.toString() : (double.tryParse(p1.toString())?.toString() ?? '');
+            }
+            if (chunk.length > 1) {
+              slot.student2Id = int.tryParse(chunk[1]['student_id'].toString());
+              final p2 = chunk[1]['price'];
+              slot.price2Controller.text =
+                  p2 is num ? p2.toString() : (double.tryParse(p2.toString())?.toString() ?? '');
+            }
+            slotDrafts.add(slot);
+          }
         }
 
         // если слотов нет — оставим один пустой
@@ -184,15 +211,16 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 
   Future<void> _prefillLastPriceForStudent({
-    required _SlotDraft slot,
+    required TextEditingController controller,
     required int? studentId,
+    required bool Function() isStillSameSelection,
   }) async {
     if (studentId == null) return;
-    if (slot.priceController.text.trim().isNotEmpty) return;
+    if (controller.text.trim().isNotEmpty) return;
 
     final cached = _lastPriceByStudent[studentId];
     if (cached != null && cached > 0) {
-      slot.priceController.text = cached.toStringAsFixed(0);
+      controller.text = cached.toStringAsFixed(0);
       return;
     }
 
@@ -204,11 +232,11 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       final last = lessons.first;
       final price = last.price;
       if (price <= 0) return;
-      // Не перетираем, если пользователь уже успел ввести
-      if (slot.studentId != studentId) return;
-      if (slot.priceController.text.trim().isNotEmpty) return;
+      // Не перетираем, если выбор уже изменился или пользователь успел ввести
+      if (!isStillSameSelection()) return;
+      if (controller.text.trim().isNotEmpty) return;
       _lastPriceByStudent[studentId] = price;
-      slot.priceController.text = price.toStringAsFixed(0);
+      controller.text = price.toStringAsFixed(0);
     } catch (_) {
       // если не удалось — просто оставим пусто
     }
@@ -252,30 +280,61 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         return;
       }
 
-      if (slot.studentId == null) {
+      final students = <Map<String, dynamic>>[];
+
+      if (slot.student1Id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Слот ${i + 1}: выберите ученика 1'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+
+      final p1 = _parsePrice(slot.price1Controller.text);
+      if (p1 == null || p1 <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Слот ${i + 1}: укажите цену для 1 ребёнка'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+
+      students.add({'studentId': slot.student1Id, 'price': p1});
+      _lastPriceByStudent[slot.student1Id!] = p1;
+
+      if (slot.student2Id != null) {
+        if (slot.student2Id == slot.student1Id) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Слот ${i + 1}: дети должны быть разными'), backgroundColor: Colors.orange),
+          );
+          return;
+        }
+        final p2 = _parsePrice(slot.price2Controller.text);
+        if (p2 == null || p2 <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Слот ${i + 1}: укажите цену для 2 ребёнка'), backgroundColor: Colors.orange),
+          );
+          return;
+        }
+        students.add({'studentId': slot.student2Id, 'price': p2});
+        _lastPriceByStudent[slot.student2Id!] = p2;
+      }
+
+      if (students.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Слот ${i + 1}: выберите ученика'), backgroundColor: Colors.orange),
         );
         return;
       }
-
-      final p = _parsePrice(slot.priceController.text);
-      if (p == null || p <= 0) {
+      if (students.length > _maxStudentsPerSlot) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: укажите цену'), backgroundColor: Colors.orange),
+          SnackBar(content: Text('Слот ${i + 1}: максимум $_maxStudentsPerSlot ученика'), backgroundColor: Colors.orange),
         );
         return;
       }
 
-      // Кэшируем последнюю цену по ребенку (на время сессии конструктора)
-      _lastPriceByStudent[slot.studentId!] = p;
-
       slotsPayload.add({
         'timeStart': start,
         'timeEnd': end,
-        'students': [
-          {'studentId': slot.studentId, 'price': p},
-        ],
+        'students': students,
       });
     }
 
@@ -420,16 +479,45 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                           const SizedBox(height: 12),
 
                           _StudentPickerRow(
-                            label: 'Ребёнок *',
+                            label: 'Ребёнок 1 *',
                             students: _students,
-                            value: slot.studentId,
+                            value: slot.student1Id,
                             onChanged: (v) async {
-                              setState(() => slot.studentId = v);
-                              await _prefillLastPriceForStudent(slot: slot, studentId: v);
+                              setState(() {
+                                slot.student1Id = v;
+                                slot.price1Controller.text = '';
+                              });
+                              await _prefillLastPriceForStudent(
+                                controller: slot.price1Controller,
+                                studentId: v,
+                                isStillSameSelection: () => slot.student1Id == v,
+                              );
                               if (!mounted) return;
                               setState(() {});
                             },
-                            priceController: slot.priceController,
+                            priceController: slot.price1Controller,
+                          ),
+                          const SizedBox(height: 10),
+                          _StudentPickerRow(
+                            label: 'Ребёнок 2 (опционально)',
+                            students: _students,
+                            value: slot.student2Id,
+                            allowEmpty: true,
+                            onChanged: (v) async {
+                              setState(() {
+                                slot.student2Id = v;
+                                slot.price2Controller.text = '';
+                              });
+                              if (v == null) return;
+                              await _prefillLastPriceForStudent(
+                                controller: slot.price2Controller,
+                                studentId: v,
+                                isStillSameSelection: () => slot.student2Id == v,
+                              );
+                              if (!mounted) return;
+                              setState(() {});
+                            },
+                            priceController: slot.price2Controller,
                           ),
                         ],
                       ),
@@ -444,7 +532,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Правила: до 10 занятий в день; одно занятие = один ребёнок.',
+                  'Правила: до 10 занятий в день; на одно время — 1 или 2 ребёнка.',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha:0.55),
                   ),
@@ -461,6 +549,7 @@ class _StudentPickerRow extends StatelessWidget {
   final int? value;
   final ValueChanged<int?> onChanged;
   final TextEditingController priceController;
+  final bool allowEmpty;
 
   const _StudentPickerRow({
     required this.label,
@@ -468,6 +557,7 @@ class _StudentPickerRow extends StatelessWidget {
     required this.value,
     required this.onChanged,
     required this.priceController,
+    this.allowEmpty = false,
   });
 
   @override
@@ -476,12 +566,17 @@ class _StudentPickerRow extends StatelessWidget {
       children: [
         Expanded(
           flex: 3,
-          child: DropdownButtonFormField<int>(
+          child: DropdownButtonFormField<int?>(
             key: ValueKey<int?>(value),
             initialValue: value,
             items: [
+              if (allowEmpty)
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('—'),
+                ),
               ...students.map(
-                (s) => DropdownMenuItem<int>(
+                (s) => DropdownMenuItem<int?>(
                   value: s.id,
                   child: Text(s.name),
                 ),
