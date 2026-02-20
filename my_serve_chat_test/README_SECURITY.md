@@ -25,9 +25,9 @@ openssl rand -base64 32
 
 Или используйте онлайн генератор: https://www.lastpass.com/features/password-generator
 
-**Пример:**
+**Пример (подставьте свой сгенерированный ключ):**
 ```env
-JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=
+JWT_SECRET=<ваш-секретный-ключ-мин-32-символа>
 ```
 
 ### ALLOWED_ORIGINS

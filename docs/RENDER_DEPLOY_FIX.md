@@ -36,7 +36,7 @@
 ```
 
 **Решение:** Добавьте JWT_SECRET в переменные окружения:
-- `JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=`
+- `JWT_SECRET=<ваш-секретный-ключ-мин-32-символа>`
 
 #### 3. Зависимости не установлены
 ```
@@ -53,7 +53,7 @@ Error: Cannot find module 'bcryptjs'
 
 ```env
 DATABASE_URL=your-postgresql-url
-JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=
+JWT_SECRET=<ваш-секретный-ключ-мин-32-символа>
 ALLOWED_ORIGINS=https://my-chat-app.vercel.app,https://your-domain.com
 NODE_ENV=production
 ```

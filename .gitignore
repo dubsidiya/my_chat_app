@@ -1,6 +1,13 @@
 # Минимальный .gitignore - разрешаем почти все
 # Только системные файлы и кеши
 
+# Секреты — никогда не коммитить
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.template
+
 .DS_Store
 *.swp
 *.swo

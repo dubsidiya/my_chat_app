@@ -24,10 +24,10 @@
 ### 2. Проверьте переменные окружения
 
 Settings → Environment Variables должны быть:
-яяяя
+
 ```env
 DATABASE_URL=your-postgresql-url
-JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=
+JWT_SECRET=<ваш-секретный-ключ-мин-32-символа>
 ALLOWED_ORIGINS=https://my-chat-app.vercel.app
 NODE_ENV=production
 ```

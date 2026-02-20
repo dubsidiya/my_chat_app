@@ -16,7 +16,7 @@
 
 Откройте `my_serve_chat_test/.env` и убедитесь, что:
 
-- ✅ `JWT_SECRET` установлен (уже есть: `9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=`)
+- ✅ `JWT_SECRET` установлен (свой ключ в .env, не в репозитории)
 - ✅ `ALLOWED_ORIGINS` содержит ваши домены
 - ✅ `DATABASE_URL` заполнен (если еще не был настроен)
 

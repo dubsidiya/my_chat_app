@@ -17,16 +17,14 @@ cp .env.example .env
 
 ### 1. JWT_SECRET (ОБЯЗАТЕЛЬНО!)
 
-Сгенерированный ключ: `9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=`
-
-Или создайте свой:
+Сгенерируйте свой ключ (не коммитьте в git):
 ```bash
 openssl rand -base64 32
 ```
 
 Добавьте в `.env`:
 ```env
-JWT_SECRET=9QErZi0KfaChVnHQ4vrJNISfUfo0ySfUrNTbG1rSQDE=
+JWT_SECRET=<вставьте-результат-команды-выше>
 ```
 
 ### 2. ALLOWED_ORIGINS
