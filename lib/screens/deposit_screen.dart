@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/students_service.dart';
+import '../models/transaction.dart';
 
 class DepositScreen extends StatefulWidget {
   final int studentId;
@@ -17,6 +18,10 @@ class _DepositScreenState extends State<DepositScreen> {
   final _descriptionController = TextEditingController();
   final _studentsService = StudentsService();
   bool _isLoading = false;
+  bool _manualCorrection = false;
+
+  static const double _largeAmountWarn = 10000;
+  static const double _maxAmount = 1000000;
 
   @override
   void dispose() {
@@ -28,25 +33,46 @@ class _DepositScreenState extends State<DepositScreen> {
   Future<void> _deposit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final amount = double.parse(_amountController.text);
+    if (_manualCorrection || amount >= _largeAmountWarn) {
+      final label = _manualCorrection ? 'ручная корректировка' : 'крупная сумма';
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Подтвердить операцию?'),
+          content: Text(
+            'Вы собираетесь выполнить $label:\n'
+            '${amount.toStringAsFixed(0)} ₽\n\n'
+            'Продолжить?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Подтвердить'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      await _studentsService.depositBalance(
+      final tx = await _studentsService.depositBalance(
         studentId: widget.studentId,
-        amount: double.parse(_amountController.text),
+        amount: amount,
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
       );
 
       if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Баланс пополнен'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        Navigator.pop<Transaction>(context, tx);
       }
     } catch (e) {
       if (mounted) {
@@ -76,6 +102,17 @@ class _DepositScreenState extends State<DepositScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            SwitchListTile(
+              value: _manualCorrection,
+              onChanged: _isLoading ? null : (v) => setState(() => _manualCorrection = v),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Ручная корректировка'),
+              subtitle: Text(
+                'Требует обязательный комментарий',
+                style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
+              ),
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               controller: _amountController,
               decoration: const InputDecoration(
@@ -92,18 +129,31 @@ class _DepositScreenState extends State<DepositScreen> {
                 if (amount == null || amount <= 0) {
                   return 'Введите корректную сумму';
                 }
+                if (amount > _maxAmount) {
+                  return 'Слишком большая сумма';
+                }
                 return null;
               },
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Описание (опционально)',
-                border: OutlineInputBorder(),
-                hintText: 'Например: Оплата за месяц',
+              decoration: InputDecoration(
+                labelText: _manualCorrection ? 'Комментарий *' : 'Описание (опционально)',
+                border: const OutlineInputBorder(),
+                hintText: _manualCorrection
+                    ? 'Например: Исправление ошибки, пересчет'
+                    : 'Например: Оплата за месяц',
               ),
               maxLines: 2,
+              validator: (value) {
+                if (_manualCorrection) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Комментарий обязателен для ручной корректировки';
+                  }
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 24),
             ElevatedButton(

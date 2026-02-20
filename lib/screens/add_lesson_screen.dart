@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/students_service.dart';
+import '../models/lesson.dart';
 
 class AddLessonScreen extends StatefulWidget {
   final int studentId;
@@ -20,7 +22,11 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
   final _timeController = TextEditingController();
   final _studentsService = StudentsService();
   DateTime _selectedDate = DateTime.now();
+  int _durationMinutes = 60;
   bool _isLoading = false;
+
+  static const double _largeAmountWarn = 10000;
+  static const double _maxAmount = 1000000;
 
   @override
   void dispose() {
@@ -52,24 +58,25 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _studentsService.createLesson(
+      final lesson = await _studentsService.createLesson(
         studentId: widget.studentId,
         lessonDate: _selectedDate,
         lessonTime: _timeController.text.isEmpty ? null : _timeController.text,
+        durationMinutes: _durationMinutes,
         price: double.parse(_priceController.text),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
       );
 
+      // Запомним последнюю цену для выбранной длительности
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble('lesson_price_$_durationMinutes', double.parse(_priceController.text));
+      } catch (_) {}
+
       if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Занятие добавлено'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        Navigator.pop<Lesson>(context, lesson);
       }
     } catch (e) {
       if (mounted) {
@@ -147,6 +154,39 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Шаблоны длительности
+            Text(
+              'Длительность',
+              style: TextStyle(fontSize: 13, color: scheme.onSurface.withValues(alpha: 0.75)),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final m in const [60, 90, 120])
+                  ChoiceChip(
+                    label: Text('$m мин'),
+                    selected: _durationMinutes == m,
+                    onSelected: _isLoading
+                        ? null
+                        : (v) async {
+                            if (!v) return;
+                            setState(() => _durationMinutes = m);
+                            if (_priceController.text.trim().isNotEmpty) return;
+                            try {
+                              final prefs = await SharedPreferences.getInstance();
+                              final saved = prefs.getDouble('lesson_price_$m');
+                              if (saved != null && saved > 0 && mounted) {
+                                _priceController.text = saved.toStringAsFixed(0);
+                              }
+                            } catch (_) {}
+                          },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
             // Цена
             TextFormField(
               controller: _priceController,
@@ -162,6 +202,9 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                 final price = double.tryParse(value);
                 if (price == null || price <= 0) {
                   return 'Введите корректную стоимость';
+                }
+                if (price > _maxAmount) {
+                  return 'Слишком большая сумма';
                 }
                 return null;
               },
@@ -180,7 +223,33 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
             const SizedBox(height: 24),
 
             ElevatedButton(
-              onPressed: _isLoading ? null : _saveLesson,
+              onPressed: _isLoading
+                  ? null
+                  : () async {
+                      final raw = _priceController.text.trim();
+                      final price = double.tryParse(raw);
+                      if (price != null && price >= _largeAmountWarn) {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Подтвердить сумму?'),
+                            content: Text('Стоимость занятия: ${price.toStringAsFixed(0)} ₽\n\nПродолжить?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Отмена'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Подтвердить'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                      }
+                      await _saveLesson();
+                    },
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),

@@ -146,18 +146,20 @@ const findStudentByPaymentDescription = async (teacherId, description) => {
   
   // Получаем студентов, доступных текущему преподавателю
   const studentsResult = await pool.query(
-    `SELECT s.id, s.name, s.parent_name, s.phone
+    `SELECT s.id, s.name, s.parent_name, s.phone, s.email
      FROM teacher_students ts
      JOIN students s ON s.id = ts.student_id
      WHERE ts.teacher_id = $1`,
     [teacherId]
   );
 
-  // Ищем совпадения по имени, имени родителя или телефону
+  // Ищем совпадения по имени, имени родителя, телефону или email
   for (const student of studentsResult.rows) {
     const studentName = student.name?.toLowerCase() || '';
     const parentName = student.parent_name?.toLowerCase() || '';
     const phone = student.phone?.replace(/\D/g, '') || '';
+    const email = student.email?.toLowerCase().trim() || '';
+    const emailLocal = email.includes('@') ? email.split('@')[0] : '';
     const descClean = desc.replace(/\D/g, '');
 
     // Проверяем совпадение по имени студента
@@ -172,6 +174,11 @@ const findStudentByPaymentDescription = async (teacherId, description) => {
 
     // Проверяем совпадение по телефону (если есть в описании)
     if (phone && descClean.includes(phone) && phone.length >= 10) {
+      return student;
+    }
+
+    // Проверяем совпадение по email (или "нику" = local-part)
+    if (email && (desc.includes(email) || (emailLocal && desc.includes(emailLocal)))) {
       return student;
     }
   }

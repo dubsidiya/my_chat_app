@@ -39,3 +39,52 @@ export const depositBalance = async (req, res) => {
   }
 };
 
+// Удаление транзакции (для undo пополнения)
+export const deleteTransaction = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const id = parseInt(req.params.id, 10);
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({ message: 'Некорректный ID транзакции' });
+    }
+
+    const txRes = await pool.query(
+      `SELECT id, type, created_by
+       FROM transactions
+       WHERE id = $1
+       LIMIT 1`,
+      [id]
+    );
+
+    if (txRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Транзакция не найдена' });
+    }
+
+    const tx = txRes.rows[0];
+    if (tx.type !== 'deposit') {
+      return res.status(400).json({ message: 'Можно отменять только пополнения' });
+    }
+
+    // Для безопасности: отменять можно только свои пополнения
+    if (tx.created_by !== userId) {
+      return res.status(403).json({ message: 'Можно отменить только свои операции' });
+    }
+
+    const delRes = await pool.query(
+      `DELETE FROM transactions
+       WHERE id = $1 AND created_by = $2 AND type = 'deposit'
+       RETURNING id`,
+      [id, userId]
+    );
+
+    if (delRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Транзакция не найдена' });
+    }
+
+    return res.json({ message: 'Транзакция отменена', id });
+  } catch (error) {
+    console.error('Ошибка удаления транзакции:', error);
+    return res.status(500).json({ message: 'Ошибка удаления транзакции' });
+  }
+};
+

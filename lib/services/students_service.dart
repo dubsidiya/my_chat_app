@@ -164,6 +164,7 @@ class StudentsService {
     required int studentId,
     required DateTime lessonDate,
     String? lessonTime,
+    int? durationMinutes,
     required double price,
     String? notes,
   }) async {
@@ -174,6 +175,7 @@ class StudentsService {
       body: jsonEncode({
         'lesson_date': lessonDate.toIso8601String().split('T')[0],
         'lesson_time': lessonTime,
+        if (durationMinutes != null) 'duration_minutes': durationMinutes,
         'price': price,
         'notes': notes,
       }),
@@ -203,7 +205,7 @@ class StudentsService {
   }
 
   // Пополнение баланса
-  Future<void> depositBalance({
+  Future<Transaction> depositBalance({
     required int studentId,
     required double amount,
     String? description,
@@ -218,9 +220,29 @@ class StudentsService {
       }),
     );
 
-    if (response.statusCode != 201) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось пополнить баланс');
+    if (response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      return Transaction.fromJson(data);
+    }
+
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось пополнить баланс');
+  }
+
+  Future<void> deleteTransaction(int transactionId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/students/transactions/$transactionId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      try {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Не удалось отменить транзакцию');
+      } catch (_) {
+        throw Exception('Не удалось отменить транзакцию');
+      }
     }
   }
 

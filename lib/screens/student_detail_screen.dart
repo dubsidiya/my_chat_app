@@ -99,16 +99,45 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   }
 
   void _addLesson() async {
-    final result = await Navigator.push(
+    final lesson = await Navigator.push<Lesson?>(
       context,
       MaterialPageRoute(
         builder: (_) => AddLessonScreen(studentId: _student.id),
       ),
     );
 
-    if (result == true) {
+    if (lesson != null) {
       // Быстрое обновление данных после добавления занятия
       await _refreshData();
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Занятие добавлено'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 15),
+          action: SnackBarAction(
+            label: 'Отменить',
+            onPressed: () async {
+              try {
+                await _studentsService.deleteLesson(lesson.id);
+                await _refreshData();
+                if (!mounted) return;
+                messenger.hideCurrentSnackBar();
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Занятие отменено'), backgroundColor: Colors.orange),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+          ),
+        ),
+      );
     }
   }
 
@@ -270,7 +299,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: isDebtor ? Colors.red.shade400 : Colors.green.shade500,
+                    color: isDebtor
+                        ? Colors.red.shade400
+                        : _balance > 0
+                            ? Colors.green.shade500
+                            : scheme.onSurface.withValues(alpha: 0.70),
                   ),
                 ),
                 if (isDebtor)
@@ -401,9 +434,22 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 ? const Center(child: CircularProgressIndicator())
                 : _lessons.isEmpty
                     ? Center(
-                        child: Text(
-                          'Нет занятий',
-                          style: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.event_busy, size: 56, color: scheme.onSurface.withValues(alpha: 0.35)),
+                              const SizedBox(height: 12),
+                              Text('Нет занятий', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70))),
+                              const SizedBox(height: 10),
+                              ElevatedButton.icon(
+                                onPressed: _addLesson,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Добавить'),
+                              ),
+                            ],
+                          ),
                         ),
                       )
                               : RefreshIndicator(
@@ -425,6 +471,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                   ? Text('Время: ${lesson.lessonTime}')
                                   : null,
                               trailing: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
@@ -434,9 +481,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
+                                  const SizedBox(height: 2),
                                   IconButton(
                                     icon: const Icon(Icons.delete, color: Colors.red),
                                     onPressed: () => _deleteLesson(lesson),
+                                    constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                                    padding: EdgeInsets.zero,
+                                    tooltip: 'Удалить',
                                   ),
                                 ],
                               ),
@@ -511,14 +562,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                 child: Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: transaction.isBankDeposit 
-                                                      ? Colors.blue.shade50 
-                                                      : Colors.orange.shade50,
+                                                  color: transaction.isBankDeposit
+                                                      ? (isDark ? Colors.blue.withValues(alpha: 0.14) : Colors.blue.shade50)
+                                                      : (isDark ? Colors.orange.withValues(alpha: 0.14) : Colors.orange.shade50),
                                                   borderRadius: BorderRadius.circular(4),
                                                   border: Border.all(
                                                     color: transaction.isBankDeposit 
-                                                        ? Colors.blue.shade200 
-                                                        : Colors.orange.shade200,
+                                                        ? (isDark ? Colors.blue.withValues(alpha: 0.35) : Colors.blue.shade200)
+                                                        : (isDark ? Colors.orange.withValues(alpha: 0.35) : Colors.orange.shade200),
                                                     width: 1,
                                                   ),
                                                 ),

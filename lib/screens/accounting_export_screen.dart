@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../services/admin_service.dart';
 import '../services/students_service.dart';
 import '../models/student.dart';
+import '../models/transaction.dart';
 import '../utils/download_text_file.dart';
 import 'bank_statement_screen.dart';
 import 'deposit_screen.dart';
@@ -380,6 +381,85 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
+  Future<void> _copyTransactionsCsv() async {
+    try {
+      final csv = await _adminService.exportTransactionsCsv(from: _fmt(_from), to: _fmt(_to));
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CSV транзакций скопирован в буфер'), backgroundColor: Colors.green),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка CSV транзакций: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _copyTransactionsCsvBankTransfer() async {
+    try {
+      final csv = await _adminService.exportTransactionsCsv(
+        from: _fmt(_from),
+        to: _fmt(_to),
+        bankTransferOnly: true,
+      );
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('CSV транзакций (расч. счёт) скопирован в буфер'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _downloadTransactionsCsvFile({required bool bankTransferOnly}) async {
+    try {
+      final csv = await _adminService.exportTransactionsCsv(
+        from: _fmt(_from),
+        to: _fmt(_to),
+        bankTransferOnly: bankTransferOnly,
+      );
+      final suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
+      final filename = 'transactions_${_fmt(_from)}_${_fmt(_to)}$suffix.csv';
+
+      final okWeb = await downloadTextFile(
+        filename: filename,
+        content: csv,
+        mimeType: 'text/csv; charset=utf-8',
+      );
+      if (okWeb) return;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsString(csv, flush: true);
+
+      if (!mounted) return;
+      final uri = Uri.file(file.path);
+      final can = await canLaunchUrl(uri);
+      if (!mounted) return;
+      if (can) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<Student?> _pickStudentForDeposit() async {
     try {
       final students = await _studentsService.getAllStudents();
@@ -514,14 +594,39 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final student = await _pickStudentForDeposit();
     if (student == null || !mounted) return;
 
-    final ok = await Navigator.push<bool>(
+    final tx = await Navigator.push<Transaction?>(
       context,
       MaterialPageRoute(builder: (_) => DepositScreen(studentId: student.id)),
     );
 
-    if (ok == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Баланс пополнен: ${student.name}'), backgroundColor: Colors.green),
+    if (tx != null && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Пополнение выполнено: ${student.name}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 15),
+          action: SnackBarAction(
+            label: 'Отменить',
+            onPressed: () async {
+              try {
+                await _studentsService.deleteTransaction(tx.id);
+                if (!mounted) return;
+                messenger.hideCurrentSnackBar();
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+                );
+                await _load();
+              } catch (e) {
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+          ),
+        ),
       );
     }
   }
@@ -765,6 +870,52 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                           onPressed: _isLoading ? null : _downloadCsvFileBankTransfer,
                           icon: const Icon(Icons.download_rounded),
                           label: const Text('Скачать выписку'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Divider(height: 20),
+                  const Text(
+                    'Экспорт транзакций за период (по операциям):',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _copyTransactionsCsv,
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Транзакции (копия)'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : () => _downloadTransactionsCsvFile(bankTransferOnly: false),
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Транзакции (файл)'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _copyTransactionsCsvBankTransfer,
+                          icon: const Icon(Icons.account_balance_rounded),
+                          label: const Text('Транзакции (расч. счёт)'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : () => _downloadTransactionsCsvFile(bankTransferOnly: true),
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Скачать (расч. счёт)'),
                         ),
                       ),
                     ],

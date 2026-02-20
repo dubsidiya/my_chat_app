@@ -328,3 +328,103 @@ export const exportAccounting = async (req, res) => {
   }
 };
 
+// GET /admin/accounting/transactions-export?from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv
+export const exportAccountingTransactions = async (req, res) => {
+  try {
+    const from = (req.query.from || '').toString();
+    const to = (req.query.to || '').toString();
+    const formatRaw = ((req.query.format || 'json').toString() || 'json').toLowerCase();
+    const format = formatRaw === 'csv' ? 'csv' : 'json';
+    const bankTransferOnly = req.query.bank_transfer_only === '1' || req.query.bank_transfer_only === 'true';
+
+    if (!isValidISODate(from) || !isValidISODate(to)) {
+      return res.status(400).json({ message: 'Параметры from/to обязательны в формате YYYY-MM-DD' });
+    }
+    if (to < from) {
+      return res.status(400).json({ message: 'to должен быть >= from' });
+    }
+
+    const txRes = await pool.query(
+      `SELECT t.id,
+              t.student_id,
+              COALESCE(s.name, '') as student_name,
+              COALESCE(s.pay_by_bank_transfer, false) as pay_by_bank_transfer,
+              t.type,
+              t.amount,
+              t.description,
+              t.lesson_id,
+              t.created_at,
+              t.created_by,
+              COALESCE(u.email, '') as created_by_email
+       FROM transactions t
+       LEFT JOIN students s ON s.id = t.student_id
+       LEFT JOIN users u ON u.id = t.created_by
+       WHERE t.created_at >= $1::date
+         AND t.created_at < ($2::date + interval '1 day')
+       ORDER BY t.created_at ASC, t.id ASC`,
+      [from, to]
+    );
+
+    const rows = bankTransferOnly
+      ? txRes.rows.filter((r) => r.pay_by_bank_transfer === true)
+      : txRes.rows;
+
+    if (format === 'csv') {
+      const header = [
+        'transaction_id',
+        'student_id',
+        'student_name',
+        'type',
+        'amount',
+        'description',
+        'lesson_id',
+        'created_at',
+        'created_by',
+        'created_by_email',
+      ];
+      const csvRows = [header];
+      for (const r of rows) {
+        csvRows.push([
+          r.id,
+          r.student_id,
+          r.student_name,
+          r.type,
+          toNumber(r.amount),
+          r.description || '',
+          r.lesson_id || '',
+          (r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at || '').toString()),
+          r.created_by || '',
+          r.created_by_email || '',
+        ]);
+      }
+      const csv = asCsv(csvRows);
+      const suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="transactions_${from}_${to}${suffix}.csv"`);
+      return res.status(200).send(csv);
+    }
+
+    return res.json({
+      from,
+      to,
+      bankTransferOnly,
+      count: rows.length,
+      transactions: rows.map((r) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        type: r.type,
+        amount: toNumber(r.amount),
+        description: r.description || null,
+        lessonId: r.lesson_id || null,
+        createdAt: r.created_at,
+        createdBy: r.created_by || null,
+        createdByEmail: r.created_by_email || null,
+      })),
+    });
+  } catch (error) {
+    console.error('Ошибка выгрузки транзакций:', error);
+    return res.status(500).json({ message: 'Ошибка выгрузки транзакций' });
+  }
+};
+

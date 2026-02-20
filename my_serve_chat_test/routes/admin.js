@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireSuperuser } from '../middleware/auth.js';
-import { exportAccounting } from '../controllers/adminAccountingController.js';
+import { exportAccounting, exportAccountingTransactions } from '../controllers/adminAccountingController.js';
 import { adminResetUserPassword } from '../controllers/authController.js';
 
 const router = express.Router();
@@ -9,6 +9,7 @@ const router = express.Router();
 router.use(authenticateToken, requireSuperuser);
 
 router.get('/accounting/export', exportAccounting);
+router.get('/accounting/transactions-export', exportAccountingTransactions);
 router.post('/reset-user-password', adminResetUserPassword);
 
 export default router;

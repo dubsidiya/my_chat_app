@@ -14,7 +14,8 @@ import {
   deleteLesson
 } from '../controllers/lessonsController.js';
 import {
-  depositBalance
+  depositBalance,
+  deleteTransaction
 } from '../controllers/transactionsController.js';
 
 const router = express.Router();
@@ -38,6 +39,8 @@ router.delete('/lessons/:id', requirePrivateAccess, deleteLesson);
 // Маршруты для транзакций
 // Пополнение баланса — только суперпользователь (бухгалтерия)
 router.post('/:studentId/deposit', requireSuperuser, depositBalance);
+// Undo пополнения — только суперпользователь (и только свои операции)
+router.delete('/transactions/:id', requireSuperuser, deleteTransaction);
 
 export default router;
 

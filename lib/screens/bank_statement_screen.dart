@@ -105,6 +105,34 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
       return;
     }
 
+    final count = _selectedPayments.length;
+    final total = _selectedPayments.fold<double>(
+      0,
+      (sum, p) => sum + (p['amount'] is num ? (p['amount'] as num).toDouble() : double.tryParse('${p['amount']}') ?? 0),
+    );
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Применить платежи?'),
+        content: Text(
+          'Будет применено: $count\n'
+          'Сумма: ${total.toStringAsFixed(0)} ₽\n\n'
+          'Это массовая операция. Продолжить?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Применить'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
     if (!mounted) return;
     setState(() => _isLoading = true);
 

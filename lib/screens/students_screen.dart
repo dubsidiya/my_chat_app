@@ -313,6 +313,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         clipBehavior: Clip.antiAlias,
                         child: ListTile(
+                          dense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           leading: Container(
                             width: 46,
@@ -338,6 +339,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           ),
                           title: Text(
                             student.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -349,41 +352,53 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     student.parentName!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
                                   ),
                                 )
                               : null,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
-                                '${student.balance.toStringAsFixed(0)} ₽',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: student.isDebtor ? Colors.red : Colors.green.shade700,
-                                ),
-                              ),
-                              if (student.isDebtor) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withValues(alpha:0.12),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
+                          trailing: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 120),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
                                   child: Text(
-                                    'Долг',
+                                    '${student.balance.toStringAsFixed(0)} ₽',
                                     style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.red.shade700,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: student.balance < 0
+                                          ? Colors.red
+                                          : student.balance > 0
+                                              ? Colors.green.shade700
+                                              : scheme.onSurface.withValues(alpha: 0.65),
                                     ),
                                   ),
                                 ),
+                                if (student.isDebtor) ...[
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withValues(alpha:0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'Долг',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                           onTap: () => _openStudentDetail(student),
                         ),
