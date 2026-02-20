@@ -159,6 +159,23 @@ class StudentsService {
     }
   }
 
+  /// Получение занятий студента, созданных текущим пользователем (created_by = me).
+  /// Важно для автоподстановок (разные цены у разных преподавателей).
+  Future<List<Lesson>> getStudentLessonsMine(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/$studentId/lessons?mine=1'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Lesson.fromJson(json)).toList();
+    } else {
+      throw Exception('Не удалось загрузить занятия: ${response.statusCode}');
+    }
+  }
+
   // Создание занятия
   Future<Lesson> createLesson({
     required int studentId,

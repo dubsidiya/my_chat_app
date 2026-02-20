@@ -14,9 +14,12 @@ export const getStudentLessons = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { studentId } = req.params;
+    const mine = req.query.mine === '1' || req.query.mine === 'true';
 
     // Суперпользователь (бухгалтерия) может смотреть занятия любого ученика
-    if (!isSuperuser(req.user)) {
+    // Но для UI-автоподстановок (например, цена в отчетах) иногда нужно строго "мои занятия",
+    // даже если роль суперпользователь.
+    if (!isSuperuser(req.user) || mine) {
       const checkResult = await pool.query(
         'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
         [userId, studentId]
@@ -27,18 +30,19 @@ export const getStudentLessons = async (req, res) => {
       }
     }
 
-    const result = isSuperuser(req.user)
+    const onlyMine = mine || !isSuperuser(req.user);
+    const result = onlyMine
         ? await pool.query(
-            `SELECT * FROM lessons
-             WHERE student_id = $1
-             ORDER BY lesson_date DESC, lesson_time DESC`,
-            [studentId]
-          )
-        : await pool.query(
             `SELECT * FROM lessons
              WHERE student_id = $1 AND created_by = $2
              ORDER BY lesson_date DESC, lesson_time DESC`,
             [studentId, userId]
+          )
+        : await pool.query(
+            `SELECT * FROM lessons
+             WHERE student_id = $1
+             ORDER BY lesson_date DESC, lesson_time DESC`,
+            [studentId]
           );
 
     res.json(result.rows);

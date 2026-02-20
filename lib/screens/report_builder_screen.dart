@@ -18,24 +18,19 @@ class ReportBuilderScreen extends StatefulWidget {
 
 class _SlotDraft {
   final TextEditingController startController = TextEditingController();
-  final TextEditingController endController = TextEditingController();
-  final TextEditingController price1Controller = TextEditingController();
-  final TextEditingController price2Controller = TextEditingController();
+  final TextEditingController priceController = TextEditingController();
 
-  int? student1Id;
-  int? student2Id;
+  int durationMinutes = 60;
+  int? studentId;
 
   void dispose() {
     startController.dispose();
-    endController.dispose();
-    price1Controller.dispose();
-    price2Controller.dispose();
+    priceController.dispose();
   }
 }
 
 class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   static const int _maxSlots = 10;
-  static const int _maxStudentsPerSlot = 2;
 
   final StudentsService _studentsService = StudentsService();
   final ReportsService _reportsService = ReportsService();
@@ -46,6 +41,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   bool _isLoading = false;
   List<Student> _students = [];
   final List<_SlotDraft> _slots = [];
+  final Map<int, double> _lastPriceByStudent = {};
 
   @override
   void initState() {
@@ -66,45 +62,21 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         final reportDate = report.reportDate;
 
         final lessons = report.lessons ?? const [];
-        final grouped = <String, List<Map<String, dynamic>>>{};
+        final slotDrafts = <_SlotDraft>[];
         for (final l in lessons) {
           final timeRaw = (l['lesson_time'] ?? '').toString();
-          final time = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
+          final start = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
           final duration = (l['duration_minutes'] ?? 60) is int
               ? (l['duration_minutes'] as int)
               : int.tryParse(l['duration_minutes'].toString()) ?? 60;
-          final key = '$time|$duration';
-          grouped.putIfAbsent(key, () => []).add(l);
-        }
-
-        final slotDrafts = <_SlotDraft>[];
-        for (final entry in grouped.entries) {
-          final parts = entry.key.split('|');
-          final start = parts[0];
-          final duration = int.tryParse(parts[1]) ?? 60;
-          final endMinutes = _toMinutes(start) + duration;
-          final endH = (endMinutes ~/ 60).clamp(0, 23).toString().padLeft(2, '0');
-          final endM = (endMinutes % 60).clamp(0, 59).toString().padLeft(2, '0');
-          final end = '$endH:$endM';
 
           final slot = _SlotDraft();
           slot.startController.text = start;
-          slot.endController.text = end;
+          slot.durationMinutes = duration;
+          slot.studentId = int.tryParse(l['student_id'].toString());
 
-          final items = entry.value;
-          // максимум 2 ученика на слот
-          if (items.isNotEmpty) {
-            final sid1 = int.tryParse(items[0]['student_id'].toString());
-            slot.student1Id = sid1;
-            final p1 = items[0]['price'];
-            slot.price1Controller.text = p1 is num ? p1.toString() : (double.tryParse(p1.toString())?.toString() ?? '');
-          }
-          if (items.length > 1) {
-            final sid2 = int.tryParse(items[1]['student_id'].toString());
-            slot.student2Id = sid2;
-            final p2 = items[1]['price'];
-            slot.price2Controller.text = p2 is num ? p2.toString() : (double.tryParse(p2.toString())?.toString() ?? '');
-          }
+          final p = l['price'];
+          slot.priceController.text = p is num ? p.toString() : (double.tryParse(p.toString())?.toString() ?? '');
           slotDrafts.add(slot);
         }
 
@@ -190,9 +162,56 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     return int.parse(parts[0]) * 60 + int.parse(parts[1]);
   }
 
+  String _minutesToHHMM(int mins) {
+    final m = mins.clamp(0, 23 * 60 + 59);
+    final hh = (m ~/ 60).toString().padLeft(2, '0');
+    final mm = (m % 60).toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _computeEndTimeHHMM(String start, int durationMinutes) {
+    try {
+      final a = _toMinutes(start);
+      return _minutesToHHMM(a + durationMinutes);
+    } catch (_) {
+      return '';
+    }
+  }
+
   double? _parsePrice(String raw) {
     final v = raw.trim().replaceAll(',', '.');
     return double.tryParse(v);
+  }
+
+  Future<void> _prefillLastPriceForStudent({
+    required _SlotDraft slot,
+    required int? studentId,
+  }) async {
+    if (studentId == null) return;
+    if (slot.priceController.text.trim().isNotEmpty) return;
+
+    final cached = _lastPriceByStudent[studentId];
+    if (cached != null && cached > 0) {
+      slot.priceController.text = cached.toStringAsFixed(0);
+      return;
+    }
+
+    try {
+      final lessons = await _studentsService.getStudentLessonsMine(studentId);
+      if (!mounted) return;
+      // В бэкенде сортировка DESC, значит [0] — последнее занятие
+      if (lessons.isEmpty) return;
+      final last = lessons.first;
+      final price = last.price;
+      if (price <= 0) return;
+      // Не перетираем, если пользователь уже успел ввести
+      if (slot.studentId != studentId) return;
+      if (slot.priceController.text.trim().isNotEmpty) return;
+      _lastPriceByStudent[studentId] = price;
+      slot.priceController.text = price.toStringAsFixed(0);
+    } catch (_) {
+      // если не удалось — просто оставим пусто
+    }
   }
 
   Future<void> _save() async {
@@ -215,7 +234,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     for (int i = 0; i < _slots.length; i++) {
       final slot = _slots[i];
       final start = slot.startController.text.trim();
-      final end = slot.endController.text.trim();
+      final end = _computeEndTimeHHMM(start, slot.durationMinutes);
 
       final startErr = _validateTime(start);
       final endErr = _validateTime(end);
@@ -233,51 +252,30 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         return;
       }
 
-      final students = <Map<String, dynamic>>[];
-      if (slot.student1Id != null) {
-        final p = _parsePrice(slot.price1Controller.text);
-        if (p == null || p <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Слот ${i + 1}: укажите цену для 1 ученика'), backgroundColor: Colors.orange),
-          );
-          return;
-        }
-        students.add({'studentId': slot.student1Id, 'price': p});
-      }
-      if (slot.student2Id != null) {
-        final p = _parsePrice(slot.price2Controller.text);
-        if (p == null || p <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Слот ${i + 1}: укажите цену для 2 ученика'), backgroundColor: Colors.orange),
-          );
-          return;
-        }
-        students.add({'studentId': slot.student2Id, 'price': p});
-      }
-
-      if (students.isEmpty) {
+      if (slot.studentId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Слот ${i + 1}: выберите ученика'), backgroundColor: Colors.orange),
         );
         return;
       }
-      if (students.length > _maxStudentsPerSlot) {
+
+      final p = _parsePrice(slot.priceController.text);
+      if (p == null || p <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: максимум $_maxStudentsPerSlot ученика'), backgroundColor: Colors.orange),
-        );
-        return;
-      }
-      if (students.length == 2 && students[0]['studentId'] == students[1]['studentId']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: ученики должны быть разными'), backgroundColor: Colors.orange),
+          SnackBar(content: Text('Слот ${i + 1}: укажите цену'), backgroundColor: Colors.orange),
         );
         return;
       }
 
+      // Кэшируем последнюю цену по ребенку (на время сессии конструктора)
+      _lastPriceByStudent[slot.studentId!] = p;
+
       slotsPayload.add({
         'timeStart': start,
         'timeEnd': end,
-        'students': students,
+        'students': [
+          {'studentId': slot.studentId, 'price': p},
+        ],
       });
     }
 
@@ -353,6 +351,10 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                 const SizedBox(height: 8),
                 ...List.generate(_slots.length, (index) {
                   final slot = _slots[index];
+                  final startText = slot.startController.text.trim();
+                  final computedEnd = _validateTime(startText) == null
+                      ? _computeEndTimeHHMM(startText, slot.durationMinutes)
+                      : '';
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: Padding(
@@ -377,49 +379,57 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Row(
+                          TextField(
+                            controller: slot.startController,
+                            decoration: InputDecoration(
+                              labelText: 'Время начала (ЧЧ:ММ) *',
+                              border: const OutlineInputBorder(),
+                              helperText: computedEnd.isEmpty ? null : 'Конец: $computedEnd',
+                            ),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [_TimeTextInputFormatter()],
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 12),
+
+                          Text(
+                            'Длительность',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: slot.startController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Начало (ЧЧ:ММ)',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [_TimeTextInputFormatter()],
+                              for (final m in const [60, 90, 120])
+                                ChoiceChip(
+                                  label: Text('$m мин'),
+                                  selected: slot.durationMinutes == m,
+                                  onSelected: _isLoading
+                                      ? null
+                                      : (v) {
+                                          if (!v) return;
+                                          setState(() => slot.durationMinutes = m);
+                                        },
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: slot.endController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Конец (ЧЧ:ММ)',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [_TimeTextInputFormatter()],
-                                ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 12),
+
                           _StudentPickerRow(
-                            label: 'Ученик 1 *',
+                            label: 'Ребёнок *',
                             students: _students,
-                            value: slot.student1Id,
-                            onChanged: (v) => setState(() => slot.student1Id = v),
-                            priceController: slot.price1Controller,
-                          ),
-                          const SizedBox(height: 10),
-                          _StudentPickerRow(
-                            label: 'Ученик 2 (опционально)',
-                            students: _students,
-                            value: slot.student2Id,
-                            onChanged: (v) => setState(() => slot.student2Id = v),
-                            priceController: slot.price2Controller,
-                            allowEmpty: true,
+                            value: slot.studentId,
+                            onChanged: (v) async {
+                              setState(() => slot.studentId = v);
+                              await _prefillLastPriceForStudent(slot: slot, studentId: v);
+                              if (!mounted) return;
+                              setState(() {});
+                            },
+                            priceController: slot.priceController,
                           ),
                         ],
                       ),
@@ -434,7 +444,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Правила: до 10 занятий в день; на одно время — 1 или 2 ученика.',
+                  'Правила: до 10 занятий в день; одно занятие = один ребёнок.',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha:0.55),
                   ),
@@ -451,7 +461,6 @@ class _StudentPickerRow extends StatelessWidget {
   final int? value;
   final ValueChanged<int?> onChanged;
   final TextEditingController priceController;
-  final bool allowEmpty;
 
   const _StudentPickerRow({
     required this.label,
@@ -459,7 +468,6 @@ class _StudentPickerRow extends StatelessWidget {
     required this.value,
     required this.onChanged,
     required this.priceController,
-    this.allowEmpty = false,
   });
 
   @override
@@ -472,11 +480,6 @@ class _StudentPickerRow extends StatelessWidget {
             key: ValueKey<int?>(value),
             initialValue: value,
             items: [
-              if (allowEmpty)
-                const DropdownMenuItem<int>(
-                  value: null,
-                  child: Text('—'),
-                ),
               ...students.map(
                 (s) => DropdownMenuItem<int>(
                   value: s.id,
