@@ -25,6 +25,49 @@ const chatUsersFolderColumnExists = async () => {
   }
 };
 
+let _chatUsersFolderIdColumnExists = null;
+const chatUsersFolderIdColumnExists = async () => {
+  if (_chatUsersFolderIdColumnExists !== null) return _chatUsersFolderIdColumnExists;
+  try {
+    const r = await pool.query(
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'chat_users'
+        AND column_name = 'folder_id'
+      LIMIT 1
+      `
+    );
+    _chatUsersFolderIdColumnExists = r.rows.length > 0;
+    return _chatUsersFolderIdColumnExists;
+  } catch (_) {
+    _chatUsersFolderIdColumnExists = false;
+    return false;
+  }
+};
+
+let _chatFoldersTableExists = null;
+const chatFoldersTableExists = async () => {
+  if (_chatFoldersTableExists !== null) return _chatFoldersTableExists;
+  try {
+    const r = await pool.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'chat_folders'
+      LIMIT 1
+      `
+    );
+    _chatFoldersTableExists = r.rows.length > 0;
+    return _chatFoldersTableExists;
+  } catch (_) {
+    _chatFoldersTableExists = false;
+    return false;
+  }
+};
+
 const getChatCreatorId = async (chatId) => {
   const r = await pool.query('SELECT created_by FROM chats WHERE id = $1', [chatId]);
   return r.rows.length ? r.rows[0].created_by?.toString() : null;
@@ -111,8 +154,16 @@ export const getChatsList = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const hasFolder = await chatUsersFolderColumnExists();
-    const folderSelect = hasFolder ? 'cu.folder AS folder' : 'NULL::text AS folder';
+    const hasFolderId = await chatUsersFolderIdColumnExists();
+    const hasFoldersTable = await chatFoldersTableExists();
+    const hasLegacyFolder = await chatUsersFolderColumnExists();
+
+    const folderJoin = (hasFolderId && hasFoldersTable)
+      ? 'LEFT JOIN chat_folders cf ON cf.id = cu.folder_id AND cf.user_id = $1'
+      : '';
+    const folderIdSelect = (hasFolderId && hasFoldersTable) ? 'cu.folder_id::text AS folder_id' : 'NULL::text AS folder_id';
+    const folderNameSelect = (hasFolderId && hasFoldersTable) ? 'cf.name AS folder_name' : 'NULL::text AS folder_name';
+    const legacyFolderSelect = hasLegacyFolder ? 'cu.folder AS folder_legacy' : 'NULL::text AS folder_legacy';
 
     const result = await pool.query(
       `
@@ -126,9 +177,12 @@ export const getChatsList = async (req, res) => {
           END AS name,
           CASE WHEN c.is_group = true THEN NULL ELSE ou.id END AS other_user_id,
           CASE WHEN c.is_group = true THEN NULL ELSE ou.avatar_url END AS other_user_avatar_url,
-          ${folderSelect}
+          ${folderIdSelect},
+          ${folderNameSelect},
+          ${legacyFolderSelect}
         FROM chats c
         JOIN chat_users cu ON cu.chat_id = c.id AND cu.user_id = $1
+        ${folderJoin}
         LEFT JOIN LATERAL (
           SELECT u.id, u.email, u.display_name, u.avatar_url
           FROM chat_users cu2
@@ -174,7 +228,9 @@ export const getChatsList = async (req, res) => {
         uc.is_group,
         uc.other_user_id,
         uc.other_user_avatar_url,
-        uc.folder,
+        uc.folder_id,
+        uc.folder_name,
+        uc.folder_legacy,
         COALESCE(ucnt.unread_count, 0) AS unread_count,
         CASE
           WHEN lm.last_message_id IS NULL THEN NULL
@@ -206,29 +262,129 @@ export const getChatsList = async (req, res) => {
   }
 };
 
+export const getChatFolders = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const ok = await chatFoldersTableExists();
+    if (!ok) return res.status(400).json({ message: 'Папки недоступны: примените миграцию add_custom_chat_folders.sql' });
+    const r = await pool.query(
+      'SELECT id, name, created_at FROM chat_folders WHERE user_id = $1 ORDER BY id DESC LIMIT 50',
+      [userId]
+    );
+    return res.status(200).json({ folders: r.rows.map((x) => ({ id: x.id?.toString(), name: x.name })) });
+  } catch (e) {
+    console.error('Ошибка getChatFolders:', e);
+    return res.status(500).json({ message: 'Ошибка получения папок' });
+  }
+};
+
+export const createChatFolder = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const ok = await chatFoldersTableExists();
+    if (!ok) return res.status(400).json({ message: 'Папки недоступны: примените миграцию add_custom_chat_folders.sql' });
+
+    const nameRaw = (req.body?.name ?? '').toString();
+    const name = nameRaw.trim();
+    if (!name) return res.status(400).json({ message: 'Укажите название папки' });
+    if (name.length > 50) return res.status(400).json({ message: 'Название папки не более 50 символов' });
+
+    const cnt = await pool.query('SELECT COUNT(*)::int AS c FROM chat_folders WHERE user_id = $1', [userId]);
+    if ((cnt.rows[0]?.c ?? 0) >= 5) {
+      return res.status(400).json({ message: 'Максимум 5 папок' });
+    }
+
+    // case-insensitive uniqueness (без расширений БД)
+    const exists = await pool.query(
+      'SELECT 1 FROM chat_folders WHERE user_id = $1 AND lower(name) = lower($2) LIMIT 1',
+      [userId, name]
+    );
+    if (exists.rows.length) return res.status(409).json({ message: 'Папка с таким названием уже есть' });
+
+    const r = await pool.query(
+      'INSERT INTO chat_folders (user_id, name) VALUES ($1, $2) RETURNING id, name',
+      [userId, name]
+    );
+    return res.status(201).json({ id: r.rows[0].id?.toString(), name: r.rows[0].name });
+  } catch (e) {
+    console.error('Ошибка createChatFolder:', e);
+    return res.status(500).json({ message: 'Ошибка создания папки' });
+  }
+};
+
+export const renameChatFolder = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const folderId = parseInt(req.params.folderId, 10);
+    if (isNaN(folderId)) return res.status(400).json({ message: 'Некорректный folderId' });
+
+    const nameRaw = (req.body?.name ?? '').toString();
+    const name = nameRaw.trim();
+    if (!name) return res.status(400).json({ message: 'Укажите название папки' });
+    if (name.length > 50) return res.status(400).json({ message: 'Название папки не более 50 символов' });
+
+    const own = await pool.query('SELECT 1 FROM chat_folders WHERE id = $1 AND user_id = $2', [folderId, userId]);
+    if (!own.rows.length) return res.status(404).json({ message: 'Папка не найдена' });
+
+    const exists = await pool.query(
+      'SELECT 1 FROM chat_folders WHERE user_id = $1 AND lower(name) = lower($2) AND id <> $3 LIMIT 1',
+      [userId, name, folderId]
+    );
+    if (exists.rows.length) return res.status(409).json({ message: 'Папка с таким названием уже есть' });
+
+    await pool.query('UPDATE chat_folders SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3', [name, folderId, userId]);
+    return res.status(200).json({ success: true, id: folderId.toString(), name });
+  } catch (e) {
+    console.error('Ошибка renameChatFolder:', e);
+    return res.status(500).json({ message: 'Ошибка переименования папки' });
+  }
+};
+
+export const deleteChatFolder = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const folderId = parseInt(req.params.folderId, 10);
+    if (isNaN(folderId)) return res.status(400).json({ message: 'Некорректный folderId' });
+
+    const hasFolderId = await chatUsersFolderIdColumnExists();
+    const ok = await chatFoldersTableExists();
+    if (!ok || !hasFolderId) return res.status(400).json({ message: 'Папки недоступны: примените миграцию add_custom_chat_folders.sql' });
+
+    const own = await pool.query('SELECT 1 FROM chat_folders WHERE id = $1 AND user_id = $2', [folderId, userId]);
+    if (!own.rows.length) return res.status(404).json({ message: 'Папка не найдена' });
+
+    // снимаем привязку только для текущего пользователя
+    await pool.query('UPDATE chat_users SET folder_id = NULL WHERE user_id = $1 AND folder_id = $2', [userId, folderId]);
+    await pool.query('DELETE FROM chat_folders WHERE id = $1 AND user_id = $2', [folderId, userId]);
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('Ошибка deleteChatFolder:', e);
+    return res.status(500).json({ message: 'Ошибка удаления папки' });
+  }
+};
+
 export const setChatFolder = async (req, res) => {
   try {
     const userId = req.user.userId;
     const chatId = req.params.id;
 
-    const hasFolder = await chatUsersFolderColumnExists();
-    if (!hasFolder) {
-      return res.status(400).json({ message: 'Папки/метки чатов недоступны: примените миграцию add_chat_folders.sql' });
+    const hasFolderId = await chatUsersFolderIdColumnExists();
+    const ok = await chatFoldersTableExists();
+    if (!hasFolderId || !ok) {
+      return res.status(400).json({ message: 'Папки недоступны: примените миграцию add_custom_chat_folders.sql' });
     }
 
-    let folder = req.body?.folder;
-    if (folder === undefined) {
-      folder = req.body?.value;
+    let folderId = req.body?.folder_id ?? req.body?.folderId ?? req.body?.folder;
+    if (folderId === undefined) folderId = req.body?.value;
+    if (folderId === null || folderId === '' || folderId === false) {
+      folderId = null;
     }
-
-    if (folder === null || folder === '' || folder === false) {
-      folder = null;
-    } else {
-      folder = String(folder).trim().toLowerCase();
-      const allowed = new Set(['work', 'personal', 'archive']);
-      if (!allowed.has(folder)) {
-        return res.status(400).json({ message: 'Некорректная папка. Разрешено: work, personal, archive, null' });
-      }
+    let folderIdNum = null;
+    if (folderId !== null) {
+      folderIdNum = parseInt(folderId, 10);
+      if (isNaN(folderIdNum)) return res.status(400).json({ message: 'Некорректный folderId' });
+      const own = await pool.query('SELECT id, name FROM chat_folders WHERE id = $1 AND user_id = $2', [folderIdNum, userId]);
+      if (!own.rows.length) return res.status(404).json({ message: 'Папка не найдена' });
     }
 
     const memberCheck = await pool.query(
@@ -239,12 +395,14 @@ export const setChatFolder = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
-    await pool.query(
-      'UPDATE chat_users SET folder = $1 WHERE chat_id = $2 AND user_id = $3',
-      [folder, chatId, userId]
-    );
+    await pool.query('UPDATE chat_users SET folder_id = $1 WHERE chat_id = $2 AND user_id = $3', [folderIdNum, chatId, userId]);
+    // best-effort: если есть legacy column folder — чистим её, чтобы не было рассинхрона
+    const hasLegacy = await chatUsersFolderColumnExists();
+    if (hasLegacy) {
+      await pool.query('UPDATE chat_users SET folder = NULL WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
+    }
 
-    return res.status(200).json({ success: true, folder });
+    return res.status(200).json({ success: true, folder_id: folderIdNum?.toString() ?? null });
   } catch (error) {
     console.error('Ошибка setChatFolder:', error);
     return res.status(500).json({ message: 'Ошибка обновления папки/метки чата' });

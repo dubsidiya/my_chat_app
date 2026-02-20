@@ -1,5 +1,5 @@
 import express from 'express';
-import { getChatsList, getUserChats, createChat, deleteChat, getChatMembers, addMembersToChat, removeMemberFromChat, leaveChat, updateMemberRole, transferOwnership, createInvite, joinByInvite, revokeInvite, renameChat, setChatFolder } from '../controllers/chatsController.js';
+import { getChatsList, getUserChats, createChat, deleteChat, getChatMembers, addMembersToChat, removeMemberFromChat, leaveChat, updateMemberRole, transferOwnership, createInvite, joinByInvite, revokeInvite, renameChat, setChatFolder, getChatFolders, createChatFolder, renameChatFolder, deleteChatFolder } from '../controllers/chatsController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -9,6 +9,10 @@ router.use(authenticateToken);
 
 // Более специфичные роуты должны быть раньше общих
 router.get('/', getChatsList); // GET /chats - список чатов с last message + unread
+router.get('/folders', getChatFolders); // GET /chats/folders
+router.post('/folders', createChatFolder); // POST /chats/folders {name}
+router.put('/folders/:folderId', renameChatFolder); // PUT /chats/folders/:folderId {name}
+router.delete('/folders/:folderId', deleteChatFolder); // DELETE /chats/folders/:folderId
 router.post('/:id/leave', leaveChat); // POST /chats/:id/leave - выход из чата
 router.post('/:id/transfer-ownership', transferOwnership); // POST /chats/:id/transfer-ownership
 router.post('/:id/invites', createInvite); // POST /chats/:id/invites

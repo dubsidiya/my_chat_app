@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
+import '../models/chat_folder.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
 
@@ -433,36 +434,94 @@ class ChatsService {
     throw Exception('$msg (${response.statusCode})');
   }
 
+  @Deprecated('Use setChatFolderId(folderId: ...) for custom folders')
   Future<String?> setChatFolder(String chatId, {String? folder}) async {
-    try {
-      final headers = await _getAuthHeaders();
-      final response = await http.put(
-        Uri.parse('$baseUrl/chats/$chatId/folder'),
-        headers: headers,
-        body: jsonEncode({'folder': folder}),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw Exception('Таймаут при обновлении папки/метки'),
-      );
+    await setChatFolderId(chatId, folderId: folder);
+    return folder;
+  }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data is Map && data['folder'] != null) return data['folder']?.toString();
-        return folder;
-      }
-
-      String errorMessage = 'Не удалось обновить папку/метку';
-      try {
-        final errorData = jsonDecode(response.body);
-        if (errorData is Map && errorData['message'] != null) {
-          errorMessage = errorData['message'];
-        }
-      } catch (_) {}
-      throw Exception('$errorMessage (${response.statusCode})');
-    } catch (e) {
-      if (e is Exception) rethrow;
-      throw Exception('Неожиданная ошибка при обновлении папки/метки: $e');
+  Future<List<ChatFolder>> fetchFolders() async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/chats/folders'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = (data['folders'] as List<dynamic>? ?? []);
+      return list.map((e) => ChatFolder.fromJson(e as Map<String, dynamic>)).toList();
     }
+    String msg = 'Не удалось загрузить папки';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
+
+  Future<ChatFolder> createFolder(String name) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/chats/folders'),
+      headers: headers,
+      body: jsonEncode({'name': name}),
+    );
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return ChatFolder.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    String msg = 'Не удалось создать папку';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
+
+  Future<void> renameFolder(String folderId, String name) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.put(
+      Uri.parse('$baseUrl/chats/folders/$folderId'),
+      headers: headers,
+      body: jsonEncode({'name': name}),
+    );
+    if (response.statusCode == 200) return;
+    String msg = 'Не удалось переименовать папку';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
+
+  Future<void> deleteFolder(String folderId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/chats/folders/$folderId'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) return;
+    String msg = 'Не удалось удалить папку';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
+  }
+
+  Future<void> setChatFolderId(String chatId, {String? folderId}) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.put(
+      Uri.parse('$baseUrl/chats/$chatId/folder'),
+      headers: headers,
+      body: jsonEncode({'folderId': folderId}),
+    );
+    if (response.statusCode == 200) return;
+    String msg = 'Не удалось обновить папку чата';
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['message'] != null) msg = data['message'];
+    } catch (_) {}
+    throw Exception('$msg (${response.statusCode})');
   }
 }
 

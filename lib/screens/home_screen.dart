@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
+import '../models/chat_folder.dart';
 import '../services/chats_service.dart';
 import '../services/auth_service.dart';
 import '../services/admin_service.dart';
@@ -35,7 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChatsService _chatsService = ChatsService();
   final AuthService _authService = AuthService();
   List<Chat> _chats = [];
-  String? _folderFilter; // null = all, work/personal/archive
+  List<ChatFolder> _folders = [];
+  String? _folderFilterId; // null = all
   String? _displayName;
   String? _avatarUrl;
 
@@ -45,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _displayName = widget.displayName;
     _avatarUrl = widget.avatarUrl;
     _loadChats();
+    _loadFolders();
     _subscribeToNewMessages();
   }
 
@@ -304,6 +307,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadFolders() async {
+    try {
+      final folders = await _chatsService.fetchFolders();
+      if (!mounted) return;
+      setState(() {
+        _folders = folders;
+        // если фильтр указывает на несуществующую папку — сбрасываем
+        if (_folderFilterId != null && !_folders.any((f) => f.id == _folderFilterId)) {
+          _folderFilterId = null;
+        }
+      });
+    } catch (e) {
+      // не блокируем UI — просто нет папок
+      if (kDebugMode) print('Ошибка загрузки папок: $e');
+    }
+  }
+
   /// Чаты в сохранённом порядке (сначала по _chatOrder, затем остальные по дате последнего сообщения).
   List<Chat> get _sortedChats {
     if (_chats.isEmpty) return [];
@@ -455,10 +475,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if ((chat.folder ?? '').trim().isNotEmpty) ...[
+                      if ((chat.folderName ?? '').trim().isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
-                          _folderLabel(chat.folder),
+                          chat.folderName!.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -524,23 +544,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _folderLabel(String? value) {
-    final v = (value ?? '').trim().toLowerCase();
-    switch (v) {
-      case 'work':
-        return 'Работа';
-      case 'personal':
-        return 'Личное';
-      case 'archive':
-        return 'Архив';
-      default:
-        return v.isEmpty ? '' : v;
-    }
-  }
-
   Future<void> _showChatFolderPicker(Chat chat) async {
     final scheme = Theme.of(context).colorScheme;
-    final selected = (chat.folder ?? '').trim().toLowerCase();
+    final selectedId = (chat.folderId ?? '').trim();
     final maxH = MediaQuery.of(context).size.height * 0.6;
     final result = await showModalBottomSheet<String>(
       context: context,
@@ -569,10 +575,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: const Text('Переместить в папку'),
               ),
               const Divider(height: 1),
-              _folderTile(ctx, scheme, 'Без папки', '__none__', selected.isEmpty),
-              _folderTile(ctx, scheme, 'Работа', 'work', selected == 'work'),
-              _folderTile(ctx, scheme, 'Личное', 'personal', selected == 'personal'),
-              _folderTile(ctx, scheme, 'Архив', 'archive', selected == 'archive'),
+              _folderTile(ctx, scheme, 'Без папки', '__none__', selectedId.isEmpty),
+              for (final f in _folders)
+                _folderTile(ctx, scheme, f.name, f.id, f.id == selectedId),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.create_new_folder_rounded, color: _folders.length >= 5 ? scheme.onSurface.withValues(alpha: 0.35) : scheme.primary),
+                title: Text(_folders.length >= 5 ? 'Создать папку (лимит 5)' : 'Создать папку'),
+                onTap: _folders.length >= 5
+                    ? null
+                    : () async {
+                        Navigator.pop(ctx, '__create__');
+                      },
+              ),
+              ListTile(
+                leading: Icon(Icons.settings_rounded, color: scheme.onSurface.withValues(alpha: 0.7)),
+                title: const Text('Управление папками'),
+                onTap: () async {
+                  Navigator.pop(ctx, '__manage__');
+                },
+              ),
               const SizedBox(height: 12),
             ],
           ),
@@ -582,11 +604,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
     if (result == null) return;
-    final folder = result == '__none__' ? null : result;
+
+    if (result == '__create__') {
+      await _createFolderFlow();
+      return;
+    }
+    if (result == '__manage__') {
+      await _manageFoldersFlow();
+      return;
+    }
+
+    final folderId = result == '__none__' ? null : result;
+    final folderName = folderId == null ? null : _folders.firstWhere((f) => f.id == folderId, orElse: () => ChatFolder(id: folderId, name: '')).name;
 
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _chatsService.setChatFolder(chat.id, folder: folder);
+      await _chatsService.setChatFolderId(chat.id, folderId: folderId);
       if (!mounted) return;
       setState(() {
         _chats = _chats
@@ -595,7 +628,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     id: c.id,
                     name: c.name,
                     isGroup: c.isGroup,
-                    folder: folder,
+                    folderId: folderId,
+                    folderName: folderName,
                     otherUserId: c.otherUserId,
                     otherUserAvatarUrl: c.otherUserAvatarUrl,
                     lastMessageId: c.lastMessageId,
@@ -629,6 +663,168 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       title: Text(label),
       onTap: () => Navigator.pop(ctx, value),
+    );
+  }
+
+  Future<void> _createFolderFlow() async {
+    if (!mounted) return;
+    if (_folders.length >= 5) return;
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Новая папка'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Название папки'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = (name ?? '').trim();
+    if (trimmed.isEmpty) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _chatsService.createFolder(trimmed);
+      await _loadFolders();
+      messenger.showSnackBar(const SnackBar(content: Text('Папка создана')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+    }
+  }
+
+  Future<void> _manageFoldersFlow() async {
+    if (!mounted) return;
+    final scheme = Theme.of(context).colorScheme;
+    final maxH = MediaQuery.of(context).size.height * 0.75;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const ListTile(
+                title: Text('Папки'),
+                subtitle: Text('Можно создать максимум 5'),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _folders.length,
+                  itemBuilder: (context, index) {
+                    final f = _folders[index];
+                    return ListTile(
+                      leading: const Icon(Icons.folder_rounded),
+                      title: Text(f.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Переименовать',
+                            icon: const Icon(Icons.edit_rounded),
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(ctx);
+                              final c = TextEditingController(text: f.name);
+                              final newName = await showDialog<String>(
+                                context: ctx,
+                                builder: (dctx) => AlertDialog(
+                                  title: const Text('Переименовать папку'),
+                                  content: TextField(controller: c, autofocus: true),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                                    FilledButton(onPressed: () => Navigator.pop(dctx, c.text), child: const Text('Сохранить')),
+                                  ],
+                                ),
+                              );
+                              final t = (newName ?? '').trim();
+                              if (t.isEmpty) return;
+                              try {
+                                await _chatsService.renameFolder(f.id, t);
+                                await _loadFolders();
+                              } catch (e) {
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                                );
+                              }
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Удалить',
+                            icon: Icon(Icons.delete_rounded, color: scheme.error),
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(ctx);
+                              final ok = await showDialog<bool>(
+                                context: ctx,
+                                builder: (dctx) => AlertDialog(
+                                  title: const Text('Удалить папку?'),
+                                  content: Text('Папка "${f.name}" будет удалена. Чаты останутся, просто без папки.'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Отмена')),
+                                    FilledButton(
+                                      onPressed: () => Navigator.pop(dctx, true),
+                                      style: FilledButton.styleFrom(backgroundColor: scheme.error),
+                                      child: const Text('Удалить'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (ok != true) return;
+                              try {
+                                await _chatsService.deleteFolder(f.id);
+                                await _loadFolders();
+                                if (_folderFilterId == f.id && mounted) setState(() => _folderFilterId = null);
+                              } catch (e) {
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: FilledButton.icon(
+                  onPressed: _folders.length >= 5 ? null : () async {
+                    Navigator.pop(ctx);
+                    await _createFolderFlow();
+                  },
+                  icon: const Icon(Icons.create_new_folder_rounded),
+                  label: Text(_folders.length >= 5 ? 'Лимит 5' : 'Создать папку'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1109,11 +1305,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final q = _query.trim().toLowerCase();
     final sortedChats = _sortedChats;
-    final folder = (_folderFilter ?? '').trim().toLowerCase();
+    final folderId = (_folderFilterId ?? '').trim();
     final filteredChats = sortedChats.where((c) {
-      if (folder.isNotEmpty) {
-        final cf = (c.folder ?? '').trim().toLowerCase();
-        if (cf != folder) return false;
+      if (folderId.isNotEmpty) {
+        final cf = (c.folderId ?? '').trim();
+        if (cf != folderId) return false;
       }
       if (q.isEmpty) return true;
       final name = c.name.toLowerCase();
@@ -1325,12 +1521,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           children: [
                             _folderChip(scheme, 'Все', null, Icons.all_inbox_rounded),
+                            for (final f in _folders) ...[
+                              const SizedBox(width: 8),
+                              _folderChip(scheme, f.name, f.id, Icons.folder_rounded),
+                            ],
                             const SizedBox(width: 8),
-                            _folderChip(scheme, 'Работа', 'work', Icons.work_rounded),
-                            const SizedBox(width: 8),
-                            _folderChip(scheme, 'Личное', 'personal', Icons.person_rounded),
-                            const SizedBox(width: 8),
-                            _folderChip(scheme, 'Архив', 'archive', Icons.archive_rounded),
+                            IconButton(
+                              onPressed: _folders.length >= 5 ? null : _createFolderFlow,
+                              icon: const Icon(Icons.add_circle_rounded),
+                              tooltip: _folders.length >= 5 ? 'Лимит 5 папок' : 'Создать папку',
+                            ),
+                            IconButton(
+                              onPressed: _manageFoldersFlow,
+                              icon: const Icon(Icons.tune_rounded),
+                              tooltip: 'Управление папками',
+                            ),
                           ],
                         ),
                       ),
@@ -1459,7 +1664,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _folderChip(ColorScheme scheme, String label, String? value, IconData icon) {
-    final selected = (_folderFilter == value) || (_folderFilter == null && value == null);
+    final selected = (_folderFilterId == value) || (_folderFilterId == null && value == null);
     return ChoiceChip(
       selected: selected,
       label: Text(label),
@@ -1470,7 +1675,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.9),
         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
       ),
-      onSelected: (_) => setState(() => _folderFilter = value),
+      onSelected: (_) => setState(() => _folderFilterId = value),
     );
   }
 }
