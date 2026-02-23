@@ -1,7 +1,7 @@
 import pool from '../db.js';
 import multer from 'multer';
 import csvParser from 'csv-parser';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import iconv from 'iconv-lite';
 import { Readable } from 'stream';
 
@@ -24,16 +24,20 @@ export const upload = multer({
     const allowExcel = process.env.ALLOW_EXCEL_UPLOADS === 'true';
     const ext = (file.originalname || '').toLowerCase();
     const isCsv = ext.endsWith('.csv') || file.mimetype === 'text/csv';
-    const isExcel = ext.endsWith('.xlsx') || ext.endsWith('.xls');
-    
-    if (isExcel && !allowExcel) {
+    const isExcel = ext.endsWith('.xlsx');
+    const isOldExcel = ext.endsWith('.xls');
+
+    if ((isExcel || isOldExcel) && !allowExcel) {
       return cb(new Error('Загрузка Excel отключена на сервере. Используйте CSV.'));
+    }
+    if (isOldExcel) {
+      return cb(new Error('Поддерживается только .xlsx. Сохраните файл в формате Excel (.xlsx).'));
     }
 
     if (allowedMimes.includes(file.mimetype) || isCsv || (allowExcel && isExcel)) {
       cb(null, true);
     } else {
-      cb(new Error('Неподдерживаемый формат файла. Используйте CSV или Excel (.xlsx, .xls)'));
+      cb(new Error('Неподдерживаемый формат файла. Используйте CSV или Excel (.xlsx)'));
     }
   }
 });
@@ -96,32 +100,34 @@ const parseCSV = (buffer) => {
   });
 };
 
-// Парсинг Excel файла
-const parseExcel = (buffer) => {
-  const workbook = xlsx.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  // Защита от prototype pollution: сначала получаем массивы, затем сами строим объекты с безопасными ключами
-  const rows = xlsx.utils.sheet_to_json(worksheet, {
-    header: 1,
-    raw: true,
-    blankrows: false,
-    defval: '',
-  });
-
-  if (!Array.isArray(rows) || rows.length === 0) return [];
+// Парсинг Excel файла (.xlsx) через exceljs (без уязвимостей xlsx)
+const parseExcel = async (buffer) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
 
   const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
+  const maxRows = 10000;
+  const rows = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rows.length >= maxRows + 1) return;
+    const values = row.values || [];
+    const arr = [];
+    for (let i = 1; i < values.length; i++) arr.push(values[i] ?? '');
+    rows.push(arr);
+  });
+
+  if (rows.length === 0) return [];
+
   const headersRaw = (rows[0] || []).map((h) => (h ?? '').toString().trim());
   const headers = headersRaw.map((h) => {
-    const lower = h.toLowerCase();
+    const lower = (h || '').toLowerCase();
     if (!h) return null;
     if (blockedKeys.has(lower)) return null;
     return h.length > 120 ? h.substring(0, 120) : h;
   });
 
-  // Ограничим количество строк, чтобы снизить DoS-риск
-  const maxRows = 10000;
   const out = [];
   for (let i = 1; i < rows.length && out.length < maxRows; i++) {
     const r = rows[i] || [];
@@ -253,7 +259,7 @@ export const processBankStatement = async (req, res) => {
     const allowExcel = process.env.ALLOW_EXCEL_UPLOADS === 'true';
     if (file.originalname.endsWith('.csv') || file.mimetype === 'text/csv') {
       rows = await parseCSV(file.buffer);
-    } else if (allowExcel && (file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls'))) {
+    } else if (allowExcel && file.originalname.toLowerCase().endsWith('.xlsx')) {
       rows = await parseExcel(file.buffer);
     } else {
       return res.status(400).json({ message: 'Неподдерживаемый формат файла' });
@@ -328,7 +334,7 @@ export const processBankStatement = async (req, res) => {
       } catch (error) {
         errors.push({
           row: i + 1,
-          error: error.message
+          error: 'Ошибка обработки строки'
         });
       }
     }
@@ -359,6 +365,10 @@ export const applyPayments = async (req, res) => {
 
     if (!Array.isArray(payments) || payments.length === 0) {
       return res.status(400).json({ message: 'Не указаны платежи для применения' });
+    }
+    const MAX_PAYMENTS_PER_REQUEST = 200;
+    if (payments.length > MAX_PAYMENTS_PER_REQUEST) {
+      return res.status(400).json({ message: `Максимум ${MAX_PAYMENTS_PER_REQUEST} платежей за один запрос` });
     }
 
     const results = [];
@@ -411,7 +421,7 @@ export const applyPayments = async (req, res) => {
       } catch (error) {
         errors.push({
           payment,
-          error: error.message
+          error: 'Ошибка применения платежа'
         });
       }
     }

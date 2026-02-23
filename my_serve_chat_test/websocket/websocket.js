@@ -40,7 +40,9 @@ export function getWebSocketClients() {
 }
 
 export function setupWebSocket(server) {
-  const wss = new WebSocketServer({ server });
+  // Лимит размера одного сообщения (64 KB) — защита от DoS
+  const MAX_WS_PAYLOAD = 64 * 1024;
+  const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
 
   wss.on('connection', (ws, req) => {
     // Получаем токен:

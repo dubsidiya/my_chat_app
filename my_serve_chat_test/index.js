@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,6 +23,7 @@ import pool from './db.js';
 dotenv.config();
 
 const app = express();
+app.disable('x-powered-by'); // Не раскрывать клиенту технологию сервера
 const server = http.createServer(app);
 
 // Health check endpoint (для keep-alive пинга на Render free tier)
@@ -34,29 +36,46 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
-// В production JWT_SECRET обязателен
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.error('❌ JWT_SECRET НЕ УСТАНОВЛЕН! Сервер не может безопасно запуститься в production.');
-  process.exit(1);
+// В production JWT_SECRET обязателен и не короче 32 символов
+const JWT_SECRET = process.env.JWT_SECRET;
+if (process.env.NODE_ENV === 'production') {
+  if (!JWT_SECRET || typeof JWT_SECRET !== 'string') {
+    console.error('❌ JWT_SECRET НЕ УСТАНОВЛЕН! Сервер не может безопасно запуститься в production.');
+    process.exit(1);
+  }
+  if (JWT_SECRET.length < 32) {
+    console.error('❌ JWT_SECRET должен быть не короче 32 символов в production.');
+    process.exit(1);
+  }
 }
 
 // Настройка trust proxy: 1 = доверять только первому прокси (Render).
 // true запрещён express-rate-limit (позволяет подделку IP). Число 1 даёт корректный client IP и проходит валидацию.
 app.set('trust proxy', 1);
 
-// Базовые security headers (без дополнительных зависимостей)
+// Helmet — набор security-заголовков (X-Content-Type-Options, X-Frame-Options и др.)
+app.use(helmet({
+  contentSecurityPolicy: false, // API не отдаёт HTML
+  crossOriginEmbedderPolicy: false,
+}));
+// Дополнительно: жёсткий DENY для iframe и HSTS в production
 app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
   next();
 });
 
 // Настройка CORS - ограничиваем только разрешенные домены
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : ['http://localhost:3000', 'https://my-chat-app.vercel.app'];
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGINS?.trim()) {
+  console.warn('⚠️  В production рекомендуется задать ALLOWED_ORIGINS в .env');
+}
 
 // Опциональные pattern/wildcard origins (например: https://*.vercel.app, *.netlify.app)
 // По умолчанию разрешаем все *.vercel.app (preview и production деплои на Vercel).
@@ -191,6 +210,17 @@ const getClientIp = (req) => {
   return ip || 'unknown';
 };
 
+// Глобальный rate limit (последняя линия от DoS — все запросы с одного IP)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  message: { message: 'Слишком много запросов с вашего адреса, попробуйте позже' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getClientIp,
+});
+app.use(globalLimiter);
+
 // Rate limiting для защиты от брутфорса
 // Ключ = username + IP: один пользователь с неверным паролем не блокирует остальных (важно при общем IP за прокси)
 const authLimiter = rateLimit({
@@ -254,6 +284,17 @@ app.use('/bank-statement', bankStatementRoutes);
 app.use('/setup', setupRoutes);
 app.use('/admin', adminRoutes);
 app.use('/moderation', moderationRoutes);
+
+// 404 — не раскрываем структуру API
+app.use((req, res) => {
+  res.status(404).json({ message: 'Не найдено' });
+});
+
+// Обработка ошибок (например, от CORS) — без утечки деталей
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  res.status(500).json({ message: 'Ошибка сервера' });
+});
 
 // Подключение WebSocket
 setupWebSocket(server);

@@ -37,7 +37,7 @@ router.post('/upload-file', (req, res, next) => {
     if (err) {
       console.error('Multer file error:', err);
       const msg = err.code === 'LIMIT_FILE_SIZE'
-        ? 'Файл слишком большой. Максимум 2 ГБ'
+        ? 'Файл слишком большой. Максимум 100 МБ'
         : 'Ошибка загрузки файла';
       return res.status(400).json({ message: msg });
     }

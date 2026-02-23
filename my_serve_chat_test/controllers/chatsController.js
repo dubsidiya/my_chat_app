@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 
 const normalizeRole = (role) => (role || '').toString().toLowerCase();
 
@@ -284,10 +285,8 @@ export const createChatFolder = async (req, res) => {
     const ok = await chatFoldersTableExists();
     if (!ok) return res.status(400).json({ message: 'Папки недоступны: примените миграцию add_custom_chat_folders.sql' });
 
-    const nameRaw = (req.body?.name ?? '').toString();
-    const name = nameRaw.trim();
+    const name = sanitizeForDisplay((req.body?.name ?? '').toString(), 50);
     if (!name) return res.status(400).json({ message: 'Укажите название папки' });
-    if (name.length > 50) return res.status(400).json({ message: 'Название папки не более 50 символов' });
 
     const cnt = await pool.query('SELECT COUNT(*)::int AS c FROM chat_folders WHERE user_id = $1', [userId]);
     if ((cnt.rows[0]?.c ?? 0) >= 5) {
@@ -315,13 +314,11 @@ export const createChatFolder = async (req, res) => {
 export const renameChatFolder = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const folderId = parseInt(req.params.folderId, 10);
-    if (isNaN(folderId)) return res.status(400).json({ message: 'Некорректный folderId' });
+    const folderId = parsePositiveInt(req.params.folderId);
+    if (!folderId) return res.status(400).json({ message: 'Некорректный folderId' });
 
-    const nameRaw = (req.body?.name ?? '').toString();
-    const name = nameRaw.trim();
+    const name = sanitizeForDisplay((req.body?.name ?? '').toString(), 50);
     if (!name) return res.status(400).json({ message: 'Укажите название папки' });
-    if (name.length > 50) return res.status(400).json({ message: 'Название папки не более 50 символов' });
 
     const own = await pool.query('SELECT 1 FROM chat_folders WHERE id = $1 AND user_id = $2', [folderId, userId]);
     if (!own.rows.length) return res.status(404).json({ message: 'Папка не найдена' });
@@ -343,8 +340,8 @@ export const renameChatFolder = async (req, res) => {
 export const deleteChatFolder = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const folderId = parseInt(req.params.folderId, 10);
-    if (isNaN(folderId)) return res.status(400).json({ message: 'Некорректный folderId' });
+    const folderId = parsePositiveInt(req.params.folderId);
+    if (!folderId) return res.status(400).json({ message: 'Некорректный folderId' });
 
     const hasFolderId = await chatUsersFolderIdColumnExists();
     const ok = await chatFoldersTableExists();
@@ -380,9 +377,9 @@ export const setChatFolder = async (req, res) => {
       folderId = null;
     }
     let folderIdNum = null;
-    if (folderId !== null) {
-      folderIdNum = parseInt(folderId, 10);
-      if (isNaN(folderIdNum)) return res.status(400).json({ message: 'Некорректный folderId' });
+    if (folderId !== null && folderId !== undefined && folderId !== '' && folderId !== false) {
+      folderIdNum = parsePositiveInt(folderId);
+      if (!folderIdNum) return res.status(400).json({ message: 'Некорректный folderId' });
       const own = await pool.query('SELECT id, name FROM chat_folders WHERE id = $1 AND user_id = $2', [folderIdNum, userId]);
       if (!own.rows.length) return res.status(404).json({ message: 'Папка не найдена' });
     }
@@ -418,6 +415,10 @@ export const createChat = async (req, res) => {
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({ message: "Укажите хотя бы одного участника (userIds)" });
+    }
+    const MAX_USER_IDS = 50;
+    if (userIds.length > MAX_USER_IDS) {
+      return res.status(400).json({ message: `Максимум ${MAX_USER_IDS} участников за раз` });
     }
 
     // Создатель чата - текущий пользователь из токена
@@ -463,19 +464,15 @@ export const createChat = async (req, res) => {
       if (uniqueUserIds.length < 2) {
         return res.status(400).json({ message: "Для группового чата выберите хотя бы одного участника" });
       }
-      const nameTrimmed = String(name).trim();
+      const nameTrimmed = sanitizeForDisplay(String(name ?? ''), 100);
       if (!nameTrimmed) {
         return res.status(400).json({ message: "Укажите имя группового чата" });
-      }
-      if (nameTrimmed.length > 100) {
-        return res.status(400).json({ message: "Имя чата не более 100 символов" });
       }
     }
 
     const isGroup = isGroupRequested === true;
-    const finalName = isGroup
-      ? (name && String(name).trim().length > 0 ? String(name).trim().slice(0, 100) : 'Групповой чат')
-      : 'Личный чат';
+    const groupName = (name != null && isGroup) ? sanitizeForDisplay(String(name), 100) : '';
+    const finalName = isGroup ? (groupName || 'Групповой чат') : 'Личный чат';
 
     // Создаём чат с is_group и created_by
     const chatResult = await pool.query(
@@ -640,6 +637,10 @@ export const addMembersToChat = async (req, res) => {
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({ message: "Укажите хотя бы одного участника (userIds)" });
+    }
+    const MAX_ADD_MEMBERS = 50;
+    if (userIds.length > MAX_ADD_MEMBERS) {
+      return res.status(400).json({ message: `Максимум ${MAX_ADD_MEMBERS} участников за раз` });
     }
 
     // Проверяем, существует ли чат
@@ -1149,11 +1150,10 @@ export const renameChat = async (req, res) => {
   try {
     const chatId = req.params.id;
     const requesterId = req.user.userId;
-    const name = (req.body?.name || '').toString().trim();
+    const name = sanitizeForDisplay((req.body?.name || '').toString(), 100);
 
     if (!chatId) return res.status(400).json({ message: 'Укажите chatId' });
     if (!name) return res.status(400).json({ message: 'Укажите name' });
-    if (name.length > 100) return res.status(400).json({ message: 'Слишком длинное имя (макс 100)' });
 
     const chatCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
     if (chatCheck.rows.length === 0) return res.status(404).json({ message: 'Чат не найден' });

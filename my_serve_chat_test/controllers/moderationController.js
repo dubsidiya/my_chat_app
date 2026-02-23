@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { parsePositiveInt } from '../utils/sanitize.js';
 
 export const ensureUserBlocksTable = async () => {
   await pool.query(`
@@ -28,8 +29,8 @@ export const reportMessage = async (req, res) => {
   try {
     await ensureContentReportsTable();
     const reporterId = req.user.userId;
-    const messageId = parseInt(req.params.messageId, 10);
-    if (!Number.isFinite(messageId)) {
+    const messageId = parsePositiveInt(req.params.messageId);
+    if (!messageId) {
       return res.status(400).json({ message: 'Некорректный ID сообщения' });
     }
     const msgCheck = await pool.query('SELECT id, chat_id FROM messages WHERE id = $1', [messageId]);
@@ -58,8 +59,9 @@ export const blockUser = async (req, res) => {
   try {
     await ensureUserBlocksTable();
     const blockerId = req.user.userId;
-    const blockedId = parseInt(req.body?.user_id ?? req.body?.userId ?? req.params.userId, 10);
-    if (!Number.isFinite(blockedId) || blockedId === blockerId) {
+    const rawId = req.body?.user_id ?? req.body?.userId ?? req.params.userId;
+    const blockedId = parsePositiveInt(rawId);
+    if (!blockedId || blockedId === blockerId) {
       return res.status(400).json({ message: 'Некорректный пользователь' });
     }
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [blockedId]);

@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
+import { sanitizeForDisplay } from '../utils/sanitize.js';
+import { securityEvent } from '../utils/auditLog.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
 
@@ -139,7 +141,7 @@ export const login = async (req, res) => {
     const result = await queryUserWithOptionalAvatarByEmail(normalizedUsername);
 
     if (result.rows.length === 0) {
-      // Не раскрываем, существует ли пользователь (защита от перечисления)
+      securityEvent('login_fail', req);
       return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
@@ -170,6 +172,7 @@ export const login = async (req, res) => {
     }
     
     if (!passwordMatch) {
+      securityEvent('login_fail', req);
       return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
@@ -219,6 +222,7 @@ export const adminResetUserPassword = async (req, res) => {
     const targetUserId = userResult.rows[0].id;
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, targetUserId]);
+    securityEvent('admin_reset_password', req, { targetUserId });
     return res.status(200).json({ message: 'Пароль успешно изменён' });
   } catch (error) {
     console.error('Ошибка adminResetUserPassword:', error.message);
@@ -257,10 +261,8 @@ export const updateProfile = async (req, res) => {
     if (!req.user?.userId) {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
-    const displayName = (req.body?.display_name ?? req.body?.displayName ?? '').toString().trim();
-    if (displayName.length > 255) {
-      return res.status(400).json({ message: 'Ник не более 255 символов' });
-    }
+    const raw = (req.body?.display_name ?? req.body?.displayName ?? '').toString();
+    const displayName = sanitizeForDisplay(raw, 255);
     await pool.query(
       'UPDATE users SET display_name = $1 WHERE id = $2',
       [displayName || null, req.user.userId]
@@ -336,6 +338,10 @@ export const saveFcmToken = async (req, res) => {
     if (!tokenTrimmed) {
       return res.status(400).json({ message: 'fcmToken не может быть пустым' });
     }
+    const FCM_TOKEN_MAX_LENGTH = 1024;
+    if (tokenTrimmed.length > FCM_TOKEN_MAX_LENGTH) {
+      return res.status(400).json({ message: `fcmToken не более ${FCM_TOKEN_MAX_LENGTH} символов` });
+    }
     await pool.query(
       'UPDATE users SET fcm_token = $1 WHERE id = $2',
       [tokenTrimmed, userId]
@@ -373,7 +379,7 @@ export const uploadAvatar = async (req, res) => {
     res.status(200).json({ avatarUrl: imageUrl });
   } catch (error) {
     console.error('Ошибка uploadAvatar:', error);
-    res.status(500).json({ message: error.message || 'Ошибка загрузки аватара' });
+    res.status(500).json({ message: 'Ошибка загрузки аватара' });
   }
 };
 
@@ -497,8 +503,8 @@ export const deleteAccount = async (req, res) => {
       console.log(`Удален пользователь ${userId}`);
 
       await client.query('COMMIT'); // Подтверждаем транзакцию
-      
-      res.status(200).json({ 
+      securityEvent('account_deleted', req);
+      res.status(200).json({
         message: 'Аккаунт успешно удален',
         deletedChats: createdChats.rows.length
       });
@@ -513,10 +519,7 @@ export const deleteAccount = async (req, res) => {
   } catch (error) {
     console.error('Ошибка удаления аккаунта:', error);
     console.error('Stack:', error.stack);
-    res.status(500).json({ 
-      message: 'Ошибка удаления аккаунта',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Ошибка удаления аккаунта' });
   }
 };
 
@@ -579,17 +582,12 @@ export const changePassword = async (req, res) => {
 
     console.log(`Пароль изменен для пользователя ${userId}`);
 
-    res.status(200).json({ 
-      message: 'Пароль успешно изменен'
-    });
-
+    securityEvent('password_changed', req);
+    res.status(200).json({ message: 'Пароль успешно изменен' });
   } catch (error) {
     console.error('Ошибка смены пароля:', error);
     console.error('Stack:', error.stack);
-    res.status(500).json({ 
-      message: 'Ошибка смены пароля',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Ошибка смены пароля' });
   }
 };
 

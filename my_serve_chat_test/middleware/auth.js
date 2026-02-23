@@ -24,6 +24,12 @@ export const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: 'Токен доступа отсутствует' });
   }
 
+  // Ограничение длины токена — защита от DoS (огромная строка в jwt.verify)
+  const MAX_TOKEN_LENGTH = 4096;
+  if (token.length > MAX_TOKEN_LENGTH) {
+    return res.status(401).json({ message: 'Токен доступа отсутствует' });
+  }
+
   jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }, (err, user) => {
     if (err) {
       if (process.env.NODE_ENV === 'development') {

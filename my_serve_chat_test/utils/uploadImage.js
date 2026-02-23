@@ -6,8 +6,8 @@ import { uploadToYandex, deleteFromYandex, getImageUrl as getYandexImageUrl } fr
 // Файл будет храниться в памяти, затем загрузим в Яндекс Облако
 const storage = multer.memoryStorage();
 
-// Фильтр файлов - только изображения (все распространённые форматы фото)
-const ALLOWED_IMAGE_EXT = /\.(jpeg|jpg|jpe|png|gif|webp|heic|heif|bmp|tiff|tif|avif|ico|svg)$/i;
+// Фильтр файлов - только изображения (SVG исключён: может содержать JavaScript — XSS при отображении)
+const ALLOWED_IMAGE_EXT = /\.(jpeg|jpg|jpe|png|gif|webp|heic|heif|bmp|tiff|tif|avif|ico)$/i;
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
   'image/jpg',
@@ -24,7 +24,6 @@ const ALLOWED_MIME_TYPES = [
   'image/avif',
   'image/x-icon',
   'image/vnd.microsoft.icon',
-  'image/svg+xml',
 ];
 
 const fileFilter = (req, file, cb) => {
@@ -37,7 +36,7 @@ const fileFilter = (req, file, cb) => {
   if (okByExt || okByMime) {
     return cb(null, true);
   }
-  cb(new Error('Только изображения! Разрешены: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO, SVG'));
+  cb(new Error('Только изображения! Разрешены: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO'));
 };
 
 // Настройка multer для загрузки изображений (сжатое + оригинал)

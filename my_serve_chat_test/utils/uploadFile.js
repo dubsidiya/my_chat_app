@@ -74,13 +74,13 @@ const fileFilter = (req, file, cb) => {
   cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, код (.py, .js, .ts, .html, .css), а также аудио (M4A/AAC/MP3/OGG/OPUS/WAV)'));
 };
 
-// Лимит размера файла для загрузки в чат (2 GB)
-const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
+// Лимит размера файла для загрузки в чат (100 MB — защита от DoS: файл хранится в памяти до загрузки в облако)
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 
 export const uploadFile = multer({
   storage,
   limits: {
-    fileSize: MAX_FILE_SIZE_BYTES, // 2 GB
+    fileSize: MAX_FILE_SIZE_BYTES,
     files: 1,
   },
   fileFilter,

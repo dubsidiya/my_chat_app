@@ -14,9 +14,37 @@ const unlockLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: 'Слишком много попыток, попробуйте позже' },
   keyGenerator: (req) => {
-    // Ограничиваем по userId, если есть, иначе по IP
     return req.user?.userId?.toString() || req.ip;
   },
+});
+
+// Лимит на сохранение FCM-токена (защита от спама)
+const fcmTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком частые обновления токена, попробуйте позже' },
+  keyGenerator: (req) => req.user?.userId?.toString() || req.ip || 'unknown',
+});
+
+// Лимит на критические действия (удаление аккаунта, смена пароля) — защита от злоупотребления при утёкшем токене
+const sensitiveActionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 час
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком много попыток, попробуйте позже' },
+  keyGenerator: (req) => req.user?.userId?.toString() || req.ip || 'unknown',
+});
+
+// Лимит на запрос профиля по ID (защита от перебора/скрапинга списка пользователей)
+const getUserByIdLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.userId?.toString() || req.ip || 'unknown',
 });
 
 // Публичные эндпоинты (не требуют аутентификации)
@@ -28,10 +56,10 @@ router.get('/me', authenticateToken, getMe);
 router.patch('/me', authenticateToken, updateProfile); // PATCH /auth/me — обновить ник (display_name)
 router.post('/me/avatar', authenticateToken, uploadImage.single('avatar'), uploadAvatar); // POST /auth/me/avatar — загрузить аватар
 router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - получение всех пользователей
-router.get('/users/:userId', authenticateToken, getUserById); // GET /auth/users/:userId - профиль пользователя (аватар/ник)
-router.delete('/user/:userId', authenticateToken, deleteAccount); // DELETE /auth/user/:userId - удаление аккаунта
-router.put('/user/:userId/password', authenticateToken, changePassword); // PUT /auth/user/:userId/password - смена пароля
+router.get('/users/:userId', authenticateToken, getUserByIdLimiter, getUserById); // GET /auth/users/:userId - профиль пользователя
+router.delete('/user/:userId', authenticateToken, sensitiveActionLimiter, deleteAccount); // DELETE /auth/user/:userId
+router.put('/user/:userId/password', authenticateToken, sensitiveActionLimiter, changePassword); // PUT /auth/user/:userId/password
 router.post('/unlock-private', authenticateToken, unlockLimiter, unlockPrivateAccess); // POST /auth/unlock-private - получить токен с privateAccess=true
-router.post('/fcm-token', authenticateToken, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
+router.post('/fcm-token', authenticateToken, fcmTokenLimiter, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
 
 export default router;

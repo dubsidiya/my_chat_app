@@ -44,11 +44,10 @@ export const setupCorsEndpoint = async (req, res) => {
     let errorMessage = 'Ошибка настройки CORS';
     if (error.name === 'NoSuchBucket') {
       errorMessage = `Бакет "${process.env.YANDEX_BUCKET_NAME}" не найден`;
-    } else if (error.name === 'AccessDenied' || error.message.includes('Access Denied')) {
+    } else if (error.name === 'AccessDenied' || (error.message && error.message.includes('Access Denied'))) {
       errorMessage = 'Доступ запрещен. Проверьте ключи доступа и права сервисного аккаунта';
-    } else {
-      errorMessage = error.message || errorMessage;
     }
+    // Не передаём error.message клиенту — возможна утечка внутренней информации
 
     res.status(500).json({
       success: false,

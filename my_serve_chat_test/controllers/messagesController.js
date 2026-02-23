@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
+import { sanitizeMessageContent } from '../utils/sanitize.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 import { sendPushToTokens } from '../utils/pushNotifications.js';
@@ -703,7 +704,7 @@ export const sendMessage = async (req, res) => {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url или file_url' });
   }
 
-  const contentStr = content != null ? String(content) : '';
+  const contentStr = sanitizeMessageContent(content != null ? String(content) : '');
   if (contentStr.length > MAX_MESSAGE_CONTENT_LENGTH) {
     return res.status(400).json({ message: `Текст сообщения не более ${MAX_MESSAGE_CONTENT_LENGTH} символов` });
   }
@@ -979,14 +980,16 @@ export const editMessage = async (req, res) => {
     return res.status(400).json({ message: 'Укажите content или image_url для редактирования' });
   }
 
-  const contentStr = content != null ? String(content) : '';
+  const contentStr = content != null ? sanitizeMessageContent(String(content)) : '';
   if (contentStr.length > 65535) {
     return res.status(400).json({ message: 'Текст сообщения не более 65535 символов' });
   }
   if (image_url != null && String(image_url).length > 2048) {
     return res.status(400).json({ message: 'Ссылка на изображение не более 2048 символов' });
   }
-  
+
+  const sanitizedContent = content !== undefined ? contentStr : undefined;
+
   try {
     // Проверяем, существует ли сообщение и получаем информацию о нем
     const messageCheck = await pool.query(
@@ -1029,9 +1032,9 @@ export const editMessage = async (req, res) => {
     const updateValues = [];
     let paramIndex = 1;
     
-    if (content !== undefined) {
+    if (sanitizedContent !== undefined) {
       updateFields.push(`content = $${paramIndex++}`);
-      updateValues.push(content);
+      updateValues.push(sanitizedContent);
     }
     
     if (image_url !== undefined) {

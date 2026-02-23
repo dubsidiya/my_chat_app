@@ -1,8 +1,19 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { getChatsList, getUserChats, createChat, deleteChat, getChatMembers, addMembersToChat, removeMemberFromChat, leaveChat, updateMemberRole, transferOwnership, createInvite, joinByInvite, revokeInvite, renameChat, setChatFolder, getChatFolders, createChatFolder, renameChatFolder, deleteChatFolder } from '../controllers/chatsController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Rate limit для вступления по инвайт-коду (защита от перебора кодов)
+const joinInviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 25,
+  message: { message: 'Слишком много попыток вступления по инвайту, попробуйте позже' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip || req.connection?.remoteAddress || 'unknown').toString(),
+});
 
 // Все роуты чатов требуют аутентификации
 router.use(authenticateToken);
@@ -16,7 +27,7 @@ router.delete('/folders/:folderId', deleteChatFolder); // DELETE /chats/folders/
 router.post('/:id/leave', leaveChat); // POST /chats/:id/leave - выход из чата
 router.post('/:id/transfer-ownership', transferOwnership); // POST /chats/:id/transfer-ownership
 router.post('/:id/invites', createInvite); // POST /chats/:id/invites
-router.post('/join', joinByInvite); // POST /chats/join
+router.post('/join', joinInviteLimiter, joinByInvite); // POST /chats/join
 router.post('/:id/invites/:inviteId/revoke', revokeInvite); // POST /chats/:id/invites/:inviteId/revoke
 router.get('/:id/members', getChatMembers); // GET /chats/:id/members
 router.post('/:id/members', addMembersToChat); // POST /chats/:id/members
