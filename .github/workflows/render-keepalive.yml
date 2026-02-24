@@ -15,7 +15,7 @@ jobs:
         env:
           RENDER_URL: ${{ vars.RENDER_SERVICE_URL }}
         run: |
-          base="${RENDER_URL:-http://93.77.185.6:3000}"
+          base="${RENDER_URL:-https://reollity.duckdns.org}"
           url="${base%/}/healthz?warm=1"
           for i in 1 2 3 4 5; do
             curl -fsS --max-time 30 "$url" >/dev/null && echo "OK $i" || true

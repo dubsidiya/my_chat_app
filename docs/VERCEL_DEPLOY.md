@@ -39,9 +39,10 @@
 
 3. **Настройте проект**:
    - **Framework Preset**: Other
-   - **Build Command**: `flutter build web`
+   - **Build Command**: оставьте по умолчанию (используется `vercel-build.sh`)
    - **Output Directory**: `build/web`
    - **Install Command**: `flutter pub get`
+   - Для **HTTPS API** (чтобы логин с Vercel работал): **Environment Variables** → **API_BASE_URL** = `https://api.твой-домен.ru` (после настройки HTTPS на ВМ, см. docs/YANDEX_SERVER_MIGRATION.md шаг 5а)
 
 4. **Нажмите "Deploy"**
 
@@ -88,8 +89,7 @@
 
 ### Переменные окружения (если нужно)
 
-Если нужно изменить URL сервера при сборке (Flutter web): в Vercel **Environment Variables** задайте `API_BASE_URL` или собирайте с `--dart-define=API_BASE_URL=...`. По умолчанию приложение использует бэкенд на Yandex VM:
-- **API_BASE_URL** (опционально) = `http://93.77.185.6:3000`
+URL бэкенда подставляется при сборке. По умолчанию: `http://93.77.185.6:3000`. Если настроил HTTPS на ВМ (скрипт `scripts/setup-https-on-vm.sh`), в Vercel задай **API_BASE_URL** = `https://api.твой-домен.ru` — тогда логин с Vercel не будет давать «XMLHttpRequest error».
 
 ---
 

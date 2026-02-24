@@ -53,9 +53,14 @@ flutter pub get || {
   exit 1
 }
 
-# Собираем веб-версию
+# Собираем веб-версию (API_BASE_URL из Vercel Environment Variables подставляется в приложение)
 echo "🔨 Сборка веб-версии..."
-flutter build web --release || {
+DART_DEFINES=""
+if [ -n "$API_BASE_URL" ]; then
+  DART_DEFINES="--dart-define=API_BASE_URL=$API_BASE_URL"
+  echo "Используется API_BASE_URL: $API_BASE_URL"
+fi
+flutter build web --release $DART_DEFINES || {
   echo "❌ Ошибка при сборке"
   exit 1
 }

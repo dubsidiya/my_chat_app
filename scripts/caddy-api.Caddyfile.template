@@ -1,0 +1,6 @@
+# Шаблон Caddyfile для API. Подставляется DOMAIN в setup-https-on-vm.sh.
+# Caddy автоматически получает и обновляет сертификат Let's Encrypt.
+
+DOMAIN_PLACEHOLDER {
+	reverse_proxy 127.0.0.1:3000
+}

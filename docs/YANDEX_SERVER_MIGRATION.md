@@ -109,9 +109,11 @@ git clone https://github.com/ТВОЙ_ЛОГИН/my_chat_app.git ~/my_chat_app
 cd ~/my_chat_app
 ```
 
-### Шаг 3. Открыть порт на ВМ в Yandex
+### Шаг 3. Открыть порты на ВМ в Yandex
 
-В [консоли Yandex Cloud](https://console.yandex.cloud) → **Compute Cloud** → **Виртуальные машины** → **chat-server** → вкладка **«Сеть»** (или **Группы безопасности**). Добавь правило входящего трафика: порт **3000**, источник **0.0.0.0/0** (или только нужные IP). Без этого запросы снаружи до сервера не дойдут.
+В [консоли Yandex Cloud](https://console.yandex.cloud) → **Compute Cloud** → **Виртуальные машины** → **chat-server** → вкладка **«Сеть»** (или **Группы безопасности**). Добавь правила входящего трафика:
+- Порт **3000** (TCP) — для прямого доступа к API по HTTP.
+- Порты **80** и **443** (TCP) — понадобятся для HTTPS (шаг 5а). Источник **0.0.0.0/0** (или только нужные IP).
 
 ### Шаг 4. Установить окружение и запустить сервер на ВМ
 
@@ -150,6 +152,25 @@ nano my_serve_chat_test/.env
 ### Шаг 5. Переключить приложение на этот сервер
 
 **Сделано:** базовый URL API во Flutter по умолчанию установлен на `http://93.77.185.6:3000` (`lib/config/api_config.dart`). При сборке под другой домен передай `--dart-define=API_BASE_URL=https://твой-домен` или настрой переменные в Vercel.
+
+### Шаг 5а. HTTPS для API (чтобы логин с Vercel работал без «XMLHttpRequest error»)
+
+Если приложение открыто с **Vercel (HTTPS)**, браузер блокирует запросы на HTTP API. Нужно поднять API по HTTPS на ВМ одним скриптом:
+
+1. **Домен:** заведи домен или поддомен (например `api.твой-домен.ru`), создай **A-запись** на IP ВМ (**93.77.185.6**).
+2. **На ВМ** (после SSH):
+   ```bash
+   cd ~/my_chat_app
+   chmod +x scripts/setup-https-on-vm.sh
+   sudo DOMAIN=api.твой-домен.ru ./scripts/setup-https-on-vm.sh
+   ```
+   Скрипт ставит **Caddy**, получает сертификат Let's Encrypt и проксирует HTTPS → твой Node на порту 3000.
+3. **Порты 80 и 443** должны быть открыты в группе безопасности ВМ (шаг 3).
+4. **Vercel:** в настройках проекта → **Environment Variables** добавь **API_BASE_URL** = `https://api.твой-домен.ru` (без слэша в конце). Пересобери/задеплой проект — сборка подставит этот URL в приложение.
+5. В **my_serve_chat_test/.env** на ВМ в **ALLOWED_ORIGINS** добавь свой фронт, например `https://my-chat-app.vercel.app`, затем `pm2 restart chat-server`.
+
+**Подробная инструкция с нуля (что такое домен, куда нажимать, какие команды):** [HTTPS_API_PO_SHAGAM.md](HTTPS_API_PO_SHAGAM.md).  
+Про ошибку «XMLHttpRequest error»: [XMLHTTPREQUEST_ERROR_AFTER_VM.md](XMLHTTPREQUEST_ERROR_AFTER_VM.md).
 
 ### Шаг 6. Автодеплой при изменении кода (GitHub Actions)
 
