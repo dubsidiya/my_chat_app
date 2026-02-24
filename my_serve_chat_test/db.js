@@ -13,10 +13,19 @@ if (!process.env.DATABASE_URL) {
   // Не падаем сразу, чтобы можно было увидеть ошибку в логах
 }
 
+// Yandex Managed PostgreSQL использует сертификат, который pg может не доверять.
+// Убираем sslmode из URL, чтобы не переопределял наш ssl (в новых pg sslmode=require → verify-full).
+let connectionString = process.env.DATABASE_URL ?? '';
+if (connectionString) {
+  connectionString = connectionString.replace(/[?&]sslmode=[^&]*/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+  if (connectionString.includes('&') && !connectionString.includes('?')) connectionString = connectionString.replace('&', '?');
+}
+const isLocal = process.env.DATABASE_URL?.includes('localhost') ?? false;
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : {
-    rejectUnauthorized: false, // ОБЯЗАТЕЛЕН для Supabase/Neon/Render
+  connectionString,
+  ssl: isLocal ? false : {
+    rejectUnauthorized: false, // для облачных БД (Neon, Yandex, Supabase, Render)
   },
 });
 

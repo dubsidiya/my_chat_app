@@ -7,6 +7,10 @@
 .env.*.local
 !.env.example
 !.env.template
+*yandex*credentials*
+**/.env.yandex
+docs/YANDEX_DB_CREDENTIALS.txt
+my_serve_chat_test/neon_dump_*.sql
 
 .DS_Store
 *.swp
