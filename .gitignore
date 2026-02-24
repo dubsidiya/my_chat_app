@@ -11,6 +11,11 @@
 **/.env.yandex
 docs/YANDEX_DB_CREDENTIALS.txt
 my_serve_chat_test/neon_dump_*.sql
+**/.env.yandex-vm
+**/env-yandex-vm.txt
+scripts/.deploy_key
+scripts/.deploy_key.pub
+scripts/vm-connection.txt
 
 .DS_Store
 *.swp

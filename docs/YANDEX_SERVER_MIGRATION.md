@@ -57,6 +57,126 @@ yc compute instance create \
 
 ---
 
+## Запуск сервера на уже созданной ВМ (chat-server)
+
+ВМ уже есть: **chat-server**, публичный IP **93.77.185.6**. Ключ для SSH добавляется при создании через **cloud-init** (`scripts/cloud-init-ssh.yaml`). Ниже — пошаговый запуск приложения на ней.
+
+### Шаг 1. Подключиться по SSH
+
+В проекте есть ключ для деплоя: **scripts/.deploy_key** (приватный) и **.deploy_key.pub**. Подключение без пароля (после того как ключ добавлен на ВМ, см. блок ниже):
+
+```bash
+ssh -i scripts/.deploy_key ubuntu@93.77.185.6
+```
+
+**Если форма «Закрытый SSH-ключ» пишет «unable to authenticate»:**
+- **Логин** — ровно `ubuntu` (без пробелов).
+- **Ключ** — весь файл `scripts/.deploy_key` от первой до последней строки: `-----BEGIN OPENSSH PRIVATE KEY-----` … `-----END OPENSSH PRIVATE KEY-----`. Копируй в терминале: `cat scripts/.deploy_key` → выделить весь вывод, вставить в форму. Без лишних пустых строк в начале/конце.
+- Если форма принимает только **файл** — укажи путь к `scripts/.deploy_key` или загрузи этот файл.
+- Если всё равно не пускает — возможно, форма ждёт ключ в другом формате или от другой ВМ; тогда добавь ключ через серийную консоль или инструкцию «Восстановление доступа к ВМ» в консоли Yandex.
+
+**Если подключаешься по паролю** (сброс пароля в консоли): на ВМ выполни:
+```bash
+mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIA4rDkbvyojdqjtUS4JNU7u7yajUPq6hB+YllG1tQpe deploy-yandex-vm' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+```
+После этого с Mac будет работать: `ssh -i scripts/.deploy_key ubuntu@93.77.185.6` и `./scripts/deploy-to-yandex-vm-now.sh`.
+
+**Вариант из консоли (SSH-клиент):** `ssh -l ubuntu 93.77.185.6` — с ключом: `ssh -l ubuntu -i scripts/.deploy_key 93.77.185.6`.
+
+**Вариант через CLI Yandex** (из корня репозитория):
+```bash
+yc compute ssh --id fhmo1h7g2cl6904tl3q4 --identity-file scripts/.deploy_key --login ubuntu --folder-id b1glvesspg0e1brhvevg --public-address
+```
+Работает после того, как публичный ключ добавлен в `~/.ssh/authorized_keys` на ВМ один раз (см. блок «Если Permission denied» ниже).
+
+### Шаг 2. Загрузить код на ВМ
+
+**Вариант А — с твоего Mac (из каталога с репозиторием):**
+
+```bash
+rsync -avz --exclude node_modules --exclude '.env' -e ssh \
+  ./ ubuntu@93.77.185.6:~/my_chat_app/
+```
+
+Файл `.env` на ВМ создашь вручную (см. шаг 4), чтобы не светить секреты.
+
+**Вариант Б — на ВМ через git (если репозиторий публичный):**
+
+```bash
+ssh ubuntu@93.77.185.6
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/ТВОЙ_ЛОГИН/my_chat_app.git ~/my_chat_app
+cd ~/my_chat_app
+```
+
+### Шаг 3. Открыть порт на ВМ в Yandex
+
+В [консоли Yandex Cloud](https://console.yandex.cloud) → **Compute Cloud** → **Виртуальные машины** → **chat-server** → вкладка **«Сеть»** (или **Группы безопасности**). Добавь правило входящего трафика: порт **3000**, источник **0.0.0.0/0** (или только нужные IP). Без этого запросы снаружи до сервера не дойдут.
+
+### Шаг 4. Установить окружение и запустить сервер на ВМ
+
+На ВМ (после SSH):
+
+```bash
+cd ~/my_chat_app
+chmod +x scripts/setup-server-on-yandex-vm.sh
+```
+
+Создай `.env` в каталоге бэкенда (скопируй с Render или с локальной машины и подставь Yandex):
+
+```bash
+nano my_serve_chat_test/.env
+```
+
+Минимум в `.env`:
+
+- `NODE_ENV=production`
+- `PORT=3000`
+- `DATABASE_URL=postgresql://chat_app:ПАРОЛЬ@rc1a-fb78j7h9hisgnsll.mdb.yandexcloud.net:6432/chat_db` (без sslmode или с `?sslmode=require` — в коде уже обрабатывается)
+- `JWT_SECRET=...` (не короче 32 символов, как на Render)
+- `ALLOWED_ORIGINS=https://my-chat-app.vercel.app,http://localhost:3000,...`
+- При использовании Object Storage: `YANDEX_ACCESS_KEY_ID`, `YANDEX_SECRET_ACCESS_KEY`, `YANDEX_BUCKET_NAME=mychatimage`
+
+Запуск (один раз, для проверки):
+
+```bash
+./scripts/setup-server-on-yandex-vm.sh
+```
+
+В логах должно появиться «Подключение к базе данных успешно» и «Server running on port 3000». Проверка с твоего компьютера: `curl http://93.77.185.6:3000/healthz` — ответ `ok`.
+
+Чтобы сервер работал после выхода из SSH и перезагрузки ВМ, на ВМ можно установить **pm2** и запускать через него (см. комментарий в конце скрипта `setup-server-on-yandex-vm.sh`).
+
+### Шаг 5. Переключить приложение на этот сервер
+
+**Сделано:** базовый URL API во Flutter по умолчанию установлен на `http://93.77.185.6:3000` (`lib/config/api_config.dart`). При сборке под другой домен передай `--dart-define=API_BASE_URL=https://твой-домен` или настрой переменные в Vercel.
+
+### Шаг 6. Автодеплой при изменении кода (GitHub Actions)
+
+При пуше в `main` в каталог `my_serve_chat_test/**` GitHub Actions подключается по SSH к ВМ, подтягивает код и перезапускает сервер. Workflow: `.github/workflows/deploy-yandex-vm.yml`.
+
+**Один раз настроить:**
+
+1. **Ключ деплоя** уже есть в репозитории: `scripts/.deploy_key` и `scripts/.deploy_key.pub` (файлы в .gitignore, не коммитятся). Публичный ключ уже добавлен в метаданные ВМ (или будет при пересоздании ВМ через `create-yandex-vm.sh`).
+
+2. **Секреты в GitHub:** репозиторий → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+   - `DEPLOY_HOST` = IP ВМ (например `93.77.185.6`)
+   - `DEPLOY_USER` = `ubuntu`
+   - `DEPLOY_SSH_KEY` = весь текст приватного ключа: `cat scripts/.deploy_key` (скопировать и вставить в секрет)
+
+3. **На ВМ:** репозиторий должен быть в `~/my_chat_app`, сервер запущен через **pm2** с именем `chat-server`:
+   ```bash
+   cd ~/my_chat_app/my_serve_chat_test
+   npm i -g pm2
+   pm2 start index.js --name chat-server
+   pm2 save
+   pm2 startup   # автозапуск при перезагрузке ВМ
+   ```
+
+После этого каждый push в `main` с изменениями в `my_serve_chat_test/` будет запускать workflow: на ВМ выполнится `git pull`, `npm ci`, `pm2 restart chat-server`. Запуск вручную: в GitHub → **Actions** → **Deploy to Yandex VM** → **Run workflow**.
+
+---
+
 ## Общая идея
 
 1. Создать виртуальную машину (VM) в Yandex Compute Cloud.

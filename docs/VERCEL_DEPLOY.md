@@ -88,9 +88,8 @@
 
 ### Переменные окружения (если нужно)
 
-Если нужно изменить URL сервера, добавьте в настройках Vercel:
-- **Environment Variables** → Add:
-  - `API_URL` = `https://my-server-chat.onrender.com`
+Если нужно изменить URL сервера при сборке (Flutter web): в Vercel **Environment Variables** задайте `API_BASE_URL` или собирайте с `--dart-define=API_BASE_URL=...`. По умолчанию приложение использует бэкенд на Yandex VM:
+- **API_BASE_URL** (опционально) = `http://93.77.185.6:3000`
 
 ---
 

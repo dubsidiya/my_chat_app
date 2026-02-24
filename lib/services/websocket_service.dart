@@ -36,7 +36,9 @@ class WebSocketService {
       _currentToken = token;
 
       final baseUrl = ApiConfig.baseUrl;
-      final wsUrl = baseUrl.replaceFirst(RegExp(r'^https?://'), 'wss://');
+      final wsUrl = baseUrl.startsWith('https://')
+          ? baseUrl.replaceFirst('https://', 'wss://')
+          : baseUrl.replaceFirst('http://', 'ws://');
 
       if (kIsWeb) {
         _channel = WebSocketChannel.connect(

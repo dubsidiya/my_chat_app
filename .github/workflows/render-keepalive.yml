@@ -1,5 +1,5 @@
-# Держит сервер на Render.com (free tier) от засыпания: пинг каждые 5 минут.
-# Если ваш сервис на другом URL — замените RENDER_URL ниже или задайте в Settings → Secrets and variables → Actions.
+# Пинг бэкенда каждые 5 минут (раньше — Render keepalive; сейчас — Yandex VM).
+# Переопределить URL: Settings → Secrets and variables → Actions → RENDER_SERVICE_URL.
 name: render-keepalive
 
 on:
@@ -11,11 +11,11 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint (keep-alive + warm DB)
+      - name: Ping health endpoint
         env:
           RENDER_URL: ${{ vars.RENDER_SERVICE_URL }}
         run: |
-          base="${RENDER_URL:-https://my-server-chat.onrender.com}"
+          base="${RENDER_URL:-http://93.77.185.6:3000}"
           url="${base%/}/healthz?warm=1"
           for i in 1 2 3 4 5; do
             curl -fsS --max-time 30 "$url" >/dev/null && echo "OK $i" || true

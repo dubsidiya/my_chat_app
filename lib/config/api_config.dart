@@ -3,7 +3,7 @@
 /// Можно переопределить URL при сборке через:
 /// `--dart-define=API_BASE_URL=https://...`
 class ApiConfig {
-  static const String _defaultBaseUrl = 'https://my-server-chat.onrender.com';
+  static const String _defaultBaseUrl = 'http://93.77.185.6:3000';
 
   /// Базовый URL API без завершающего `/`.
   static String get baseUrl {

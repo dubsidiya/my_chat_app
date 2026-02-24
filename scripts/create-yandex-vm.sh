@@ -27,12 +27,22 @@ if [[ -z "$FOLDER_ID" ]]; then
   exit 1
 fi
 
-SSH_KEY="${HOME}/.ssh/id_rsa.pub"
-if [[ ! -f "$SSH_KEY" ]]; then
-  echo "Warning: $SSH_KEY not found. SSH key will not be added (use console or set --metadata-from-file)."
-  SSH_ARGS=()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_INIT="$SCRIPT_DIR/cloud-init-ssh.yaml"
+EXTRA_ARGS=()
+
+# Ключ добавляем через cloud-init (гарантированно срабатывает при первом запуске)
+if [[ -f "$CLOUD_INIT" ]]; then
+  echo "Using cloud-init to add SSH key on first boot: $CLOUD_INIT"
+  EXTRA_ARGS=(--metadata-from-file "user-data=$CLOUD_INIT")
+elif [[ -f "$SCRIPT_DIR/.deploy_key.pub" ]]; then
+  echo "Using --ssh-key: $SCRIPT_DIR/.deploy_key.pub"
+  EXTRA_ARGS=(--ssh-key "$SCRIPT_DIR/.deploy_key.pub")
+elif [[ -f "${HOME}/.ssh/id_rsa.pub" ]]; then
+  echo "Using --ssh-key: ${HOME}/.ssh/id_rsa.pub"
+  EXTRA_ARGS=(--ssh-key "${HOME}/.ssh/id_rsa.pub")
 else
-  SSH_ARGS=(--ssh-key "$SSH_KEY")
+  echo "Warning: no cloud-init and no SSH key. ВМ создастся без ключа."
 fi
 
 yc compute instance create \
@@ -43,6 +53,6 @@ yc compute instance create \
   --memory 2gb \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-2204-lts,size=15gb \
   --network-interface "subnet-name=$SUBNET,nat-ip-version=ipv4" \
-  "${SSH_ARGS[@]}"
+  "${EXTRA_ARGS[@]}"
 
 echo "Done. Get public IP: yc compute instance get $NAME"

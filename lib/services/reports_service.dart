@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/report.dart';
 import 'storage_service.dart';
 
 class ReportsService {
-  final String baseUrl = 'https://my-server-chat.onrender.com';
+  final String baseUrl = ApiConfig.baseUrl;
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();

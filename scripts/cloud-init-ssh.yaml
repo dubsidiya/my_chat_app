@@ -1,0 +1,8 @@
+#cloud-config
+# Добавляет SSH-ключ для ubuntu при первом запуске ВМ.
+runcmd:
+  - mkdir -p /home/ubuntu/.ssh
+  - echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIA4rDkbvyojdqjtUS4JNU7u7yajUPq6hB+YllG1tQpe deploy-yandex-vm' >> /home/ubuntu/.ssh/authorized_keys
+  - chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+  - chmod 700 /home/ubuntu/.ssh
+  - chmod 600 /home/ubuntu/.ssh/authorized_keys

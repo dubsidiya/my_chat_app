@@ -1,0 +1,43 @@
+# Автодеплой бэкенда на ВМ в Yandex Cloud при push в main.
+# Перед первым запуском настрой секреты и SSH-ключ на ВМ (см. комментарии ниже).
+name: Deploy to Yandex VM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'my_serve_chat_test/**'
+      - '.github/workflows/deploy-yandex-vm.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd ~/my_chat_app || { echo "Каталог ~/my_chat_app не найден"; exit 1; }
+            git fetch origin main && git reset --hard origin/main
+            cd my_serve_chat_test
+            npm ci
+            pm2 restart chat-server || (pm2 start index.js --name chat-server)
+            pm2 save
+            echo "Deploy done."
+
+# Настройка (один раз):
+# 1. На своей машине: ssh-keygen -t ed25519 -C "github-deploy" -f ~/.ssh/deploy_yandex_vm (пустой пароль).
+# 2. В GitHub: Settings → Secrets and variables → Actions → New repository secret:
+#    - DEPLOY_HOST = IP ВМ (например 93.77.176.231)
+#    - DEPLOY_USER = ubuntu
+#    - DEPLOY_SSH_KEY = содержимое файла ~/.ssh/deploy_yandex_vm (приватный ключ, весь вывод cat ~/.ssh/deploy_yandex_vm).
+# 3. На ВМ (под ubuntu): добавить публичный ключ в authorized_keys:
+#    echo "содержимое deploy_yandex_vm.pub" >> ~/.ssh/authorized_keys
+# 4. На ВМ должен быть клонирован репозиторий в ~/my_chat_app и установлен pm2 с запущенным процессом chat-server
+#    (или при первом деплое pm2 start создаст его).
