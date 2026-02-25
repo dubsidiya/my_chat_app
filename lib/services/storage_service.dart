@@ -35,7 +35,9 @@ class StorageService {
         await prefs.remove(_avatarUrlKey);
       }
       await prefs.setBool(_isSuperuserKey, isSuperuser);
-      // Токен: на mobile/desktop — secure storage, на web — shared_preferences
+      // Токен: на mobile/desktop — secure storage; на web — SharedPreferences (риск XSS:
+      // при уязвимости XSS токен может быть прочитан скриптом; для высоких требований
+      // рассмотреть httpOnly cookie на бэкенде).
       if (kIsWeb) {
         await prefs.setString(_tokenKey, token);
       } else {

@@ -73,8 +73,11 @@ app.use((req, res, next) => {
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : ['http://localhost:3000', 'https://my-chat-app.vercel.app'];
-if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGINS?.trim()) {
-  console.warn('⚠️  В production рекомендуется задать ALLOWED_ORIGINS в .env');
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.ALLOWED_ORIGINS?.trim()) {
+    console.error('❌ В production необходимо задать ALLOWED_ORIGINS в .env (список разрешённых origin для CORS).');
+    process.exit(1);
+  }
 }
 
 // Опциональные pattern/wildcard origins (например: https://*.vercel.app, *.netlify.app)

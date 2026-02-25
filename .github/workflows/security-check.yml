@@ -1,0 +1,36 @@
+# Проверки безопасности: нет секретов в репо, npm audit без критичных уязвимостей.
+# Запускается при каждом push и pull_request — ничего вручную запускать не нужно.
+name: Security check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  secrets-and-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Проверка: секреты не в репозитории"
+        run: bash scripts/ci-check-no-secrets.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: my_serve_chat_test/package-lock.json
+
+      - name: npm ci (бэкенд)
+        run: |
+          cd my_serve_chat_test
+          npm ci
+
+      - name: "npm audit (критические и высокие — fail)"
+        run: |
+          cd my_serve_chat_test
+          npm audit --audit-level=high

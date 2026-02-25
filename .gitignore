@@ -7,15 +7,19 @@
 .env.*.local
 !.env.example
 !.env.template
+# Разрешить только примеры (без реальных секретов)
 *yandex*credentials*
+!docs/YANDEX_DB_CREDENTIALS.example.txt
 **/.env.yandex
 docs/YANDEX_DB_CREDENTIALS.txt
 my_serve_chat_test/neon_dump_*.sql
 **/.env.yandex-vm
 **/env-yandex-vm.txt
+!**/env-yandex-vm.example.txt
 scripts/.deploy_key
 scripts/.deploy_key.pub
 scripts/vm-connection.txt
+*.pem
 
 .DS_Store
 *.swp

@@ -1,0 +1,28 @@
+# Пример переменных для деплоя на ВМ (Yandex Cloud)
+# НЕ КОММИТИТЬ файл с реальными значениями (env-yandex-vm.txt в .gitignore).
+# Использование: скопируй в env-yandex-vm.txt и подставь реальные значения.
+# Скрипт deploy-to-yandex-vm-now.sh копирует env-yandex-vm.txt как .env на ВМ.
+
+# Обязательно
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/chat_db?sslmode=require
+JWT_SECRET=минимум-32-символа-случайная-строка-openssl-rand-base64-32
+ALLOWED_ORIGINS=https://your-app.vercel.app,https://reollity.duckdns.org
+
+# Порт (опционально)
+PORT=3000
+
+# Суперпользователь и приватный доступ (опционально)
+# SUPERUSER_USERNAMES=admin
+# SUPERUSER_USER_IDS=
+# PRIVATE_ACCESS_USERNAMES=
+# PRIVATE_ACCESS_USER_IDS=
+
+# Яндекс Object Storage (загрузка файлов)
+# YANDEX_ACCESS_KEY_ID=
+# YANDEX_SECRET_ACCESS_KEY=
+# YANDEX_BUCKET_NAME=
+# YANDEX_STORAGE_URL=
+
+# Дополнительно
+# NODE_ENV=production
+# ALLOWED_ORIGIN_PATTERNS=https://*.vercel.app
