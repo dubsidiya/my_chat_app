@@ -41,7 +41,7 @@ yc managed-postgresql hosts add \
 Удалить реплику (вернуть один хост и снизить счёт):  
 `yc managed-postgresql hosts delete <имя-хоста-реплики> --cluster-name chat-db --folder-id <folder-id> --async`
 
-При такой конфигурации ориентировочно **от ~500–700 ₽/мес** (цены могут меняться, лучше проверить в [калькуляторе Yandex Cloud](https://cloud.yandex.ru/docs/managed-postgresql/pricing) или при создании кластера).
+При такой конфигурации счёт за Managed PostgreSQL может быть **от ~3 000 ₽/мес** и выше (по факту у тебя ~3 300 ₽/мес). Цены зависят от класса хоста и зоны; проверяй [калькулятор Yandex Cloud](https://cloud.yandex.ru/docs/managed-postgresql/pricing) и разбивку в счёте.
 
 ### Если есть ИП/ООО
 
@@ -51,7 +51,7 @@ yc managed-postgresql hosts add \
 
 | | Neon (free) | Yandex (минимальный кластер) |
 |---|---|---|
-| Стоимость | 0 ₽ | ~500–700 ₽/мес |
+| Стоимость | 0 ₽ | ~3 000–3 500 ₽/мес (по факту счёта) |
 | Хранилище | 0.5 GB | 10 GB и больше |
 | Ограничения | Лимит по объёму, compute-часы | По деньгам, лимитов по размеру БД больше |
 
