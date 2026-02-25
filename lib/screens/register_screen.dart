@@ -236,7 +236,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ],
                           ),
                         ),
-                        child: Padding(
+                        child: Theme(
+                          data: ThemeData.light().copyWith(
+                            primaryColor: AppColors.primary,
+                            colorScheme: ColorScheme.light(
+                              primary: AppColors.primary,
+                              surface: Colors.white,
+                              onSurface: Colors.black87,
+                            ),
+                            inputDecorationTheme: InputDecorationTheme(
+                              fillColor: Colors.grey.shade50,
+                              hintStyle: TextStyle(color: Colors.grey.shade600),
+                              labelStyle: TextStyle(color: Colors.grey.shade700),
+                              floatingLabelStyle: TextStyle(color: AppColors.primary),
+                            ),
+                            textSelectionTheme: TextSelectionThemeData(
+                              cursorColor: AppColors.primary,
+                              selectionColor: AppColors.primary.withValues(alpha: 0.25),
+                              selectionHandleColor: AppColors.primary,
+                            ),
+                          ),
+                          child: Padding(
                           padding: const EdgeInsets.all(28),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -256,7 +276,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 child: TextField(
                                   controller: _usernameController,
                                   keyboardType: TextInputType.text,
-                                  style: const TextStyle(fontSize: 16),
+                                  style: TextStyle(fontSize: 16, color: Colors.black87),
                                   decoration: InputDecoration(
                                     labelText: 'Логин',
                                     prefixIcon: const Icon(
@@ -310,7 +330,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 child: TextField(
                                   controller: _passwordController,
-                                  style: const TextStyle(fontSize: 16),
+                                  style: TextStyle(fontSize: 16, color: Colors.black87),
                                   decoration: InputDecoration(
                                     labelText: 'Пароль',
                                     prefixIcon: const Icon(
@@ -437,8 +457,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ),
+                  ),
                   const SizedBox(height: 32),
-                  
                   // Кнопка входа
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),

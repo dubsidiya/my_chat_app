@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/painting.dart' show FontFeature;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -2376,35 +2377,43 @@ class _ChatScreenState extends State<ChatScreen> {
     final showPlaying = isCurrent && _voiceIsPlaying;
 
     final playColor = isMine ? Colors.white : _accent1;
-    final trackInactive = isMine ? Colors.white.withValues(alpha:0.35) : Colors.grey.shade300;
+    final trackInactive = isMine ? Colors.white.withValues(alpha: 0.35) : Colors.grey.shade300;
+    final bubbleBg = isMine ? Colors.white.withValues(alpha: 0.22) : Colors.grey.shade50;
+    final borderColor = isMine ? Colors.white.withValues(alpha: 0.35) : Colors.grey.shade200;
+    final textColor = isMine ? Colors.white.withValues(alpha: 0.95) : AppColors.onSurfaceDark;
+    final textSecondary = isMine ? Colors.white.withValues(alpha: 0.75) : AppColors.onSurfaceVariantDark;
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      constraints: const BoxConstraints(minWidth: 240, maxWidth: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: isMine ? Colors.white.withValues(alpha:0.2) : Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isMine ? Colors.white.withValues(alpha:0.3) : Colors.grey.shade200,
-          width: 1,
-        ),
+        color: bubbleBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor, width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:isMine ? 0.06 : 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: isMine ? 0.08 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
+          if (isMine)
+            BoxShadow(
+              color: (Theme.of(context).brightness == Brightness.dark ? _accent1 : AppColors.primary).withValues(alpha: 0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 2),
+            ),
         ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (isBusy)
             SizedBox(
-              width: 40,
-              height: 40,
+              width: 48,
+              height: 48,
               child: Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation(playColor),
@@ -2413,36 +2422,62 @@ class _ChatScreenState extends State<ChatScreen> {
             )
           else
             Material(
-              color: isMine ? Colors.white.withValues(alpha:0.25) : Colors.white,
-              shape: const CircleBorder(),
+              color: isMine ? Colors.white.withValues(alpha: 0.28) : Colors.white,
               elevation: 0,
               shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: isMine ? Colors.white.withValues(alpha: 0.4) : Colors.grey.shade200,
+                  width: 1,
+                ),
+              ),
               child: InkWell(
-                customBorder: const CircleBorder(),
+                borderRadius: BorderRadius.circular(24),
                 onTap: () => _toggleVoicePlayback(msg),
                 child: Container(
-                  width: 40,
-                  height: 40,
+                  width: 48,
+                  height: 48,
                   alignment: Alignment.center,
                   child: Icon(
                     showPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 24,
+                    size: 28,
                     color: playColor,
                   ),
                 ),
               ),
             ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.mic_rounded,
+                      size: 14,
+                      color: textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Голосовое сообщение',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: textSecondary,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    trackHeight: 5,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
                     activeTrackColor: playColor,
                     inactiveTrackColor: trackInactive,
                     thumbColor: playColor,
@@ -2468,22 +2503,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       _formatDuration(pos),
                       style: TextStyle(
-                        fontSize: 12,
-                        color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        color: textColor,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                    const Spacer(),
                     Text(
                       dur == Duration.zero ? '—:—' : _formatDuration(dur),
                       style: TextStyle(
-                        fontSize: 12,
-                        color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
+                        fontSize: 13,
+                        color: textSecondary,
                         fontWeight: FontWeight.w500,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ],

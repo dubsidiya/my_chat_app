@@ -36,6 +36,23 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
+// Проверка версии приложения: клиент сравнивает свою версию с min/latest и показывает «Обновите» при необходимости.
+// Переменные в .env: APP_MIN_VERSION (обязательное обновление ниже этой версии), APP_LATEST_VERSION (рекомендуемое),
+// APP_FORCE_UPDATE (true/false — трактовать ли устаревшую версию как блокирующую), APP_STORE_URL_ANDROID, APP_STORE_URL_IOS.
+app.get('/version', (req, res) => {
+  const minVersion = process.env.APP_MIN_VERSION || process.env.APP_LATEST_VERSION || '0.0.0';
+  const latestVersion = process.env.APP_LATEST_VERSION || minVersion;
+  const forceUpdate = process.env.APP_FORCE_UPDATE === 'true' || process.env.APP_FORCE_UPDATE === '1';
+  res.json({
+    minVersion,
+    latestVersion,
+    forceUpdate,
+    message: process.env.APP_VERSION_MESSAGE || 'Доступна новая версия приложения. Обновите для корректной работы.',
+    storeUrlAndroid: process.env.APP_STORE_URL_ANDROID || null,
+    storeUrlIos: process.env.APP_STORE_URL_IOS || null,
+  });
+});
+
 // В production JWT_SECRET обязателен и не короче 32 символов
 const JWT_SECRET = process.env.JWT_SECRET;
 if (process.env.NODE_ENV === 'production') {

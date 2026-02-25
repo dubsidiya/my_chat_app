@@ -24,6 +24,13 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       PushNotificationService.sendTokenToBackendIfNeeded();
     });
+    // Проверка версии приложения отключена, пока приложение не в App Store / Play Market.
+    // Когда будете публиковать — см. docs/VERSION_CHECK.md и раскомментируйте вызов ниже.
+    // WidgetsBinding.instance.addPostFrameCallback((_) async {
+    //   final info = await VersionCheckService.check();
+    //   if (!mounted) return;
+    //   await VersionCheckService.showDialogIfNeeded(context, info);
+    // });
   }
 
   @override
