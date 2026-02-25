@@ -2,11 +2,19 @@ import multer from 'multer';
 import path from 'path';
 import { uploadToYandex, deleteFromYandex } from './yandexStorage.js';
 
-// Санитизация имени файла: только basename, без path traversal, макс. длина
+// Санитизация имени файла: только basename, без path traversal, макс. длина.
+// Декодируем percent-encoded (RFC 5987), чтобы кириллица и спецсимволы отображались корректно.
 const MAX_ORIGINAL_NAME_LENGTH = 255;
 const sanitizeOriginalName = (name) => {
   if (!name || typeof name !== 'string') return 'file';
-  const base = path.basename(name.trim()).replace(/\0/g, '');
+  let decoded = name.trim();
+  // Убираем префикс RFC 5987 (filename*=UTF-8'') если есть
+  const utf8Prefix = /^utf-8''/i;
+  if (utf8Prefix.test(decoded)) decoded = decoded.replace(utf8Prefix, '');
+  try {
+    if (/%[0-9A-Fa-f]{2}/.test(decoded)) decoded = decodeURIComponent(decoded);
+  } catch (_) { /* оставляем как есть при ошибке декодирования */ }
+  const base = path.basename(decoded).replace(/\0/g, '');
   if (base.length > MAX_ORIGINAL_NAME_LENGTH) return base.slice(0, MAX_ORIGINAL_NAME_LENGTH);
   return base || 'file';
 };

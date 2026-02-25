@@ -7,6 +7,7 @@ import '../models/link_preview.dart';
 import '../models/message.dart';
 import '../services/link_preview_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/file_name_display.dart';
 import 'link_preview_card.dart';
 import 'mention_text.dart';
 
@@ -192,7 +193,7 @@ class ChatMessageTile extends StatelessWidget {
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
-                                        msg.replyToMessage!.fileName ?? 'Файл',
+                                        decodeFileNameForDisplay(msg.replyToMessage!.fileName),
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
@@ -303,7 +304,7 @@ class ChatMessageTile extends StatelessWidget {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          msg.fileName ?? 'Файл',
+                                          decodeFileNameForDisplay(msg.fileName),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(color: isMine ? Colors.white : AppColors.onSurfaceDark, fontWeight: FontWeight.w600),

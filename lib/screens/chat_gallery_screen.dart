@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_media_item.dart';
 import '../services/messages_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/file_name_display.dart';
 import 'photo_viewer_screen.dart';
 
 class ChatGalleryScreen extends StatefulWidget {
@@ -245,7 +246,7 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
                                           right: 8,
                                           bottom: 8,
                                           child: Text(
-                                            (item.fileName ?? 'Видео').toString(),
+                                            decodeFileNameForDisplay(item.fileName, fallback: 'Видео'),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(

@@ -23,6 +23,7 @@ import '../services/local_messages_service.dart'; // ✅ Импорт серви
 import '../services/notification_feedback_service.dart';
 import '../services/websocket_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/file_name_display.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
@@ -4280,7 +4281,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         const SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
-                                            _replyToMessage!.fileName ?? 'Файл',
+                                            decodeFileNameForDisplay(_replyToMessage!.fileName),
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.grey.shade600,
