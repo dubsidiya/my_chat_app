@@ -185,7 +185,7 @@ nano my_serve_chat_test/.env
    - `DEPLOY_USER` = `ubuntu`
    - `DEPLOY_SSH_KEY` = весь текст приватного ключа: `cat scripts/.deploy_key` (скопировать и вставить в секрет)
 
-3. **На ВМ:** репозиторий должен быть в `~/my_chat_app`, сервер запущен через **pm2** с именем `chat-server`:
+3. **На ВМ:** уже настроено: репозиторий склонирован в `~/my_chat_app` (git), сервер запущен через **pm2** (`chat-server`), автозапуск при перезагрузке включён (`pm2 startup`). При необходимости повторить вручную:
    ```bash
    cd ~/my_chat_app/my_serve_chat_test
    npm i -g pm2
@@ -194,7 +194,7 @@ nano my_serve_chat_test/.env
    pm2 startup   # автозапуск при перезагрузке ВМ
    ```
 
-После этого каждый push в `main` с изменениями в `my_serve_chat_test/` будет запускать workflow: на ВМ выполнится `git pull`, `npm ci`, `pm2 restart chat-server`. Запуск вручную: в GitHub → **Actions** → **Deploy to Yandex VM** → **Run workflow**.
+После добавления секретов (п. 2) каждый push в `main` с изменениями в `my_serve_chat_test/` будет запускать workflow: на ВМ выполнится `git fetch origin main && git reset --hard origin/main`, `npm ci`, `pm2 restart chat-server`. Запуск вручную: в GitHub → **Actions** → **Deploy to Yandex VM** → **Run workflow**.
 
 ---
 

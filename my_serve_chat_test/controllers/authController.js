@@ -64,7 +64,9 @@ export const register = async (req, res) => {
   // Валидация данных
   const validation = validateRegisterData(normalizedUsername, password);
   if (!validation.valid) {
-    console.log('Валидация не прошла:', { username: normalizedUsername, error: validation.message });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Валидация регистрации не прошла:', { error: validation.message });
+    }
     return res.status(400).json({ message: validation.message });
   }
 
@@ -78,10 +80,9 @@ export const register = async (req, res) => {
     );
     
     if (existing.rows.length > 0) {
-      console.log('Попытка регистрации существующего пользователя:', {
-        requested: normalizedUsername,
-        existing: existing.rows[0].email
-      });
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Попытка регистрации существующего пользователя (логин не выводим в лог)');
+      }
       return res.status(400).json({ message: 'Пользователь уже существует' });
     }
 
