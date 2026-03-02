@@ -1,5 +1,12 @@
 import pool from '../db.js';
 import { isSuperuser } from '../middleware/auth.js';
+import {
+  beginIdempotent,
+  completeIdempotent,
+  getIdempotencyKey,
+  hashIdempotencyPayload,
+} from '../utils/idempotency.js';
+import { logAccountingEvent } from '../utils/accountingAudit.js';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const hasStudentAccess = async (client, teacherId, studentId) => {
@@ -58,6 +65,7 @@ export const createLesson = async (req, res) => {
   const userId = req.user.userId;
   const student_id = parseInt(req.params.studentId, 10);
   const { lesson_date, lesson_time, duration_minutes, price, notes } = req.body;
+  const idempotencyKey = getIdempotencyKey(req);
 
   // Преобразуем price в число, если это строка
   const priceNum = typeof price === 'string' ? parseFloat(price) : price;
@@ -73,6 +81,27 @@ export const createLesson = async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const idem = await beginIdempotent(client, {
+      userId,
+      scope: 'lessons:create',
+      key: idempotencyKey,
+      requestHash: hashIdempotencyPayload({
+        student_id,
+        lesson_date,
+        lesson_time: lesson_time || null,
+        duration_minutes: duration_minutes || 60,
+        price: priceNum,
+        notes: notes || null,
+      }),
+    });
+    if (idem.replay) {
+      await client.query('ROLLBACK');
+      return res.status(idem.responseStatus).json(idem.responseBody);
+    }
+    if (idem.conflict) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: idem.conflict });
+    }
 
     // Проверяем, что студент доступен пользователю
     const can = await hasStudentAccess(client, userId, student_id);
@@ -119,6 +148,26 @@ export const createLesson = async (req, res) => {
         userId,
       ]
     );
+    await completeIdempotent(client, {
+      userId,
+      scope: 'lessons:create',
+      key: idempotencyKey,
+      responseStatus: 201,
+      responseBody: lesson,
+    });
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'lesson_created',
+      entityType: 'lesson',
+      entityId: lesson.id,
+      payload: {
+        studentId: student_id,
+        lessonDate: lesson_date,
+        lessonTime: lessonTimeValue,
+        price: priceNum,
+      },
+    });
 
     await client.query('COMMIT');
     return res.status(201).json(lesson);
@@ -162,6 +211,14 @@ export const deleteLesson = async (req, res) => {
 
     // Удаляем занятие
     await client.query('DELETE FROM lessons WHERE id = $1 AND created_by = $2', [id, userId]);
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'lesson_deleted',
+      entityType: 'lesson',
+      entityId: id,
+      payload: {},
+    });
 
     await client.query('COMMIT');
     return res.json({ message: 'Занятие удалено' });

@@ -5,6 +5,13 @@ import ExcelJS from 'exceljs';
 import iconv from 'iconv-lite';
 import { Readable } from 'stream';
 import { isSuperuser } from '../middleware/auth.js';
+import {
+  beginIdempotent,
+  completeIdempotent,
+  getIdempotencyKey,
+  hashIdempotencyPayload,
+} from '../utils/idempotency.js';
+import { logAccountingEvent } from '../utils/accountingAudit.js';
 
 // Настройка multer для загрузки файлов в память
 const storage = multer.memoryStorage();
@@ -366,22 +373,39 @@ export const processBankStatement = async (req, res) => {
 
 // Применение платежей (создание транзакций пополнения)
 export const applyPayments = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const canAccessAllStudents = isSuperuser(req.user);
-    const { payments } = req.body; // Массив { studentId, amount, date, description }
+  const userId = req.user.userId;
+  const canAccessAllStudents = isSuperuser(req.user);
+  const { payments } = req.body; // Массив { studentId, amount, date, description }
+  const idempotencyKey = getIdempotencyKey(req);
 
-    if (!Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json({ message: 'Не указаны платежи для применения' });
+  if (!Array.isArray(payments) || payments.length === 0) {
+    return res.status(400).json({ message: 'Не указаны платежи для применения' });
+  }
+  const MAX_PAYMENTS_PER_REQUEST = 200;
+  if (payments.length > MAX_PAYMENTS_PER_REQUEST) {
+    return res.status(400).json({ message: `Максимум ${MAX_PAYMENTS_PER_REQUEST} платежей за один запрос` });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const idem = await beginIdempotent(client, {
+      userId,
+      scope: 'bank-statement:apply-payments',
+      key: idempotencyKey,
+      requestHash: hashIdempotencyPayload({ payments }),
+    });
+    if (idem.replay) {
+      await client.query('ROLLBACK');
+      return res.status(idem.responseStatus).json(idem.responseBody);
     }
-    const MAX_PAYMENTS_PER_REQUEST = 200;
-    if (payments.length > MAX_PAYMENTS_PER_REQUEST) {
-      return res.status(400).json({ message: `Максимум ${MAX_PAYMENTS_PER_REQUEST} платежей за один запрос` });
+    if (idem.conflict) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: idem.conflict });
     }
 
     const results = [];
     const errors = [];
-
     for (const payment of payments) {
       try {
         const { studentId, amount, date, description } = payment;
@@ -396,14 +420,14 @@ export const applyPayments = async (req, res) => {
 
         // Проверяем, что студент существует и доступен пользователю
         const studentCheck = canAccessAllStudents
-          ? await pool.query(
+          ? await client.query(
               `SELECT s.id, s.name
                FROM students s
                WHERE s.id = $1
                LIMIT 1`,
               [studentId]
             )
-          : await pool.query(
+          : await client.query(
               `SELECT s.id, s.name
                FROM teacher_students ts
                JOIN students s ON s.id = ts.student_id
@@ -430,7 +454,7 @@ export const applyPayments = async (req, res) => {
           continue;
         }
         const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
-        const result = await pool.query(
+        const result = await client.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
            VALUES ($1, $2, 'deposit', $3, $4, $5)
            RETURNING *`,
@@ -449,16 +473,40 @@ export const applyPayments = async (req, res) => {
       }
     }
 
-    res.json({
+    const responsePayload = {
       success: results.length,
       failed: errors.length,
       results: results,
       errors: errors
+    };
+    await completeIdempotent(client, {
+      userId,
+      scope: 'bank-statement:apply-payments',
+      key: idempotencyKey,
+      responseStatus: 200,
+      responseBody: responsePayload,
     });
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'bank_statement_payments_applied',
+      entityType: 'bank_statement',
+      entityId: null,
+      payload: {
+        total: payments.length,
+        success: results.length,
+        failed: errors.length,
+      },
+    });
+    await client.query('COMMIT');
+    res.json(responsePayload);
 
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка применения платежей:', error);
     res.status(500).json({ message: 'Ошибка применения платежей' });
+  } finally {
+    client.release();
   }
 };
 

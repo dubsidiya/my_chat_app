@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/report.dart';
@@ -6,6 +7,13 @@ import 'storage_service.dart';
 
 class ReportsService {
   final String baseUrl = ApiConfig.baseUrl;
+  final Random _rnd = Random();
+
+  String _newIdempotencyKey(String scope) {
+    final t = DateTime.now().microsecondsSinceEpoch;
+    final r = _rnd.nextInt(1 << 32);
+    return '$scope-$t-$r';
+  }
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
@@ -64,13 +72,12 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
-    final clientToday = DateTime.now().toIso8601String().split('T')[0];
+    headers['Idempotency-Key'] = _newIdempotencyKey('report-create');
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
-        'client_today': clientToday,
         'content': content,
       }),
     );
@@ -91,13 +98,12 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
-    final clientToday = DateTime.now().toIso8601String().split('T')[0];
+    headers['Idempotency-Key'] = _newIdempotencyKey('report-create-structured');
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
-        'client_today': clientToday,
         'slots': slots,
       }),
     );
@@ -118,13 +124,11 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
-    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.put(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
-        'client_today': clientToday,
         'content': content,
       }),
     );
@@ -145,13 +149,11 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
-    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.put(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
-        'client_today': clientToday,
         'slots': slots,
       }),
     );

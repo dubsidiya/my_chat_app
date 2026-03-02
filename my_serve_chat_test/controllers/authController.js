@@ -7,13 +7,14 @@ import { sanitizeForDisplay } from '../utils/sanitize.js';
 import { securityEvent } from '../utils/auditLog.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
+import { DEFAULT_USER_TIMEZONE, normalizeTimeZone } from '../utils/timezone.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 
 async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
   try {
     return await pool.query(
-      'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
+      'SELECT id, email, password, display_name, avatar_url, timezone FROM users WHERE LOWER(TRIM(email)) = $1',
       [normalizedUsername]
     );
   } catch (error) {
@@ -24,7 +25,15 @@ async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
         'SELECT id, email, password, display_name FROM users WHERE LOWER(TRIM(email)) = $1',
         [normalizedUsername]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE }));
+      return fallback;
+    }
+    if (error?.code === '42703' && String(error?.message || '').includes('timezone')) {
+      const fallback = await pool.query(
+        'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
+        [normalizedUsername]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE }));
       return fallback;
     }
     throw error;
@@ -34,7 +43,7 @@ async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
 async function queryUserWithOptionalAvatarById(userId) {
   try {
     return await pool.query(
-      'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
+      'SELECT id, email, display_name, avatar_url, timezone FROM users WHERE id = $1',
       [userId]
     );
   } catch (error) {
@@ -43,7 +52,15 @@ async function queryUserWithOptionalAvatarById(userId) {
         'SELECT id, email, display_name FROM users WHERE id = $1',
         [userId]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE }));
+      return fallback;
+    }
+    if (error?.code === '42703' && String(error?.message || '').includes('timezone')) {
+      const fallback = await pool.query(
+        'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
+        [userId]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE }));
       return fallback;
     }
     throw error;
@@ -71,6 +88,8 @@ export const register = async (req, res) => {
   }
 
   try {
+    const timezoneFromHeader = normalizeTimeZone(req.headers['x-client-timezone']);
+    const timezoneValue = timezoneFromHeader || DEFAULT_USER_TIMEZONE;
     // Проверяем существование пользователя с нормализованным логином
     // Используем LOWER и TRIM для поиска, чтобы найти даже если есть пробелы или другой регистр
     // Используем поле email в БД для хранения логина (для обратной совместимости)
@@ -91,8 +110,8 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const result = await pool.query(
-      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email, display_name',
-      [normalizedUsername, hashedPassword]
+      'INSERT INTO users (email, password, timezone) VALUES ($1, $2, $3) RETURNING id, email, display_name, timezone',
+      [normalizedUsername, hashedPassword, timezoneValue]
     );
 
     const newUser = result.rows[0];
@@ -107,6 +126,7 @@ export const register = async (req, res) => {
       token: token,
       privateAccess,
       displayName: newUser.display_name ?? null,
+      timezone: newUser.timezone || DEFAULT_USER_TIMEZONE,
     });
   } catch (error) {
     console.error('Ошибка регистрации:', error.message);
@@ -194,6 +214,7 @@ export const login = async (req, res) => {
       privateAccess,
       displayName: user.display_name ?? null,
       avatarUrl: user.avatar_url ?? null,
+      timezone: normalizeTimeZone(user.timezone) || DEFAULT_USER_TIMEZONE,
     });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
@@ -247,6 +268,7 @@ export const getMe = async (req, res) => {
       username: u.email,
       displayName: u.display_name ?? null,
       avatarUrl: u.avatar_url ?? null,
+      timezone: normalizeTimeZone(u.timezone) || DEFAULT_USER_TIMEZONE,
       isSuperuser: isSuperuser(req.user),
       privateAccess: req.user.privateAccess === true,
     });
@@ -264,12 +286,24 @@ export const updateProfile = async (req, res) => {
     }
     const raw = (req.body?.display_name ?? req.body?.displayName ?? '').toString();
     const displayName = sanitizeForDisplay(raw, 255);
+    const rawTimezone = req.body?.timezone;
+    const timezone = rawTimezone == null || String(rawTimezone).trim() === ''
+      ? null
+      : normalizeTimeZone(rawTimezone);
+    if (rawTimezone != null && timezone == null) {
+      return res.status(400).json({ message: 'Некорректная timezone (ожидается IANA, например Europe/Moscow)' });
+    }
     await pool.query(
-      'UPDATE users SET display_name = $1 WHERE id = $2',
-      [displayName || null, req.user.userId]
+      timezone
+        ? 'UPDATE users SET display_name = $1, timezone = $2 WHERE id = $3'
+        : 'UPDATE users SET display_name = $1 WHERE id = $2',
+      timezone
+        ? [displayName || null, timezone, req.user.userId]
+        : [displayName || null, req.user.userId]
     );
     res.status(200).json({
       displayName: displayName || null,
+      timezone: timezone || undefined,
     });
   } catch (error) {
     console.error('Ошибка updateProfile:', error);

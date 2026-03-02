@@ -1,4 +1,12 @@
 import pool from '../db.js';
+import { getDateInTimeZoneISO, getUserTimeZone } from '../utils/timezone.js';
+import {
+  beginIdempotent,
+  completeIdempotent,
+  getIdempotencyKey,
+  hashIdempotencyPayload,
+} from '../utils/idempotency.js';
+import { logAccountingEvent } from '../utils/accountingAudit.js';
 
 // Парсинг текста отчета для извлечения занятий
 // Новый формат:
@@ -160,6 +168,10 @@ const validateSlots = (slots) => {
 };
 
 const isValidISODate = (value) => typeof value === 'string' && ISO_DATE_RE.test(value);
+const getTodayByUserTimezone = async (client, userId) => {
+  const tz = await getUserTimeZone(client, userId);
+  return { tz, todayIso: getDateInTimeZoneISO(tz) };
+};
 
 // Получение всех отчетов пользователя
 export const getAllReports = async (req, res) => {
@@ -228,7 +240,8 @@ const MAX_REPORT_CONTENT_LENGTH = 200000;
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
   const userId = req.user.userId;
-  const { report_date, client_today, content, slots: rawSlots } = req.body;
+  const { report_date, content, slots: rawSlots } = req.body;
+  const idempotencyKey = getIdempotencyKey(req);
 
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
@@ -240,20 +253,34 @@ export const createReport = async (req, res) => {
   if (!isValidISODate(report_date)) {
     return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
   }
-  if (client_today != null && !isValidISODate(client_today)) {
-    return res.status(400).json({ message: 'client_today должен быть в формате YYYY-MM-DD' });
-  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    const idem = await beginIdempotent(client, {
+      userId,
+      scope: 'reports:create',
+      key: idempotencyKey,
+      requestHash: hashIdempotencyPayload({
+        report_date,
+        content: content ?? null,
+        slots: rawSlots ?? null,
+      }),
+    });
+    if (idem.replay) {
+      await client.query('ROLLBACK');
+      return res.status(idem.responseStatus).json(idem.responseBody);
+    }
+    if (idem.conflict) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: idem.conflict });
+    }
+
+    const { tz, todayIso } = await getTodayByUserTimezone(client, userId);
+
     // Запрещаем отчеты за будущие даты
-    const futureCheck = await client.query(
-      'SELECT ($1::date > COALESCE($2::date, CURRENT_DATE)) as is_future',
-      [report_date, client_today || null]
-    );
-    if (futureCheck.rows[0]?.is_future) {
+    if (report_date > todayIso) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя создать отчет за будущую дату' });
     }
@@ -318,9 +345,9 @@ export const createReport = async (req, res) => {
     // Создаем отчет
     const reportResult = await client.query(
       `INSERT INTO reports (report_date, content, created_by, is_late)
-       VALUES ($1, $2, $3, ($1::date < COALESCE($4::date, CURRENT_DATE)))
+       VALUES ($1, $2, $3, ($1::date < $4::date))
        RETURNING *`,
-      [report_date, finalContent, userId, client_today || null]
+      [report_date, finalContent, userId, todayIso]
     );
 
     const report = reportResult.rows[0];
@@ -420,6 +447,26 @@ export const createReport = async (req, res) => {
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
 
+    await completeIdempotent(client, {
+      userId,
+      scope: 'reports:create',
+      key: idempotencyKey,
+      responseStatus: 201,
+      responseBody: report,
+    });
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'report_created',
+      entityType: 'report',
+      entityId: report.id,
+      payload: {
+        reportDate: report_date,
+        lessonsCreated: createdLessons.length,
+        timezone: tz,
+      },
+    });
+
     await client.query('COMMIT');
     return res.status(201).json(report);
   } catch (error) {
@@ -438,7 +485,7 @@ export const createReport = async (req, res) => {
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
-  const { report_date, client_today, content, slots: rawSlots } = req.body;
+  const { report_date, content, slots: rawSlots } = req.body;
 
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
@@ -450,20 +497,14 @@ export const updateReport = async (req, res) => {
   if (!isValidISODate(report_date)) {
     return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
   }
-  if (client_today != null && !isValidISODate(client_today)) {
-    return res.status(400).json({ message: 'client_today должен быть в формате YYYY-MM-DD' });
-  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const { tz, todayIso } = await getTodayByUserTimezone(client, userId);
 
     // Запрещаем отчеты за будущие даты
-    const futureCheck = await client.query(
-      'SELECT ($1::date > COALESCE($2::date, CURRENT_DATE)) as is_future',
-      [report_date, client_today || null]
-    );
-    if (futureCheck.rows[0]?.is_future) {
+    if (report_date > todayIso) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя установить будущую дату отчета' });
     }
@@ -556,7 +597,7 @@ export const updateReport = async (req, res) => {
     // Обновляем отчет
     const reportResult = await client.query(
       `UPDATE reports 
-       SET report_date = $1, content = $2, is_late = ($1::date < created_at::date), updated_at = CURRENT_TIMESTAMP
+       SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND created_by = $4
        RETURNING *`,
       [report_date, finalContent, id, userId]
@@ -638,6 +679,18 @@ export const updateReport = async (req, res) => {
     report.lessons_count = createdLessons.length;
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'report_updated',
+      entityType: 'report',
+      entityId: id,
+      payload: {
+        reportDate: report_date,
+        lessonsCreated: createdLessons.length,
+        timezone: tz,
+      },
+    });
 
     await client.query('COMMIT');
     return res.json(report);
@@ -692,6 +745,16 @@ export const deleteReport = async (req, res) => {
 
     // Удаляем отчет (каскадно удалит связи)
     await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
+    await logAccountingEvent({
+      client,
+      userId,
+      eventType: 'report_deleted',
+      entityType: 'report',
+      entityId: id,
+      payload: {
+        lessonsDeleted: lessonIds.length,
+      },
+    });
 
     await client.query('COMMIT');
     return res.json({ message: 'Отчет удален' });

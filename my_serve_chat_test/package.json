@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "migrate": "node scripts/run-migration.js",
+    "smoke:accounting": "node scripts/smoke-accounting-reliability.js",
+    "smoke:accounting:edge": "node scripts/smoke-accounting-edge-cases.js",
     "migrate-passwords": "node migrate_passwords.js",
     "check-setup": "node check_setup.js",
     "auto-setup": "node auto_setup.js",

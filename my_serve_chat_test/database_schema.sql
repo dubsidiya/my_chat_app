@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
+    timezone VARCHAR(64) NOT NULL DEFAULT 'Europe/Moscow',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -41,6 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages (user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_users_chat_id ON chat_users (chat_id);
 CREATE INDEX IF NOT EXISTS idx_chat_users_user_id ON chat_users (user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+CREATE INDEX IF NOT EXISTS idx_users_timezone ON users (timezone);
 
 -- Комментарии к таблицам
 COMMENT ON TABLE users IS 'Пользователи системы';
@@ -103,6 +105,9 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 -- Индексы для оптимизации
 CREATE INDEX IF NOT EXISTS idx_students_created_by ON students(created_by);
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_students_name_trgm
+ON students USING gin (LOWER(REPLACE(TRIM(name), 'ё', 'е')) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_lessons_student_id ON lessons(student_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(lesson_date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_student_id ON transactions(student_id);
@@ -158,4 +163,40 @@ WHERE lesson_time IS NOT NULL;
 -- Комментарии к таблицам отчетов
 COMMENT ON TABLE reports IS 'Отчеты за день с автоматическим созданием занятий';
 COMMENT ON TABLE report_lessons IS 'Связь отчетов и занятий для возможности редактирования';
+
+-- ============================================
+-- Reliability: idempotency и аудит
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope VARCHAR(120) NOT NULL,
+    idempotency_key VARCHAR(200) NOT NULL,
+    request_hash VARCHAR(128) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'completed')),
+    response_status INTEGER,
+    response_body JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + interval '24 hours'),
+    UNIQUE(user_id, scope, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires_at ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_scope_status ON idempotency_keys(scope, status);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(120) NOT NULL,
+    entity_type VARCHAR(120),
+    entity_id VARCHAR(120),
+    payload JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_events_user_id ON audit_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_event_type ON audit_events(event_type);
 
