@@ -114,52 +114,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _isApplyingSuggestion = false;
   }
 
-  Future<void> _confirmAndApplySuggestion(Map<String, dynamic> s) async {
-    final name = (s['name'] ?? '').toString().trim();
-    if (name.isEmpty) return;
-    final parent = (s['parent_name'] ?? '').toString().trim();
-    final phone = (s['phone'] ?? '').toString().trim();
-    final email = (s['email'] ?? '').toString().trim();
-    final isLinked = s['is_linked'] == true;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Выбрать этого ученика?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (parent.isNotEmpty) Text('Родитель: $parent'),
-            if (phone.isNotEmpty) Text('Телефон: $phone'),
-            if (email.isNotEmpty) Text('Email: $email'),
-            const SizedBox(height: 8),
-            Text(
-              isLinked
-                  ? 'Этот ученик уже в вашем списке.'
-                  : 'Этот ученик уже есть в базе. Будет выполнена привязка, а не создание нового.',
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Выбрать'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      _applySuggestion(s);
-    }
-  }
-
   Future<void> _saveStudent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -186,19 +140,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             );
 
       if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _selectedExistingStudentId != null
-                  ? 'Выбран существующий ученик — добавлен к вам'
-                  : (result.wasExisting
-                      ? 'Ученик уже существует — добавлен к вам'
-                      : 'Ученик добавлен'),
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
+        final successMessage = _selectedExistingStudentId != null
+            ? 'Выбран существующий ученик — добавлен к вам'
+            : (result.wasExisting
+                ? 'Ученик уже существует — добавлен к вам'
+                : 'Ученик добавлен');
+        Navigator.pop(context, {
+          'created': true,
+          'message': successMessage,
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -322,7 +272,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             color: isLinked ? Colors.green : scheme.onSurface.withValues(alpha: 0.65),
                           ),
                         ),
-                        onTap: () => _confirmAndApplySuggestion(s),
+                        onTap: () => _applySuggestion(s),
                       );
                     }),
                   ],
