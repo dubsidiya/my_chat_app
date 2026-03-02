@@ -3,6 +3,68 @@ import { isSuperuser } from '../middleware/auth.js';
 
 const normalizePhoneDigits = (v) => (v || '').toString().replace(/\D/g, '');
 const normalizeEmail = (v) => (v || '').toString().trim().toLowerCase();
+const normalizeText = (v) =>
+  (v || '')
+    .toString()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const tokenize = (v) => normalizeText(v).split(' ').filter(Boolean);
+
+const levenshteinDistance = (aRaw, bRaw) => {
+  const a = normalizeText(aRaw);
+  const b = normalizeText(bRaw);
+  const n = a.length;
+  const m = b.length;
+  if (!n) return m;
+  if (!m) return n;
+  const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+  for (let i = 0; i <= n; i++) dp[i][0] = i;
+  for (let j = 0; j <= m; j++) dp[0][j] = j;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[n][m];
+};
+
+const scoreNameCandidate = (query, candidateName, isLinked) => {
+  const q = normalizeText(query);
+  const s = normalizeText(candidateName);
+  if (!q || !s) return 0;
+  if (q === s) return 1.0 + (isLinked ? 0.03 : 0);
+
+  const qTokens = tokenize(q);
+  const sTokens = tokenize(s);
+  const contains = s.includes(q) || q.includes(s) ? 1 : 0;
+  const prefix = sTokens.some((st) => qTokens.some((qt) => st.startsWith(qt) || qt.startsWith(st))) ? 1 : 0;
+  const qSet = new Set(qTokens);
+  const sSet = new Set(sTokens);
+  let inter = 0;
+  for (const t of qSet) {
+    if (sSet.has(t)) inter++;
+  }
+  const tokenOverlap = qSet.size === 0 ? 0 : inter / qSet.size;
+  const lev = levenshteinDistance(q, s);
+  const levSim = 1 - lev / Math.max(q.length, s.length, 1);
+
+  // Взвешенный скор: покрывает contains/prefix и опечатки через levenshtein.
+  const score =
+    contains * 0.45 +
+    tokenOverlap * 0.25 +
+    Math.max(0, levSim) * 0.25 +
+    prefix * 0.1 +
+    (isLinked ? 0.05 : 0);
+  return Math.max(0, Math.min(1.2, score));
+};
 
 const ensureTeacherStudentLink = async (client, teacherId, studentId) => {
   await client.query(
@@ -191,6 +253,93 @@ export const createStudent = async (req, res) => {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка создания студента:', error);
     return res.status(500).json({ message: 'Ошибка создания студента' });
+  } finally {
+    client.release();
+  }
+};
+
+// Поиск похожих учеников по имени/фамилии, чтобы не создавать дубли из-за опечаток.
+export const searchStudentSuggestions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const query = (req.query.q || '').toString().trim();
+    const limitRaw = parseInt((req.query.limit || '8').toString(), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitRaw, 20)) : 8;
+
+    if (query.length < 2) {
+      return res.json([]);
+    }
+
+    // Скан ограничиваем, чтобы endpoint оставался отзывчивым.
+    const scanLimit = 3000;
+    const candidatesRes = await pool.query(
+      `SELECT s.id, s.name, s.parent_name, s.phone, s.email, s.pay_by_bank_transfer, s.created_at, s.updated_at,
+              CASE WHEN ts.teacher_id IS NULL THEN FALSE ELSE TRUE END AS is_linked
+       FROM students s
+       LEFT JOIN teacher_students ts
+         ON ts.student_id = s.id AND ts.teacher_id = $1
+       ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+       LIMIT $2`,
+      [userId, scanLimit]
+    );
+
+    const threshold = query.length <= 3 ? 0.58 : 0.42;
+    const matched = candidatesRes.rows
+      .map((row) => ({
+        ...row,
+        score: scoreNameCandidate(query, row.name, row.is_linked === true),
+      }))
+      .filter((row) => row.score >= threshold)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if ((a.is_linked === true) !== (b.is_linked === true)) return a.is_linked === true ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
+      })
+      .slice(0, limit)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        parent_name: row.parent_name,
+        phone: row.phone,
+        email: row.email,
+        pay_by_bank_transfer: row.pay_by_bank_transfer === true,
+        is_linked: row.is_linked === true,
+      }));
+
+    return res.json(matched);
+  } catch (error) {
+    console.error('Ошибка поиска похожих учеников:', error);
+    return res.status(500).json({ message: 'Ошибка поиска учеников' });
+  }
+};
+
+// Явная привязка существующего ученика к преподавателю.
+export const linkExistingStudent = async (req, res) => {
+  const userId = req.user.userId;
+  const studentId = parseInt(req.body?.student_id, 10);
+  if (!studentId || Number.isNaN(studentId)) {
+    return res.status(400).json({ message: 'Некорректный student_id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      'SELECT * FROM students WHERE id = $1 LIMIT 1',
+      [studentId]
+    );
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Студент не найден' });
+    }
+
+    await ensureTeacherStudentLink(client, userId, studentId);
+    await client.query('COMMIT');
+    return res.status(200).json(existing.rows[0]);
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Ошибка привязки существующего ученика:', error);
+    return res.status(500).json({ message: 'Ошибка привязки ученика' });
   } finally {
     client.release();
   }

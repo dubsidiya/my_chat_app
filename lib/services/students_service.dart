@@ -90,6 +90,49 @@ class StudentsService {
     throw Exception(error['message'] ?? 'Не удалось создать студента');
   }
 
+  /// Поиск похожих учеников по имени/фамилии для предотвращения дублей.
+  Future<List<Map<String, dynamic>>> searchStudentCandidates(
+    String query, {
+    int limit = 8,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse('$baseUrl/students/search').replace(
+      queryParameters: {
+        'q': query,
+        'limit': limit.toString(),
+      },
+    );
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.cast<Map<String, dynamic>>();
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось выполнить поиск учеников');
+  }
+
+  /// Привязка существующего ученика (по id) к текущему преподавателю.
+  Future<CreateStudentResult> linkExistingStudent({
+    required int studentId,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/students/link-existing'),
+      headers: headers,
+      body: jsonEncode({'student_id': studentId}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return CreateStudentResult(
+        student: Student.fromJson({...data, 'balance': data['balance'] ?? 0.0}),
+        wasExisting: true,
+      );
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось привязать существующего ученика');
+  }
+
   // Обновление студента
   Future<Student> updateStudent({
     required int id,

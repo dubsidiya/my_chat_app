@@ -3,6 +3,8 @@ import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../mi
 import {
   getAllStudents,
   createStudent,
+  searchStudentSuggestions,
+  linkExistingStudent,
   updateStudent,
   deleteStudent,
   getStudentBalance,
@@ -26,6 +28,8 @@ router.use(authenticateToken);
 // Маршруты для студентов
 router.get('/', requirePrivateAccess, getAllStudents);
 router.post('/', requirePrivateAccess, createStudent);
+router.get('/search', requirePrivateAccess, searchStudentSuggestions);
+router.post('/link-existing', requirePrivateAccess, linkExistingStudent);
 router.put('/:id', requirePrivateAccess, updateStudent);
 router.delete('/:id', requirePrivateAccess, deleteStudent);
 router.get('/:id/balance', requirePrivateAccess, getStudentBalance);
