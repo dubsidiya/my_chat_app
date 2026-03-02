@@ -329,5 +329,39 @@ class StudentsService {
       throw Exception('Не удалось загрузить транзакции: ${response.statusCode}');
     }
   }
+
+  /// Получение транзакций студента, созданных текущим пользователем.
+  Future<List<Transaction>> getStudentTransactionsMine(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/$studentId/transactions?mine=1'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Transaction.fromJson(json)).toList();
+    } else {
+      throw Exception('Не удалось загрузить транзакции: ${response.statusCode}');
+    }
+  }
+
+  /// Получение баланса только по операциям текущего пользователя.
+  Future<double> getStudentBalanceMine(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/$studentId/balance?mine=1'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final raw = data['balance'];
+      if (raw is num) return raw.toDouble();
+      return double.tryParse(raw.toString()) ?? 0.0;
+    } else {
+      throw Exception('Не удалось загрузить баланс: ${response.statusCode}');
+    }
+  }
 }
 

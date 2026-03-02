@@ -145,6 +145,16 @@ CREATE INDEX IF NOT EXISTS idx_reports_is_late ON reports(is_late);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_report_id ON report_lessons(report_id);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_lesson_id ON report_lessons(lesson_id);
 
+-- Бизнес-уникальность для защиты от дублей
+CREATE UNIQUE INDEX IF NOT EXISTS ux_reports_created_by_report_date
+ON reports(created_by, report_date);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_lessons_owner_student_date_null_time
+ON lessons(created_by, student_id, lesson_date)
+WHERE lesson_time IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_lessons_owner_student_date_time
+ON lessons(created_by, student_id, lesson_date, lesson_time)
+WHERE lesson_time IS NOT NULL;
+
 -- Комментарии к таблицам отчетов
 COMMENT ON TABLE reports IS 'Отчеты за день с автоматическим созданием занятий';
 COMMENT ON TABLE report_lessons IS 'Связь отчетов и занятий для возможности редактирования';

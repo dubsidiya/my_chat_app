@@ -64,11 +64,13 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
+    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
+        'client_today': clientToday,
         'content': content,
       }),
     );
@@ -89,11 +91,13 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
+    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
+        'client_today': clientToday,
         'slots': slots,
       }),
     );
@@ -114,11 +118,13 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
+    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.put(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
+        'client_today': clientToday,
         'content': content,
       }),
     );
@@ -139,11 +145,13 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
+    final clientToday = DateTime.now().toIso8601String().split('T')[0];
     final response = await http.put(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
         'report_date': reportDate.toIso8601String().split('T')[0],
+        'client_today': clientToday,
         'slots': slots,
       }),
     );

@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { isSuperuser } from '../middleware/auth.js';
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const hasStudentAccess = async (client, teacherId, studentId) => {
   const r = await client.query(
@@ -64,6 +65,9 @@ export const createLesson = async (req, res) => {
   if (!student_id || isNaN(student_id) || !lesson_date || !priceNum || priceNum <= 0) {
     return res.status(400).json({ message: 'ID студента, дата и цена обязательны' });
   }
+  if (!ISO_DATE_RE.test(String(lesson_date))) {
+    return res.status(400).json({ message: 'lesson_date должен быть в формате YYYY-MM-DD' });
+  }
 
   // Создание урока + транзакции должно быть атомарным
   const client = await pool.connect();
@@ -120,6 +124,9 @@ export const createLesson = async (req, res) => {
     return res.status(201).json(lesson);
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
+    if (error?.code === '23505') {
+      return res.status(409).json({ message: 'Занятие на эту дату/время уже существует' });
+    }
     console.error('Ошибка создания занятия:', error);
     return res.status(500).json({ message: 'Ошибка создания занятия' });
   } finally {

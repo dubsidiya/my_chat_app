@@ -75,6 +75,7 @@ const parseReportContent = (content, reportDate, userId) => {
 // -----------------------------
 const MAX_SLOTS_PER_DAY = 10;
 const MAX_STUDENTS_PER_SLOT = 2;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const isValidTimeHHMM = (t) => typeof t === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
 
@@ -158,6 +159,8 @@ const validateSlots = (slots) => {
   return null;
 };
 
+const isValidISODate = (value) => typeof value === 'string' && ISO_DATE_RE.test(value);
+
 // Получение всех отчетов пользователя
 export const getAllReports = async (req, res) => {
   try {
@@ -204,7 +207,6 @@ export const getReport = async (req, res) => {
        FROM report_lessons rl
        JOIN lessons l ON rl.lesson_id = l.id AND l.created_by = $2
        JOIN students s ON l.student_id = s.id
-       JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = $2
        WHERE rl.report_id = $1
        ORDER BY l.lesson_date, l.lesson_time`,
       [id, userId]
@@ -226,7 +228,7 @@ const MAX_REPORT_CONTENT_LENGTH = 200000;
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
   const userId = req.user.userId;
-  const { report_date, content, slots: rawSlots } = req.body;
+  const { report_date, client_today, content, slots: rawSlots } = req.body;
 
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
@@ -235,13 +237,22 @@ export const createReport = async (req, res) => {
   if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
     return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
   }
+  if (!isValidISODate(report_date)) {
+    return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
+  }
+  if (client_today != null && !isValidISODate(client_today)) {
+    return res.status(400).json({ message: 'client_today должен быть в формате YYYY-MM-DD' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // Запрещаем отчеты за будущие даты
-    const futureCheck = await client.query('SELECT ($1::date > CURRENT_DATE) as is_future', [report_date]);
+    const futureCheck = await client.query(
+      'SELECT ($1::date > COALESCE($2::date, CURRENT_DATE)) as is_future',
+      [report_date, client_today || null]
+    );
     if (futureCheck.rows[0]?.is_future) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя создать отчет за будущую дату' });
@@ -307,9 +318,9 @@ export const createReport = async (req, res) => {
     // Создаем отчет
     const reportResult = await client.query(
       `INSERT INTO reports (report_date, content, created_by, is_late)
-       VALUES ($1, $2, $3, ($1::date < CURRENT_DATE))
+       VALUES ($1, $2, $3, ($1::date < COALESCE($4::date, CURRENT_DATE)))
        RETURNING *`,
-      [report_date, finalContent, userId]
+      [report_date, finalContent, userId, client_today || null]
     );
 
     const report = reportResult.rows[0];
@@ -341,14 +352,18 @@ export const createReport = async (req, res) => {
           [userId, name]
         );
         if (studentResult.rows.length === 0) {
-          studentResult = await client.query(
+          const fuzzyResult = await client.query(
             `SELECT s.id
              FROM teacher_students ts
              JOIN students s ON s.id = ts.student_id
              WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
-             LIMIT 1`,
+             ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
+             LIMIT 2`,
             [userId, `%${name}%`]
           );
+          if (fuzzyResult.rows.length === 1) {
+            studentResult = fuzzyResult;
+          }
         }
         if (studentResult.rows.length === 0) continue;
         studentId = studentResult.rows[0].id;
@@ -409,6 +424,9 @@ export const createReport = async (req, res) => {
     return res.status(201).json(report);
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
+    if (error?.code === '23505') {
+      return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
+    }
     console.error('Ошибка создания отчета:', error);
     return res.status(500).json({ message: 'Ошибка создания отчета' });
   } finally {
@@ -420,7 +438,7 @@ export const createReport = async (req, res) => {
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
-  const { report_date, content, slots: rawSlots } = req.body;
+  const { report_date, client_today, content, slots: rawSlots } = req.body;
 
   const hasSlots = Array.isArray(rawSlots);
   if (!report_date || (!content && !hasSlots)) {
@@ -429,13 +447,22 @@ export const updateReport = async (req, res) => {
   if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
     return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
   }
+  if (!isValidISODate(report_date)) {
+    return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
+  }
+  if (client_today != null && !isValidISODate(client_today)) {
+    return res.status(400).json({ message: 'client_today должен быть в формате YYYY-MM-DD' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // Запрещаем отчеты за будущие даты
-    const futureCheck = await client.query('SELECT ($1::date > CURRENT_DATE) as is_future', [report_date]);
+    const futureCheck = await client.query(
+      'SELECT ($1::date > COALESCE($2::date, CURRENT_DATE)) as is_future',
+      [report_date, client_today || null]
+    );
     if (futureCheck.rows[0]?.is_future) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя установить будущую дату отчета' });
@@ -529,7 +556,7 @@ export const updateReport = async (req, res) => {
     // Обновляем отчет
     const reportResult = await client.query(
       `UPDATE reports 
-       SET report_date = $1, content = $2, is_late = ($1::date < CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
+       SET report_date = $1, content = $2, is_late = ($1::date < created_at::date), updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND created_by = $4
        RETURNING *`,
       [report_date, finalContent, id, userId]
@@ -560,14 +587,18 @@ export const updateReport = async (req, res) => {
           [userId, name]
         );
         if (studentResult.rows.length === 0) {
-          studentResult = await client.query(
+          const fuzzyResult = await client.query(
             `SELECT s.id
              FROM teacher_students ts
              JOIN students s ON s.id = ts.student_id
              WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
-             LIMIT 1`,
+             ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
+             LIMIT 2`,
             [userId, `%${name}%`]
           );
+          if (fuzzyResult.rows.length === 1) {
+            studentResult = fuzzyResult;
+          }
         }
         if (studentResult.rows.length === 0) continue;
         studentId = studentResult.rows[0].id;
@@ -612,6 +643,9 @@ export const updateReport = async (req, res) => {
     return res.json(report);
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
+    if (error?.code === '23505') {
+      return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
+    }
     console.error('Ошибка обновления отчета:', error);
     return res.status(500).json({ message: 'Ошибка обновления отчета' });
   } finally {

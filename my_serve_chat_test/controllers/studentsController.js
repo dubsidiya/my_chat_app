@@ -46,7 +46,7 @@ export const getAllStudents = async (req, res) => {
               COALESCE(SUM(CASE WHEN t.type IN ('deposit', 'refund') THEN t.amount ELSE -t.amount END), 0) as balance
        FROM teacher_students ts
        JOIN students s ON s.id = ts.student_id
-       LEFT JOIN transactions t ON s.id = t.student_id
+       LEFT JOIN transactions t ON s.id = t.student_id AND t.created_by = $1
        WHERE ts.teacher_id = $1
        GROUP BY s.id
        ORDER BY s.name`,
@@ -305,6 +305,7 @@ export const getStudentBalance = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
+    const mine = req.query.mine === '1' || req.query.mine === 'true';
 
     // Суперпользователь (бухгалтерия) может смотреть баланс любого ученика
     if (!isSuperuser(req.user)) {
@@ -317,12 +318,19 @@ export const getStudentBalance = async (req, res) => {
       }
     }
 
-    const result = await pool.query(
-      `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
-       FROM transactions
-       WHERE student_id = $1`,
-      [id]
-    );
+    const result = mine
+      ? await pool.query(
+          `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
+           FROM transactions
+           WHERE student_id = $1 AND created_by = $2`,
+          [id, userId]
+        )
+      : await pool.query(
+          `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
+           FROM transactions
+           WHERE student_id = $1`,
+          [id]
+        );
 
     res.json({ balance: parseFloat(result.rows[0].balance) });
   } catch (error) {
@@ -336,6 +344,7 @@ export const getStudentTransactions = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
+    const mine = req.query.mine === '1' || req.query.mine === 'true';
 
     // Суперпользователь (бухгалтерия) может смотреть транзакции любого ученика
     if (!isSuperuser(req.user)) {
@@ -348,15 +357,25 @@ export const getStudentTransactions = async (req, res) => {
       }
     }
 
-    const result = await pool.query(
-      `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
-       FROM transactions t
-       LEFT JOIN lessons l ON t.lesson_id = l.id
-       LEFT JOIN users u ON t.created_by = u.id
-       WHERE t.student_id = $1
-       ORDER BY t.created_at DESC`,
-      [id]
-    );
+    const result = mine
+      ? await pool.query(
+          `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+           FROM transactions t
+           LEFT JOIN lessons l ON t.lesson_id = l.id
+           LEFT JOIN users u ON t.created_by = u.id
+           WHERE t.student_id = $1 AND t.created_by = $2
+           ORDER BY t.created_at DESC`,
+          [id, userId]
+        )
+      : await pool.query(
+          `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+           FROM transactions t
+           LEFT JOIN lessons l ON t.lesson_id = l.id
+           LEFT JOIN users u ON t.created_by = u.id
+           WHERE t.student_id = $1
+           ORDER BY t.created_at DESC`,
+          [id]
+        );
 
     res.json(result.rows);
   } catch (error) {

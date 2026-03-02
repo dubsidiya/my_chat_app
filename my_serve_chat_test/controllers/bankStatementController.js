@@ -4,6 +4,7 @@ import csvParser from 'csv-parser';
 import ExcelJS from 'exceljs';
 import iconv from 'iconv-lite';
 import { Readable } from 'stream';
+import { isSuperuser } from '../middleware/auth.js';
 
 // Настройка multer для загрузки файлов в память
 const storage = multer.memoryStorage();
@@ -143,21 +144,26 @@ const parseExcel = async (buffer) => {
 };
 
 // Поиск студента по описанию платежа (только среди студентов текущего преподавателя)
-const findStudentByPaymentDescription = async (teacherId, description) => {
+const findStudentByPaymentDescription = async (teacherId, canAccessAllStudents, description) => {
   if (!description || typeof description !== 'string') {
     return null;
   }
 
   const desc = description.toLowerCase().trim();
   
-  // Получаем студентов, доступных текущему преподавателю
-  const studentsResult = await pool.query(
-    `SELECT s.id, s.name, s.parent_name, s.phone, s.email
-     FROM teacher_students ts
-     JOIN students s ON s.id = ts.student_id
-     WHERE ts.teacher_id = $1`,
-    [teacherId]
-  );
+  // Для суперпользователя ищем среди всех учеников, иначе — среди доступных преподавателю.
+  const studentsResult = canAccessAllStudents
+    ? await pool.query(
+        `SELECT s.id, s.name, s.parent_name, s.phone, s.email
+         FROM students s`
+      )
+    : await pool.query(
+        `SELECT s.id, s.name, s.parent_name, s.phone, s.email
+         FROM teacher_students ts
+         JOIN students s ON s.id = ts.student_id
+         WHERE ts.teacher_id = $1`,
+        [teacherId]
+      );
 
   // Ищем совпадения по имени, имени родителя, телефону или email
   for (const student of studentsResult.rows) {
@@ -246,6 +252,7 @@ export const processBankStatement = async (req, res) => {
     }
 
     const userId = req.user.userId;
+    const canAccessAllStudents = isSuperuser(req.user);
     const file = req.file;
     let rows = [];
 
@@ -318,7 +325,7 @@ export const processBankStatement = async (req, res) => {
         }
 
         // Ищем студента по описанию платежа
-        const student = await findStudentByPaymentDescription(userId, description);
+        const student = await findStudentByPaymentDescription(userId, canAccessAllStudents, description);
 
         processedPayments.push({
           row: i + 1,
@@ -361,6 +368,7 @@ export const processBankStatement = async (req, res) => {
 export const applyPayments = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const canAccessAllStudents = isSuperuser(req.user);
     const { payments } = req.body; // Массив { studentId, amount, date, description }
 
     if (!Array.isArray(payments) || payments.length === 0) {
@@ -387,14 +395,22 @@ export const applyPayments = async (req, res) => {
         }
 
         // Проверяем, что студент существует и доступен пользователю
-        const studentCheck = await pool.query(
-          `SELECT s.id, s.name
-           FROM teacher_students ts
-           JOIN students s ON s.id = ts.student_id
-           WHERE ts.teacher_id = $1 AND s.id = $2
-           LIMIT 1`,
-          [userId, studentId]
-        );
+        const studentCheck = canAccessAllStudents
+          ? await pool.query(
+              `SELECT s.id, s.name
+               FROM students s
+               WHERE s.id = $1
+               LIMIT 1`,
+              [studentId]
+            )
+          : await pool.query(
+              `SELECT s.id, s.name
+               FROM teacher_students ts
+               JOIN students s ON s.id = ts.student_id
+               WHERE ts.teacher_id = $1 AND s.id = $2
+               LIMIT 1`,
+              [userId, studentId]
+            );
 
         if (studentCheck.rows.length === 0) {
           errors.push({
@@ -406,6 +422,13 @@ export const applyPayments = async (req, res) => {
 
         // Создаем транзакцию пополнения (из банковской выписки)
         const createdAt = date ? new Date(date) : new Date();
+        if (Number.isNaN(createdAt.getTime())) {
+          errors.push({
+            payment,
+            error: 'Некорректная дата платежа'
+          });
+          continue;
+        }
         const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
         const result = await pool.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)

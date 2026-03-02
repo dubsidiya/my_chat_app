@@ -47,8 +47,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     setState(() => _isLoading = true);
 
     try {
-      final lessons = await _studentsService.getStudentLessons(_student.id);
-      final transactions = await _studentsService.getStudentTransactions(_student.id);
+      final lessons = await _studentsService.getStudentLessonsMine(_student.id);
+      final transactions = await _studentsService.getStudentTransactionsMine(_student.id);
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -69,8 +69,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   Future<void> _refreshData() async {
     if (!mounted) return;
     try {
-      final lessons = await _studentsService.getStudentLessons(_student.id);
-      final transactions = await _studentsService.getStudentTransactions(_student.id);
+      final lessons = await _studentsService.getStudentLessonsMine(_student.id);
+      final transactions = await _studentsService.getStudentTransactionsMine(_student.id);
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -93,8 +93,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     if (updated != null && mounted) {
       setState(() {
         _student = updated;
-        _balance = updated.balance;
       });
+      _updateBalance();
     }
   }
 
@@ -143,14 +143,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
   Future<void> _updateBalance() async {
     try {
-      final students = await _studentsService.getAllStudents();
-      final updatedStudent = students.firstWhere(
-        (s) => s.id == _student.id,
-      );
+      final updatedBalance = await _studentsService.getStudentBalanceMine(_student.id);
       if (mounted) {
-      setState(() {
-        _balance = updatedStudent.balance;
-      });
+        setState(() {
+          _balance = updatedBalance;
+        });
       }
     } catch (e) {
       if (kDebugMode) print('Ошибка обновления баланса: $e');
@@ -164,10 +161,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         title: const Text('Удалить ученика?'),
         content: Text(
           'Вы уверены, что хотите удалить "${_student.name}"?\n\n'
-          'Это действие удалит все связанные данные:\n'
-          '• Все занятия (${_lessons.length})\n'
-          '• Все транзакции (${_transactions.length})\n'
-          '• Историю баланса\n\n'
+          'Это действие удалит вашу связь с учеником.\n'
+          'Если ученик привязан к другим преподавателям, его данные останутся у них.\n\n'
           'Это действие нельзя отменить!',
         ),
         actions: [
