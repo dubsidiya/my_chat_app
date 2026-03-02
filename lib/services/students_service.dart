@@ -20,10 +20,11 @@ class CreateStudentResult {
 class StudentsService {
   final String baseUrl = ApiConfig.baseUrl;
   final Random _rnd = Random();
+  static const int _idempotencyRandomMax = 1000000000;
 
   String _newIdempotencyKey(String scope) {
     final t = DateTime.now().microsecondsSinceEpoch;
-    final r = _rnd.nextInt(1 << 32);
+    final r = _rnd.nextInt(_idempotencyRandomMax);
     return '$scope-$t-$r';
   }
 

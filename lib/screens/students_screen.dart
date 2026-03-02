@@ -81,17 +81,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
       ),
     );
 
-    if (result == true || (result is Map && result['created'] == true)) {
+    if (result == true) {
       _loadStudents();
-      final message = result is Map ? (result['message']?.toString() ?? '') : '';
-      if (mounted && message.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     }
   }
 
