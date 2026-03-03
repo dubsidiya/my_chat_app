@@ -36,6 +36,50 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
+// Метаданные сервера (диагностика прод-окружения)
+// Без секретов: возвращаем хост, время, env-флаги, и "куда подключена БД" (без пароля).
+app.get('/_meta', async (req, res) => {
+  const startedAt = new Date(Date.now() - Math.floor(process.uptime() * 1000)).toISOString();
+  const dbUrlRaw = process.env.DATABASE_URL || '';
+  let db = null;
+  try {
+    if (dbUrlRaw) {
+      const u = new URL(dbUrlRaw);
+      db = {
+        host: u.hostname,
+        port: u.port ? parseInt(u.port, 10) : null,
+        database: (u.pathname || '').replace(/^\//, '') || null,
+        sslmode: u.searchParams.get('sslmode') || null,
+      };
+    }
+  } catch (_) {
+    db = { host: null, port: null, database: null, sslmode: null };
+  }
+
+  let dbOk = false;
+  try {
+    await pool.query('SELECT 1');
+    dbOk = true;
+  } catch (_) {
+    dbOk = false;
+  }
+
+  res.status(200).json({
+    now: new Date().toISOString(),
+    startedAt,
+    uptimeSeconds: Math.floor(process.uptime()),
+    node: process.version,
+    env: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 3000,
+    db,
+    dbOk,
+    allowedOrigins: process.env.ALLOWED_ORIGINS || null,
+    allowedOriginPatterns: process.env.ALLOWED_ORIGIN_PATTERNS || null,
+    appMinVersion: process.env.APP_MIN_VERSION || null,
+    appLatestVersion: process.env.APP_LATEST_VERSION || null,
+  });
+});
+
 // Проверка версии приложения: клиент сравнивает свою версию с min/latest и показывает «Обновите» при необходимости.
 // Переменные в .env: APP_MIN_VERSION (обязательное обновление ниже этой версии), APP_LATEST_VERSION (рекомендуемое),
 // APP_FORCE_UPDATE (true/false — трактовать ли устаревшую версию как блокирующую), APP_STORE_URL_ANDROID, APP_STORE_URL_IOS.
