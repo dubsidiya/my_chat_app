@@ -474,8 +474,29 @@ export const createReport = async (req, res) => {
     if (error?.code === '23505') {
       return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
     }
+    await logAccountingEvent({
+      userId,
+      eventType: 'report_create_error',
+      entityType: 'report',
+      entityId: null,
+      payload: {
+        code: error?.code || null,
+        constraint: error?.constraint || null,
+        detail: error?.detail || null,
+        where: error?.where || null,
+        report_date: req.body?.report_date || null,
+        has_slots: Array.isArray(req.body?.slots),
+      },
+    });
+    // Даем пользователю минимально полезную диагностику, без stack trace.
+    if (error?.code === '42P01') {
+      return res.status(500).json({ message: 'Ошибка создания отчета: БД не мигрирована (нет таблицы/индекса). Примените миграции.' });
+    }
+    if (error?.code === '42501') {
+      return res.status(500).json({ message: 'Ошибка создания отчета: недостаточно прав на объекты БД. Проверьте роль пользователя БД и миграции.' });
+    }
     console.error('Ошибка создания отчета:', error);
-    return res.status(500).json({ message: 'Ошибка создания отчета' });
+    return res.status(500).json({ message: `Ошибка создания отчета (код: ${error?.code || 'unknown'})` });
   } finally {
     client.release();
   }
@@ -699,8 +720,22 @@ export const updateReport = async (req, res) => {
     if (error?.code === '23505') {
       return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
     }
+    await logAccountingEvent({
+      userId,
+      eventType: 'report_update_error',
+      entityType: 'report',
+      entityId: id,
+      payload: {
+        code: error?.code || null,
+        constraint: error?.constraint || null,
+        detail: error?.detail || null,
+        where: error?.where || null,
+        report_date: req.body?.report_date || null,
+        has_slots: Array.isArray(req.body?.slots),
+      },
+    });
     console.error('Ошибка обновления отчета:', error);
-    return res.status(500).json({ message: 'Ошибка обновления отчета' });
+    return res.status(500).json({ message: `Ошибка обновления отчета (код: ${error?.code || 'unknown'})` });
   } finally {
     client.release();
   }
