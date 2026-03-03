@@ -13,18 +13,29 @@ export const normalizeTimeZone = (value) => {
 };
 
 export const getDateInTimeZoneISO = (timeZone, date = new Date()) => {
-  const tz = normalizeTimeZone(timeZone) || DEFAULT_USER_TIMEZONE;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const byType = {};
-  for (const p of parts) {
-    byType[p.type] = p.value;
+  const preferred = normalizeTimeZone(timeZone);
+  const fallback = normalizeTimeZone(DEFAULT_USER_TIMEZONE);
+  const tz = preferred || fallback;
+  if (!tz) {
+    // Если runtime не поддерживает IANA timezone (редко, но бывает в проде),
+    // используем UTC-день как гарантированно стабильный fallback.
+    return date.toISOString().slice(0, 10);
   }
-  return `${byType.year}-${byType.month}-${byType.day}`;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const byType = {};
+    for (const p of parts) {
+      byType[p.type] = p.value;
+    }
+    return `${byType.year}-${byType.month}-${byType.day}`;
+  } catch (_) {
+    return date.toISOString().slice(0, 10);
+  }
 };
 
 export const getUserTimeZone = async (client, userId) => {
