@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/report.dart';
+import '../models/monthly_salary_report.dart';
 import 'storage_service.dart';
 
 class ReportsService {
@@ -172,6 +173,34 @@ class ReportsService {
 
     final error = jsonDecode(response.body);
     throw Exception(error['message'] ?? 'Не удалось обновить отчет');
+  }
+
+  /// Зарплата за месяц: 50% от дохода, поздние отчёты не входят в доход.
+  /// [year] — год, [month] — 1–12.
+  Future<MonthlySalaryReport> getMonthlySalaryReport(int year, int month) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/reports/salary').replace(queryParameters: {
+        'year': year.toString(),
+        'month': month.toString(),
+      }),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return MonthlySalaryReport.fromJson(data);
+    } else if (response.statusCode == 403) {
+      try {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Требуется приватный доступ');
+      } catch (_) {
+        throw Exception('Требуется приватный доступ');
+      }
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось загрузить отчёт по зарплате');
+    }
   }
 
   // Удаление отчета

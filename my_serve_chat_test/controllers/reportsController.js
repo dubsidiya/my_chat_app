@@ -195,6 +195,93 @@ export const getAllReports = async (req, res) => {
   }
 };
 
+// Зарплата за месяц: 50% от дохода; поздние отчёты не входят в доход (считаем как 0)
+export const getMonthlySalaryReport = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const year = parseInt(req.query.year, 10);
+    const month = parseInt(req.query.month, 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+      return res.status(400).json({ message: 'Укажите год и месяц: year, month (1–12)' });
+    }
+    const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0);
+    const lastDayStr = lastDay.getFullYear() + '-' +
+      String(lastDay.getMonth() + 1).padStart(2, '0') + '-' +
+      String(lastDay.getDate()).padStart(2, '0');
+
+    // Доход за месяц по всем занятиям преподавателя (lesson_date в месяце)
+    const totalsResult = await pool.query(
+      `WITH month_lessons AS (
+         SELECT l.id, l.lesson_date, l.price, r.id AS report_id, r.is_late
+         FROM lessons l
+         LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
+         LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
+         WHERE l.created_by = $1
+           AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+       )
+       SELECT
+         COALESCE(SUM(price), 0) AS total_all,
+         COALESCE(SUM(CASE WHEN is_late = true THEN price ELSE 0 END), 0) AS late_amount,
+         COALESCE(SUM(CASE WHEN is_late IS DISTINCT FROM true THEN price ELSE 0 END), 0) AS income_counted
+       FROM month_lessons`,
+      [userId, firstDay, lastDayStr]
+    );
+    const row = totalsResult.rows[0];
+    const totalAll = Number(row?.total_all ?? 0);
+    const lateAmount = Number(row?.late_amount ?? 0);
+    const incomeCounted = Number(row?.income_counted ?? 0);
+    const salary = Math.round(incomeCounted * 0.5);
+
+    // Разбивка по отчётам за месяц (дата, поздний/нет, сумма)
+    const breakdownResult = await pool.query(
+      `SELECT r.id AS report_id, r.report_date, r.is_late,
+              COALESCE(SUM(l.price), 0) AS amount
+       FROM reports r
+       LEFT JOIN report_lessons rl ON rl.report_id = r.id
+       LEFT JOIN lessons l ON l.id = rl.lesson_id
+       WHERE r.created_by = $1
+         AND r.report_date >= $2::date AND r.report_date <= $3::date
+       GROUP BY r.id, r.report_date, r.is_late
+       ORDER BY r.report_date ASC`,
+      [userId, firstDay, lastDayStr]
+    );
+    const reportBreakdown = breakdownResult.rows.map((r) => ({
+      report_id: r.report_id,
+      report_date: r.report_date,
+      is_late: r.is_late,
+      amount: Number(r.amount),
+    }));
+
+    // Занятия без отчёта (ручные) за этот месяц — входят в доход
+    const noReportResult = await pool.query(
+      `SELECT COALESCE(SUM(l.price), 0) AS amount
+       FROM lessons l
+       WHERE l.created_by = $1
+         AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+         AND NOT EXISTS (SELECT 1 FROM report_lessons rl WHERE rl.lesson_id = l.id)`,
+      [userId, firstDay, lastDayStr]
+    );
+    const lessonsWithoutReportAmount = Number(noReportResult.rows[0]?.amount ?? 0);
+
+    res.json({
+      year,
+      month,
+      first_day: firstDay,
+      last_day: lastDayStr,
+      total_all: totalAll,
+      late_reports_amount: lateAmount,
+      income_counted: incomeCounted,
+      salary,
+      report_breakdown: reportBreakdown,
+      lessons_without_report_amount: lessonsWithoutReportAmount,
+    });
+  } catch (error) {
+    console.error('Ошибка расчёта зарплаты за месяц:', error);
+    res.status(500).json({ message: 'Ошибка расчёта зарплаты за месяц' });
+  }
+};
+
 // Получение одного отчета с занятиями
 export const getReport = async (req, res) => {
   try {

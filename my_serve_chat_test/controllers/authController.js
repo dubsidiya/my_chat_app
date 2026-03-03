@@ -501,11 +501,10 @@ export const deleteAccount = async (req, res) => {
       return res.status(401).json({ message: 'Неверный пароль' });
     }
 
-    // Начинаем транзакцию для безопасного удаления всех связанных данных
     const client = await pool.connect();
-    
     try {
-      await client.query('BEGIN'); // Начало транзакции
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      await client.query('BEGIN');
 
       // 1. Удаляем все сообщения пользователя
       await client.query('DELETE FROM messages WHERE user_id = $1', [userId]);
@@ -545,10 +544,11 @@ export const deleteAccount = async (req, res) => {
       });
 
     } catch (error) {
-      await client.query('ROLLBACK'); // Откатываем транзакцию при ошибке
+      try { await client.query('ROLLBACK'); } catch (_) {}
       throw error;
     } finally {
-      client.release(); // Освобождаем соединение
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      client.release();
     }
 
   } catch (error) {

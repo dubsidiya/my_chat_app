@@ -388,6 +388,7 @@ export const applyPayments = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const idem = await beginIdempotent(client, {
       userId,
@@ -468,8 +469,10 @@ export const applyPayments = async (req, res) => {
       } catch (error) {
         errors.push({
           payment,
-          error: 'Ошибка применения платежа'
+          error: error?.message || 'Ошибка применения платежа'
         });
+        // Ошибка БД переводит транзакцию в aborted — прерываем цикл и откатываем
+        throw error;
       }
     }
 
@@ -487,7 +490,6 @@ export const applyPayments = async (req, res) => {
       responseBody: responsePayload,
     });
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'bank_statement_payments_applied',
       entityType: 'bank_statement',
@@ -506,6 +508,7 @@ export const applyPayments = async (req, res) => {
     console.error('Ошибка применения платежей:', error);
     res.status(500).json({ message: 'Ошибка применения платежей' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };

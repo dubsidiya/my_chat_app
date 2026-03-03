@@ -6,6 +6,7 @@ import '../models/report.dart';
 import '../services/reports_service.dart';
 import 'edit_report_screen.dart';
 import 'report_builder_screen.dart';
+import 'monthly_salary_screen.dart';
 
 class ReportsChatScreen extends StatefulWidget {
   final String userId;
@@ -183,6 +184,25 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              color: _accent1.withValues(alpha:0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.pie_chart_rounded, color: _accent1),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MonthlySalaryScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Зарплата за месяц',
+            ),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(

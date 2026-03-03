@@ -80,6 +80,7 @@ export const createLesson = async (req, res) => {
   // Создание урока + транзакции должно быть атомарным
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const idem = await beginIdempotent(client, {
       userId,
@@ -156,7 +157,6 @@ export const createLesson = async (req, res) => {
       responseBody: lesson,
     });
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'lesson_created',
       entityType: 'lesson',
@@ -179,6 +179,7 @@ export const createLesson = async (req, res) => {
     console.error('Ошибка создания занятия:', error);
     return res.status(500).json({ message: 'Ошибка создания занятия' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
@@ -190,6 +191,7 @@ export const deleteLesson = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
     // Проверяем, что занятие существует и принадлежит пользователю
@@ -212,7 +214,6 @@ export const deleteLesson = async (req, res) => {
     // Удаляем занятие
     await client.query('DELETE FROM lessons WHERE id = $1 AND created_by = $2', [id, userId]);
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'lesson_deleted',
       entityType: 'lesson',
@@ -227,6 +228,7 @@ export const deleteLesson = async (req, res) => {
     console.error('Ошибка удаления занятия:', error);
     return res.status(500).json({ message: 'Ошибка удаления занятия' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };

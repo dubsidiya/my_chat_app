@@ -93,6 +93,7 @@ export const createStudent = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const idem = await beginIdempotent(client, {
       userId,
@@ -201,7 +202,6 @@ export const createStudent = async (req, res) => {
       }
 
       await logAccountingEvent({
-        client,
         userId,
         eventType: 'student_linked_existing',
         entityType: 'student',
@@ -240,7 +240,6 @@ export const createStudent = async (req, res) => {
     const student = created.rows[0];
     await ensureTeacherStudentLink(client, userId, student.id);
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'student_created',
       entityType: 'student',
@@ -264,6 +263,7 @@ export const createStudent = async (req, res) => {
     console.error('Ошибка создания студента:', error);
     return res.status(500).json({ message: 'Ошибка создания студента' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
@@ -360,6 +360,7 @@ export const linkExistingStudent = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const idem = await beginIdempotent(client, {
       userId,
@@ -386,7 +387,6 @@ export const linkExistingStudent = async (req, res) => {
 
     await ensureTeacherStudentLink(client, userId, studentId);
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'student_linked_manual',
       entityType: 'student',
@@ -407,6 +407,7 @@ export const linkExistingStudent = async (req, res) => {
     console.error('Ошибка привязки существующего ученика:', error);
     return res.status(500).json({ message: 'Ошибка привязки ученика' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
@@ -471,6 +472,7 @@ export const deleteStudent = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
     const isSuper = isSuperuser(req.user);
@@ -490,7 +492,6 @@ export const deleteStudent = async (req, res) => {
       await client.query('DELETE FROM teacher_students WHERE student_id = $1', [id]);
       await client.query('DELETE FROM students WHERE id = $1', [id]);
       await logAccountingEvent({
-        client,
         userId,
         eventType: 'student_deleted_full',
         entityType: 'student',
@@ -510,7 +511,6 @@ export const deleteStudent = async (req, res) => {
       if (stillLinked.rows.length === 0) {
         await client.query('DELETE FROM students WHERE id = $1', [id]);
         await logAccountingEvent({
-          client,
           userId,
           eventType: 'student_deleted_full',
           entityType: 'student',
@@ -519,7 +519,6 @@ export const deleteStudent = async (req, res) => {
         });
       } else {
         await logAccountingEvent({
-          client,
           userId,
           eventType: 'student_unlinked',
           entityType: 'student',
@@ -536,6 +535,7 @@ export const deleteStudent = async (req, res) => {
     console.error('Ошибка удаления студента:', error);
     return res.status(500).json({ message: 'Ошибка удаления студента' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };

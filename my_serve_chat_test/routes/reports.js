@@ -3,6 +3,7 @@ import { authenticateToken, requirePrivateAccess } from '../middleware/auth.js';
 import {
   getAllReports,
   getReport,
+  getMonthlySalaryReport,
   createReport,
   updateReport,
   deleteReport
@@ -13,6 +14,7 @@ const router = express.Router();
 // Все маршруты требуют аутентификации
 router.use(authenticateToken, requirePrivateAccess);
 
+router.get('/salary', getMonthlySalaryReport);
 router.get('/', getAllReports);
 router.get('/:id', getReport);
 router.post('/', createReport);

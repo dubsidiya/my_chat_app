@@ -23,6 +23,7 @@ export const depositBalance = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const idem = await beginIdempotent(client, {
       userId,
@@ -70,7 +71,6 @@ export const depositBalance = async (req, res) => {
       responseBody: createdTx,
     });
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'deposit_created',
       entityType: 'transaction',
@@ -87,6 +87,7 @@ export const depositBalance = async (req, res) => {
     console.error('Ошибка пополнения баланса:', error);
     res.status(500).json({ message: 'Ошибка пополнения баланса' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
