@@ -256,6 +256,9 @@ export const createReport = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    // Защита: если из пула пришёл client с незавершённой/aborted транзакцией,
+    // то любые запросы будут падать с 25P02. Сбрасываем состояние заранее.
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
     const idem = await beginIdempotent(client, {
@@ -498,6 +501,8 @@ export const createReport = async (req, res) => {
     console.error('Ошибка создания отчета:', error);
     return res.status(500).json({ message: `Ошибка создания отчета (код: ${error?.code || 'unknown'})` });
   } finally {
+    // Страховка: никогда не возвращаем client в пул в aborted состоянии.
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
@@ -521,6 +526,7 @@ export const updateReport = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
     const { tz, todayIso } = await getTodayByUserTimezone(client, userId);
 
@@ -737,6 +743,7 @@ export const updateReport = async (req, res) => {
     console.error('Ошибка обновления отчета:', error);
     return res.status(500).json({ message: `Ошибка обновления отчета (код: ${error?.code || 'unknown'})` });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
@@ -748,6 +755,7 @@ export const deleteReport = async (req, res) => {
 
   const client = await pool.connect();
   try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
     // Проверяем, что отчет принадлежит пользователю
@@ -798,6 +806,7 @@ export const deleteReport = async (req, res) => {
     console.error('Ошибка удаления отчета:', error);
     return res.status(500).json({ message: 'Ошибка удаления отчета' });
   } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
   }
 };
