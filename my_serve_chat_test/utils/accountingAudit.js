@@ -33,11 +33,10 @@ export const logAccountingEvent = async ({
       await db.query('RELEASE SAVEPOINT audit_event_sp');
     }
   } catch (error) {
-    // Если это client-транзакция — откатываемся к SAVEPOINT, чтобы не оставить транзакцию aborted.
+    // Откат к SAVEPOINT снимает aborted; после отката savepoint уничтожен — RELEASE не вызываем
     try {
       if (client && typeof client.query === 'function') {
         await db.query('ROLLBACK TO SAVEPOINT audit_event_sp');
-        await db.query('RELEASE SAVEPOINT audit_event_sp');
       }
     } catch (_) {
       // ignore

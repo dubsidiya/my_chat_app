@@ -457,8 +457,8 @@ export const createReport = async (req, res) => {
       responseStatus: 201,
       responseBody: report,
     });
+    // Аудит на отдельном соединении, чтобы ошибка/отсутствие audit_events не переводило транзакцию в 25P02
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'report_created',
       entityType: 'report',
@@ -706,8 +706,8 @@ export const updateReport = async (req, res) => {
     report.lessons_count = createdLessons.length;
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
+    // Аудит на отдельном соединении — не трогаем client-транзакцию
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'report_updated',
       entityType: 'report',
@@ -788,8 +788,8 @@ export const deleteReport = async (req, res) => {
 
     // Удаляем отчет (каскадно удалит связи)
     await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
+    // Аудит на отдельном соединении
     await logAccountingEvent({
-      client,
       userId,
       eventType: 'report_deleted',
       entityType: 'report',

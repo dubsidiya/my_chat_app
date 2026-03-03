@@ -83,7 +83,7 @@ export const beginIdempotent = async (client, { userId, scope, key, requestHash 
   } catch (error) {
     try {
       await client.query('ROLLBACK TO SAVEPOINT idem_sp');
-      await client.query('RELEASE SAVEPOINT idem_sp');
+      // После ROLLBACK TO SAVEPOINT точка уничтожается — RELEASE не вызываем
     } catch (_) {
       // ignore
     }
@@ -122,7 +122,7 @@ export const completeIdempotent = async (
   } catch (error) {
     try {
       await client.query('ROLLBACK TO SAVEPOINT idem_complete_sp');
-      await client.query('RELEASE SAVEPOINT idem_complete_sp');
+      // После ROLLBACK TO SAVEPOINT точка уничтожается — RELEASE не вызываем
     } catch (_) {
       // ignore
     }
