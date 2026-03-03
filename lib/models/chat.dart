@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
-
+//
 class Chat {
   final String id;
   final String name;
