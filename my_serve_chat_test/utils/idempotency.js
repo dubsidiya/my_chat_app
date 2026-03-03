@@ -7,7 +7,8 @@ const isIdempotencyStorageUnavailable = (error) => {
   // 42P01: relation does not exist
   // 42703: column does not exist
   // 42P16: invalid table definition / incompatible schema
-  return code === '42P01' || code === '42703' || code === '42P16';
+  // 42501: insufficient_privilege
+  return code === '42P01' || code === '42703' || code === '42P16' || code === '42501';
 };
 
 const stableStringify = (value) => {

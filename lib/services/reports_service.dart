@@ -9,6 +9,8 @@ class ReportsService {
   final String baseUrl = ApiConfig.baseUrl;
   final Random _rnd = Random();
   static const int _idempotencyRandomMax = 1000000000;
+  static const bool _enableIdempotencyHeaders =
+      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: false);
 
   String _newIdempotencyKey(String scope) {
     final t = DateTime.now().microsecondsSinceEpoch;
@@ -73,7 +75,9 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('report-create');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('report-create');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
@@ -99,7 +103,9 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('report-create-structured');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('report-create-structured');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/reports'),
       headers: headers,

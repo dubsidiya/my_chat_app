@@ -21,6 +21,8 @@ class StudentsService {
   final String baseUrl = ApiConfig.baseUrl;
   final Random _rnd = Random();
   static const int _idempotencyRandomMax = 1000000000;
+  static const bool _enableIdempotencyHeaders =
+      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: false);
 
   String _newIdempotencyKey(String scope) {
     final t = DateTime.now().microsecondsSinceEpoch;
@@ -72,7 +74,9 @@ class StudentsService {
     bool payByBankTransfer = false,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('student-create');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('student-create');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/students'),
       headers: headers,
@@ -126,7 +130,9 @@ class StudentsService {
     required int studentId,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('student-link-existing');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('student-link-existing');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/students/link-existing'),
       headers: headers,
@@ -240,7 +246,9 @@ class StudentsService {
     String? notes,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('lesson-create');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('lesson-create');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/students/$studentId/lessons'),
       headers: headers,
@@ -283,7 +291,9 @@ class StudentsService {
     String? description,
   }) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('deposit-create');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('deposit-create');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/students/$studentId/deposit'),
       headers: headers,
@@ -354,7 +364,9 @@ class StudentsService {
   // Применение платежей из выписки
   Future<Map<String, dynamic>> applyPayments(List<Map<String, dynamic>> payments) async {
     final headers = await _getAuthHeaders();
-    headers['Idempotency-Key'] = _newIdempotencyKey('bank-statement-apply');
+    if (_enableIdempotencyHeaders) {
+      headers['Idempotency-Key'] = _newIdempotencyKey('bank-statement-apply');
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/bank-statement/apply'),
       headers: headers,
