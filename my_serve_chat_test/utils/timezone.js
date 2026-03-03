@@ -38,9 +38,9 @@ export const getDateInTimeZoneISO = (timeZone, date = new Date()) => {
   }
 };
 
-export const getUserTimeZone = async (client, userId) => {
+export const getUserTimeZone = async (db, userId) => {
   try {
-    const r = await client.query(
+    const r = await db.query(
       'SELECT timezone FROM users WHERE id = $1 LIMIT 1',
       [userId]
     );

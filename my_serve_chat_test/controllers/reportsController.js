@@ -168,8 +168,8 @@ const validateSlots = (slots) => {
 };
 
 const isValidISODate = (value) => typeof value === 'string' && ISO_DATE_RE.test(value);
-const getTodayByUserTimezone = async (client, userId) => {
-  const tz = await getUserTimeZone(client, userId);
+const getTodayByUserTimezone = async (db, userId) => {
+  const tz = await getUserTimeZone(db, userId);
   return { tz, todayIso: getDateInTimeZoneISO(tz) };
 };
 
@@ -254,10 +254,21 @@ export const createReport = async (req, res) => {
     return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
   }
 
+  // Дата/таймзона — до транзакции (отдельное соединение), чтобы ошибка/отсутствие колонки timezone не давала 25P02
+  let tz;
+  let todayIso;
+  try {
+    const todayResult = await getTodayByUserTimezone(pool, userId);
+    tz = todayResult.tz;
+    todayIso = todayResult.todayIso;
+  } catch (e) {
+    console.error('getTodayByUserTimezone:', e);
+    return res.status(500).json({ message: 'Ошибка определения даты. Проверьте миграции (колонка users.timezone).' });
+  }
+
   const client = await pool.connect();
   try {
     // Защита: если из пула пришёл client с незавершённой/aborted транзакцией,
-    // то любые запросы будут падать с 25P02. Сбрасываем состояние заранее.
     try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
@@ -280,9 +291,7 @@ export const createReport = async (req, res) => {
       return res.status(409).json({ message: idem.conflict });
     }
 
-    const { tz, todayIso } = await getTodayByUserTimezone(client, userId);
-
-    // Запрещаем отчеты за будущие даты
+    // todayIso уже получен выше через pool
     if (report_date > todayIso) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя создать отчет за будущую дату' });
@@ -524,13 +533,22 @@ export const updateReport = async (req, res) => {
     return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
   }
 
+  let tz;
+  let todayIso;
+  try {
+    const todayResult = await getTodayByUserTimezone(pool, userId);
+    tz = todayResult.tz;
+    todayIso = todayResult.todayIso;
+  } catch (e) {
+    console.error('getTodayByUserTimezone:', e);
+    return res.status(500).json({ message: 'Ошибка определения даты. Проверьте миграции (колонка users.timezone).' });
+  }
+
   const client = await pool.connect();
   try {
     try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
-    const { tz, todayIso } = await getTodayByUserTimezone(client, userId);
-
-    // Запрещаем отчеты за будущие даты
+    // todayIso уже получен выше через pool
     if (report_date > todayIso) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Нельзя установить будущую дату отчета' });
