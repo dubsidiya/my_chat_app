@@ -42,6 +42,9 @@ export const hashIdempotencyPayload = (payload) => {
 export const beginIdempotent = async (client, { userId, scope, key, requestHash }) => {
   if (!key) return { enabled: false };
   try {
+    // Любая ошибка в транзакции PostgreSQL переводит её в aborted state (25P02),
+    // даже если мы поймали exception в JS. Поэтому изолируем idempotency в SAVEPOINT.
+    await client.query('SAVEPOINT idem_sp');
     await client.query(
       'DELETE FROM idempotency_keys WHERE expires_at < CURRENT_TIMESTAMP'
     );
@@ -55,9 +58,11 @@ export const beginIdempotent = async (client, { userId, scope, key, requestHash 
     if (existing.rows.length > 0) {
       const row = existing.rows[0];
       if (row.request_hash !== requestHash) {
+        await client.query('RELEASE SAVEPOINT idem_sp');
         return { enabled: true, conflict: 'Этот idempotency key уже использован для другого запроса' };
       }
       if (row.status === 'completed') {
+        await client.query('RELEASE SAVEPOINT idem_sp');
         return {
           enabled: true,
           replay: true,
@@ -65,6 +70,7 @@ export const beginIdempotent = async (client, { userId, scope, key, requestHash 
           responseBody: row.response_body || {},
         };
       }
+      await client.query('RELEASE SAVEPOINT idem_sp');
       return { enabled: true, conflict: 'Запрос с этим idempotency key уже выполняется' };
     }
     await client.query(
@@ -72,8 +78,15 @@ export const beginIdempotent = async (client, { userId, scope, key, requestHash 
        VALUES ($1, $2, $3, $4, 'pending')`,
       [userId, scope, key, requestHash]
     );
+    await client.query('RELEASE SAVEPOINT idem_sp');
     return { enabled: true };
   } catch (error) {
+    try {
+      await client.query('ROLLBACK TO SAVEPOINT idem_sp');
+      await client.query('RELEASE SAVEPOINT idem_sp');
+    } catch (_) {
+      // ignore
+    }
     if (isIdempotencyStorageUnavailable(error)) {
       console.warn('Idempotency storage unavailable, request will proceed without idempotency checks');
       return { enabled: false };
@@ -88,6 +101,7 @@ export const completeIdempotent = async (
 ) => {
   if (!key) return;
   try {
+    await client.query('SAVEPOINT idem_complete_sp');
     await client.query(
       `UPDATE idempotency_keys
        SET status = 'completed',
@@ -104,7 +118,14 @@ export const completeIdempotent = async (
         JSON.stringify(responseBody ?? {}),
       ]
     );
+    await client.query('RELEASE SAVEPOINT idem_complete_sp');
   } catch (error) {
+    try {
+      await client.query('ROLLBACK TO SAVEPOINT idem_complete_sp');
+      await client.query('RELEASE SAVEPOINT idem_complete_sp');
+    } catch (_) {
+      // ignore
+    }
     if (isIdempotencyStorageUnavailable(error)) {
       return;
     }
