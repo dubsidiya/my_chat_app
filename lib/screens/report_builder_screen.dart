@@ -543,7 +543,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 }
 
-class _StudentPickerRow extends StatelessWidget {
+class _StudentPickerRow extends StatefulWidget {
   final String label;
   final List<Student> students;
   final int? value;
@@ -561,46 +561,101 @@ class _StudentPickerRow extends StatelessWidget {
   });
 
   @override
+  State<_StudentPickerRow> createState() => _StudentPickerRowState();
+}
+
+class _StudentPickerRowState extends State<_StudentPickerRow> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  List<Student> get _filteredStudents {
+    final q = _searchController.text.trim().toLowerCase();
+    List<Student> list = q.isEmpty
+        ? List<Student>.from(widget.students)
+        : widget.students.where((s) => s.name.toLowerCase().contains(q)).toList();
+    if (widget.value != null && !list.any((s) => s.id == widget.value)) {
+      final selected = widget.students.where((s) => s.id == widget.value).toList();
+      if (selected.isNotEmpty) list = [selected.first, ...list];
+    }
+    return list;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
+    final filtered = _filteredStudents;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 3,
-          child: DropdownButtonFormField<int?>(
-            key: ValueKey<int?>(value),
-            initialValue: value,
-            items: [
-              if (allowEmpty)
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('—'),
-                ),
-              ...students.map(
-                (s) => DropdownMenuItem<int?>(
-                  value: s.id,
-                  child: Text(s.name),
+        TextField(
+          controller: _searchController,
+          focusNode: _searchFocus,
+          decoration: InputDecoration(
+            labelText: 'Поиск ученика',
+            hintText: 'Введите имя...',
+            prefixIcon: const Icon(Icons.search_rounded, size: 22),
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: DropdownButtonFormField<int?>(
+                key: ValueKey<int?>(widget.value),
+                initialValue: widget.value,
+                items: [
+                  if (widget.allowEmpty)
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('—'),
+                    ),
+                  ...filtered.map(
+                    (s) => DropdownMenuItem<int?>(
+                      value: s.id,
+                      child: Text(s.name),
+                    ),
+                  ),
+                  if (filtered.isEmpty && widget.students.isNotEmpty)
+                    const DropdownMenuItem<int?>(
+                      value: -1,
+                      enabled: false,
+                      child: Text('Нет совпадений'),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v == null || v != -1) widget.onChanged(v);
+                },
+                decoration: InputDecoration(
+                  labelText: widget.label,
+                  border: const OutlineInputBorder(),
                 ),
               ),
-            ],
-            onChanged: onChanged,
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
             ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          flex: 2,
-          child: TextField(
-            controller: priceController,
-            decoration: const InputDecoration(
-              labelText: 'Цена (₽)',
-              border: OutlineInputBorder(),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: TextField(
+                controller: widget.priceController,
+                decoration: const InputDecoration(
+                  labelText: 'Цена (₽)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+              ),
             ),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
-          ),
+          ],
         ),
       ],
     );
