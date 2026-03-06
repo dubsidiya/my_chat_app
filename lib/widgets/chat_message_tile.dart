@@ -71,8 +71,8 @@ class ChatMessageTile extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isHighlighted ? accent1.withValues(alpha: 0.10) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          color: isHighlighted ? accent1.withValues(alpha: 0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -93,7 +93,6 @@ class ChatMessageTile extends StatelessWidget {
                           )
                         : null,
                     shape: BoxShape.circle,
-                    boxShadow: AppColors.neonGlowSoft,
                   ),
                   child: ClipOval(
                     child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
@@ -127,21 +126,12 @@ class ChatMessageTile extends StatelessWidget {
                         : null,
                     color: isMine ? null : AppColors.cardElevatedDark,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(20),
-                      topRight: const Radius.circular(20),
-                      bottomLeft: Radius.circular(isMine ? 20 : 4),
-                      bottomRight: Radius.circular(isMine ? 4 : 20),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMine ? 18 : 6),
+                      bottomRight: Radius.circular(isMine ? 6 : 18),
                     ),
-                    boxShadow: isMine
-                        ? AppColors.neonGlowSoft
-                        : [
-                            BoxShadow(
-                              color: scheme.outline.withValues(alpha: 0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                    border: isMine ? null : Border.all(color: scheme.outline.withValues(alpha: 0.18), width: 1.2),
+                    border: isMine ? null : Border.all(color: scheme.outline.withValues(alpha: 0.15), width: 1),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -441,7 +431,7 @@ class ChatMessageTile extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: AppColors.neonGlowSoft),
+                decoration: const BoxDecoration(shape: BoxShape.circle),
                 child: ClipOval(
                   child: myAvatarUrl != null && myAvatarUrl!.isNotEmpty
                       ? CachedNetworkImage(

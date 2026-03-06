@@ -100,8 +100,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         listTileTheme: ListTileThemeData(
           iconColor: scheme.onSurface.withValues(alpha: 0.85),
           textColor: scheme.onSurface,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          dense: false,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         chipTheme: ChipThemeData(
@@ -124,25 +124,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
         appBarTheme: AppBarTheme(
           elevation: 0,
-          backgroundColor: card,
+          scrolledUnderElevation: 0,
+          backgroundColor: scheme.surface,
           foregroundColor: scheme.onSurface,
           surfaceTintColor: Colors.transparent,
           centerTitle: false,
           titleTextStyle: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             color: scheme.onSurface,
-            letterSpacing: 0.5,
+            letterSpacing: 0.2,
           ),
-          iconTheme: IconThemeData(color: scheme.onSurface),
+          iconTheme: IconThemeData(color: scheme.onSurface, size: 24),
         ),
         cardTheme: CardThemeData(
-          elevation: 8,
+          elevation: 0,
           color: card,
-          shadowColor: AppColors.primaryGlow.withValues(alpha: 0.4),
+          shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: outline.withValues(alpha: 0.6)),
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: outline.withValues(alpha: 0.25), width: 1),
           ),
           margin: EdgeInsets.zero,
         ),
@@ -187,12 +188,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
-          elevation: 12,
+          elevation: 0,
           backgroundColor: AppColors.cardElevatedDark,
           contentTextStyle: TextStyle(color: AppColors.onSurfaceDark),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: AppColors.primaryGlow.withValues(alpha: 0.5)),
           ),
         ),
         progressIndicatorTheme: ProgressIndicatorThemeData(
@@ -200,34 +200,34 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: AppColors.primary.withValues(alpha: 0.08),
+          fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: outline),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: outline.withValues(alpha: 0.3)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: outline),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: outline.withValues(alpha: 0.25)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            elevation: 8,
-            shadowColor: AppColors.primaryGlow.withValues(alpha: 0.6),
+            elevation: 0,
+            shadowColor: Colors.transparent,
             backgroundColor: AppColors.primary,
             foregroundColor: AppColors.onSurfaceDark,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
             textStyle: const TextStyle(
               fontSize: 15,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

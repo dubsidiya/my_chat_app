@@ -85,8 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _chatAvatarPlaceholder(String chatName) {
     final letter = chatName.trim().isNotEmpty ? chatName.trim()[0].toUpperCase() : '?';
     return Container(
-      width: 46,
-      height: 46,
+      width: 52,
+      height: 52,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Center(
         child: Text(
           letter,
-          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -370,10 +370,10 @@ class _HomeScreenState extends State<HomeScreen> {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(12),
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(14),
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
       confirmDismiss: (direction) async {
@@ -419,21 +419,26 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _openChat(chat),
           onLongPress: () => _showChatFolderPicker(chat),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
                 GestureDetector(
                   onTap: () => _openChatUserProfile(chat),
                   child: Container(
-                    width: 46,
-                    height: 46,
+                    width: 52,
+                    height: 52,
                     decoration: BoxDecoration(
                       gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
                           ? const LinearGradient(
@@ -442,17 +447,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               colors: [AppColors.primary, AppColors.primaryDeep],
                             )
                           : null,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       child: chat.isGroup
                           ? const Icon(Icons.group_rounded, color: Colors.white, size: 22)
                           : (chat.otherUserAvatarUrl != null && chat.otherUserAvatarUrl!.trim().isNotEmpty)
                               ? CachedNetworkImage(
                                   imageUrl: chat.otherUserAvatarUrl!,
-                                  width: 46,
-                                  height: 46,
+                                  width: 52,
+                                  height: 52,
                                   fit: BoxFit.cover,
                                   placeholder: (_, __) => _chatAvatarPlaceholder(chat.name),
                                   errorWidget: (_, __, ___) => _chatAvatarPlaceholder(chat.name),
@@ -461,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -523,8 +528,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: scheme.primary,
-                          borderRadius: BorderRadius.circular(999),
+                          color: scheme.primary.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           unread > 99 ? '99+' : unread.toString(),
@@ -1304,7 +1309,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
 
     final q = _query.trim().toLowerCase();
     final sortedChats = _sortedChats;
@@ -1329,7 +1333,7 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         backgroundColor: scheme.surface,
         leading: Padding(
-          padding: const EdgeInsets.only(left: 8),
+          padding: const EdgeInsets.only(left: 4),
           child: GestureDetector(
             onTap: _openProfile,
             child: Center(
@@ -1338,8 +1342,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  boxShadow: AppColors.neonGlowSoft,
-                  border: Border.all(color: AppColors.primaryGlow.withValues(alpha: 0.5), width: 1),
+                  border: Border.all(color: scheme.outline.withValues(alpha: 0.35), width: 1),
                 ),
                 child: ClipOval(
                   child: _avatarUrl != null && _avatarUrl!.isNotEmpty
@@ -1360,60 +1363,33 @@ class _HomeScreenState extends State<HomeScreen> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            letterSpacing: 0.3,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            letterSpacing: 0.2,
           ),
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: AppColors.primary),
-              onPressed: _loadChats,
-              tooltip: 'Обновить',
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: AppColors.primaryGlow.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.vpn_key_rounded, color: AppColors.primaryGlow),
-              onPressed: _joinByInviteDialog,
-              tooltip: 'Вступить по коду',
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [
-                  AppColors.primary,
-                  AppColors.primaryGlow,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: AppColors.neonGlow,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.add_rounded, color: Colors.white),
-              onPressed: _showCreateChatDialog,
-              tooltip: 'Создать чат',
-            ),
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
+            onPressed: _loadChats,
+            tooltip: 'Обновить',
           ),
           IconButton(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.75)),
+            icon: Icon(Icons.vpn_key_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
+            onPressed: _joinByInviteDialog,
+            tooltip: 'Вступить по коду',
+          ),
+          IconButton(
+            icon: Icon(Icons.add_rounded, color: scheme.primary, size: 26),
+            onPressed: _showCreateChatDialog,
+            tooltip: 'Создать чат',
+          ),
+          IconButton(
+            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
             onPressed: () => _showMainMenu(context, scheme),
             tooltip: 'Меню',
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(
@@ -1483,14 +1459,14 @@ class _HomeScreenState extends State<HomeScreen> {
           : Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04),
-                          borderRadius: BorderRadius.circular(16),
+                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: scheme.outline.withValues(alpha: isDark ? 0.18 : 0.12),
-                            width: 1.2,
+                            color: scheme.outline.withValues(alpha: 0.2),
+                            width: 1,
                           ),
                         ),
                         child: TextField(
@@ -1498,8 +1474,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           onChanged: (v) => setState(() => _query = v),
                           decoration: InputDecoration(
                             hintText: 'Поиск по чатам',
-                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.55)),
-                            prefixIcon: Icon(Icons.search_rounded, color: scheme.primary),
+                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)),
+                            prefixIcon: Icon(Icons.search_rounded, color: scheme.onSurface.withValues(alpha: 0.6), size: 22),
                             suffixIcon: _query.isEmpty
                                 ? null
                                 : IconButton(

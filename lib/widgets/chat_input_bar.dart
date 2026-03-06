@@ -150,23 +150,23 @@ class ChatInputBar extends StatelessWidget {
           children: [
             Container(
               decoration: BoxDecoration(
-                color: accent2.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(14),
+                color: accent2.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: IconButton(
-                icon: Icon(Icons.attach_file_rounded, color: accent2),
+                icon: Icon(Icons.attach_file_rounded, color: accent2, size: 22),
                 onPressed: isRecordingVoice ? null : onPickFile,
                 tooltip: 'Прикрепить файл',
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Container(
               decoration: BoxDecoration(
-                color: accent1.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(14),
+                color: accent1.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: IconButton(
-                icon: Icon(Icons.image_rounded, color: accent1),
+                icon: Icon(Icons.image_rounded, color: accent1, size: 22),
                 onPressed: isRecordingVoice ? null : onPickImage,
                 tooltip: 'Прикрепить изображение',
               ),
@@ -184,10 +184,10 @@ class ChatInputBar extends StatelessWidget {
                   onVoiceLongPressEnd();
                 },
                 child: Material(
-                  color: (isRecordingVoice ? scheme.error : accent1).withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(14),
+                  color: (isRecordingVoice ? scheme.error : accent1).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     onTap: (isUploadingImage || isUploadingFile) ? null : onToggleVoiceRecording,
                     child: Container(
                       padding: const EdgeInsets.all(10),
@@ -204,9 +204,9 @@ class ChatInputBar extends StatelessWidget {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.08),
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppColors.borderDark),
+                  border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
                 ),
                 child: TextField(
                   controller: controller,
@@ -242,7 +242,6 @@ class ChatInputBar extends StatelessWidget {
                     colors: [accent1, accent2],
                   ),
                   shape: BoxShape.circle,
-                  boxShadow: AppColors.neonGlow,
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.send, color: Colors.white),
