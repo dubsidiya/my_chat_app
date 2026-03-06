@@ -144,7 +144,7 @@ class StorageService {
     }
     if (userId != null) {
       await prefs.remove('$_privateUnlockedPrefix$userId');
-      await prefs.remove('$_chatOrderPrefix$userId');
+      // Порядок чатов не удаляем при выходе — при повторном входе под тем же userId порядок сохранится.
       await prefs.remove('$_eulaAcceptedPrefix$userId');
     }
   }
