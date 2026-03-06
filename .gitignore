@@ -54,6 +54,11 @@ windows/flutter/ephemeral/
 *.temp
 *.log
 
+# Туториалы (локально для чтения, не коммитить)
+docs/TUTORIAL_INDEX.md
+docs/DART_FLUTTER_TUTORIAL.md
+docs/tutorial/
+
 # Резервные копии
 *.backup
 *.bak
