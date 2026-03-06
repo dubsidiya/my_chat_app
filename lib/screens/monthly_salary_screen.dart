@@ -196,7 +196,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Итоговая зарплата (50%)
+          // Итог (зарплата за месяц)
           Card(
             elevation: 3,
             shadowColor: _accent1.withValues(alpha: 0.35),
@@ -219,7 +219,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
               child: Column(
                 children: [
                   Text(
-                    'Ваша часть (50%)',
+                    'Итог:',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
