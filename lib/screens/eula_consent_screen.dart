@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import '../services/storage_service.dart';
 import 'main_tabs_screen.dart';
 
@@ -41,58 +42,96 @@ class EulaConsentScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 16),
-              Text(
-                'Условия использования',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Text(
-                    _eulaText,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      height: 1.5,
-                      fontSize: 15,
-                    ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.backgroundDark,
+              AppColors.surfaceDark,
+              AppColors.primaryDeep,
+            ],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 16),
+                Text(
+                  'Условия использования',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    letterSpacing: 0.3,
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: () async {
-                  await StorageService.setEulaAccepted(userId);
-                  if (!context.mounted) return;
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => MainTabsScreen(
-                        userId: userId,
-                        userEmail: userEmail,
-                        displayName: displayName,
-                        avatarUrl: avatarUrl,
-                        isSuperuser: isSuperuser,
+                const SizedBox(height: 16),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardDark.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.primaryGlow.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Text(
+                        _eulaText,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          height: 1.5,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
-                  );
-                },
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text('Принимаю'),
-              ),
-            ],
+                const SizedBox(height: 24),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryDeep],
+                    ),
+                    boxShadow: AppColors.neonGlow,
+                  ),
+                  child: FilledButton(
+                    onPressed: () async {
+                      await StorageService.setEulaAccepted(userId);
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => MainTabsScreen(
+                            userId: userId,
+                            userEmail: userEmail,
+                            displayName: displayName,
+                            avatarUrl: avatarUrl,
+                            isSuperuser: isSuperuser,
+                          ),
+                        ),
+                      );
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Принимаю'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

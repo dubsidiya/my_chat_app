@@ -469,9 +469,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                     const SizedBox(height: 6),
                                     Text(
                                       report.content,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: scheme.onSurface.withValues(alpha:0.70)),
+                                      style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70)),
                                     ),
                                     const SizedBox(height: 4),
                                     if (report.isLate)

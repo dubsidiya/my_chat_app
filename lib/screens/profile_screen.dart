@@ -227,14 +227,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Positioned.fill(
                       child: ClipOval(
                         child: Container(
-                          color: Colors.black54,
-                          child: const Center(
+                          color: scheme.surface.withValues(alpha: 0.75),
+                          child: Center(
                             child: SizedBox(
                               width: 32,
                               height: 32,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(scheme.primary),
                               ),
                             ),
                           ),
@@ -358,7 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               context,
               icon: Icons.delete_forever_rounded,
               title: 'Удалить аккаунт',
-              titleColor: Colors.red,
+              titleColor: scheme.error,
               onTap: () => _openDeleteAccount(context),
             ),
             _listTile(

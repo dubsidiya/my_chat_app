@@ -62,4 +62,9 @@ class AppColors {
           offset: Offset.zero,
         ),
       ];
+
+  /// Цвета для состояний (ошибка, успех) в тёмной теме.
+  static Color get errorDark => const Color(0xFFE57373);
+  static Color get successDark => const Color(0xFF81C784);
+  static Color get warningDark => const Color(0xFFFFB74D);
 }

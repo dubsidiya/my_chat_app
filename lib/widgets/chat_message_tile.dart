@@ -189,7 +189,7 @@ class ChatMessageTile extends StatelessWidget {
                               if (msg.replyToMessage!.hasFile)
                                 Row(
                                   children: [
-                                    Icon(Icons.insert_drive_file_rounded, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                    Icon(Icons.insert_drive_file_rounded, size: 14, color: isMine ? Colors.white70 : scheme.outline),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
@@ -208,7 +208,7 @@ class ChatMessageTile extends StatelessWidget {
                               else if (msg.replyToMessage!.hasImage)
                                 Row(
                                   children: [
-                                    Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : Colors.grey.shade600),
+                                    Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : scheme.outline),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Фото',
@@ -248,7 +248,7 @@ class ChatMessageTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 250, maxHeight: 400),
-                              child: CachedNetworkImage(
+                                child: CachedNetworkImage(
                                 imageUrl: msg.imageUrl!,
                                 fit: BoxFit.contain,
                                 memCacheWidth: 500,
@@ -256,14 +256,23 @@ class ChatMessageTile extends StatelessWidget {
                                 placeholder: (_, __) => Container(
                                   width: 250,
                                   height: 200,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(child: CircularProgressIndicator()),
+                                  color: scheme.surfaceContainerHighest,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: scheme.primary,
+                                    ),
+                                  ),
                                 ),
                                 errorWidget: (_, __, ___) => Container(
                                   width: 250,
                                   height: 200,
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(Icons.broken_image_rounded, color: Colors.red),
+                                  color: scheme.surfaceContainerHighest,
+                                  child: Icon(
+                                    Icons.broken_image_rounded,
+                                    color: scheme.error,
+                                    size: 48,
+                                  ),
                                 ),
                               ),
                             ),
@@ -402,7 +411,7 @@ class ChatMessageTile extends StatelessWidget {
                             formatDate(msg.createdAt),
                             style: TextStyle(
                               fontSize: 11,
-                              color: isMine ? Colors.white.withValues(alpha: 0.8) : Colors.grey.shade500,
+                              color: isMine ? Colors.white.withValues(alpha: 0.8) : scheme.onSurfaceVariant,
                             ),
                           ),
                           if (isMine) ...[
@@ -416,7 +425,7 @@ class ChatMessageTile extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontStyle: FontStyle.italic,
-                                color: isMine ? Colors.white.withValues(alpha: 0.6) : Colors.grey.shade400,
+                                color: isMine ? Colors.white.withValues(alpha: 0.6) : scheme.onSurfaceVariant,
                               ),
                             ),
                           ],

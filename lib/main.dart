@@ -293,9 +293,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                       Text(
                         'Загрузка...',
                         style: TextStyle(
-                          color: AppColors.onSurfaceDark.withValues(alpha: 0.9),
+                          color: AppColors.onSurfaceDark.withValues(alpha: 0.85),
                           fontSize: 16,
                           letterSpacing: 0.5,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],

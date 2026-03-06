@@ -175,6 +175,9 @@ class _HomeScreenState extends State<HomeScreen> {
             }
 
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: const Text('Вступить по коду'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -929,7 +932,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     await _openReports();
                   }),
                   const Divider(height: 24),
-                  _menuTile(ctx, scheme, Icons.logout_rounded, Colors.blue, 'Выйти', () {
+                  _menuTile(ctx, scheme, Icons.logout_rounded, AppColors.primaryGlow, 'Выйти', () {
                     Navigator.pop(ctx);
                     _logout();
                   }),
@@ -1058,7 +1061,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   'Введите логин пользователя и новый пароль. Только администратор может сбросить пароль.',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  style: TextStyle(fontSize: 14, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -1159,7 +1162,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Последнее предупреждение!'),
         content: const Text(
           'Вы действительно хотите удалить аккаунт? Это действие нельзя отменить!',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           TextButton(
@@ -1378,11 +1381,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.10),
+              color: AppColors.primaryGlow.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.vpn_key_rounded, color: Colors.green.shade700),
+              icon: Icon(Icons.vpn_key_rounded, color: AppColors.primaryGlow),
               onPressed: _joinByInviteDialog,
               tooltip: 'Вступить по коду',
             ),
@@ -1421,7 +1424,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const CircularProgressIndicator(
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primary,
+                      AppColors.primaryGlow,
                     ),
                     strokeWidth: 3,
                   ),
@@ -1429,7 +1432,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     'Загрузка чатов...',
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: scheme.onSurfaceVariant,
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.3,
@@ -1445,21 +1448,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.wifi_off_rounded, size: 64, color: Colors.orange.shade400),
+                        Icon(Icons.wifi_off_rounded, size: 64, color: AppColors.warningDark),
                         const SizedBox(height: 24),
                         Text(
                           'Не удалось загрузить чаты',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade800,
+                            color: scheme.onSurface,
                           ),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           _loadError!,
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                          style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
                           textAlign: TextAlign.center,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
@@ -1559,7 +1562,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             Icon(
                                               Icons.chat_bubble_outline_rounded,
                                               size: 56,
-                                              color: AppColors.primary.withValues(alpha: 0.5),
+                                              color: scheme.primary.withValues(alpha: 0.5),
                                             ),
                                           if (_chats.isEmpty) const SizedBox(height: 16),
                                           Text(
@@ -1568,7 +1571,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 : 'По запросу ничего не найдено',
                                             style: TextStyle(
                                               fontSize: 16,
-                                              color: Colors.grey.shade600,
+                                              color: scheme.onSurfaceVariant,
                                               fontWeight: FontWeight.w600,
                                             ),
                                             textAlign: TextAlign.center,
@@ -1579,7 +1582,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               'Создайте чат кнопкой + или обновите список',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                color: Colors.grey.shade500,
+                                                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                                               ),
                                               textAlign: TextAlign.center,
                                             ),
@@ -1598,7 +1601,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               'Очистите поиск, чтобы увидеть все чаты',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                color: Colors.grey.shade500,
+                                                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                                               ),
                                               textAlign: TextAlign.center,
                                             ),
@@ -1916,7 +1919,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                     'Введите запрос в поле поиска,\nчтобы найти пользователя',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 14,
                     ),
                   ),
@@ -1927,7 +1930,10 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   'Никого не найдено',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                  ),
                 ),
               )
             else
@@ -1984,7 +1990,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
@@ -2175,10 +2181,11 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.lock_outline, color: Colors.blue.shade700),
+          Icon(Icons.lock_outline, color: scheme.primary),
           const SizedBox(width: 8),
           const Text('Изменить пароль'),
         ],
@@ -2190,7 +2197,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
           children: [
             Text(
               'Введите текущий пароль и новый пароль',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -2288,8 +2295,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
             );
           },
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue.shade700,
-            foregroundColor: Colors.white,
+            backgroundColor: scheme.primary,
+            foregroundColor: scheme.onPrimary,
           ),
           child: const Text('Изменить'),
         ),

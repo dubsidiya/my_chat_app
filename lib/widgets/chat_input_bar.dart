@@ -61,19 +61,15 @@ class ChatInputBar extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.red.shade50,
-                  Colors.red.withValues(alpha: 0.06),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: scheme.error.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.2), width: 1),
+              border: Border.all(
+                color: scheme.error.withValues(alpha: 0.35),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.red.withValues(alpha: 0.08),
+                  color: scheme.error.withValues(alpha: 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -85,11 +81,11 @@ class ChatInputBar extends StatelessWidget {
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: Colors.red.shade400,
+                    color: scheme.error,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.red.withValues(alpha: 0.5),
+                        color: scheme.error.withValues(alpha: 0.5),
                         blurRadius: 6,
                       ),
                     ],
@@ -101,7 +97,7 @@ class ChatInputBar extends StatelessWidget {
                     'Запись: ${_formatDuration(voiceRecordDuration)}',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: Colors.red.shade800,
+                      color: scheme.onSurface,
                       fontSize: 14,
                     ),
                   ),
@@ -113,7 +109,7 @@ class ChatInputBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     child: Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Icon(Icons.close_rounded, size: 22, color: Colors.red.shade700),
+                      child: Icon(Icons.close_rounded, size: 22, color: scheme.error),
                     ),
                   ),
                 ),
@@ -188,7 +184,7 @@ class ChatInputBar extends StatelessWidget {
                   onVoiceLongPressEnd();
                 },
                 child: Material(
-                  color: (isRecordingVoice ? Colors.red : accent1).withValues(alpha: 0.12),
+                  color: (isRecordingVoice ? scheme.error : accent1).withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(14),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
@@ -197,7 +193,7 @@ class ChatInputBar extends StatelessWidget {
                       padding: const EdgeInsets.all(10),
                       child: Icon(
                         isRecordingVoice ? Icons.stop_rounded : Icons.mic_rounded,
-                        color: isRecordingVoice ? Colors.red.shade700 : accent1,
+                        color: isRecordingVoice ? scheme.error : accent1,
                         size: 24,
                       ),
                     ),
