@@ -1,12 +1,13 @@
 import express from 'express';
-import { authenticateToken, requirePrivateAccess } from '../middleware/auth.js';
+import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../middleware/auth.js';
 import {
   getAllReports,
   getReport,
   getMonthlySalaryReport,
   createReport,
   updateReport,
-  deleteReport
+  deleteReport,
+  setReportNotLate
 } from '../controllers/reportsController.js';
 
 const router = express.Router();
@@ -20,6 +21,8 @@ router.get('/:id', getReport);
 router.post('/', createReport);
 router.put('/:id', updateReport);
 router.delete('/:id', deleteReport);
+// Снять пометку «поздний отчёт» — только суперпользователь
+router.patch('/:id/set-not-late', requireSuperuser, setReportNotLate);
 
 export default router;
 

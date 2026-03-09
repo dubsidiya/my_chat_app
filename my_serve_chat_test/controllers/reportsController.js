@@ -7,6 +7,7 @@ import {
   hashIdempotencyPayload,
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
+import { isSuperuser } from '../middleware/auth.js';
 
 // Парсинг текста отчета для извлечения занятий
 // Новый формат:
@@ -726,14 +727,24 @@ export const updateReport = async (req, res) => {
       });
     }
 
-    // Обновляем отчет
-    const reportResult = await client.query(
-      `UPDATE reports 
-       SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3 AND created_by = $4
-       RETURNING *`,
-      [report_date, finalContent, id, userId]
-    );
+    // Обновляем отчет. is_late меняем только суперпользователю (иначе обычный пользователь мог бы обойти пометку «поздний» сменой даты).
+    const superuser = isSuperuser(req.user);
+    const reportResult = superuser
+      ? await client.query(
+          `UPDATE reports 
+           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP,
+               is_late = ($1::date < $5::date)
+           WHERE id = $3 AND created_by = $4
+           RETURNING *`,
+          [report_date, finalContent, id, userId, todayIso]
+        )
+      : await client.query(
+          `UPDATE reports 
+           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3 AND created_by = $4
+           RETURNING *`,
+          [report_date, finalContent, id, userId]
+        );
     const report = reportResult.rows[0];
 
     // Парсим новое содержание и создаем занятия заново
@@ -913,6 +924,38 @@ export const deleteReport = async (req, res) => {
   } finally {
     try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
+  }
+};
+
+/**
+ * Снять пометку «поздний отчёт» (только суперпользователь).
+ * Позволяет засчитать отчёт в доход/зарплату, хотя он был сдан с опозданием.
+ * PATCH /reports/:id/set-not-late
+ */
+export const setReportNotLate = async (req, res) => {
+  const reportId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(reportId)) {
+    return res.status(400).json({ message: 'Некорректный id отчёта' });
+  }
+  try {
+    const result = await pool.query(
+      `UPDATE reports SET is_late = false WHERE id = $1 RETURNING *`,
+      [reportId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Отчёт не найден' });
+    }
+    await logAccountingEvent({
+      userId: req.user.userId,
+      eventType: 'report_set_not_late',
+      entityType: 'report',
+      entityId: reportId,
+      payload: { report_date: result.rows[0].report_date },
+    });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('setReportNotLate:', error);
+    return res.status(500).json({ message: 'Ошибка при снятии пометки «поздний отчёт»' });
   }
 };
 

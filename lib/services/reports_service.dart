@@ -216,5 +216,24 @@ class ReportsService {
       throw Exception(error['message'] ?? 'Не удалось удалить отчет');
     }
   }
+
+  /// Снять пометку «поздний отчёт» (только суперпользователь). Отчёт начнёт учитываться в доходе/зарплате.
+  Future<Report> setReportNotLate(int reportId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/reports/$reportId/set-not-late'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return Report.fromJson(data);
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось снять пометку «поздний отчёт»');
+  }
 }
 

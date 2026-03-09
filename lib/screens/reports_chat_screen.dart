@@ -11,8 +11,9 @@ import 'monthly_salary_screen.dart';
 class ReportsChatScreen extends StatefulWidget {
   final String userId;
   final String userEmail;
+  final bool isSuperuser;
 
-  const ReportsChatScreen({super.key, required this.userId, required this.userEmail});
+  const ReportsChatScreen({super.key, required this.userId, required this.userEmail, this.isSuperuser = false});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -475,20 +476,55 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                     if (report.isLate)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 6),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red.withValues(alpha:0.12),
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: Text(
-                                            'Поздний отчет',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.red.shade700,
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red.withValues(alpha:0.12),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                'Поздний отчет',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.red.shade700,
+                                                ),
+                                              ),
                                             ),
-                                          ),
+                                            if (widget.isSuperuser) ...[
+                                              const SizedBox(width: 8),
+                                              TextButton(
+                                                style: TextButton.styleFrom(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                ),
+                                                onPressed: () async {
+                                                  try {
+                                                    await _reportsService.setReportNotLate(report.id);
+                                                    if (mounted) await _loadReports();
+                                                    if (mounted) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        const SnackBar(content: Text('Отчёт учтён как сдан вовремя')),
+                                                      );
+                                                    }
+                                                  } catch (e) {
+                                                    if (mounted) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                                                      );
+                                                    }
+                                                  }
+                                                },
+                                                child: Text(
+                                                  'Считать вовремя',
+                                                  style: TextStyle(fontSize: 12, color: scheme.primary),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
                                       ),
                                     if (report.isEdited)

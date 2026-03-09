@@ -1278,7 +1278,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await _ensurePrivateAccess() || !mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail)),
+      MaterialPageRoute(builder: (_) => ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail, isSuperuser: widget.isSuperuser)),
     );
   }
 
