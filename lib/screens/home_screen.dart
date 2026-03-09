@@ -15,6 +15,7 @@ import 'students_screen.dart';
 import 'reports_chat_screen.dart';
 import 'profile_screen.dart';
 import 'user_profile_screen.dart';
+import '../utils/network_error_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 
@@ -1750,7 +1751,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при создании чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(networkErrorMessage(e)),
             duration: const Duration(seconds: 3),
           ),
         );

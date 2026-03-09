@@ -3,6 +3,7 @@ import '../theme/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/storage_service.dart';
+import '../utils/network_error_helper.dart';
 import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
@@ -45,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (userData != null && userData['token'] != null) {
         final userId = userData['id'].toString();
         final userIdentifier = userData['username'] ?? userData['email'] ?? '';
-        final isSuperuser = userData['isSuperuser'] == true;
+        final isSuperuser = userData['isSuperuser'] == true || userData['isSuperuser'] == 'true';
         final displayName = userData['displayName']?.toString();
         final avatarUrl = userData['avatarUrl'] ?? userData['avatar_url']?.toString();
         final eulaAccepted = await StorageService.getEulaAccepted(userId);
@@ -83,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+          _errorMessage = networkErrorMessage(e);
         });
       }
     }

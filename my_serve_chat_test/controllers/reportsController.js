@@ -931,8 +931,12 @@ export const deleteReport = async (req, res) => {
  * Снять пометку «поздний отчёт» (только суперпользователь).
  * Позволяет засчитать отчёт в доход/зарплату, хотя он был сдан с опозданием.
  * PATCH /reports/:id/set-not-late
+ * Защита: маршрут с requireSuperuser + повторная проверка в контроллере.
  */
 export const setReportNotLate = async (req, res) => {
+  if (!isSuperuser(req.user)) {
+    return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
+  }
   const reportId = parseInt(req.params.id, 10);
   if (!Number.isFinite(reportId)) {
     return res.status(400).json({ message: 'Некорректный id отчёта' });

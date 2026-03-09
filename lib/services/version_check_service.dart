@@ -37,6 +37,9 @@ class VersionCheckService {
   static const String _versionPath = '/version';
 
   /// Сравнение версий в формате "1.0.0". Возвращает: < 0 если a < b, 0 если a == b, > 0 если a > b.
+  /// Публичный для тестов.
+  static int compareVersions(String a, String b) => _compareVersions(a, b);
+
   static int _compareVersions(String a, String b) {
     final aParts = _parseVersion(a);
     final bParts = _parseVersion(b);

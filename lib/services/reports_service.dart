@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/report.dart';
@@ -33,10 +34,12 @@ class ReportsService {
   // Получение всех отчетов
   Future<List<Report>> getAllReports() async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
-      Uri.parse('$baseUrl/reports'),
-      headers: headers,
-    );
+    final response = await http
+        .get(Uri.parse('$baseUrl/reports'), headers: headers)
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw TimeoutException('reports'),
+        );
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);

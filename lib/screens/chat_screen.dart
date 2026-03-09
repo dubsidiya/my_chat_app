@@ -24,6 +24,7 @@ import '../services/notification_feedback_service.dart';
 import '../services/websocket_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
+import '../utils/network_error_helper.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
@@ -1726,7 +1727,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка загрузки сообщений: $e'),
+            content: Text('Ошибка загрузки сообщений: ${networkErrorMessage(e)}'),
             action: SnackBarAction(
               label: 'Повторить',
               onPressed: () => _loadMessages(),
@@ -1823,7 +1824,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка загрузки сообщений: $e'),
+            content: Text('Ошибка загрузки сообщений: ${networkErrorMessage(e)}'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -2976,7 +2977,9 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка отправки сообщения: $e')),
+          SnackBar(
+            content: Text('Ошибка отправки сообщения: ${networkErrorMessage(e)}'),
+          ),
         );
       }
     }

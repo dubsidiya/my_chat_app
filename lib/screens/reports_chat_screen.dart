@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../models/report.dart';
 import '../services/reports_service.dart';
+import '../utils/network_error_helper.dart';
 import 'edit_report_screen.dart';
 import 'report_builder_screen.dart';
 import 'monthly_salary_screen.dart';
@@ -59,8 +60,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при загрузке отчетов: $e'),
+            content: Text(networkErrorMessage(e)),
             backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Повторить',
+              onPressed: () => _loadReports(),
+            ),
           ),
         );
       }
