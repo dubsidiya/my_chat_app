@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kDebugMode, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
+import '../utils/reload_util.dart';
 
 /// Результат проверки версии приложения.
 enum VersionCheckResult {
@@ -111,9 +112,55 @@ class VersionCheckService {
   }
 
   /// Показать диалог по результату проверки. Вызывать после check() когда есть context.
+  /// На web при доступном обновлении показываем инструкцию по сбросу кэша и кнопку «Обновить страницу».
   static Future<void> showDialogIfNeeded(BuildContext context, VersionCheckInfo? info) async {
     if (info == null || info.result == VersionCheckResult.upToDate) return;
     if (!context.mounted) return;
+
+    if (kIsWeb) {
+      final isRequired = info.result == VersionCheckResult.updateRequired;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: !isRequired,
+        builder: (ctx) => AlertDialog(
+          title: Text(isRequired ? 'Требуется обновление' : 'Доступна новая версия'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  info.message ?? 'Чтобы подтянуть последнюю версию с сервера, обновите страницу.',
+                  style: const TextStyle(height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                const Text('Как обновить:', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                const Text('• Windows / Linux: Ctrl+Shift+R'),
+                const Text('• Mac: Cmd+Shift+R'),
+                const SizedBox(height: 4),
+                Text(
+                  'Либо: настройки браузера → Очистить данные (кэш) → перезагрузить страницу.',
+                  style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.8)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (!isRequired)
+              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Позже')),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                reloadPage();
+              },
+              child: const Text('Обновить страницу'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     if (info.result == VersionCheckResult.updateRequired) {
       await showDialog<void>(
@@ -172,4 +219,8 @@ class VersionCheckService {
     if (info.storeUrlIos != null) return Uri.tryParse(info.storeUrlIos!);
     return null;
   }
+
+  /// Текст для баннера «доступно обновление» на web.
+  static String get webUpdateBannerText =>
+      'Доступна новая версия. Обновите страницу: Ctrl+Shift+R (Win/Linux) или Cmd+Shift+R (Mac).';
 }
