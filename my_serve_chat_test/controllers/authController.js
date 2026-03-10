@@ -366,22 +366,27 @@ export const saveFcmToken = async (req, res) => {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
     const { fcmToken } = req.body || {};
-    if (!fcmToken || typeof fcmToken !== 'string') {
+    if (fcmToken === undefined || fcmToken === null) {
       return res.status(400).json({ message: 'Укажите fcmToken в теле запроса' });
     }
-    const tokenTrimmed = fcmToken.trim();
-    if (!tokenTrimmed) {
-      return res.status(400).json({ message: 'fcmToken не может быть пустым' });
+    const tokenTrimmed = typeof fcmToken === 'string' ? fcmToken.trim() : '';
+    if (tokenTrimmed.length > 0) {
+      const FCM_TOKEN_MAX_LENGTH = 1024;
+      if (tokenTrimmed.length > FCM_TOKEN_MAX_LENGTH) {
+        return res.status(400).json({ message: `fcmToken не более ${FCM_TOKEN_MAX_LENGTH} символов` });
+      }
+      await pool.query(
+        'UPDATE users SET fcm_token = $1 WHERE id = $2',
+        [tokenTrimmed, userId]
+      );
+      return res.status(200).json({ message: 'Токен сохранён' });
     }
-    const FCM_TOKEN_MAX_LENGTH = 1024;
-    if (tokenTrimmed.length > FCM_TOKEN_MAX_LENGTH) {
-      return res.status(400).json({ message: `fcmToken не более ${FCM_TOKEN_MAX_LENGTH} символов` });
-    }
+    // Пустая строка — сброс токена (при выходе из аккаунта)
     await pool.query(
-      'UPDATE users SET fcm_token = $1 WHERE id = $2',
-      [tokenTrimmed, userId]
+      'UPDATE users SET fcm_token = NULL WHERE id = $1',
+      [userId]
     );
-    res.status(200).json({ message: 'Токен сохранён' });
+    res.status(200).json({ message: 'Токен сброшен' });
   } catch (error) {
     console.error('Ошибка saveFcmToken:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

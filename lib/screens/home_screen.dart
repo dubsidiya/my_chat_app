@@ -7,6 +7,7 @@ import '../services/chats_service.dart';
 import '../services/auth_service.dart';
 import '../services/admin_service.dart';
 import '../services/storage_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../theme/app_colors.dart';
 import 'chat_screen.dart';
@@ -888,7 +889,7 @@ class _HomeScreenState extends State<HomeScreen> {
               final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
               WebSocketService.instance.disconnect();
-              // Очищаем сохраненные данные
+              await PushNotificationService.clearTokenOnBackend();
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
               if (mounted) {

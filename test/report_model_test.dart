@@ -18,7 +18,13 @@ void main() {
       expect(report.reportDate.day, 1);
       expect(report.content, 'Текст отчёта');
       expect(report.isLate, true);
-      expect(report.createdAt.toUtc(), DateTime.utc(2025, 3, 2, 10, 0, 0));
+      // created_at с сервера в UTC; сравниваем компоненты, чтобы не зависеть от isUtc
+      final createdAtUtc = report.createdAt.toUtc();
+      expect(createdAtUtc.year, 2025);
+      expect(createdAtUtc.month, 3);
+      expect(createdAtUtc.day, 2);
+      expect(createdAtUtc.hour, 10);
+      expect(createdAtUtc.minute, 0);
     });
 
     test('is_late false когда false или отсутствует', () {

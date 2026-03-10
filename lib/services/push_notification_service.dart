@@ -21,10 +21,18 @@ class PushNotificationService {
   static String? _fcmToken;
   static GlobalKey<NavigatorState>? _navigatorKey;
 
+  /// Текущий открытый чат (id). Если пришёл push по этому чату — уведомление не показываем.
+  static String? _currentChatId;
+
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
   static bool get isInitialized => _initialized;
+
+  /// Вызвать при входе в чат. Передай [chatId] или null при выходе из чата.
+  static void setCurrentChatId(String? chatId) {
+    _currentChatId = chatId;
+  }
 
   /// Вызвать после [WidgetsFlutterBinding.ensureInitialized], до [runApp].
   /// [navigatorKey] — ключ навигатора приложения для перехода в чат при нажатии на уведомление.
@@ -114,10 +122,13 @@ class PushNotificationService {
       _handleOpenFromNotification(message.data);
     });
 
-    // Сообщение при открытом приложении — показываем локальное уведомление
+    // Сообщение при открытом приложении — показываем локальное уведомление (если не в этом чате)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      final notification = message.notification;
       final data = message.data;
+      if (_currentChatId != null && data['chatId']?.toString() == _currentChatId) {
+        return; // уже в этом чате — не показываем
+      }
+      final notification = message.notification;
       final title = notification?.title ?? 'Новое сообщение';
       final body = notification?.body ?? 'Сообщение в чате';
       _showForegroundNotification(title: title, body: body, data: data);
@@ -226,6 +237,30 @@ class PushNotificationService {
       }
     } catch (e) {
       if (kDebugMode) print('PushNotificationService: sendToken error: $e');
+    }
+  }
+
+  /// Очистить FCM-токен на бэкенде (вызывать перед выходом из аккаунта).
+  static Future<void> clearTokenOnBackend() async {
+    final userData = await StorageService.getUserData();
+    final authToken = userData?['token'];
+    if (authToken == null || authToken.isEmpty) return;
+
+    final url = Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token');
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({'fcmToken': ''}),
+      );
+      if (kDebugMode) {
+        print('PushNotificationService: clear fcm-token response ${response.statusCode}');
+      }
+    } catch (e) {
+      if (kDebugMode) print('PushNotificationService: clearToken error: $e');
     }
   }
 }

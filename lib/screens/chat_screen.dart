@@ -21,6 +21,7 @@ import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
 import '../services/notification_feedback_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
@@ -423,6 +424,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    PushNotificationService.setCurrentChatId(widget.chatId);
     _chatTitle = widget.chatName;
 
     // ✅ Voice player streams (single player for whole chat)
@@ -3571,6 +3573,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    PushNotificationService.setCurrentChatId(null);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _webSocketSubscription?.cancel();
