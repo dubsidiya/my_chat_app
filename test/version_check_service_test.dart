@@ -30,5 +30,15 @@ void main() {
       expect(VersionCheckService.compareVersions('1.1', '1.1.0'), 0);
       expect(VersionCheckService.compareVersions('2', '1.9.9'), greaterThan(0));
     });
+
+    test('пустые строки трактуются как 0.0.0', () {
+      expect(VersionCheckService.compareVersions('', ''), 0);
+      expect(VersionCheckService.compareVersions('', '1.0.0'), lessThan(0));
+      expect(VersionCheckService.compareVersions('1.0.0', ''), greaterThan(0));
+    });
+
+    test('нечисловые части считаются нулём', () {
+      expect(VersionCheckService.compareVersions('1.x.0', '1.0.0'), 0);
+    });
   });
 }

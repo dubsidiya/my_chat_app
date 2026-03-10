@@ -38,6 +38,11 @@ void main() {
       expect(msg, 'Неверный логин или пароль');
     });
 
+    test('строка Connection refused -> нет подключения', () {
+      final msg = networkErrorMessage(Exception('Connection refused'));
+      expect(msg, contains('интернет'));
+    });
+
     test('длинное сообщение обрезается', () {
       final long = 'X' * 200;
       final msg = networkErrorMessage(Exception(long));
