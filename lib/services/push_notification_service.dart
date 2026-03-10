@@ -3,17 +3,26 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../screens/chat_screen.dart';
 import 'storage_service.dart';
 
+/// Канал для уведомлений о сообщениях (Android).
+const String _channelId = 'chat_messages';
+const String _channelName = 'Сообщения в чатах';
+
 /// Сервис push-уведомлений через Firebase Cloud Messaging.
 /// Если Firebase не настроен (нет GoogleService-Info.plist и т.д.), инициализация пропускается без ошибки.
+/// В foreground при получении FCM показывается локальное уведомление (flutter_local_notifications).
 class PushNotificationService {
   static bool _initialized = false;
   static String? _fcmToken;
   static GlobalKey<NavigatorState>? _navigatorKey;
+
+  static final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   static bool get isInitialized => _initialized;
 
@@ -30,7 +39,42 @@ class PushNotificationService {
       return;
     }
 
+    // Локальные уведомления (для foreground и обработка тапа по локальному)
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosInit = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+    );
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
+    await _localNotifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: _onLocalNotificationTapped,
+    );
+
+    // Android: канал для сообщений
+    const androidChannel = AndroidNotificationChannel(
+      _channelId,
+      _channelName,
+      description: 'Уведомления о новых сообщениях в чатах',
+      importance: Importance.high,
+      playSound: true,
+    );
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(androidChannel);
+
     final messaging = FirebaseMessaging.instance;
+
+    // iOS: показывать баннер/звук при получении пуша в foreground
+    await messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
     final settings = await messaging.requestPermission(
       alert: true,
@@ -70,12 +114,54 @@ class PushNotificationService {
       _handleOpenFromNotification(message.data);
     });
 
-    // Сообщение при открытом приложении (опционально можно показать in-app)
+    // Сообщение при открытом приложении — показываем локальное уведомление
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (kDebugMode) {
-        print('PushNotificationService: onMessage ${message.notification?.title}');
-      }
+      final notification = message.notification;
+      final data = message.data;
+      final title = notification?.title ?? 'Новое сообщение';
+      final body = notification?.body ?? 'Сообщение в чате';
+      _showForegroundNotification(title: title, body: body, data: data);
     });
+  }
+
+  static void _onLocalNotificationTapped(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload == null || payload.isEmpty) return;
+    try {
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+      _handleOpenFromNotification(
+        data.map((k, v) => MapEntry(k, v?.toString() ?? '')),
+      );
+    } catch (_) {
+      if (kDebugMode) print('PushNotificationService: invalid payload $payload');
+    }
+  }
+
+  static Future<void> _showForegroundNotification({
+    required String title,
+    required String body,
+    required Map<String, dynamic> data,
+  }) async {
+    final payload = jsonEncode(data);
+    const androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: 'Уведомления о новых сообщениях в чатах',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    final id = DateTime.now().millisecondsSinceEpoch.remainder(0x7FFFFFFF);
+    await _localNotifications.show(id, title, body, details, payload: payload);
   }
 
   static void _handleOpenFromNotification(Map<String, dynamic> data) {

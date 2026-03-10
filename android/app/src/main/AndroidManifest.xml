@@ -1,21 +1,29 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:versionCode="1"
+    android:versionName="1.0.0"
+    tools:ignore="UnknownAttribute,OldTargetApi">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" tools:ignore="OldTargetApi" />
     <application
         android:label="my_chat_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:enableOnBackInvokedCallback="true">
+        android:enableOnBackInvokedCallback="true"
+        tools:replace="android:name"
+        tools:ignore="UnresolvedClass,UnknownAttribute,OldTargetApi">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.my_chat_app.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="UnknownAttribute,OldTargetApi">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
@@ -43,7 +51,7 @@
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <data android:mimeType="text/plain" tools:ignore="UnknownAttribute" />
         </intent>
     </queries>
 </manifest>
