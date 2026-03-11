@@ -26,6 +26,7 @@ Web: `flutter run -d chrome`. Сборка: `flutter build web` / `flutter build
 
 - API: `lib/config/api_config.dart` (или `--dart-define=API_BASE_URL=https://...`).
 - Web-заголовок и PWA: `web/index.html`, `web/manifest.json`.
+- **Деплой бэкенда:** проект развёрнут в **Яндекс Облаке** (ВМ + Yandex Managed PostgreSQL). В документации также упоминаются Render, Vercel и др. как альтернативы — при инструкциях «на сервере» имеется в виду ваш хостинг (Yandex Cloud, Render и т.д.).
 
 ## Документация
 

@@ -207,7 +207,7 @@ vlad.kh4rin@yandex.ru
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY` (приватный ключ сервисного аккаунта JSON, символ `\n` можно оставить как `\\n` в .env)
 
-Сервисный аккаунт: Firebase Console → Project settings → **Service accounts** → **Generate new private key**. Эти данные кладутся в `.env` на сервере (Render и т.д.).
+Сервисный аккаунт: Firebase Console → Project settings → **Service accounts** → **Generate new private key**. Эти данные кладутся в `.env` на сервере (Яндекс Облако, Render и т.д.).
 
 ### 2.4 iOS: возможности проекта
 

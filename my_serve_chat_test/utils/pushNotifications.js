@@ -13,6 +13,9 @@ async function getMessaging() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
   if (!projectId || !clientEmail || !privateKey) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Firebase Admin: missing env (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
+    }
     return null;
   }
   try {
@@ -43,12 +46,15 @@ async function getMessaging() {
  */
 export async function sendPushToTokens(tokens, title, body, data = {}) {
   const cleaned = tokens.filter(Boolean);
-  if (cleaned.length === 0) return;
+  if (cleaned.length === 0) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Push skipped: no FCM tokens');
+    }
+    return;
+  }
   const fcm = await getMessaging();
   if (!fcm) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Push skipped: Firebase not configured');
-    }
+    console.warn('Push skipped: Firebase not configured (check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
     return;
   }
   try {
@@ -62,8 +68,13 @@ export async function sendPushToTokens(tokens, title, body, data = {}) {
       apns: { payload: { aps: { sound: 'default' } } },
     };
     const result = await fcm.sendEachForMulticast(message);
-    if (process.env.NODE_ENV === 'development' && result.failureCount > 0) {
-      console.log('FCM partial failure:', result.failureCount, result.responses);
+    if (process.env.NODE_ENV === 'development' || result.failureCount > 0) {
+      console.log('FCM push:', { successCount: result.successCount, failureCount: result.failureCount, total: cleaned.length });
+      if (result.failureCount > 0 && result.responses) {
+        result.responses.forEach((r, i) => {
+          if (!r.success) console.log('FCM token failure:', i, r.error?.message || r.error);
+        });
+      }
     }
   } catch (err) {
     console.error('FCM send error:', err.message);

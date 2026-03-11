@@ -935,10 +935,13 @@ export const sendMessage = async (req, res) => {
         .filter(id => id !== user_id);
       if (otherMemberIds.length > 0) {
         const tokensResult = await pool.query(
-          'SELECT fcm_token FROM users WHERE id = ANY($1) AND fcm_token IS NOT NULL AND fcm_token != \'\'',
+          'SELECT id, fcm_token FROM users WHERE id = ANY($1) AND fcm_token IS NOT NULL AND fcm_token != \'\'',
           [otherMemberIds]
         );
         const tokens = tokensResult.rows.map(r => r.fcm_token);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Push: otherMemberIds=', otherMemberIds, 'tokens found=', tokens.length, 'userIds with token=', tokensResult.rows.map(r => r.id));
+        }
         if (tokens.length > 0) {
           const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
           const chatName = chatInfo.rows[0]?.name || 'Чат';

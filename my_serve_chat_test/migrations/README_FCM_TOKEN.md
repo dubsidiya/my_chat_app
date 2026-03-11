@@ -1,6 +1,6 @@
 # Миграция: FCM-токен для push-уведомлений
 
-Применить **один раз** к вашей базе PostgreSQL (например: Render → Shell, или `psql` к вашей БД).
+Применить **один раз** к вашей базе PostgreSQL (например: консоль ВМ в Яндекс Облаке, psql, или Render → Shell).
 
 ## Файл миграции
 
@@ -19,7 +19,7 @@ psql "$DATABASE_URL" -f migrations/add_fcm_token.sql
 
 ### Вариант 2: скопировать SQL и выполнить в консоли БД
 
-Откройте в Render.com: **Dashboard → ваша БД (Postgres) → Connect → PSQL** (или любой клиент к вашей PostgreSQL) и выполните:
+Откройте консоль вашей БД (Яндекс Облако, Render, Supabase и т.д.) или любой клиент к вашей PostgreSQL и выполните:
 
 ```sql
 -- FCM (Firebase Cloud Messaging) токен для push-уведомлений на мобильных и веб

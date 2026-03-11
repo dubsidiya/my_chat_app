@@ -1246,7 +1246,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Доступ к «Учет занятий» и «Отчеты» только по списку в env на сервере (Render). Без имени в списке не пропускаем.
+  /// Доступ к «Учет занятий» и «Отчеты» только по списку в env на сервере (Yandex Cloud, Render и т.д.). Без имени в списке не пропускаем.
   Future<bool> _ensurePrivateAccess() async {
     final me = await _authService.fetchMe();
     final allowed = me != null && me['privateAccess'] == true;
