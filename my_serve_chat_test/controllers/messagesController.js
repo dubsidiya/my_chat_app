@@ -860,13 +860,16 @@ export const sendMessage = async (req, res) => {
       sender_avatar_url: senderAvatarUrl
     };
 
+    // Участники чата — нужны и для WebSocket, и для push
+    const membersResult = await pool.query(
+      'SELECT user_id FROM chat_users WHERE chat_id = $1',
+      [chatIdNum]
+    );
+    const members = membersResult;
+
     // Отправляем сообщение через WebSocket всем участникам чата
     try {
       const clients = getWebSocketClients();
-      const members = await pool.query(
-        'SELECT user_id FROM chat_users WHERE chat_id = $1',
-        [chatIdNum]
-      );
 
       // Гарантируем строки и отсутствие null для надёжной доставки на клиент
       const wsMessage = {
