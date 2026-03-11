@@ -13,9 +13,7 @@ async function getMessaging() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
   if (!projectId || !clientEmail || !privateKey) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Firebase Admin: missing env (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
-    }
+    console.warn('Firebase Admin: missing env (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
     return null;
   }
   try {
@@ -28,6 +26,7 @@ async function getMessaging() {
           privateKey: privateKey.replace(/\\n/g, '\n'),
         }),
       });
+      console.log('Firebase Admin: initialized for push notifications');
     }
     messaging = admin.default.messaging();
     return messaging;
@@ -47,14 +46,12 @@ async function getMessaging() {
 export async function sendPushToTokens(tokens, title, body, data = {}) {
   const cleaned = tokens.filter(Boolean);
   if (cleaned.length === 0) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Push skipped: no FCM tokens');
-    }
+    if (process.env.NODE_ENV === 'development') console.log('Push skipped: no FCM tokens');
     return;
   }
   const fcm = await getMessaging();
   if (!fcm) {
-    console.warn('Push skipped: Firebase not configured (check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
+    console.warn('Push skipped: Firebase not configured (check FIREBASE_* env vars on server)');
     return;
   }
   try {
