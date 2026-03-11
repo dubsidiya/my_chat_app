@@ -71,6 +71,11 @@ app.get('/_meta', async (req, res) => {
     node: process.version,
     env: process.env.NODE_ENV || 'development',
     port: process.env.PORT || 3000,
+    firebasePushConfigured: Boolean(
+      process.env.FIREBASE_PROJECT_ID &&
+      process.env.FIREBASE_CLIENT_EMAIL &&
+      process.env.FIREBASE_PRIVATE_KEY
+    ),
     db,
     dbOk,
     allowedOrigins: process.env.ALLOWED_ORIGINS || null,
