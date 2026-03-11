@@ -65,13 +65,11 @@ export async function sendPushToTokens(tokens, title, body, data = {}) {
       apns: { payload: { aps: { sound: 'default' } } },
     };
     const result = await fcm.sendEachForMulticast(message);
-    if (process.env.NODE_ENV === 'development' || result.failureCount > 0) {
-      console.log('FCM push:', { successCount: result.successCount, failureCount: result.failureCount, total: cleaned.length });
-      if (result.failureCount > 0 && result.responses) {
-        result.responses.forEach((r, i) => {
-          if (!r.success) console.log('FCM token failure:', i, r.error?.message || r.error);
-        });
-      }
+    console.log('FCM push:', { successCount: result.successCount, failureCount: result.failureCount, total: cleaned.length });
+    if (result.failureCount > 0 && result.responses) {
+      result.responses.forEach((r, i) => {
+        if (!r.success) console.log('FCM token failure:', i, r.error?.message || r.error);
+      });
     }
   } catch (err) {
     console.error('FCM send error:', err.message);

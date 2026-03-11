@@ -689,8 +689,19 @@ export const sendMessage = async (req, res) => {
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
 
+  // Логируем вызов даже в production (без контента), чтобы можно было понять,
+  // что запрос вообще дошёл до сервера.
+  console.log('📨 sendMessage:', {
+    chat_id,
+    user_id,
+    has_text: Boolean(content && String(content).trim()),
+    has_image: Boolean(image_url),
+    has_file: Boolean(file_url),
+    has_reply: Boolean(reply_to_message_id),
+  });
+
   if (process.env.NODE_ENV === 'development') {
-    console.log('📨 sendMessage called:', {
+    console.log('📨 sendMessage debug payload:', {
       chat_id,
       content,
       image_url,
@@ -861,11 +872,10 @@ export const sendMessage = async (req, res) => {
     };
 
     // Участники чата — нужны и для WebSocket, и для push
-    const membersResult = await pool.query(
+    const members = await pool.query(
       'SELECT user_id FROM chat_users WHERE chat_id = $1',
       [chatIdNum]
     );
-    const members = membersResult;
 
     // Отправляем сообщение через WebSocket всем участникам чата
     try {
@@ -942,9 +952,13 @@ export const sendMessage = async (req, res) => {
           [otherMemberIds]
         );
         const tokens = tokensResult.rows.map(r => r.fcm_token);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Push: otherMemberIds=', otherMemberIds, 'tokens found=', tokens.length, 'userIds with token=', tokensResult.rows.map(r => r.id));
-        }
+        console.log('Push:', {
+          chat_id: chatIdNum,
+          sender_id: user_id,
+          other_members: otherMemberIds.length,
+          tokens_found: tokens.length,
+          user_ids_with_token: tokensResult.rows.map(r => r.id),
+        });
         if (tokens.length > 0) {
           const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
           const chatName = chatInfo.rows[0]?.name || 'Чат';
@@ -957,6 +971,8 @@ export const sendMessage = async (req, res) => {
             chatName,
             isGroup: isGroup ? '1' : '0',
           });
+        } else {
+          console.log('Push skipped: no recipient tokens for chat', chatIdNum);
         }
       }
     } catch (pushErr) {
