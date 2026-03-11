@@ -16,6 +16,7 @@ async function buildCredential(admin) {
     try {
       const obj = JSON.parse(jsonRaw);
       if (obj?.client_email && obj?.private_key) {
+        console.log('Firebase Admin: using credential source JSON');
         return { credential: admin.default.credential.cert(obj), projectId: obj.project_id || process.env.FIREBASE_PROJECT_ID || null };
       }
       console.warn('Firebase Admin: FIREBASE_SERVICE_ACCOUNT_JSON is set but missing client_email/private_key');
@@ -32,6 +33,7 @@ async function buildCredential(admin) {
       const raw = fs.readFileSync(path, 'utf8');
       const obj = JSON.parse(raw);
       if (obj?.client_email && obj?.private_key) {
+        console.log('Firebase Admin: using credential source PATH', { path });
         return { credential: admin.default.credential.cert(obj), projectId: obj.project_id || process.env.FIREBASE_PROJECT_ID || null };
       }
       console.warn('Firebase Admin: service account file is missing client_email/private_key');
@@ -55,6 +57,7 @@ async function buildCredential(admin) {
   const hasSlashN = pk.includes('\\n');
   const hasRealNl = pk.includes('\n');
   console.log('Firebase Admin: credential sanity:', { projectId, hasBegin, hasEnd, hasSlashN, hasRealNl });
+  console.log('Firebase Admin: using credential source PARTS');
 
   return {
     credential: admin.default.credential.cert({
@@ -86,8 +89,17 @@ async function getMessaging() {
     try {
       const cred = admin.default.app().options?.credential;
       if (cred && typeof cred.getAccessToken === 'function') {
-        await cred.getAccessToken();
-        console.log('Firebase Admin: access token OK');
+        const tok = await cred.getAccessToken();
+        const accessToken = tok?.access_token;
+        if (!accessToken || typeof accessToken !== 'string' || accessToken.length < 50) {
+          console.error('Firebase Admin: access token missing/too short', {
+            hasToken: Boolean(accessToken),
+            tokenLength: typeof accessToken === 'string' ? accessToken.length : null,
+            expiresIn: tok?.expires_in ?? null,
+          });
+          return null;
+        }
+        console.log('Firebase Admin: access token OK', { tokenLength: accessToken.length, expiresIn: tok?.expires_in ?? null });
       } else {
         console.warn('Firebase Admin: credential has no getAccessToken()');
       }
@@ -136,7 +148,16 @@ export async function sendPushToTokens(tokens, title, body, data = {}) {
     console.log('FCM push:', { successCount: result.successCount, failureCount: result.failureCount, total: cleaned.length });
     if (result.failureCount > 0 && result.responses) {
       result.responses.forEach((r, i) => {
-        if (!r.success) console.log('FCM token failure:', i, r.error?.message || r.error);
+        if (!r.success) {
+          const err = r.error;
+          console.log('FCM token failure:', i, {
+            code: err?.code || null,
+            message: err?.message || String(err),
+            // FirebaseMessagingError иногда содержит errorInfo (без секретов)
+            errorInfo: err?.errorInfo || null,
+            cause: err?.cause ? (err.cause.message || String(err.cause)) : null,
+          });
+        }
       });
     }
   } catch (err) {
