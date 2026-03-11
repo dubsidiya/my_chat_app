@@ -1,5 +1,7 @@
 import pool from '../db.js';
 
+let _auditTableMissingLogged = false;
+
 export const logAccountingEvent = async ({
   client = null,
   userId = null,
@@ -41,7 +43,14 @@ export const logAccountingEvent = async ({
     } catch (_) {
       // ignore
     }
-    // Лог аудита не должен ломать бизнес-операции.
-    console.warn('Не удалось записать accounting audit event:', error?.message || error);
+    // Лог аудита не должен ломать бизнес-операции. Не спамим, если таблицы нет (миграция не применена).
+    const msg = error?.message || String(error);
+    const tableMissing = /relation "audit_events" does not exist/i.test(msg);
+    if (tableMissing && !_auditTableMissingLogged) {
+      _auditTableMissingLogged = true;
+      console.warn('Не удалось записать accounting audit event: таблица audit_events не существует. Примените миграцию add_accounting_reliability_features.sql');
+    } else if (!tableMissing) {
+      console.warn('Не удалось записать accounting audit event:', msg);
+    }
   }
 };
