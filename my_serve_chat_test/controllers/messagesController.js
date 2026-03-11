@@ -871,11 +871,18 @@ export const sendMessage = async (req, res) => {
       sender_avatar_url: senderAvatarUrl
     };
 
-    // Участники чата — нужны и для WebSocket, и для push
-    const members = await pool.query(
-      'SELECT user_id FROM chat_users WHERE chat_id = $1',
-      [chatIdNum]
-    );
+    // Участники чата — нужны и для WebSocket, и для push.
+    // Если запрос участников упадёт, само сообщение всё равно не должно ломаться:
+    // просто пропустим WS/push и вернём 201.
+    let members = { rows: [] };
+    try {
+      members = await pool.query(
+        'SELECT user_id FROM chat_users WHERE chat_id = $1',
+        [chatIdNum]
+      );
+    } catch (e) {
+      console.error('Не удалось получить участников чата для WS/push:', e?.message || e);
+    }
 
     // Отправляем сообщение через WebSocket всем участникам чата
     try {

@@ -379,6 +379,8 @@ export const saveFcmToken = async (req, res) => {
         'UPDATE users SET fcm_token = $1 WHERE id = $2',
         [tokenTrimmed, userId]
       );
+      // Не логируем токен (секрет/PII). Только факт и длина.
+      console.log('FCM token saved:', { userId, length: tokenTrimmed.length });
       return res.status(200).json({ message: 'Токен сохранён' });
     }
     // Пустая строка — сброс токена (при выходе из аккаунта)
@@ -386,6 +388,7 @@ export const saveFcmToken = async (req, res) => {
       'UPDATE users SET fcm_token = NULL WHERE id = $1',
       [userId]
     );
+    console.log('FCM token cleared:', { userId });
     res.status(200).json({ message: 'Токен сброшен' });
   } catch (error) {
     console.error('Ошибка saveFcmToken:', error);
