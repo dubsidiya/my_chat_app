@@ -71,11 +71,24 @@ app.get('/_meta', async (req, res) => {
     node: process.version,
     env: process.env.NODE_ENV || 'development',
     port: process.env.PORT || 3000,
-    firebasePushConfigured: Boolean(
-      process.env.FIREBASE_PROJECT_ID &&
-      process.env.FIREBASE_CLIENT_EMAIL &&
-      process.env.FIREBASE_PRIVATE_KEY
-    ),
+    firebase: {
+      configured: Boolean(
+        (process.env.FIREBASE_PROJECT_ID &&
+          process.env.FIREBASE_CLIENT_EMAIL &&
+          process.env.FIREBASE_PRIVATE_KEY) ||
+          process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+          process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+      ),
+      credentialSource: process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+        ? 'path'
+        : process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+          ? 'json'
+          : (process.env.FIREBASE_PROJECT_ID &&
+              process.env.FIREBASE_CLIENT_EMAIL &&
+              process.env.FIREBASE_PRIVATE_KEY)
+            ? 'parts'
+            : 'none',
+    },
     db,
     dbOk,
     allowedOrigins: process.env.ALLOWED_ORIGINS || null,
