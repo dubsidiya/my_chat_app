@@ -4,6 +4,8 @@
 # Секреты — никогда не коммитить
 .env
 .env.local
+# Firebase: ключ API в plist не коммитить в публичный репозиторий
+ios/Runner/GoogleService-Info.plist
 .env.*.local
 !.env.example
 !.env.template
