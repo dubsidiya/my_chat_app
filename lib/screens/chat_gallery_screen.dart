@@ -8,6 +8,7 @@ import '../models/chat_media_item.dart';
 import '../services/messages_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
+import '../widgets/skeleton_placeholder.dart';
 import 'photo_viewer_screen.dart';
 
 class ChatGalleryScreen extends StatefulWidget {
@@ -210,8 +211,8 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
                                       child: CachedNetworkImage(
                                         imageUrl: thumb,
                                         fit: BoxFit.cover,
-                                        placeholder: (_, __) => Container(
-                                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                                        placeholder: (_, __) => const SkeletonPlaceholder(
+                                          borderRadius: BorderRadius.all(Radius.circular(12)),
                                         ),
                                         errorWidget: (_, __, ___) => Container(
                                           color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),

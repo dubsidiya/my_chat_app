@@ -16,6 +16,7 @@
         "flutter",
         "flutter_local_notifications",
         "flutter_secure_storage",
+        "flutter_slidable",
         "hive",
         "hive_flutter",
         "http",
@@ -72,6 +73,13 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "flutter_slidable",
+      "version": "3.1.2",
+      "dependencies": [
+        "flutter"
       ]
     },
     {

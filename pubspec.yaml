@@ -31,6 +31,7 @@ dependencies:
   cached_network_image: ^3.2.3  # Кэш изображений на диске
   package_info_plus: ^8.0.0   # Версия приложения для проверки обновлений
   web: ^1.1.0   # Браузерные API (window.location.reload) вместо устаревшего dart:html
+  flutter_slidable: ^3.1.1   # Свайп по сообщению: ответить / удалить
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/link_preview.dart';
 import '../theme/app_colors.dart';
+import 'skeleton_placeholder.dart';
 
 class LinkPreviewCard extends StatelessWidget {
   final String url;
@@ -57,10 +58,13 @@ class LinkPreviewCard extends StatelessWidget {
                   height: 84,
                   fit: BoxFit.cover,
                   memCacheWidth: 256,
-                  placeholder: (_, __) => Container(
+                  placeholder: (_, __) => const SkeletonPlaceholder(
                     width: 84,
                     height: 84,
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      bottomLeft: Radius.circular(12),
+                    ),
                   ),
                   errorWidget: (_, __, ___) => Container(
                     width: 84,

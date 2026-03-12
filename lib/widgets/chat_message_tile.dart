@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import 'link_preview_card.dart';
 import 'mention_text.dart';
+import 'skeleton_placeholder.dart';
 
 class ChatMessageTile extends StatelessWidget {
   final Message msg;
@@ -243,16 +244,10 @@ class ChatMessageTile extends StatelessWidget {
                                 fit: BoxFit.contain,
                                 memCacheWidth: 500,
                                 httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
-                                placeholder: (_, __) => Container(
+                                placeholder: (context, __) => SkeletonPlaceholder(
                                   width: 250,
                                   height: 200,
-                                  color: scheme.surfaceContainerHighest,
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
+                                  borderRadius: BorderRadius.all(Radius.circular(8)),
                                 ),
                                 errorWidget: (_, __, ___) => Container(
                                   width: 250,

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
-import 'package:flutter/painting.dart' show FontFeature;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -14,6 +13,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -32,6 +32,7 @@ import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
+import '../widgets/fade_scale_in.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 import 'chat_gallery_screen.dart';
@@ -2987,6 +2988,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Установить сообщение как ответ и прокрутить к полю ввода (для свайпа «Ответить» и меню).
+  void _setReplyAndScrollToInput(Message message) {
+    setState(() {
+      _replyToMessage = message;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   // ✅ Меню действий с сообщением
   Future<void> _showMessageMenu(Message message, {bool isMine = true}) async {
     if (!mounted) return;
@@ -3112,9 +3130,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     
     if (action == 'reply') {
-      setState(() {
-        _replyToMessage = message;
-      });
+      _setReplyAndScrollToInput(message);
     } else if (action == 'forward') {
       _showForwardDialog(message);
     } else if (action == 'edit') {
@@ -4006,13 +4022,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         padding: EdgeInsets.only(
                           top: pinnedHeight,
                         ),
-                        child: ListView.builder(
-                          key: ValueKey('messages_list_${widget.chatId}'),
-                          controller: _scrollController,
-                          reverse: false, // старые сверху, новые снизу
-                          cacheExtent: 800, // Предзагрузка элементов для плавного скролла
-                          addAutomaticKeepAlives: false, // Меньше памяти при длинных списках
-                          itemCount: _listEntries.length,
+                        child: RefreshIndicator(
+                          onRefresh: () async {
+                            await _loadMessages();
+                          },
+                          color: _accent1,
+                          child: ListView.builder(
+                            key: ValueKey('messages_list_${widget.chatId}'),
+                            controller: _scrollController,
+                            reverse: false, // старые сверху, новые снизу
+                            physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
+                            cacheExtent: 800, // Предзагрузка элементов для плавного скролла
+                            addAutomaticKeepAlives: false, // Меньше памяти при длинных списках
+                            itemCount: _listEntries.length,
                         itemBuilder: (context, index) {
                           final entry = _listEntries[index];
                           if (entry is _LoadMoreEntry) {
@@ -4031,8 +4053,40 @@ class _ChatScreenState extends State<ChatScreen> {
                     final isMine = msg.userId == widget.userId;
 
                 final isHighlighted = _highlightMessageId == msg.id;
-                return ChatMessageTile(
+                return FadeScaleIn(
+                  key: ValueKey('fade_${msg.id}'),
+                  child: Slidable(
                   key: _keyForMessage(msg.id),
+                  startActionPane: ActionPane(
+                    motion: const ScrollMotion(),
+                    extentRatio: 0.22,
+                    children: [
+                      SlidableAction(
+                        onPressed: (_) => _setReplyAndScrollToInput(msg),
+                        backgroundColor: _accent1.withValues(alpha: 0.85),
+                        foregroundColor: Colors.white,
+                        icon: Icons.reply_rounded,
+                        label: 'Ответить',
+                      ),
+                    ],
+                  ),
+                  endActionPane: isMine
+                      ? ActionPane(
+                          motion: const ScrollMotion(),
+                          extentRatio: 0.22,
+                          children: [
+                            SlidableAction(
+                              onPressed: (_) => _showDeleteMessageDialog(msg),
+                              backgroundColor: Colors.red.shade400,
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete_outline_rounded,
+                              label: 'Удалить',
+                            ),
+                          ],
+                        )
+                      : null,
+                  child: ChatMessageTile(
+                  key: ValueKey('tile_${msg.id}'),
                   msg: msg,
                   isMine: isMine,
                   isHighlighted: isHighlighted,
@@ -4055,9 +4109,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   buildMessageStatus: _buildMessageStatus(msg),
                   onShowReactionPicker: () => _showReactionPicker(msg),
                   onOpenUserProfileById: (uid, label) => _openUserProfileById(uid, fallbackLabel: label),
+                ),
+                ),
                 );
                         },
-                      ),
+                          ),
+                        ),
                       ),
                       // ✅ Закрепленные сообщения - всегда видны вверху
                       if (_pinnedMessages.isNotEmpty)

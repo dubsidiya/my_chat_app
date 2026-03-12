@@ -17,6 +17,7 @@ import 'reports_chat_screen.dart';
 import 'profile_screen.dart';
 import 'user_profile_screen.dart';
 import '../utils/network_error_helper.dart';
+import '../utils/page_routes.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 
@@ -217,8 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openProfile() async {
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => ProfileScreen(
+      slideAndFadeRoute<void>(
+        page: ProfileScreen(
           userId: widget.userId,
           userEmail: widget.userEmail,
           displayName: _displayName,
@@ -855,8 +856,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openChat(Chat chat) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
+      slideAndFadeRoute<void>(
+        page: ChatScreen(
           userId: widget.userId,
           userEmail: widget.userEmail,
           displayName: _displayName,
