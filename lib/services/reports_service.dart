@@ -56,6 +56,40 @@ class ReportsService {
     }
   }
 
+  /// Список всех отчётов для бухгалтера/суперпользователя (кто сдал, фильтры).
+  /// Параметры: dateFrom/dateTo — границы по дате отчёта, isLate — только поздние/только вовремя/null — все.
+  Future<List<Report>> getAllReportsList({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    bool? isLate,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final query = <String, String>{};
+    if (dateFrom != null) query['date_from'] = _dateToIso(dateFrom);
+    if (dateTo != null) query['date_to'] = _dateToIso(dateTo);
+    if (isLate == true) query['is_late'] = 'true';
+    if (isLate == false) query['is_late'] = 'false';
+
+    final uri = Uri.parse('$baseUrl/reports/list').replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri, headers: headers).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw TimeoutException('reports'),
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Report.fromJson(json)).toList();
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось загрузить список отчётов');
+  }
+
+  static String _dateToIso(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   // Получение одного отчета
   Future<Report> getReport(int id) async {
     final headers = await _getAuthHeaders();

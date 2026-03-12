@@ -27,7 +27,14 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   List<Report> _reports = [];
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now();
-  
+
+  /// Режим «Все отчёты» для бухгалтера/суперпользователя
+  bool _allReportsMode = false;
+  DateTime _filterDateFrom = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _filterDateTo = DateTime.now();
+  /// null = все, true = только поздние, false = только вовремя
+  bool? _filterOnlyLate;
+
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
 
@@ -42,6 +49,32 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   void dispose() {
     _dateController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadReportsList() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final reports = await _reportsService.getAllReportsList(
+        dateFrom: _filterDateFrom,
+        dateTo: _filterDateTo,
+        isLate: _filterOnlyLate,
+      );
+      if (mounted) setState(() => _reports = reports);
+    } catch (e) {
+      if (kDebugMode) print('Ошибка загрузки списка отчётов: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(networkErrorMessage(e)),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(label: 'Повторить', onPressed: () => _loadReportsList()),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadReports() async {
@@ -74,6 +107,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _onRefresh() async {
+    if (_allReportsMode) await _loadReportsList();
+    else await _loadReports();
   }
 
   Future<void> _selectDate() async {
@@ -229,7 +267,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
             ),
             child: IconButton(
               icon: const Icon(Icons.refresh_rounded, color: _accent1),
-              onPressed: _loadReports,
+              onPressed: _allReportsMode ? _loadReportsList : _loadReports,
               tooltip: 'Обновить',
             ),
           ),
@@ -238,6 +276,100 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
+          if (widget.isSuperuser) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Мои отчёты'), icon: Icon(Icons.person_outline_rounded, size: 18)),
+                  ButtonSegment(value: true, label: Text('Все отчёты'), icon: Icon(Icons.list_alt_rounded, size: 18)),
+                ],
+                selected: {_allReportsMode},
+                onSelectionChanged: (Set<bool> selected) {
+                  final all = selected.first;
+                  setState(() {
+                    _allReportsMode = all;
+                    if (all) _loadReportsList();
+                    else _loadReports();
+                  });
+                },
+              ),
+            ),
+            if (_allReportsMode) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Card(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Период и фильтр', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurface.withValues(alpha: 0.7))),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final d = await showDatePicker(context: context, initialDate: _filterDateFrom, firstDate: DateTime(2020), lastDate: DateTime.now());
+                                  if (d != null && mounted) setState(() { _filterDateFrom = d; });
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  child: Text(DateFormat('dd.MM.yyyy').format(_filterDateFrom), style: const TextStyle(fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                            ),
+                            Text(' — ', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6))),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final d = await showDatePicker(context: context, initialDate: _filterDateTo, firstDate: DateTime(2020), lastDate: DateTime.now());
+                                  if (d != null && mounted) setState(() { _filterDateTo = d; });
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  child: Text(DateFormat('dd.MM.yyyy').format(_filterDateTo), style: const TextStyle(fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<bool?>(
+                                value: _filterOnlyLate,
+                                decoration: const InputDecoration(labelText: 'Поздние', isDense: true),
+                                items: const [
+                                  DropdownMenuItem(value: null, child: Text('Все')),
+                                  DropdownMenuItem(value: true, child: Text('Только поздние')),
+                                  DropdownMenuItem(value: false, child: Text('Только вовремя')),
+                                ],
+                                onChanged: (v) => setState(() { _filterOnlyLate = v; }),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: _isLoading ? null : () => _loadReportsList(),
+                              icon: _isLoading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.search_rounded, size: 20),
+                              label: const Text('Показать'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+          if (!_allReportsMode) ...[
           // Поле ввода даты
           Container(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
@@ -364,7 +496,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           ),
 
           const Divider(height: 1),
-
+          ],
           // Список отчетов
           Expanded(
             child: _isLoading && _reports.isEmpty
@@ -422,7 +554,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                         ),
                       )
                     : RefreshIndicator(
-                        onRefresh: _loadReports,
+                        onRefresh: _onRefresh,
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           itemCount: _reports.length,
@@ -472,6 +604,19 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    if (report.createdByEmail != null && report.createdByEmail!.isNotEmpty) ...[
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 4),
+                                        child: Text(
+                                          'Кто сдал: ${report.createdByEmail}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: scheme.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                     const SizedBox(height: 6),
                                     Text(
                                       report.content,

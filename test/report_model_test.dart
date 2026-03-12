@@ -85,5 +85,20 @@ void main() {
       expect(r.lessons!.length, 2);
       expect(r.lessons![0]['price'], 2000);
     });
+
+    test('created_by и created_by_email парсятся для списка всех отчётов', () {
+      final r = Report.fromJson({
+        'id': 5,
+        'report_date': '2025-03-10',
+        'content': 'Отчёт',
+        'is_late': true,
+        'created_at': '2025-03-10T14:00:00Z',
+        'created_by': 10,
+        'created_by_email': 'teacher@example.com',
+        'lessons_count': 1,
+      });
+      expect(r.createdBy, 10);
+      expect(r.createdByEmail, 'teacher@example.com');
+    });
   });
 }

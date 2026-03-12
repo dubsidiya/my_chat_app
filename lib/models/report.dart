@@ -7,6 +7,10 @@ class Report {
   final DateTime? updatedAt;
   final int? lessonsCount;
   final List<Map<String, dynamic>>? lessons;
+  /// ID пользователя, создавшего отчёт (для списка «все отчёты»).
+  final int? createdBy;
+  /// Email создателя отчёта (для списка «все отчёты»).
+  final String? createdByEmail;
 
   Report({
     required this.id,
@@ -17,6 +21,8 @@ class Report {
     this.updatedAt,
     this.lessonsCount,
     this.lessons,
+    this.createdBy,
+    this.createdByEmail,
   });
 
   factory Report.fromJson(Map<String, dynamic> json) {
@@ -37,6 +43,8 @@ class Report {
       lessons: json['lessons'] != null
           ? (json['lessons'] as List).cast<Map<String, dynamic>>()
           : null,
+      createdBy: json['created_by'] != null ? int.tryParse(json['created_by'].toString()) : null,
+      createdByEmail: json['created_by_email']?.toString(),
     );
   }
 

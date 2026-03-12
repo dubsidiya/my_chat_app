@@ -196,6 +196,72 @@ export const getAllReports = async (req, res) => {
   }
 };
 
+/**
+ * Список всех отчётов для бухгалтера/суперпользователя: кто сдал, какие поздние, фильтры по дате.
+ * GET /reports/list?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&is_late=true|false
+ * Только суперпользователь.
+ */
+export const getReportsList = async (req, res) => {
+  if (!isSuperuser(req.user)) {
+    return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
+  }
+  try {
+    const dateFrom = req.query.date_from;
+    const dateTo = req.query.date_to;
+    const isLate = req.query.is_late; // 'true' | 'false' | не задан
+
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+    if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+      conditions.push(`r.report_date >= $${idx}::date`);
+      params.push(dateFrom);
+      idx++;
+    }
+    if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      conditions.push(`r.report_date <= $${idx}::date`);
+      params.push(dateTo);
+      idx++;
+    }
+    if (isLate === 'true') {
+      conditions.push('r.is_late = true');
+    } else if (isLate === 'false') {
+      conditions.push('r.is_late = false');
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const result = await pool.query(
+      `SELECT r.*, u.email AS created_by_email,
+              COUNT(rl.lesson_id)::int AS lessons_count
+       FROM reports r
+       LEFT JOIN users u ON r.created_by = u.id
+       LEFT JOIN report_lessons rl ON r.id = rl.report_id
+       ${whereClause}
+       GROUP BY r.id, u.email
+       ORDER BY r.report_date DESC, r.created_at DESC`,
+      params
+    );
+
+    const rows = result.rows.map((row) => ({
+      id: row.id,
+      report_date: row.report_date,
+      content: row.content,
+      is_late: row.is_late,
+      created_by: row.created_by,
+      created_by_email: row.created_by_email || '',
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      lessons_count: row.lessons_count ?? 0,
+    }));
+
+    res.json(rows);
+  } catch (error) {
+    console.error('getReportsList:', error);
+    res.status(500).json({ message: 'Ошибка получения списка отчётов' });
+  }
+};
+
 // Зарплата за месяц: 50% от дохода; поздние отчёты не входят в доход (считаем как 0)
 export const getMonthlySalaryReport = async (req, res) => {
   try {
@@ -287,12 +353,14 @@ export const getMonthlySalaryReport = async (req, res) => {
 export const getReport = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const isSuper = isSuperuser(req.user);
     const { id } = req.params;
 
-    // Получаем отчет
     const reportResult = await pool.query(
-      'SELECT * FROM reports WHERE id = $1 AND created_by = $2',
-      [id, userId]
+      isSuper
+        ? 'SELECT * FROM reports WHERE id = $1'
+        : 'SELECT * FROM reports WHERE id = $1 AND created_by = $2',
+      isSuper ? [id] : [id, userId]
     );
 
     if (reportResult.rows.length === 0) {
@@ -300,20 +368,24 @@ export const getReport = async (req, res) => {
     }
 
     const report = reportResult.rows[0];
+    const reportOwnerId = report.created_by;
 
-    // Получаем связанные занятия
     const lessonsResult = await pool.query(
       `SELECT l.*, s.name as student_name
        FROM report_lessons rl
-       JOIN lessons l ON rl.lesson_id = l.id AND l.created_by = $2
+       JOIN lessons l ON rl.lesson_id = l.id
        JOIN students s ON l.student_id = s.id
        WHERE rl.report_id = $1
        ORDER BY l.lesson_date, l.lesson_time`,
-      [id, userId]
+      [id]
     );
 
     report.lessons = lessonsResult.rows;
     report.lessons_count = lessonsResult.rows.length;
+    if (isSuper && reportOwnerId != null) {
+      const u = await pool.query('SELECT email FROM users WHERE id = $1', [reportOwnerId]);
+      report.created_by_email = u.rows[0]?.email ?? '';
+    }
 
     res.json(report);
   } catch (error) {
