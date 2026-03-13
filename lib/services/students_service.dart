@@ -310,7 +310,14 @@ class StudentsService {
 
     if (response.statusCode == 201) {
       final data = jsonDecode(response.body);
-      return Transaction.fromJson(data);
+      final tx = Transaction.fromJson(data);
+      if (tx.studentId != studentId) {
+        throw Exception(
+          'Сервер создал транзакцию для другого ученика: ожидали id=$studentId, получили id=${tx.studentId}. '
+          'Операция не засчитана.',
+        );
+      }
+      return tx;
     }
 
     final error = jsonDecode(response.body);

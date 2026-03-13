@@ -554,7 +554,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                             : ListView.separated(
                                 itemCount: filtered.length,
                                 separatorBuilder: (_, __) => const Divider(height: 1),
-                                itemBuilder: (_, i) {
+                                itemBuilder: (tileCtx, i) {
                                   final s = filtered[i];
                                   return ListTile(
                                     leading: const Icon(Icons.person_rounded),
@@ -567,7 +567,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    onTap: () => Navigator.pop(ctx, s),
+                                    onTap: () => Navigator.pop(tileCtx, s),
                                   );
                                 },
                               ),
@@ -596,10 +596,22 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
 
     final tx = await Navigator.push<Transaction?>(
       context,
-      MaterialPageRoute(builder: (_) => DepositScreen(studentId: student.id)),
+      MaterialPageRoute(builder: (_) => DepositScreen(studentId: student.id, studentName: student.name)),
     );
 
     if (tx != null && mounted) {
+      if (tx.studentId != student.id) {
+        // Страховка: если вдруг где-то по пути перепутался studentId — сразу показываем и не скрываем проблему.
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Внимание: транзакция создана для другого ученика (ожидали id=${student.id}, получили id=${tx.studentId}).'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 20),
+          ),
+        );
+      }
       await _load();
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);

@@ -4,8 +4,9 @@ import '../models/transaction.dart';
 
 class DepositScreen extends StatefulWidget {
   final int studentId;
+  final String? studentName;
 
-  const DepositScreen({super.key, required this.studentId});
+  const DepositScreen({super.key, required this.studentId, this.studentName});
 
   @override
   // ignore: library_private_types_in_public_api
@@ -95,13 +96,37 @@ class _DepositScreenState extends State<DepositScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Пополнить баланс'),
+        title: Text(widget.studentName == null || widget.studentName!.trim().isEmpty
+            ? 'Пополнить баланс'
+            : 'Пополнить: ${widget.studentName}'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.primary.withValues(alpha: 0.18)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.person, color: scheme.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Ученик: ${widget.studentName?.trim().isNotEmpty == true ? widget.studentName!.trim() : 'ID ${widget.studentId}'}\n'
+                      'ID: ${widget.studentId}',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             SwitchListTile(
               value: _manualCorrection,
               onChanged: _isLoading ? null : (v) => setState(() => _manualCorrection = v),

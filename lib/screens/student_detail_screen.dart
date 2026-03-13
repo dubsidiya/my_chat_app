@@ -180,6 +180,46 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  Future<void> _cancelDeposit(Transaction tx) async {
+    if (!_showAllAccountingData) return; // только суперпользователь
+    if (tx.type != 'deposit') return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отменить пополнение?'),
+        content: Text(
+          'Отменить пополнение на ${tx.amount.toStringAsFixed(0)} ₽?\n\n'
+          'Это удалит транзакцию пополнения из учёта.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Отменить'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    try {
+      await _studentsService.deleteTransaction(tx.id);
+      await _refreshData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _deleteStudent() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -641,15 +681,28 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                             ),
                                           ],
                                         ),
-                                        trailing: Text(
-                                          '${isDeposit ? '+' : '-'}${transaction.amount.toStringAsFixed(0)} ₽',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: isDeposit 
-                                                ? Colors.green 
-                                                : Colors.red,
-                                          ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              '${isDeposit ? '+' : '-'}${transaction.amount.toStringAsFixed(0)} ₽',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: isDeposit ? Colors.green : Colors.red,
+                                              ),
+                                            ),
+                                            if (_showAllAccountingData && isDeposit) ...[
+                                              const SizedBox(width: 8),
+                                              IconButton(
+                                                onPressed: () => _cancelDeposit(transaction),
+                                                icon: const Icon(Icons.undo_rounded),
+                                                tooltip: 'Отменить пополнение',
+                                                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                                                padding: EdgeInsets.zero,
+                                              ),
+                                            ],
+                                          ],
                                         ),
                                       ),
                                     );
