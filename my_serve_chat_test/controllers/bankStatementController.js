@@ -454,12 +454,20 @@ export const applyPayments = async (req, res) => {
           });
           continue;
         }
+        const amountNum = typeof amount === 'string' ? parseFloat(amount) : amount;
+        if (!Number.isFinite(amountNum) || amountNum <= 0) {
+          errors.push({
+            payment,
+            error: 'Некорректная сумма платежа'
+          });
+          continue;
+        }
         const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
         const result = await client.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
            VALUES ($1, $2, 'deposit', $3, $4, $5)
            RETURNING *`,
-          [studentId, amount, finalDescription, userId, createdAt]
+          [studentId, amountNum, finalDescription, userId, createdAt]
         );
 
         results.push({

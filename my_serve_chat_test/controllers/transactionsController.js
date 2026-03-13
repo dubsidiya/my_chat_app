@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { parsePositiveInt, sanitizeMessageContent } from '../utils/sanitize.js';
 import {
   beginIdempotent,
   completeIdempotent,
@@ -7,17 +8,20 @@ import {
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
 
+const round2 = (n) => Math.round(n * 100) / 100;
+
 // Пополнение баланса
 export const depositBalance = async (req, res) => {
   const userId = req.user.userId;
-  const student_id = parseInt(req.params.studentId);
+  const student_id = parsePositiveInt(req.params?.studentId);
   const { amount, description } = req.body;
   const idempotencyKey = getIdempotencyKey(req);
 
   // Преобразуем amount в число, если это строка
   const amountNum = typeof amount === 'string' ? parseFloat(amount) : amount;
 
-  if (!student_id || isNaN(student_id) || !amountNum || amountNum <= 0) {
+  const amountFinal = Number.isFinite(amountNum) ? round2(amountNum) : null;
+  if (!student_id || amountFinal == null || amountFinal <= 0) {
     return res.status(400).json({ message: 'ID студента и сумма обязательны' });
   }
 
@@ -31,7 +35,7 @@ export const depositBalance = async (req, res) => {
       key: idempotencyKey,
       requestHash: hashIdempotencyPayload({
         student_id,
-        amount: amountNum,
+        amount: amountFinal,
         description: description || null,
       }),
     });
@@ -55,12 +59,14 @@ export const depositBalance = async (req, res) => {
     }
 
     // Создаем транзакцию пополнения (ручное пополнение - наличка)
-    const finalDescription = description || 'Пополнение баланса (наличные)';
+    const rawDesc = (description ?? '').toString().trim();
+    const desc = rawDesc ? sanitizeMessageContent(rawDesc).trim() : '';
+    const finalDescription = desc || 'Пополнение баланса (наличные)';
     const result = await client.query(
       `INSERT INTO transactions (student_id, amount, type, description, created_by)
        VALUES ($1, $2, 'deposit', $3, $4)
        RETURNING *`,
-      [student_id, amountNum, finalDescription, userId]
+      [student_id, amountFinal, finalDescription, userId]
     );
     const createdTx = result.rows[0];
     await completeIdempotent(client, {
@@ -77,7 +83,7 @@ export const depositBalance = async (req, res) => {
       entityId: createdTx.id,
       payload: {
         studentId: student_id,
-        amount: amountNum,
+        amount: amountFinal,
       },
     });
     await client.query('COMMIT');
@@ -96,8 +102,8 @@ export const depositBalance = async (req, res) => {
 export const deleteTransaction = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const id = parseInt(req.params.id, 10);
-    if (!id || Number.isNaN(id)) {
+    const id = parsePositiveInt(req.params?.id);
+    if (!id) {
       return res.status(400).json({ message: 'Некорректный ID транзакции' });
     }
 
@@ -118,16 +124,11 @@ export const deleteTransaction = async (req, res) => {
       return res.status(400).json({ message: 'Можно отменять только пополнения' });
     }
 
-    // Для безопасности: отменять можно только свои пополнения
-    if (tx.created_by !== userId) {
-      return res.status(403).json({ message: 'Можно отменить только свои операции' });
-    }
-
     const delRes = await pool.query(
       `DELETE FROM transactions
-       WHERE id = $1 AND created_by = $2 AND type = 'deposit'
+       WHERE id = $1 AND type = 'deposit'
        RETURNING id`,
-      [id, userId]
+      [id]
     );
 
     if (delRes.rows.length === 0) {
@@ -138,7 +139,7 @@ export const deleteTransaction = async (req, res) => {
       eventType: 'deposit_deleted',
       entityType: 'transaction',
       entityId: id,
-      payload: {},
+      payload: { originalCreatedBy: tx.created_by },
     });
 
     return res.json({ message: 'Транзакция отменена', id });

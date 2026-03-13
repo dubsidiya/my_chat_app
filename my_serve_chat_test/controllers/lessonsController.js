@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { isSuperuser } from '../middleware/auth.js';
+import { parsePositiveInt } from '../utils/sanitize.js';
 import {
   beginIdempotent,
   completeIdempotent,
@@ -63,14 +64,14 @@ export const getStudentLessons = async (req, res) => {
 // Создание занятия
 export const createLesson = async (req, res) => {
   const userId = req.user.userId;
-  const student_id = parseInt(req.params.studentId, 10);
+  const student_id = parsePositiveInt(req.params?.studentId);
   const { lesson_date, lesson_time, duration_minutes, price, notes } = req.body;
   const idempotencyKey = getIdempotencyKey(req);
 
   // Преобразуем price в число, если это строка
   const priceNum = typeof price === 'string' ? parseFloat(price) : price;
 
-  if (!student_id || isNaN(student_id) || !lesson_date || !priceNum || priceNum <= 0) {
+  if (!student_id || !lesson_date || !Number.isFinite(priceNum) || priceNum <= 0) {
     return res.status(400).json({ message: 'ID студента, дата и цена обязательны' });
   }
   if (!ISO_DATE_RE.test(String(lesson_date))) {
