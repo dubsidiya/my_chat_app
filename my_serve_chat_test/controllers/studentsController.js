@@ -566,20 +566,29 @@ export const getStudentBalance = async (req, res) => {
 
     const isSuper = isSuperuser(req.user);
     // Для преподавателя: всегда учитываем депозиты/рефанды ученика (их может делать бухгалтерия),
-    // а списания lesson — только свои. Для суперпользователя mine=1 означает "только мои операции".
-    const result = mine && isSuper
-      ? await pool.query(
-          `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
-           FROM transactions
-           WHERE student_id = $1 AND created_by = $2`,
-          [id, userId]
-        )
+    // а списания lesson — только свои. Для суперпользователя:
+    // - mine=1 означает "только мои операции"
+    // - без mine: полный баланс по ученику
+    const result = isSuper
+      ? (mine
+        ? await pool.query(
+            `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
+             FROM transactions
+             WHERE student_id = $1 AND created_by = $2`,
+            [id, userId]
+          )
+        : await pool.query(
+            `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
+             FROM transactions
+             WHERE student_id = $1`,
+            [id]
+          ))
       : await pool.query(
           `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
            FROM transactions
            WHERE student_id = $1
              AND (type IN ('deposit', 'refund') OR created_by = $2)`,
-          isSuper ? [id] : [id, userId]
+          [id, userId]
         );
 
     res.json({ balance: parseFloat(result.rows[0].balance) });
@@ -609,16 +618,26 @@ export const getStudentTransactions = async (req, res) => {
     }
 
     const isSuper = isSuperuser(req.user);
-    const result = mine && isSuper
-      ? await pool.query(
-          `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
-           FROM transactions t
-           LEFT JOIN lessons l ON t.lesson_id = l.id
-           LEFT JOIN users u ON t.created_by = u.id
-           WHERE t.student_id = $1 AND t.created_by = $2
-           ORDER BY t.created_at DESC`,
-          [id, userId]
-        )
+    const result = isSuper
+      ? (mine
+        ? await pool.query(
+            `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+             FROM transactions t
+             LEFT JOIN lessons l ON t.lesson_id = l.id
+             LEFT JOIN users u ON t.created_by = u.id
+             WHERE t.student_id = $1 AND t.created_by = $2
+             ORDER BY t.created_at DESC`,
+            [id, userId]
+          )
+        : await pool.query(
+            `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+             FROM transactions t
+             LEFT JOIN lessons l ON t.lesson_id = l.id
+             LEFT JOIN users u ON t.created_by = u.id
+             WHERE t.student_id = $1
+             ORDER BY t.created_at DESC`,
+            [id]
+          ))
       : await pool.query(
           `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
            FROM transactions t
@@ -627,7 +646,7 @@ export const getStudentTransactions = async (req, res) => {
            WHERE t.student_id = $1
              AND (t.type IN ('deposit', 'refund') OR t.created_by = $2)
            ORDER BY t.created_at DESC`,
-          isSuper ? [id] : [id, userId]
+          [id, userId]
         );
 
     res.json(result.rows);
