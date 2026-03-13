@@ -5,6 +5,7 @@ import '../models/student.dart';
 import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../services/students_service.dart';
+import '../services/storage_service.dart';
 import 'add_lesson_screen.dart';
 import 'edit_student_screen.dart';
 
@@ -25,6 +26,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   List<Transaction> _transactions = [];
   double _balance = 0;
   bool _isLoading = false;
+  bool _showAllAccountingData = false;
   late TabController _tabController;
 
   @override
@@ -33,7 +35,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     _student = widget.student;
     _balance = _student.balance;
     _tabController = TabController(length: 2, vsync: this);
-    _loadData();
+    _initViewerModeAndLoad();
   }
 
   @override
@@ -42,13 +44,37 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     super.dispose();
   }
 
+  Future<void> _initViewerModeAndLoad() async {
+    final userData = await StorageService.getUserData();
+    _showAllAccountingData = userData?['isSuperuser'] == 'true';
+    await _loadData();
+  }
+
+  Future<List<Lesson>> _loadLessons() {
+    return _showAllAccountingData
+        ? _studentsService.getStudentLessons(_student.id)
+        : _studentsService.getStudentLessonsMine(_student.id);
+  }
+
+  Future<List<Transaction>> _loadTransactions() {
+    return _showAllAccountingData
+        ? _studentsService.getStudentTransactions(_student.id)
+        : _studentsService.getStudentTransactionsMine(_student.id);
+  }
+
+  Future<double> _loadBalance() {
+    return _showAllAccountingData
+        ? _studentsService.getStudentBalance(_student.id)
+        : _studentsService.getStudentBalanceMine(_student.id);
+  }
+
   Future<void> _loadData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      final lessons = await _studentsService.getStudentLessonsMine(_student.id);
-      final transactions = await _studentsService.getStudentTransactionsMine(_student.id);
+      final lessons = await _loadLessons();
+      final transactions = await _loadTransactions();
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -69,8 +95,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   Future<void> _refreshData() async {
     if (!mounted) return;
     try {
-      final lessons = await _studentsService.getStudentLessonsMine(_student.id);
-      final transactions = await _studentsService.getStudentTransactionsMine(_student.id);
+      final lessons = await _loadLessons();
+      final transactions = await _loadTransactions();
       await _updateBalance();
       if (mounted) {
         setState(() {
@@ -143,7 +169,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
   Future<void> _updateBalance() async {
     try {
-      final updatedBalance = await _studentsService.getStudentBalanceMine(_student.id);
+      final updatedBalance = await _loadBalance();
       if (mounted) {
         setState(() {
           _balance = updatedBalance;

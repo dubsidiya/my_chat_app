@@ -600,6 +600,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     );
 
     if (tx != null && mounted) {
+      await _load();
+      if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
@@ -637,6 +639,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       MaterialPageRoute(builder: (_) => const BankStatementScreen()),
     );
     if (ok == true && mounted) {
+      await _load();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Платежи применены'), backgroundColor: Colors.green),
       );

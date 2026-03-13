@@ -36,9 +36,9 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
-// Метаданные сервера (диагностика прод-окружения)
-// Без секретов: возвращаем хост, время, env-флаги, и "куда подключена БД" (без пароля).
-app.get('/_meta', async (req, res) => {
+// Метаданные сервера (диагностика). В production отключено — не раскрывать окружение.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/_meta', async (req, res) => {
   const startedAt = new Date(Date.now() - Math.floor(process.uptime() * 1000)).toISOString();
   const dbUrlRaw = process.env.DATABASE_URL || '';
   let db = null;
@@ -96,7 +96,10 @@ app.get('/_meta', async (req, res) => {
     appMinVersion: process.env.APP_MIN_VERSION || null,
     appLatestVersion: process.env.APP_LATEST_VERSION || null,
   });
-});
+  });
+} else {
+  app.get('/_meta', (req, res) => res.status(404).json({ message: 'Не найдено' }));
+}
 
 // Проверка версии приложения: клиент сравнивает свою версию с min/latest и показывает «Обновите» при необходимости.
 // Переменные в .env: APP_MIN_VERSION (обязательное обновление ниже этой версии), APP_LATEST_VERSION (рекомендуемое),

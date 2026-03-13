@@ -176,9 +176,14 @@ class StudentsService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      // Получаем баланс отдельно
+      // Для суперпользователя нужен общий баланс, для преподавателя — только свои операции.
+      final userData = await StorageService.getUserData();
+      final isSuperuser = userData?['isSuperuser'] == 'true';
+      final balanceUrl = isSuperuser
+          ? '$baseUrl/students/$id/balance'
+          : '$baseUrl/students/$id/balance?mine=1';
       final balanceResponse = await http.get(
-        Uri.parse('$baseUrl/students/$id/balance'),
+        Uri.parse(balanceUrl),
         headers: headers,
       );
       final balanceData = jsonDecode(balanceResponse.body);
@@ -396,6 +401,23 @@ class StudentsService {
       return data.map((json) => Transaction.fromJson(json)).toList();
     } else {
       throw Exception('Не удалось загрузить транзакции: ${response.statusCode}');
+    }
+  }
+
+  Future<double> getStudentBalance(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/$studentId/balance'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final raw = data['balance'];
+      if (raw is num) return raw.toDouble();
+      return double.tryParse(raw.toString()) ?? 0.0;
+    } else {
+      throw Exception('Не удалось загрузить баланс: ${response.statusCode}');
     }
   }
 

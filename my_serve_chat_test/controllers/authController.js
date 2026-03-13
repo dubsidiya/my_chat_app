@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { generateToken } from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
-import { sanitizeForDisplay } from '../utils/sanitize.js';
+import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 import { securityEvent } from '../utils/auditLog.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
@@ -429,8 +429,8 @@ export const uploadAvatar = async (req, res) => {
 // Публичный профиль пользователя (для отображения аватара/ника у других)
 export const getUserById = async (req, res) => {
   try {
-    const userId = (req.params?.userId ?? '').toString().trim();
-    if (!userId) return res.status(400).json({ message: 'Укажите userId' });
+    const userId = parsePositiveInt(req.params?.userId);
+    if (!userId) return res.status(400).json({ message: 'Некорректный ID пользователя' });
 
     const row = await queryUserWithOptionalAvatarById(userId);
     const u = row.rows[0];

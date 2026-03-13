@@ -22,10 +22,15 @@ if (connectionString) {
 }
 const isLocal = process.env.DATABASE_URL?.includes('localhost') ?? false;
 
+// SSL: по умолчанию rejectUnauthorized: false для облачных БД (Neon, Yandex, Supabase), у которых
+// сертификат может не пройти проверку без добавления CA. Риск: при перехвате трафика возможен MITM.
+// Чтобы включить проверку сертификата (когда настроен CA), задайте в .env: PGSSL_REJECT_UNAUTHORIZED=true
+const sslRejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' || process.env.PGSSL_REJECT_UNAUTHORIZED === '1';
+
 const pool = new Pool({
   connectionString,
   ssl: isLocal ? false : {
-    rejectUnauthorized: false, // для облачных БД (Neon, Yandex, Supabase, Render)
+    rejectUnauthorized: sslRejectUnauthorized,
   },
 });
 

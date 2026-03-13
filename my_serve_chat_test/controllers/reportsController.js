@@ -668,7 +668,7 @@ export const createReport = async (req, res) => {
       return res.status(500).json({ message: 'Ошибка создания отчета: недостаточно прав на объекты БД. Проверьте роль пользователя БД и миграции.' });
     }
     console.error('Ошибка создания отчета:', error);
-    return res.status(500).json({ message: `Ошибка создания отчета (код: ${error?.code || 'unknown'})` });
+    return res.status(500).json({ message: 'Ошибка создания отчета' });
   } finally {
     // Страховка: никогда не возвращаем client в пул в aborted состоянии.
     try { await client.query('ROLLBACK'); } catch (_) {}
@@ -929,7 +929,7 @@ export const updateReport = async (req, res) => {
       },
     });
     console.error('Ошибка обновления отчета:', error);
-    return res.status(500).json({ message: `Ошибка обновления отчета (код: ${error?.code || 'unknown'})` });
+    return res.status(500).json({ message: 'Ошибка обновления отчета' });
   } finally {
     try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
