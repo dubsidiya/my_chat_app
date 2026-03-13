@@ -7,11 +7,9 @@ import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../services/admin_service.dart';
 import '../services/students_service.dart';
-import '../models/student.dart';
-import '../models/transaction.dart';
 import '../utils/download_text_file.dart';
 import 'bank_statement_screen.dart';
-import 'deposit_screen.dart';
+import 'deposit_pick_student_screen.dart';
 
 class AccountingExportScreen extends StatefulWidget {
   const AccountingExportScreen({super.key});
@@ -460,189 +458,56 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
-  Future<Student?> _pickStudentForDeposit() async {
-    try {
-      final students = await _studentsService.getAllStudents();
-      if (!mounted) return null;
-
-      if (students.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нет учеников для пополнения'), backgroundColor: Colors.orange),
-        );
-        return null;
-      }
-
-      return await showModalBottomSheet<Student>(
-        context: context,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) {
-          final searchController = TextEditingController();
-          String query = '';
-
-          return StatefulBuilder(
-            builder: (context, setLocal) {
-              final q = _norm(query);
-              final filtered = students.where((s) {
-                if (q.isEmpty) return true;
-                return _norm(s.name).contains(q) ||
-                    (s.phone != null && _norm(s.phone!).contains(q)) ||
-                    (s.email != null && _norm(s.email!).contains(q));
-              }).toList();
-
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.75,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 48,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Выберите ученика',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: TextField(
-                          controller: searchController,
-                          onChanged: (v) => setLocal(() => query = v),
-                          decoration: InputDecoration(
-                            hintText: 'Поиск по имени / телефону / email',
-                            prefixIcon: const Icon(Icons.search_rounded),
-                            suffixIcon: query.isEmpty
-                                ? null
-                                : IconButton(
-                                    icon: const Icon(Icons.close_rounded),
-                                    onPressed: () => setLocal(() {
-                                      query = '';
-                                      searchController.clear();
-                                    }),
-                                  ),
-                            border: const OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: filtered.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'Ничего не найдено',
-                                  style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
-                                ),
-                              )
-                            : ListView.separated(
-                                itemCount: filtered.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1),
-                                itemBuilder: (tileCtx, i) {
-                                  final s = filtered[i];
-                                  return ListTile(
-                                    leading: const Icon(Icons.person_rounded),
-                                    title: Text(s.name),
-                                    subtitle: Text(
-                                      [
-                                        if (s.phone != null && s.phone!.isNotEmpty) s.phone!,
-                                        if (s.email != null && s.email!.isNotEmpty) s.email!,
-                                      ].join(' • '),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    onTap: () => Navigator.pop(tileCtx, s),
-                                  );
-                                },
-                              ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    } catch (e) {
-      if (!mounted) return null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки учеников: $e'), backgroundColor: Colors.red),
-      );
-      return null;
-    }
-  }
-
   Future<void> _openDepositFromAccounting() async {
-    final student = await _pickStudentForDeposit();
-    if (student == null || !mounted) return;
-
-    final tx = await Navigator.push<Transaction?>(
+    final result = await Navigator.push<DepositPickResult?>(
       context,
-      MaterialPageRoute(builder: (_) => DepositScreen(studentId: student.id, studentName: student.name)),
+      MaterialPageRoute(builder: (_) => const DepositPickStudentScreen()),
     );
+    if (result == null || !mounted) return;
 
-    if (tx != null && mounted) {
-      if (tx.studentId != student.id) {
-        // Страховка: если вдруг где-то по пути перепутался studentId — сразу показываем и не скрываем проблему.
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Внимание: транзакция создана для другого ученика (ожидали id=${student.id}, получили id=${tx.studentId}).'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 20),
-          ),
-        );
-      }
-      await _load();
-      if (!mounted) return;
+    final tx = result.transaction;
+    if (tx.studentId != result.studentId) {
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Пополнение выполнено: ${student.name}'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 15),
-          action: SnackBarAction(
-            label: 'Отменить',
-            onPressed: () async {
-              try {
-                await _studentsService.deleteTransaction(tx.id);
-                if (!mounted) return;
-                messenger.hideCurrentSnackBar();
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
-                );
-                await _load();
-              } catch (e) {
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
-                );
-              }
-            },
-          ),
+          content: Text('Внимание: транзакция создана для другого ученика (ожидали id=${result.studentId}, получили id=${tx.studentId}).'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 20),
         ),
       );
     }
+
+    await _load();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Пополнение выполнено: ${result.studentName}'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Отменить',
+          onPressed: () async {
+            try {
+              await _studentsService.deleteTransaction(tx.id);
+              if (!mounted) return;
+              messenger.hideCurrentSnackBar();
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+              );
+              await _load();
+            } catch (e) {
+              if (!mounted) return;
+              messenger.showSnackBar(
+                SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+              );
+            }
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _openBankStatementFromAccounting() async {

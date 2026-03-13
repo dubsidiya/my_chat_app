@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../middleware/auth.js';
+import { authenticateToken, requirePrivateAccess, requireSuperuser, isSuperuser } from '../middleware/auth.js';
 import {
   getAllStudents,
   createStudent,
@@ -25,10 +25,15 @@ const router = express.Router();
 // Все маршруты требуют аутентификации
 router.use(authenticateToken);
 
+const requirePrivateOrSuperuser = (req, res, next) => {
+  if (req.user?.privateAccess === true || isSuperuser(req.user)) return next();
+  return res.status(403).json({ message: 'Требуется приватный доступ' });
+};
+
 // Маршруты для студентов
 router.get('/', requirePrivateAccess, getAllStudents);
 router.post('/', requirePrivateAccess, createStudent);
-router.get('/search', requirePrivateAccess, searchStudentSuggestions);
+router.get('/search', requirePrivateOrSuperuser, searchStudentSuggestions);
 router.post('/link-existing', requirePrivateAccess, linkExistingStudent);
 router.put('/:id', requirePrivateAccess, updateStudent);
 router.delete('/:id', requirePrivateAccess, deleteStudent);

@@ -35,31 +35,35 @@ class _DepositScreenState extends State<DepositScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final amount = double.parse(_amountController.text);
-    if (_manualCorrection || amount >= _largeAmountWarn) {
-      final label = _manualCorrection ? 'ручная корректировка' : 'крупная сумма';
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Подтвердить операцию?'),
-          content: Text(
-            'Вы собираетесь выполнить $label:\n'
-            '${amount.toStringAsFixed(0)} ₽\n\n'
-            'Продолжить?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Подтвердить'),
-            ),
-          ],
+    final label = _manualCorrection
+        ? 'ручная корректировка'
+        : (amount >= _largeAmountWarn ? 'крупная сумма' : 'пополнение');
+    final who = (widget.studentName != null && widget.studentName!.trim().isNotEmpty)
+        ? '${widget.studentName!.trim()} (ID: ${widget.studentId})'
+        : 'ID: ${widget.studentId}';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Подтвердить операцию?'),
+        content: Text(
+          'Ученик: $who\n'
+          'Операция: $label\n'
+          'Сумма: ${amount.toStringAsFixed(0)} ₽\n\n'
+          'Продолжить?',
         ),
-      );
-      if (confirm != true) return;
-    }
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Подтвердить'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
 
     setState(() => _isLoading = true);
 
