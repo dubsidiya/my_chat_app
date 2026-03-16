@@ -13,6 +13,26 @@ import 'services/websocket_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Оборачивает приложение в ScaffoldMessenger, который перед показом нового SnackBar
+/// всегда скрывает текущий — так два вызова подряд не конфликтуют и не «зависают».
+class _AutoHideScaffoldMessenger extends ScaffoldMessenger {
+  const _AutoHideScaffoldMessenger({required super.child});
+
+  @override
+  ScaffoldMessengerState createState() => _AutoHideScaffoldMessengerState();
+}
+
+class _AutoHideScaffoldMessengerState extends ScaffoldMessengerState {
+  @override
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showSnackBar(
+    SnackBar snackBar, {
+    AnimationStyle? snackBarAnimationStyle,
+  }) {
+    hideCurrentSnackBar();
+    return super.showSnackBar(snackBar, snackBarAnimationStyle: snackBarAnimationStyle);
+  }
+}
+
 void main() {
   // Обработка ошибок Flutter
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -194,6 +214,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          showCloseIcon: true,
         ),
         progressIndicatorTheme: ProgressIndicatorThemeData(
           color: AppColors.primaryGlow,
@@ -255,7 +276,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     _appTheme ??= _buildTheme();
 
-    return MaterialApp(
+    return _AutoHideScaffoldMessenger(
+      child: MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Chat App',
       theme: _appTheme!,
@@ -336,6 +358,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           return const LoginScreen();
         },
       ),
+    ),
     );
   }
 }

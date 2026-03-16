@@ -54,6 +54,27 @@ flutter.sdk=/path/to/flutter
 
 В Android Studio: File → Project Structure → SDK Location — путь к Android SDK должен быть задан.
 
+### 5. DevTools: «Timed out waiting for Dart plugin to start DevTools»
+
+Если при запуске приложения появляется ошибка **DevTools server start-up failure** или **Timed out waiting for Dart plugin to start DevTools**, укажите путь к Dart SDK в IDE:
+
+- **Android Studio / IntelliJ:** Settings → Languages & Frameworks → Dart → **Dart SDK path** укажите:
+  ```
+  <путь_из_local.properties>/bin/cache/dart-sdk
+  ```
+  Например, если в `android/local.properties` указано `flutter.sdk=/Users/vladkharin/Desktop/development/flutter`, то **Dart SDK path**:
+  ```
+  /Users/vladkharin/Desktop/development/flutter/bin/cache/dart-sdk
+  ```
+  После сохранения перезапустите IDE.
+
+- **Cursor / VS Code:** путь к Flutter уже задан в `.vscode/settings.json` и в настройках пользователя (`dart.flutterSdkPath`). Перезагрузите окно (Developer: Reload Window).
+
+Один раз активируйте DevTools в терминале (ускоряет последующий запуск из IDE):
+  ```bash
+  flutter pub global activate devtools
+  ```
+
 ---
 
 **Итог:** открывайте корень `my_chat_app`, делайте Sync Project with Gradle Files (или `./gradlew tasks`), при необходимости выполните `flutter build apk`. После этого символы в `GeneratedPluginRegistrant.java` должны разрешаться.

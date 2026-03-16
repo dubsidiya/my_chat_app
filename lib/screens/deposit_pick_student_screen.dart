@@ -72,7 +72,7 @@ class _DepositPickStudentScreenState extends State<DepositPickStudentScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка поиска: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка поиска: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _loading = false);

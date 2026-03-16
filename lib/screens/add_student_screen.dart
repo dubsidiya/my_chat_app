@@ -189,6 +189,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text(
               _selectedExistingStudentId != null
                   ? 'Выбран существующий ученик — добавлен к вам'
@@ -204,6 +205,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),

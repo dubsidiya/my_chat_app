@@ -82,6 +82,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),

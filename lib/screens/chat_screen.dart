@@ -285,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             await Clipboard.setData(ClipboardData(text: code));
                             if (!mounted) return;
                             ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(content: Text('Код скопирован')),
+                              const SnackBar(duration: Duration(seconds: 3), content: Text('Код скопирован')),
                             );
                           },
                         ),
@@ -377,7 +377,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 setState(() => _chatTitle = newName);
                 navigator.pop();
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('Название обновлено')),
+                  const SnackBar(duration: Duration(seconds: 3), content: Text('Название обновлено')),
                 );
               } catch (e) {
                 setLocal(() {
@@ -634,7 +634,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (kDebugMode) print('Ошибка перехода к сообщению: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось перейти к сообщению')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось перейти к сообщению')),
       );
     }
   }
@@ -1269,7 +1269,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (kDebugMode) print('WebSocket error: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка WebSocket: $error')),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка WebSocket: $error')),
           );
         }
       },
@@ -1470,7 +1470,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _openMentions() async {
     final myHandle = _handleFromEmail(widget.userEmail);
     if (myHandle.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Не удалось определить ваш handle')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось определить ваш handle')));
       return;
     }
     final query = '@$myHandle';
@@ -1913,6 +1913,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
+                duration: Duration(seconds: 3),
                 content: Text('Неподдерживаемый формат. Используйте: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO, SVG'),
                 backgroundColor: Colors.orange,
               ),
@@ -1945,6 +1946,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка выбора изображения: $e'),
             backgroundColor: Colors.red,
           ),
@@ -1978,7 +1980,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (kDebugMode) print('Ошибка выбора файла: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось выбрать файл')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось выбрать файл')),
       );
     }
   }
@@ -2023,13 +2025,14 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Файл добавлен: $fileName')),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Файл добавлен: $fileName')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка при добавлении файла: $e'),
             backgroundColor: Colors.red,
           ),
@@ -2135,6 +2138,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка скачивания: $e'),
             backgroundColor: Colors.red,
           ),
@@ -2173,7 +2177,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (kIsWeb) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Голосовые сообщения пока не поддерживаются в веб-версии')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Голосовые сообщения пока не поддерживаются в веб-версии')),
       );
       return;
     }
@@ -2202,7 +2206,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _selectedFilePath != null ||
         _selectedFileBytes != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сначала отправьте/уберите вложение, затем запишите голосовое')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Сначала отправьте/уберите вложение, затем запишите голосовое')),
       );
       return;
     }
@@ -2213,7 +2217,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!hasPermission) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Нет доступа к микрофону. Разрешите доступ в настройках.')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Нет доступа к микрофону. Разрешите доступ в настройках.')),
       );
       return;
     }
@@ -2292,7 +2296,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _voiceRecordDuration = Duration.zero;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить запись')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось сохранить запись')),
       );
       return;
     }
@@ -2327,7 +2331,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _voiceRecordDuration = Duration.zero;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка записи: $e')),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка записи: $e')),
       );
     }
   }
@@ -2363,7 +2367,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _voiceDuration = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось воспроизвести аудио: ${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось воспроизвести аудио: ${e.toString().replaceFirst('Exception: ', '')}')),
       );
     }
   }
@@ -2619,6 +2623,7 @@ class _ChatScreenState extends State<ChatScreen> {
           setState(() => _isUploadingImage = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
+              duration: const Duration(seconds: 3),
               content: Text('Ошибка загрузки изображения: $e'),
               backgroundColor: Colors.red,
             ),
@@ -2635,7 +2640,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (hasImage) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Нельзя отправить изображение и файл в одном сообщении')),
+            const SnackBar(duration: Duration(seconds: 3), content: Text('Нельзя отправить изображение и файл в одном сообщении')),
           );
         }
         return;
@@ -2680,10 +2685,11 @@ class _ChatScreenState extends State<ChatScreen> {
         if (mounted) {
           setState(() => _isUploadingFile = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Ошибка загрузки файла: ${e.toString().replaceFirst('Exception: ', '')}'),
-              backgroundColor: Colors.red,
-            ),
+SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ошибка загрузки файла: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
           );
         }
         return;
@@ -2981,6 +2987,7 @@ class _ChatScreenState extends State<ChatScreen> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка отправки сообщения: ${networkErrorMessage(e)}'),
           ),
         );
@@ -3157,13 +3164,13 @@ class _ChatScreenState extends State<ChatScreen> {
       await _moderationService.reportMessage(message.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Жалоба отправлена. Модерация рассмотрит в течение 24 часов.')),
+          const SnackBar(duration: Duration(seconds: 3), content: Text('Жалоба отправлена. Модерация рассмотрит в течение 24 часов.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
         );
       }
     }
@@ -3196,13 +3203,13 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages.removeWhere((m) => m.userId == message.userId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
+          const SnackBar(duration: Duration(seconds: 3), content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
         );
       }
     }
@@ -3219,7 +3226,7 @@ class _ChatScreenState extends State<ChatScreen> {
     
     if (availableChats.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Нет других чатов для пересылки')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Нет других чатов для пересылки')),
       );
       return;
     }
@@ -3284,13 +3291,13 @@ class _ChatScreenState extends State<ChatScreen> {
         await _messagesService.forwardMessage(message.id, selectedChats);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Сообщение переслано в ${selectedChats.length} чат(ов)')),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Сообщение переслано в ${selectedChats.length} чат(ов)')),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка пересылки: $e')),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка пересылки: $e')),
           );
         }
       }
@@ -3305,12 +3312,12 @@ class _ChatScreenState extends State<ChatScreen> {
       await _loadPinnedMessages();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сообщение закреплено')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Сообщение закреплено')),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка закрепления: $e')),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка закрепления: $e')),
         );
       }
     }
@@ -3324,12 +3331,12 @@ class _ChatScreenState extends State<ChatScreen> {
       await _loadPinnedMessages();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сообщение откреплено')),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Сообщение откреплено')),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка открепления: $e')),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка открепления: $e')),
         );
       }
     }
@@ -3375,7 +3382,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка: $e')),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e')),
           );
         }
       }
@@ -3468,7 +3475,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка редактирования сообщения: $e')),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка редактирования сообщения: $e')),
           );
         }
       }
@@ -3719,7 +3726,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (availableUsers.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Нет доступных пользователей для добавления')),
+            const SnackBar(duration: Duration(seconds: 3), content: Text('Нет доступных пользователей для добавления')),
           );
         }
         return;

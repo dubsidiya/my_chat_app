@@ -218,13 +218,13 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
       if (mounted) {
         setState(() => _members.removeWhere((m) => m['id'] == userId));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
+          const SnackBar(duration: Duration(seconds: 3), content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
         );
       }
     }

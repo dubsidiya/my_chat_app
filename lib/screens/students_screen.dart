@@ -48,6 +48,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка при загрузке студентов: $e'),
             backgroundColor: Colors.red,
           ),
@@ -92,6 +93,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ученик "${student.name}" удален'),
             backgroundColor: Colors.green,
           ),
@@ -102,6 +104,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка удаления: $e'),
             backgroundColor: Colors.red,
           ),

@@ -130,7 +130,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось открыть конструктор: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось открыть конструктор: $e'), backgroundColor: Colors.red),
       );
       if (_slots.isEmpty) _slots.add(_SlotDraft());
     } finally {
@@ -246,13 +246,13 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     // локальная валидация
     if (_slots.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Добавьте хотя бы одно занятие'), backgroundColor: Colors.orange),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Добавьте хотя бы одно занятие'), backgroundColor: Colors.orange),
       );
       return;
     }
     if (_slots.length > _maxSlots) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Максимум $_maxSlots занятий в день'), backgroundColor: Colors.orange),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Максимум $_maxSlots занятий в день'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -268,14 +268,14 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       final endErr = _validateTime(end);
       if (startErr != null || endErr != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: проверьте время'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: проверьте время'), backgroundColor: Colors.orange),
         );
         return;
       }
 
       if (_toMinutes(end) <= _toMinutes(start)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: конец должен быть позже начала'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: конец должен быть позже начала'), backgroundColor: Colors.orange),
         );
         return;
       }
@@ -284,7 +284,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
       if (slot.student1Id == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: выберите ученика 1'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: выберите ученика 1'), backgroundColor: Colors.orange),
         );
         return;
       }
@@ -292,7 +292,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       final p1 = _parsePrice(slot.price1Controller.text);
       if (p1 == null || p1 <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: укажите цену для 1 ребёнка'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: укажите цену для 1 ребёнка'), backgroundColor: Colors.orange),
         );
         return;
       }
@@ -303,14 +303,14 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       if (slot.student2Id != null) {
         if (slot.student2Id == slot.student1Id) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Слот ${i + 1}: дети должны быть разными'), backgroundColor: Colors.orange),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: дети должны быть разными'), backgroundColor: Colors.orange),
           );
           return;
         }
         final p2 = _parsePrice(slot.price2Controller.text);
         if (p2 == null || p2 <= 0) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Слот ${i + 1}: укажите цену для 2 ребёнка'), backgroundColor: Colors.orange),
+            SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: укажите цену для 2 ребёнка'), backgroundColor: Colors.orange),
           );
           return;
         }
@@ -320,13 +320,13 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
       if (students.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: выберите ученика'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: выберите ученика'), backgroundColor: Colors.orange),
         );
         return;
       }
       if (students.length > _maxStudentsPerSlot) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Слот ${i + 1}: максимум $_maxStudentsPerSlot ученика'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: максимум $_maxStudentsPerSlot ученика'), backgroundColor: Colors.orange),
         );
         return;
       }
@@ -356,6 +356,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          duration: const Duration(seconds: 3),
           content: Text(widget.reportId == null ? 'Отчет создан' : 'Отчет обновлен'),
           backgroundColor: Colors.green,
         ),
@@ -363,7 +364,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);

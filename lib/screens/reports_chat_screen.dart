@@ -66,6 +66,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text(networkErrorMessage(e)),
             backgroundColor: Colors.red,
             action: SnackBarAction(label: 'Повторить', onPressed: () => _loadReportsList()),
@@ -93,6 +94,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text(networkErrorMessage(e)),
             backgroundColor: Colors.red,
             action: SnackBarAction(
@@ -199,6 +201,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),
@@ -344,7 +347,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           children: [
                             Expanded(
                               child: DropdownButtonFormField<bool?>(
-                                value: _filterOnlyLate,
+                                initialValue: _filterOnlyLate,
                                 decoration: const InputDecoration(labelText: 'Поздние', isDense: true),
                                 items: const [
                                   DropdownMenuItem(value: null, child: Text('Все')),
@@ -657,13 +660,13 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                                     if (mounted) await _loadReports();
                                                     if (mounted) {
                                                       ScaffoldMessenger.of(context).showSnackBar(
-                                                        const SnackBar(content: Text('Отчёт учтён как сдан вовремя')),
+                                                        const SnackBar(duration: Duration(seconds: 3), content: Text('Отчёт учтён как сдан вовремя')),
                                                       );
                                                     }
                                                   } catch (e) {
                                                     if (mounted) {
                                                       ScaffoldMessenger.of(context).showSnackBar(
-                                                        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                                                        SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString()), backgroundColor: Colors.red),
                                                       );
                                                     }
                                                   }

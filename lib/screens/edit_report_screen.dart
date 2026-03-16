@@ -58,6 +58,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
     if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+          duration: Duration(seconds: 3),
           content: Text('Введите содержание отчета'),
           backgroundColor: Colors.orange,
         ),
@@ -90,6 +91,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),

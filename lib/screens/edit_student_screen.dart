@@ -72,6 +72,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         Navigator.pop(context, updated);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
+            duration: Duration(seconds: 3),
             content: Text('Данные ученика сохранены'),
             backgroundColor: Colors.green,
           ),
@@ -81,6 +82,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),

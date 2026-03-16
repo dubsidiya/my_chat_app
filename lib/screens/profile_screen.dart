@@ -89,7 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
         widget.onProfileUpdated?.call();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Аватар обновлён'), behavior: SnackBarBehavior.floating),
+          const SnackBar(duration: Duration(seconds: 3), content: Text('Аватар обновлён'), behavior: SnackBarBehavior.floating),
         );
       }
     } catch (e) {
@@ -97,6 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() => _isLoadingAvatar = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: ${e.toString().replaceFirst('Exception: ', '')}'),
             behavior: SnackBarBehavior.floating,
           ),
@@ -143,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
         widget.onProfileUpdated?.call();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Имя сохранено'), behavior: SnackBarBehavior.floating),
+          const SnackBar(duration: Duration(seconds: 3), content: Text('Имя сохранено'), behavior: SnackBarBehavior.floating),
         );
       }
     } catch (e) {

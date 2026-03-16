@@ -38,6 +38,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка выбора файла: $e'),
             backgroundColor: Colors.red,
           ),
@@ -77,6 +78,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка обработки файла: $e'),
             backgroundColor: Colors.red,
           ),
@@ -98,6 +100,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
     if (_selectedPayments.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+          duration: Duration(seconds: 3),
           content: Text('Выберите платежи для применения'),
           backgroundColor: Colors.orange,
         ),
@@ -160,6 +163,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка применения платежей: $e'),
             backgroundColor: Colors.red,
           ),

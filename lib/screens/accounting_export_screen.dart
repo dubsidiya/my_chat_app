@@ -10,6 +10,8 @@ import '../services/students_service.dart';
 import '../utils/download_text_file.dart';
 import 'bank_statement_screen.dart';
 import 'deposit_pick_student_screen.dart';
+import 'deposit_screen.dart';
+import '../models/transaction.dart';
 
 class AccountingExportScreen extends StatefulWidget {
   const AccountingExportScreen({super.key});
@@ -45,6 +47,14 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
   }
 
   String _money0(dynamic v) => _asDouble(v).toStringAsFixed(0);
+
+  int? _parseStudentId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v > 0 ? v : null;
+    if (v is double) return v.toInt() > 0 ? v.toInt() : null;
+    final n = int.tryParse(v.toString());
+    return n != null && n > 0 ? n : null;
+  }
 
   Widget _chip({
     required IconData icon,
@@ -267,12 +277,12 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       await Clipboard.setData(ClipboardData(text: csv));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CSV скопирован в буфер обмена'), backgroundColor: Colors.green),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('CSV скопирован в буфер обмена'), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка CSV: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка CSV: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -288,6 +298,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+          duration: Duration(seconds: 3),
           content: Text('Выписка по расчётному счёту скопирована в буфер'),
           backgroundColor: Colors.green,
         ),
@@ -295,7 +306,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -327,12 +338,12 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -367,6 +378,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          duration: const Duration(seconds: 3),
           content: Text('Выписка по расчётному счёту сохранена: ${file.path}'),
           backgroundColor: Colors.green,
         ),
@@ -374,7 +386,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -385,12 +397,12 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       await Clipboard.setData(ClipboardData(text: csv));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CSV транзакций скопирован в буфер'), backgroundColor: Colors.green),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('CSV транзакций скопирован в буфер'), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка CSV транзакций: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка CSV транзакций: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -406,6 +418,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+          duration: Duration(seconds: 3),
           content: Text('CSV транзакций (расч. счёт) скопирован в буфер'),
           backgroundColor: Colors.green,
         ),
@@ -413,7 +426,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -448,12 +461,12 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -495,13 +508,68 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
               if (!mounted) return;
               messenger.hideCurrentSnackBar();
               messenger.showSnackBar(
-                const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+                const SnackBar(duration: Duration(seconds: 3), content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
               );
               await _load();
             } catch (e) {
               if (!mounted) return;
               messenger.showSnackBar(
-                SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Открыть экран пополнения баланса для конкретного ученика из дерева бухгалтерии.
+  Future<void> _openDepositForStudent(int studentId, String studentName) async {
+    final tx = await Navigator.push<Transaction?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DepositScreen(studentId: studentId, studentName: studentName),
+      ),
+    );
+    if (tx == null || !mounted) return;
+
+    if (tx.studentId != studentId) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Внимание: транзакция создана для другого ученика (ожидали id=$studentId, получили id=${tx.studentId}).'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 20),
+        ),
+      );
+    }
+
+    await _load();
+    if (!mounted) return;
+    final displayName = studentName.trim().isEmpty ? 'Ученик #$studentId' : studentName;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Пополнение выполнено: $displayName'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Отменить',
+          onPressed: () async {
+            try {
+              await _studentsService.deleteTransaction(tx.id);
+              if (!mounted) return;
+              messenger.hideCurrentSnackBar();
+              messenger.showSnackBar(
+                const SnackBar(duration: Duration(seconds: 3), content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+              );
+              await _load();
+            } catch (e) {
+              if (!mounted) return;
+              messenger.showSnackBar(
+                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
               );
             }
           },
@@ -519,7 +587,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Платежи применены'), backgroundColor: Colors.green),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Платежи применены'), backgroundColor: Colors.green),
       );
     }
   }
@@ -897,6 +965,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                         children: [
                           ...students.map((s) {
                             final studentName = (s['studentName'] ?? '').toString();
+                            final studentId = _parseStudentId(s['studentId']);
                             final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
                             final unpaidCount = lessons.where((x) => x['isPaid'] != true).length;
                             final unpaidSum = lessons.fold<double>(
@@ -954,6 +1023,16 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                         icon: Icons.account_balance_wallet_rounded,
                                         label: 'предоплата: ₽${overallPrepaid.toStringAsFixed(0)}',
                                         color: Colors.green.shade700,
+                                      ),
+                                    if (studentId != null)
+                                      InkWell(
+                                        onTap: () => _openDepositForStudent(studentId, studentName),
+                                        borderRadius: BorderRadius.circular(999),
+                                        child: _chip(
+                                          icon: Icons.add_circle_outline_rounded,
+                                          label: 'Пополнить баланс',
+                                          color: AppColors.primary,
+                                        ),
                                       ),
                                   ],
                                 ),

@@ -277,7 +277,7 @@ class ChatMessageTile extends StatelessWidget {
                               if (await canLaunchUrl(uri)) {
                                 await launchUrl(uri, mode: LaunchMode.externalApplication);
                               } else {
-                                messenger.showSnackBar(const SnackBar(content: Text('Не удалось открыть файл')));
+                                messenger.showSnackBar(const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось открыть файл')));
                               }
                             },
                             child: Container(

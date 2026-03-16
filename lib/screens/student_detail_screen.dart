@@ -152,12 +152,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 if (!mounted) return;
                 messenger.hideCurrentSnackBar();
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('Занятие отменено'), backgroundColor: Colors.orange),
+                  const SnackBar(duration: Duration(seconds: 3), content: Text('Занятие отменено'), backgroundColor: Colors.orange),
                 );
               } catch (e) {
                 if (!mounted) return;
                 messenger.showSnackBar(
-                  SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                  SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
                 );
               }
             },
@@ -210,12 +210,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       await _refreshData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
+        const SnackBar(duration: Duration(seconds: 3), content: Text('Пополнение отменено'), backgroundColor: Colors.orange),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -251,6 +251,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ученик "${_student.name}" удален'),
             backgroundColor: Colors.green,
           ),
@@ -261,6 +262,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка удаления: $e'),
             backgroundColor: Colors.red,
           ),
@@ -298,6 +300,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),

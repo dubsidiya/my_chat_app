@@ -83,6 +83,7 @@ class _DepositScreenState extends State<DepositScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 3),
             content: Text('Ошибка: $e'),
             backgroundColor: Colors.red,
           ),
@@ -142,27 +143,54 @@ class _DepositScreenState extends State<DepositScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _amountController,
-              decoration: const InputDecoration(
-                labelText: 'Сумма (₽) *',
-                border: OutlineInputBorder(),
-                prefixText: '+ ',
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Введите сумму';
-                }
-                final amount = double.tryParse(value);
-                if (amount == null || amount <= 0) {
-                  return 'Введите корректную сумму';
-                }
-                if (amount > _maxAmount) {
-                  return 'Слишком большая сумма';
-                }
-                return null;
-              },
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _amountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Сумма (₽) *',
+                      border: OutlineInputBorder(),
+                      prefixText: '+ ',
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Введите сумму';
+                      }
+                      final amount = double.tryParse(value);
+                      if (amount == null || amount <= 0) {
+                        return 'Введите корректную сумму';
+                      }
+                      if (amount > _maxAmount) {
+                        return 'Слишком большая сумма';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                    onPressed: _isLoading ? null : _deposit,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      backgroundColor: Colors.green.shade600,
+                      foregroundColor: scheme.onPrimary,
+                    ),
+                    child: _isLoading
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
+                            ),
+                          )
+                        : const Text('Пополнить'),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -183,25 +211,6 @@ class _DepositScreenState extends State<DepositScreen> {
                 }
                 return null;
               },
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _deposit,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: scheme.onPrimary,
-              ),
-              child: _isLoading
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
-                      ),
-                    )
-                  : const Text('Пополнить'),
             ),
           ],
         ),
