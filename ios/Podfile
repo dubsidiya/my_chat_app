@@ -1,6 +1,10 @@
 # Uncomment this line to define a global platform for your project
 platform :ios, '13.0'
 
+# Workaround for Xcode "Unable to load contents of file list ... .xcfilelist".
+# Disables input/output xcfilelists in CocoaPods script phases.
+install! 'cocoapods', :disable_input_output_paths => true
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -28,7 +32,13 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  # Required for CocoaPods when integrating Swift pods as static libraries:
+  # DKPhotoGallery -> SDWebImage (needs module map)
+  # FirebaseCoreInternal -> GoogleUtilities (needs module map)
+  pod 'SDWebImage', :modular_headers => true
+  pod 'GoogleUtilities', :modular_headers => true
+  # Fix: FirebaseInstallations imports `@import FirebaseCore;` which requires FirebaseCore to have a module map.
+  pod 'FirebaseCore', :modular_headers => true
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
@@ -39,5 +49,48 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Xcode 26+ supports iOS 12.0+; some pods default lower and cause warnings/errors.
+    # Also force Swift pods to compile in Swift 5 language mode to avoid Swift 6 strict-concurrency errors
+    # in older pod sources (e.g. DKImagePickerController).
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      config.build_settings['SWIFT_VERSION'] = '5.0'
+      config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      config.build_settings['CLANG_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+
+      # Ensure ObjC pods that use `@import` have a module (required for static lib integration).
+      config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
+      if ['FirebaseCore', 'FirebaseMessaging', 'FirebaseCoreInternal', 'FirebaseInstallations'].include?(target.name)
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+      end
+    end
+  end
+
+  # Fix Firebase pods build with static libraries: some headers use `@import FirebaseCore;`
+  # which requires a FirebaseCore module map. Replace with header import.
+  firebase_core_internal = File.join(
+    installer.sandbox.root.to_s,
+    'FirebaseInstallations',
+    'FirebaseCore',
+    'Extension',
+    'FirebaseCoreInternal.h'
+  )
+  if File.exist?(firebase_core_internal)
+    contents = File.read(firebase_core_internal)
+    patched = contents.gsub('@import FirebaseCore;', '#import <FirebaseCore/FirebaseCore.h>')
+    File.write(firebase_core_internal, patched) if patched != contents
+  end
+
+  # Flutter plugin header uses @import FirebaseMessaging; which fails with static libs. Use header import.
+  fm_plugin_h = File.expand_path(
+    File.join('..', '.symlinks', 'plugins', 'firebase_messaging', 'ios', 'firebase_messaging', 'Sources', 'firebase_messaging', 'include', 'FLTFirebaseMessagingPlugin.h'),
+    __FILE__
+  )
+  if File.exist?(fm_plugin_h)
+    contents = File.read(fm_plugin_h)
+    patched = contents.gsub('@import FirebaseMessaging;', '#import <FirebaseMessaging/FirebaseMessaging.h>')
+    File.write(fm_plugin_h, patched) if patched != contents
   end
 end
