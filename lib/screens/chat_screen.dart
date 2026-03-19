@@ -869,8 +869,13 @@ class _ChatScreenState extends State<ChatScreen> {
           // ✅ E2EE: другой участник запросил ключ чата — отдаём ему ключ, если он у нас есть
           if (messageType == 'e2ee_request_key') {
             final chatId = data['chatId']?.toString();
+            final requesterUserId = data['userId']?.toString();
             if (chatId != null) {
-              unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+              if (requesterUserId != null && requesterUserId.isNotEmpty) {
+                unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId]));
+              } else {
+                unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+              }
             }
             return;
           }
@@ -1721,6 +1726,12 @@ class _ChatScreenState extends State<ChatScreen> {
       _hasMoreMessages = true;
       _oldestMessageId = null;
     });
+
+    // Для аккаунтов, которые вошли по сохранённому токену (без ввода пароля),
+    // гарантируем локальную E2EE-пару и публикацию public key перед обменом ключами чата.
+    try {
+      await E2eeService.ensureKeyPair();
+    } catch (_) {}
     
     // ✅ Сначала загружаем из кэша для быстрого отображения
     final existingTempMessages = _messages.where((m) => 

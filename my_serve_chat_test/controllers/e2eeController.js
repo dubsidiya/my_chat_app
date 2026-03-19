@@ -98,7 +98,11 @@ export const storeChatKeys = async (req, res) => {
       await pool.query(
         `INSERT INTO chat_keys (chat_id, user_id, encrypted_key, sender_public_key, nonce, updated_at)
          VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (chat_id, user_id) DO NOTHING`,
+         ON CONFLICT (chat_id, user_id) DO UPDATE
+         SET encrypted_key = EXCLUDED.encrypted_key,
+             sender_public_key = EXCLUDED.sender_public_key,
+             nonce = EXCLUDED.nonce,
+             updated_at = CURRENT_TIMESTAMP`,
         [chatIdNum, tgtId, k.encryptedKey, k.senderPublicKey, k.nonce]
       );
     }

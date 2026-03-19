@@ -306,15 +306,18 @@ const getAuthAwareKey = (req, prefix = 'api') => {
     : 'anon';
   return `${prefix}_${ip}_${tokenPart}`;
 };
+const isProd = process.env.NODE_ENV === 'production';
 
 // Глобальный rate limit (последняя линия от DoS — все запросы с одного IP)
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  // Для мобильных клиентов за одним NAT/IP (эмулятор + устройство) прежний лимит
+  // приводил к ложным 429 и ломал E2EE-обмен ключами.
+  max: isProd ? 3000 : 50000,
   message: { message: 'Слишком много запросов с вашего адреса, попробуйте позже' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
+  keyGenerator: (req) => getAuthAwareKey(req, 'global'),
 });
 app.use(globalLimiter);
 
@@ -337,7 +340,7 @@ const authLimiter = rateLimit({
 // Общий rate limit для API (защита от DoS)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 900,
+  max: isProd ? 900 : 10000,
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
@@ -347,7 +350,7 @@ const apiLimiter = rateLimit({
 // E2EE использует bursts при обмене ключами; выделяем более мягкий лимит.
 const e2eeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  max: isProd ? 600 : 10000,
   message: 'Слишком много E2EE-запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,

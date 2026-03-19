@@ -51,9 +51,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _displayName = widget.displayName;
     _avatarUrl = widget.avatarUrl;
+    unawaited(_ensureE2eeIdentity());
     _loadChats();
     _loadFolders();
     _subscribeToNewMessages();
+  }
+
+  Future<void> _ensureE2eeIdentity() async {
+    try {
+      await E2eeService.ensureKeyPair();
+    } catch (_) {
+      // Не блокируем загрузку домашнего экрана, если E2EE сервер временно недоступен.
+    }
   }
 
   @override
@@ -261,8 +270,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (event is Map && event['type'] == 'e2ee_request_key') {
         final chatId = event['chatId']?.toString();
+        final requesterUserId = event['userId']?.toString();
         if (chatId != null) {
-          unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+          if (requesterUserId != null && requesterUserId.isNotEmpty) {
+            unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId]));
+          } else {
+            unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+          }
         }
         return;
       }

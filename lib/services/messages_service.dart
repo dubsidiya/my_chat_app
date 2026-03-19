@@ -279,6 +279,9 @@ class MessagesService {
     String contentToSend = content;
     try {
       if (content.isNotEmpty) {
+        try {
+          await E2eeService.ensureKeyPair();
+        } catch (_) {}
         var encrypted = await E2eeService.encryptMessage(chatId, content);
         if (encrypted == null) {
           await E2eeService.requestChatKey(chatId);

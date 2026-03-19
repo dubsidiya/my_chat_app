@@ -25,6 +25,7 @@ class E2eeService {
     bits: 256,
   );
   static final Map<String, DateTime> _lastRequestChatKeyAt = <String, DateTime>{};
+  static bool _publicKeySyncAttemptedThisRun = false;
 
   /// Check if local key pair exists.
   static Future<bool> hasLocalKeyPair() async {
@@ -36,7 +37,23 @@ class E2eeService {
   /// [password] is the user's login password — used to encrypt the private key for backup.
   static Future<void> ensureKeyPair({String? password}) async {
     final existing = await _secure.read(key: _privateKeyKey);
-    if (existing != null && existing.isNotEmpty) return;
+    if (existing != null && existing.isNotEmpty) {
+      // Важный кейс: локальная пара уже есть, но public key мог не загрузиться на сервер
+      // (например, из-за 429 в предыдущем запуске). Пытаемся синхронизировать хотя бы раз за запуск.
+      if (!_publicKeySyncAttemptedThisRun) {
+        try {
+          final pubB64 = await _secure.read(key: _publicKeyKey);
+          if (pubB64 != null && pubB64.isNotEmpty) {
+            final uploaded = await _uploadPublicKey(pubB64);
+            _publicKeySyncAttemptedThisRun = uploaded;
+            if (password != null && password.isNotEmpty) {
+              await _uploadKeyBackup(existing, pubB64, password);
+            }
+          }
+        } catch (_) {}
+      }
+      return;
+    }
 
     if (password != null && password.isNotEmpty) {
       final restored = await _tryRestoreFromBackup(password);
@@ -283,17 +300,34 @@ class E2eeService {
 
   // ─── Private helpers ───
 
-  static Future<void> _uploadPublicKey(String publicKeyB64) async {
+  static Future<bool> _uploadPublicKey(String publicKeyB64) async {
     final token = await StorageService.getToken();
-    if (token == null) return;
-    await http.post(
-      Uri.parse('${ApiConfig.baseUrl}/e2ee/public-key'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'publicKey': publicKeyB64}),
-    );
+    if (token == null) return false;
+    try {
+      var resp = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/public-key'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'publicKey': publicKeyB64}),
+      );
+      // При burst/429 делаем одну отложенную попытку.
+      if (resp.statusCode == 429) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        resp = await http.post(
+          Uri.parse('${ApiConfig.baseUrl}/e2ee/public-key'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'publicKey': publicKeyB64}),
+        );
+      }
+      return resp.statusCode == 200 || resp.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> _storeChatKeysOnServer(String chatId, List<Map<String, String>> keys) async {
@@ -363,6 +397,54 @@ class E2eeService {
     final myPubB64 = await getMyPublicKeyBase64();
     final List<Map<String, String>> keysPayload = [];
     for (final memberId in withoutKey) {
+      final memberPubB64 = pubKeys[memberId];
+      if (memberPubB64 == null || memberPubB64.isEmpty) continue;
+      try {
+        final memberPub = SimplePublicKey(base64Decode(memberPubB64), type: KeyPairType.x25519);
+        final sharedSecret = await _x25519.sharedSecretKey(
+          keyPair: myKeyPair,
+          remotePublicKey: memberPub,
+        );
+        final derivedKey = await _hkdf.deriveKey(
+          secretKey: sharedSecret,
+          info: utf8.encode('e2ee-chat-key-$chatId'),
+          nonce: const <int>[],
+        );
+        final nonce = _aesGcm.newNonce();
+        final encrypted = await _aesGcm.encrypt(
+          Uint8List.fromList(chatKeyBytes),
+          secretKey: derivedKey,
+          nonce: nonce,
+        );
+        keysPayload.add({
+          'userId': memberId,
+          'encryptedKey': base64Encode(encrypted.cipherText + encrypted.mac.bytes),
+          'senderPublicKey': myPubB64,
+          'nonce': base64Encode(nonce),
+        });
+      } catch (_) {
+        continue;
+      }
+    }
+    if (keysPayload.isNotEmpty) {
+      await _storeChatKeysOnServer(chatId, keysPayload);
+    }
+  }
+
+  /// Адресная отправка ключа конкретным пользователям (используем для WS e2ee_request_key,
+  /// чтобы не делать лишний GET members-without-key под rate limit).
+  static Future<void> shareChatKeyWithUsers(String chatId, List<String> userIds) async {
+    if (userIds.isEmpty) return;
+    final chatKeyB64 = await _secure.read(key: '$_chatKeyPrefix$chatId');
+    if (chatKeyB64 == null || chatKeyB64.isEmpty) return;
+    final chatKeyBytes = base64Decode(chatKeyB64);
+    final pubKeys = await fetchPublicKeys(userIds);
+    if (pubKeys.isEmpty) return;
+
+    final myKeyPair = await _getKeyPair();
+    final myPubB64 = await getMyPublicKeyBase64();
+    final List<Map<String, String>> keysPayload = [];
+    for (final memberId in userIds) {
       final memberPubB64 = pubKeys[memberId];
       if (memberPubB64 == null || memberPubB64.isEmpty) continue;
       try {
