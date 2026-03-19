@@ -261,7 +261,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (event is Map && event['type'] == 'e2ee_request_key') {
         final chatId = event['chatId']?.toString();
-        if (chatId != null) E2eeService.shareChatKeyWithNewMembers(chatId);
+        if (chatId != null) {
+          unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+        }
         return;
       }
       // Новое сообщение в любой чат: обновляем список чатов

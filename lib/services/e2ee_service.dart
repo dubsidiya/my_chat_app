@@ -313,10 +313,13 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return;
     try {
-      await http.post(
+      final resp = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/request-key'),
         headers: {'Authorization': 'Bearer $token'},
       );
+      if (resp.statusCode != 200 && resp.statusCode != 204) {
+        // Не бросаем — вызывающий может опросить ключ позже
+      }
     } catch (_) {}
   }
 
@@ -402,12 +405,31 @@ class E2eeService {
       );
       if (resp.statusCode != 200) return {};
       final data = jsonDecode(resp.body);
-      final keys = data['keys'] as Map<String, dynamic>?;
-      if (keys == null) return {};
-      return keys.map((k, v) => MapEntry(k, v?.toString()));
+      final raw = data['keys'];
+      if (raw is! Map) return {};
+      // JSON-ключи из Node/pg могут прийти как int в Dart — всегда нормализуем в String.
+      return raw.map<String, String?>(
+        (k, v) => MapEntry(k.toString(), v?.toString()),
+      );
     } catch (_) {
       return {};
     }
+  }
+
+  /// После [requestChatKey] другие клиенты по WS выкладывают ключ на сервер.
+  /// Периодически запрашиваем GET /e2ee/chat-key, пока ключ не появится (кэш локально пуст при 404).
+  static Future<bool> waitForChatKeyFromServer(
+    String chatId, {
+    Duration timeout = const Duration(seconds: 25),
+    Duration interval = const Duration(milliseconds: 500),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final k = await getChatKey(chatId);
+      if (k != null) return true;
+      await Future<void>.delayed(interval);
+    }
+    return false;
   }
 
   /// Clear all local E2EE data (on logout / delete account).

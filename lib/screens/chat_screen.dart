@@ -868,7 +868,9 @@ class _ChatScreenState extends State<ChatScreen> {
           // ✅ E2EE: другой участник запросил ключ чата — отдаём ему ключ, если он у нас есть
           if (messageType == 'e2ee_request_key') {
             final chatId = data['chatId']?.toString();
-            if (chatId != null) E2eeService.shareChatKeyWithNewMembers(chatId);
+            if (chatId != null) {
+              unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
+            }
             return;
           }
 
@@ -1656,6 +1658,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// E2EE: после requestChatKey ждём появления ключа на сервере и перерисовываем сообщения (расшифровка чужих).
+  Future<void> _retryChatKeyThenReloadMessages(String chatIdStr) async {
+    final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr);
+    if (obtained && mounted) {
+      await _loadMessages();
+    }
+  }
+
   Future<void> _loadMessages() async {
     if (!mounted) return;
     setState(() {
@@ -1723,12 +1733,14 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         });
-        // E2EE: если у нас есть ключ — отдать участникам без ключа; если у нас нет ключа — запросить у других (WS)
-        final hasKey = await E2eeService.getChatKey(widget.chatId.toString()) != null;
+        // E2EE: если у нас есть ключ — отдать участникам без ключа; если нет — запрос по WS + фоновый опрос сервера и перезагрузка (без блокировки UI)
+        final chatIdStr = widget.chatId.toString();
+        final hasKey = await E2eeService.getChatKey(chatIdStr) != null;
         if (hasKey) {
-          E2eeService.shareChatKeyWithNewMembers(widget.chatId.toString());
+          await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
         } else {
-          E2eeService.requestChatKey(widget.chatId.toString());
+          await E2eeService.requestChatKey(chatIdStr);
+          unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
         }
       }
     } catch (e) {
