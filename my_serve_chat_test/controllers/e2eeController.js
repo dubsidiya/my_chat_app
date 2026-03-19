@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
+import { broadcastToChatMembers } from '../websocket/websocket.js';
 
 const MAX_KEY_LENGTH = 256;
 const MAX_BACKUP_LENGTH = 2048;
@@ -104,6 +105,65 @@ export const storeChatKeys = async (req, res) => {
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Ошибка storeChatKeys:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+/**
+ * Участники чата, у которых ещё нет записи в chat_keys (например, вошли по инвайту).
+ * Нужен чтобы клиент мог отправить им ключ чата (shareChatKeyWithNewMembers).
+ */
+export const getMembersWithoutChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const result = await pool.query(
+      `SELECT cu.user_id FROM chat_users cu
+       LEFT JOIN chat_keys ck ON ck.chat_id = cu.chat_id AND ck.user_id = cu.user_id
+       WHERE cu.chat_id = $1 AND ck.user_id IS NULL`,
+      [chatIdNum]
+    );
+    const userIds = result.rows.map((r) => String(r.user_id));
+    return res.status(200).json({ userIds });
+  } catch (error) {
+    console.error('Ошибка getMembersWithoutChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+/** E2EE: новый участник запрашивает ключ чата; сервер рассылает другим участникам WS, те отдают ключ через shareChatKeyWithNewMembers */
+export const requestChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    await broadcastToChatMembers(
+      chatIdNum,
+      { type: 'e2ee_request_key', chatId: String(chatIdNum), userId: String(userId) },
+      { excludeUserId: userId }
+    );
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка requestChatKey:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

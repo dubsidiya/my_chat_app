@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
@@ -26,27 +27,38 @@ class MessagesPaginationResult {
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
+  static Future<Message> _decryptOne(String chatId, Message m) async {
+    String content = m.content;
+    if (E2eeService.isEncrypted(content)) {
+      content = await E2eeService.decryptMessage(chatId, content);
+    }
+    Message? replyTo = m.replyToMessage;
+    if (replyTo != null) {
+      replyTo = await _decryptOne(chatId, replyTo);
+    }
+    return Message(
+      id: m.id, chatId: m.chatId, userId: m.userId, content: content,
+      imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
+      fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
+      messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
+      createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
+      isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
+      replyToMessage: replyTo, isPinned: m.isPinned, reactions: m.reactions,
+      isForwarded: m.isForwarded, originalChatName: m.originalChatName,
+    );
+  }
+
   static Future<List<Message>> _decryptMessages(String chatId, List<Message> messages) async {
     final result = <Message>[];
     for (final m in messages) {
-      if (E2eeService.isEncrypted(m.content)) {
-        final plain = await E2eeService.decryptMessage(chatId, m.content);
-        result.add(Message(
-          id: m.id, chatId: m.chatId, userId: m.userId, content: plain,
-          imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
-          fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
-          messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
-          createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
-          isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
-          replyToMessage: m.replyToMessage, isPinned: m.isPinned, reactions: m.reactions,
-          isForwarded: m.isForwarded, originalChatName: m.originalChatName,
-        ));
-      } else {
-        result.add(m);
-      }
+      result.add(await _decryptOne(chatId, m));
     }
     return result;
   }
+
+  /// Расшифровывает одно сообщение (включая replyToMessage) для отображения в UI.
+  static Future<Message> decryptMessageForChat(String chatId, Message raw) async =>
+      _decryptOne(chatId, raw);
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -89,19 +101,20 @@ class MessagesService {
     // ✅ Проверяем подключение к интернету (без сторонних плагинов — для соответствия Apple privacy manifest)
     final isOnline = await _isOnline();
     
-    // ✅ Если есть кэш и мы офлайн, возвращаем из кэша
+    // ✅ Если есть кэш и мы офлайн, возвращаем из кэша (расшифровываем — в кэше хранится ciphertext)
     if (!isOnline && useCache) {
       if (kDebugMode) {
         // ignore: avoid_print
         print('MessagesService: offline, using cache');
       }
       final cachedMessages = await LocalMessagesService.getMessages(chatId);
+      final decrypted = await _decryptMessages(chatId, cachedMessages);
       return MessagesPaginationResult(
-        messages: cachedMessages,
+        messages: decrypted,
         hasMore: false,
-        totalCount: cachedMessages.length,
-        oldestMessageId: cachedMessages.isNotEmpty 
-            ? cachedMessages.map((m) => int.parse(m.id)).reduce((a, b) => a < b ? a : b).toString()
+        totalCount: decrypted.length,
+        oldestMessageId: decrypted.isNotEmpty
+            ? decrypted.map((m) => int.tryParse(m.id) ?? 0).reduce((a, b) => a < b ? a : b).toString()
             : null,
       );
     }
@@ -139,12 +152,12 @@ class MessagesService {
                 }
               }
             }
-            final decrypted = await _decryptMessages(chatId, messages);
             if (useCache && isOnline) {
               Future.delayed(const Duration(milliseconds: 100), () {
-                LocalMessagesService.saveMessages(chatId, decrypted);
+                LocalMessagesService.saveMessages(chatId, messages);
               });
             }
+            final decrypted = await _decryptMessages(chatId, messages);
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: paginationData['hasMore'] ?? false,
@@ -165,17 +178,17 @@ class MessagesService {
                 }
               }
             }
-            final decrypted = await _decryptMessages(chatId, messages);
             if (useCache && isOnline) {
-              await LocalMessagesService.saveMessages(chatId, decrypted);
+              await LocalMessagesService.saveMessages(chatId, messages);
             }
+            final decrypted = await _decryptMessages(chatId, messages);
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: false,
               totalCount: decrypted.length,
               oldestMessageId: null,
             );
-                 } else {
+          } else {
             // Неожиданный формат
             return MessagesPaginationResult(
               messages: [],
@@ -308,21 +321,9 @@ class MessagesService {
     try {
       final responseData = jsonDecode(response.body);
       
-      var sentMessage = Message.fromJson(responseData);
-      if (E2eeService.isEncrypted(sentMessage.content)) {
-        final plain = await E2eeService.decryptMessage(chatId, sentMessage.content);
-        sentMessage = Message(
-          id: sentMessage.id, chatId: sentMessage.chatId, userId: sentMessage.userId, content: plain,
-          imageUrl: sentMessage.imageUrl, originalImageUrl: sentMessage.originalImageUrl,
-          fileUrl: sentMessage.fileUrl, fileName: sentMessage.fileName, fileSize: sentMessage.fileSize, fileMime: sentMessage.fileMime,
-          messageType: sentMessage.messageType, senderEmail: sentMessage.senderEmail, senderAvatarUrl: sentMessage.senderAvatarUrl,
-          createdAt: sentMessage.createdAt, deliveredAt: sentMessage.deliveredAt, editedAt: sentMessage.editedAt,
-          isRead: sentMessage.isRead, readAt: sentMessage.readAt, replyToMessageId: sentMessage.replyToMessageId,
-          replyToMessage: sentMessage.replyToMessage, isPinned: sentMessage.isPinned, reactions: sentMessage.reactions,
-          isForwarded: sentMessage.isForwarded, originalChatName: sentMessage.originalChatName,
-        );
-      }
-      await LocalMessagesService.addMessage(chatId, sentMessage);
+      final rawMessage = Message.fromJson(responseData);
+      await LocalMessagesService.addMessage(chatId, rawMessage);
+      final sentMessage = await _decryptOne(chatId, rawMessage);
       return sentMessage;
     } catch (e, stackTrace) {
       if (kDebugMode) {
@@ -335,13 +336,24 @@ class MessagesService {
     }
   }
 
-  // Загрузка изображения
-  // [imageBytes] - сжатое изображение для отображения
-  // [originalBytes] - оригинальное изображение (опционально, для сохранения оригинала)
-  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes}) async {
+  // Загрузка изображения. При [chatId] и наличии ключа — E2EE шифрование перед отправкой.
+  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes, String? chatId}) async {
     final token = await StorageService.getToken();
-    if (token == null) {
-      throw Exception('Токен не найден');
+    if (token == null) throw Exception('Токен не найден');
+
+    List<int> bytesToSend = imageBytes;
+    List<int>? originalToSend = originalBytes;
+    String sendFileName = fileName;
+    if (chatId != null) {
+      final encrypted = await E2eeService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
+      if (encrypted != null) {
+        bytesToSend = encrypted;
+        sendFileName = '$fileName.e2ee';
+        if (originalBytes != null) {
+          final encOrig = await E2eeService.encryptBytes(chatId, Uint8List.fromList(originalBytes));
+          if (encOrig != null) originalToSend = encOrig;
+        }
+      }
     }
 
     try {
@@ -349,32 +361,17 @@ class MessagesService {
         'POST',
         Uri.parse('$baseUrl/messages/upload-image'),
       );
-
-      // НЕ устанавливаем Content-Type вручную - multer сам установит правильный заголовок
       request.headers['Authorization'] = 'Bearer $token';
-      
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'image',
-          imageBytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes('image', bytesToSend, filename: sendFileName),
       );
-      
-      // ✅ Если есть оригинал, отправляем его отдельно
-      if (originalBytes != null) {
-        // Генерируем имя для оригинала
-        final originalFileName = 'original-$fileName';
+      if (originalToSend != null) {
         request.files.add(
-          http.MultipartFile.fromBytes(
-            'original',
-            originalBytes,
-            filename: originalFileName,
-          ),
+          http.MultipartFile.fromBytes('original', originalToSend, filename: 'original-$sendFileName'),
         );
         if (kDebugMode) {
           // ignore: avoid_print
-          print('Uploading original image: $originalFileName, size: ${originalBytes.length} bytes');
+          print('Uploading original image: size: ${originalToSend.length} bytes');
         }
       }
 
@@ -557,13 +554,22 @@ class MessagesService {
     }
   }
 
-  // ✅ Редактирование сообщения
-  Future<void> editMessage(String messageId, {String? content, String? imageUrl}) async {
+  // ✅ Редактирование сообщения. [chatId] нужен для E2EE — шифруем content перед отправкой.
+  Future<void> editMessage(String messageId, {String? content, String? imageUrl, String? chatId}) async {
     final headers = await _getAuthHeaders();
     final body = <String, dynamic>{};
-    if (content != null) body['content'] = content;
+    if (content != null) {
+      String contentToSend = content;
+      if (chatId != null) {
+        try {
+          final encrypted = await E2eeService.encryptMessage(chatId, content);
+          if (encrypted != null) contentToSend = jsonEncode(encrypted);
+        } catch (_) {}
+      }
+      body['content'] = contentToSend;
+    }
     if (imageUrl != null) body['image_url'] = imageUrl;
-    
+
     final response = await http.put(
       Uri.parse('$baseUrl/messages/message/$messageId'),
       headers: headers,
@@ -653,23 +659,58 @@ class MessagesService {
     }
   }
 
-  // 🔎 Поиск сообщений в чате
+  // 🔎 Поиск сообщений в чате. Сервер отдаёт последние сообщения с content; расшифровываем и фильтруем по query на клиенте (E2EE).
   Future<List<Map<String, dynamic>>> searchMessages(String chatId, String query, {int limit = 20, String? before}) async {
     final headers = await _getAuthHeaders();
     final uri = Uri.parse('$baseUrl/messages/chat/$chatId/search').replace(
       queryParameters: {
         'q': query,
-        'limit': limit.toString(),
+        'limit': '300',
         if (before != null) 'before': before,
       },
     );
     final response = await http.get(uri, headers: headers);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final list = (data['results'] as List<dynamic>? ?? []);
-      return list.map((e) => e as Map<String, dynamic>).toList();
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка поиска: ${response.statusCode}');
     }
-    throw Exception('Ошибка поиска: ${response.statusCode}');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = (data['results'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final queryTrimmed = query.trim();
+    final queryLower = queryTrimmed.toLowerCase();
+    final int takeLimit = limit > 0 ? limit : 30;
+    final List<Map<String, dynamic>> out = [];
+    for (final item in list) {
+      final rawContent = (item['content'] ?? '').toString();
+      String plain = rawContent;
+      if (E2eeService.isEncrypted(rawContent)) {
+        plain = await E2eeService.decryptMessage(chatId, rawContent);
+      }
+      if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower)) continue;
+      out.add(_searchResultToSnippet(item, plain, queryLower));
+      if (out.length >= takeLimit) break;
+    }
+    return out;
+  }
+
+  static Map<String, dynamic> _searchResultToSnippet(Map<String, dynamic> item, String plainContent, String queryLower) {
+    String snippet = plainContent;
+    if (queryLower.isNotEmpty && plainContent.toLowerCase().contains(queryLower)) {
+      final idx = plainContent.toLowerCase().indexOf(queryLower);
+      final start = idx > 40 ? idx - 40 : 0;
+      final end = (idx + queryLower.length + 40).clamp(0, plainContent.length);
+      snippet = (start > 0 ? '…' : '') + plainContent.substring(start, end) + (end < plainContent.length ? '…' : '');
+    } else if (plainContent.length > 120) {
+      snippet = plainContent.substring(0, 120) + '…';
+    }
+    return {
+      'message_id': item['message_id'],
+      'content_snippet': snippet,
+      'message_type': item['message_type'],
+      'image_url': item['image_url'],
+      'created_at': item['created_at'],
+      'sender_email': item['sender_email'],
+      'is_read': item['is_read'] == true,
+    };
   }
 
   // 🎯 Получить окно сообщений вокруг messageId

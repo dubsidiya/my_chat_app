@@ -231,6 +231,12 @@ class AuthService {
               avatarUrl: userData['avatarUrl'],
             );
           }
+          // E2EE: перешифровать бэкап ключей новым паролем, чтобы после переустановки ключи восстанавливались по новому паролю
+          try {
+            await E2eeService.backupKeysWithPassword(newPassword);
+          } catch (_) {
+            // Ключей может ещё не быть — не блокируем смену пароля
+          }
         }
         return;
       } else if (response.statusCode == 401) {

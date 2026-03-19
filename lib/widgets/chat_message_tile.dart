@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -8,6 +7,7 @@ import '../models/message.dart';
 import '../services/link_preview_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
+import 'e2ee_image.dart';
 import 'link_preview_card.dart';
 import 'mention_text.dart';
 import 'skeleton_placeholder.dart';
@@ -25,6 +25,8 @@ class ChatMessageTile extends StatelessWidget {
   final Widget myAvatarPlaceholder;
   final Widget otherAvatarPlaceholder;
   final Map<String, Map<String, String>> memberByHandle;
+  /// Для E2EE: если передан, изображения сообщения загружаются и при необходимости расшифровываются.
+  final String? chatId;
 
   final VoidCallback onOpenSenderProfile;
   final VoidCallback onShowMessageMenu;
@@ -48,6 +50,7 @@ class ChatMessageTile extends StatelessWidget {
     required this.accent3,
     required this.myUserId,
     required this.myAvatarUrl,
+    this.chatId,
     required this.myAvatarPlaceholder,
     required this.otherAvatarPlaceholder,
     required this.memberByHandle,
@@ -239,11 +242,11 @@ class ChatMessageTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 250, maxHeight: 400),
-                                child: CachedNetworkImage(
+                              child: E2eeImage(
                                 imageUrl: msg.imageUrl!,
+                                chatId: chatId,
                                 fit: BoxFit.contain,
                                 memCacheWidth: 500,
-                                httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
                                 placeholder: (context, __) => SkeletonPlaceholder(
                                   width: 250,
                                   height: 200,

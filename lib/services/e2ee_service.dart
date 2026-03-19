@@ -201,11 +201,11 @@ class E2eeService {
   static Future<String> decryptMessage(String chatId, String encryptedJson) async {
     try {
       final data = jsonDecode(encryptedJson);
-      if (data is! Map || data['v'] != '1') return encryptedJson;
+      if (data is! Map || data['v'] != '1') return _cannotDecryptLabel;
       final ct = base64Decode(data['ct'] as String);
       final nonce = base64Decode(data['n'] as String);
       final key = await getChatKey(chatId);
-      if (key == null) return '[зашифровано]';
+      if (key == null) return _cannotDecryptLabel;
 
       const macLen = 16;
       final cipherText = ct.sublist(0, ct.length - macLen);
@@ -217,8 +217,56 @@ class E2eeService {
       );
       return utf8.decode(decrypted);
     } catch (_) {
-      return encryptedJson;
+      return _cannotDecryptLabel;
     }
+  }
+
+  static const String _cannotDecryptLabel = '[зашифровано]';
+
+  /// Шифрование произвольных байт (медиа). Возвращает JSON-строку { v, ct, n } в utf8.
+  static Future<Uint8List?> encryptBytes(String chatId, Uint8List plainBytes) async {
+    if (plainBytes.isEmpty) return null;
+    final key = await getChatKey(chatId);
+    if (key == null) return null;
+    final nonce = _aesGcm.newNonce();
+    final encrypted = await _aesGcm.encrypt(plainBytes, secretKey: key, nonce: nonce);
+    final map = {
+      'v': '1',
+      'ct': base64Encode(encrypted.cipherText + encrypted.mac.bytes),
+      'n': base64Encode(nonce),
+    };
+    return Uint8List.fromList(utf8.encode(jsonEncode(map)));
+  }
+
+  /// Расшифровка байт (медиа). [encryptedBytes] — JSON { v, ct, n } в utf8 или сырые байты (вернёт null).
+  static Future<Uint8List?> decryptBytes(String chatId, Uint8List encryptedBytes) async {
+    try {
+    final s = utf8.decode(encryptedBytes);
+    if (!s.startsWith('{')) return null;
+    final data = jsonDecode(s);
+    if (data is! Map || data['v'] != '1') return null;
+    final ct = base64Decode(data['ct'] as String);
+    final nonce = base64Decode(data['n'] as String);
+    final key = await getChatKey(chatId);
+    if (key == null) return null;
+    const macLen = 16;
+    final cipherText = ct.sublist(0, ct.length - macLen);
+    final mac = Mac(ct.sublist(ct.length - macLen));
+    final decrypted = await _aesGcm.decrypt(
+      SecretBox(cipherText, nonce: nonce, mac: mac),
+      secretKey: key,
+    );
+    return Uint8List.fromList(decrypted);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Проверка: байты выглядят как E2EE JSON.
+  static bool looksLikeEncryptedBytes(Uint8List bytes) {
+    if (bytes.length < 10) return false;
+    final s = utf8.decode(bytes.sublist(0, bytes.length > 50 ? 50 : bytes.length));
+    return s.startsWith('{') && s.contains('"v"') && s.contains('"ct"');
   }
 
   /// Check if a string looks like an E2EE encrypted message.
@@ -260,6 +308,85 @@ class E2eeService {
     );
   }
 
+  /// Запросить ключ чата у других участников (мы без ключа, например вошли по инвайту). Сервер шлёт им WS e2ee_request_key.
+  static Future<void> requestChatKey(String chatId) async {
+    final token = await StorageService.getToken();
+    if (token == null) return;
+    try {
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/request-key'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (_) {}
+  }
+
+  /// Участники чата без ключа (например, вошли по инвайту). Нужны для shareChatKeyWithNewMembers.
+  static Future<List<String>> getMembersWithoutChatKey(String chatId) async {
+    final token = await StorageService.getToken();
+    if (token == null) return [];
+    try {
+      final resp = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/members-without-key'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body);
+      final list = data['userIds'] as List<dynamic>?;
+      if (list == null) return [];
+      return list.map((e) => e.toString()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Если у нас есть ключ чата — шифруем его для участников без ключа и отправляем на сервер (участники по инвайту смогут расшифровать).
+  /// Вызывать при открытии чата после успешной загрузки сообщений.
+  static Future<void> shareChatKeyWithNewMembers(String chatId) async {
+    final withoutKey = await getMembersWithoutChatKey(chatId);
+    if (withoutKey.isEmpty) return;
+    final chatKeyB64 = await _secure.read(key: '$_chatKeyPrefix$chatId');
+    if (chatKeyB64 == null || chatKeyB64.isEmpty) return;
+    final chatKeyBytes = base64Decode(chatKeyB64);
+    final pubKeys = await fetchPublicKeys(withoutKey);
+    if (pubKeys.isEmpty) return;
+    final myKeyPair = await _getKeyPair();
+    final myPubB64 = await getMyPublicKeyBase64();
+    final List<Map<String, String>> keysPayload = [];
+    for (final memberId in withoutKey) {
+      final memberPubB64 = pubKeys[memberId];
+      if (memberPubB64 == null || memberPubB64.isEmpty) continue;
+      try {
+        final memberPub = SimplePublicKey(base64Decode(memberPubB64), type: KeyPairType.x25519);
+        final sharedSecret = await _x25519.sharedSecretKey(
+          keyPair: myKeyPair,
+          remotePublicKey: memberPub,
+        );
+        final derivedKey = await _hkdf.deriveKey(
+          secretKey: sharedSecret,
+          info: utf8.encode('e2ee-chat-key-$chatId'),
+          nonce: const <int>[],
+        );
+        final nonce = _aesGcm.newNonce();
+        final encrypted = await _aesGcm.encrypt(
+          Uint8List.fromList(chatKeyBytes),
+          secretKey: derivedKey,
+          nonce: nonce,
+        );
+        keysPayload.add({
+          'userId': memberId,
+          'encryptedKey': base64Encode(encrypted.cipherText + encrypted.mac.bytes),
+          'senderPublicKey': myPubB64,
+          'nonce': base64Encode(nonce),
+        });
+      } catch (_) {
+        continue;
+      }
+    }
+    if (keysPayload.isNotEmpty) {
+      await _storeChatKeysOnServer(chatId, keysPayload);
+    }
+  }
+
   /// Fetch public keys of given user IDs from the server.
   static Future<Map<String, String?>> fetchPublicKeys(List<String> userIds) async {
     final token = await StorageService.getToken();
@@ -283,10 +410,19 @@ class E2eeService {
     }
   }
 
-  /// Clear all local E2EE data (on logout).
+  /// Clear all local E2EE data (on logout / delete account).
+  /// Удаляем ключевую пару и все ключи чатов, чтобы другой пользователь на устройстве не получил старые ключи.
   static Future<void> clearAll() async {
     await _secure.delete(key: _privateKeyKey);
     await _secure.delete(key: _publicKeyKey);
+    try {
+      final all = await _secure.readAll();
+      for (final key in all.keys) {
+        if (key.startsWith(_chatKeyPrefix)) {
+          await _secure.delete(key: key);
+        }
+      }
+    } catch (_) {}
   }
 
   // ─── Key backup (password-based) ───

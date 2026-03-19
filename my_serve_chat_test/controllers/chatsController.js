@@ -797,6 +797,11 @@ export const removeMemberFromChat = async (req, res) => {
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId]
     );
+    // E2EE: отзываем ключ чата у удалённого — с нового устройства ключ получить нельзя
+    await pool.query(
+      'DELETE FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
+      [chatId, targetUserId]
+    );
 
     // Обновляем is_group, если участников стало 1 или меньше
     const newCount = await pool.query(
@@ -882,6 +887,11 @@ export const leaveChat = async (req, res) => {
     // Обычный участник может выйти
     await pool.query(
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    // E2EE: отзываем ключ чата у вышедшего — с нового устройства ключ получить нельзя
+    await pool.query(
+      'DELETE FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
 

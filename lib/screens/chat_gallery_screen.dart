@@ -130,6 +130,7 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
         builder: (_) => PhotoViewerScreen(
           imageUrl: url,
           title: widget.chatName,
+          chatId: widget.chatId,
         ),
       ),
     );

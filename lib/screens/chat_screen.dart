@@ -12,7 +12,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../models/message.dart';
@@ -29,6 +28,7 @@ import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
+import '../widgets/e2ee_image.dart';
 import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
@@ -865,6 +865,13 @@ class _ChatScreenState extends State<ChatScreen> {
             return;
           }
 
+          // ✅ E2EE: другой участник запросил ключ чата — отдаём ему ключ, если он у нас есть
+          if (messageType == 'e2ee_request_key') {
+            final chatId = data['chatId']?.toString();
+            if (chatId != null) E2eeService.shareChatKeyWithNewMembers(chatId);
+            return;
+          }
+
           // ✅ Новое сообщение (realtime) — type == 'message' просто не возвращаемся, идём к обработке chat_id ниже
 
           // ✅ Presence: начальное состояние
@@ -1017,50 +1024,50 @@ class _ChatScreenState extends State<ChatScreen> {
             return;
           }
           
-          // ✅ Обработка события редактирования сообщения
+          // ✅ Обработка события редактирования сообщения (E2EE: контент с сервера может быть зашифрован)
           if (messageType == 'message_edited') {
             final messageId = data['id']?.toString();
-            final chatId = data['chat_id']?.toString();
+            final chatIdWs = data['chat_id']?.toString();
             final currentChatId = widget.chatId.toString();
-            
-            if (chatId == currentChatId && messageId != null && mounted) {
-              setState(() {
-                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
-                if (index != -1) {
-                  // Обновляем сообщение
-                  final msg = _messages[index];
-                  final updatedMessage = Message(
-                    id: msg.id,
-                    chatId: msg.chatId,
-                    userId: msg.userId,
-                    content: data['content'] ?? msg.content,
-                    imageUrl: data['image_url'] ?? msg.imageUrl,
-                    originalImageUrl: msg.originalImageUrl,
-                    fileUrl: data['file_url'] ?? msg.fileUrl,
-                    fileName: data['file_name'] ?? msg.fileName,
-                    fileSize: data['file_size'] ?? msg.fileSize,
-                    fileMime: data['file_mime'] as String? ?? msg.fileMime,
-                    messageType: data['message_type'] ?? msg.messageType,
-                    senderAvatarUrl: data['sender_avatar_url'] ?? msg.senderAvatarUrl,
-                    senderEmail: msg.senderEmail,
-                    createdAt: msg.createdAt,
-                    deliveredAt: msg.deliveredAt,
-                    editedAt: data['edited_at']?.toString(),
-                    isRead: msg.isRead,
-                    readAt: msg.readAt,
-                    replyToMessageId: msg.replyToMessageId,
-                    replyToMessage: msg.replyToMessage,
-                    isPinned: msg.isPinned,
-                    reactions: msg.reactions,
-                    isForwarded: msg.isForwarded,
-                    originalChatName: msg.originalChatName,
-                  );
-                  _messages[index] = updatedMessage;
-                  
-                  // ✅ Обновляем в кэше
-                  LocalMessagesService.updateMessage(widget.chatId, updatedMessage);
+            if (chatIdWs == currentChatId && messageId != null && mounted) {
+              final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+              if (index != -1) {
+                final msg = _messages[index];
+                final rawContent = (data['content'] ?? msg.content).toString();
+                final updatedRaw = Message(
+                  id: msg.id,
+                  chatId: msg.chatId,
+                  userId: msg.userId,
+                  content: rawContent,
+                  imageUrl: data['image_url'] ?? msg.imageUrl,
+                  originalImageUrl: msg.originalImageUrl,
+                  fileUrl: data['file_url'] ?? msg.fileUrl,
+                  fileName: data['file_name'] ?? msg.fileName,
+                  fileSize: data['file_size'] ?? msg.fileSize,
+                  fileMime: data['file_mime'] as String? ?? msg.fileMime,
+                  messageType: data['message_type'] ?? msg.messageType,
+                  senderAvatarUrl: data['sender_avatar_url'] ?? msg.senderAvatarUrl,
+                  senderEmail: msg.senderEmail,
+                  createdAt: msg.createdAt,
+                  deliveredAt: msg.deliveredAt,
+                  editedAt: data['edited_at']?.toString(),
+                  isRead: msg.isRead,
+                  readAt: msg.readAt,
+                  replyToMessageId: msg.replyToMessageId,
+                  replyToMessage: msg.replyToMessage,
+                  isPinned: msg.isPinned,
+                  reactions: msg.reactions,
+                  isForwarded: msg.isForwarded,
+                  originalChatName: msg.originalChatName,
+                );
+                LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
+                final displayMessage = await MessagesService.decryptMessageForChat(currentChatId, updatedRaw);
+                if (mounted) {
+                  setState(() {
+                    _messages[index] = displayMessage;
+                  });
                 }
-              });
+              }
             }
             return;
           }
@@ -1141,20 +1148,9 @@ class _ChatScreenState extends State<ChatScreen> {
           if (chatId == currentChatId) {
             if (kDebugMode) print('Message is for current chat');
             try {
-              var message = Message.fromJson(data);
-              if (E2eeService.isEncrypted(message.content)) {
-                final plain = await E2eeService.decryptMessage(widget.chatId.toString(), message.content);
-                message = Message(
-                  id: message.id, chatId: message.chatId, userId: message.userId, content: plain,
-                  imageUrl: message.imageUrl, originalImageUrl: message.originalImageUrl,
-                  fileUrl: message.fileUrl, fileName: message.fileName, fileSize: message.fileSize, fileMime: message.fileMime,
-                  messageType: message.messageType, senderEmail: message.senderEmail, senderAvatarUrl: message.senderAvatarUrl,
-                  createdAt: message.createdAt, deliveredAt: message.deliveredAt, editedAt: message.editedAt,
-                  isRead: message.isRead, readAt: message.readAt, replyToMessageId: message.replyToMessageId,
-                  replyToMessage: message.replyToMessage, isPinned: message.isPinned, reactions: message.reactions,
-                  isForwarded: message.isForwarded, originalChatName: message.originalChatName,
-                );
-              }
+              final rawMessage = Message.fromJson(data);
+              LocalMessagesService.updateMessage(widget.chatId, rawMessage);
+              final message = await MessagesService.decryptMessageForChat(widget.chatId.toString(), rawMessage);
               if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               if (mounted) {
                 setState(() {
@@ -1190,11 +1186,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     
                     _messages = newMessages;
                     if (kDebugMode) print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
-                    
-                    // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      LocalMessagesService.updateMessage(widget.chatId, merged);
-                    });
                   } else {
                     // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
                     final exists = _messages.any((m) => m.id == message.id);
@@ -1237,10 +1228,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (message.userId != widget.userId.toString()) {
                           NotificationFeedbackService.onNewMessage();
                         }
-                        // ✅ Сохраняем новое сообщение в кэш с задержкой
-                        Future.delayed(const Duration(milliseconds: 500), () {
-                          LocalMessagesService.addMessage(widget.chatId, message);
-                        });
                         _scrollToBottom();
                       }
                     } else {
@@ -1736,6 +1723,13 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         });
+        // E2EE: если у нас есть ключ — отдать участникам без ключа; если у нас нет ключа — запросить у других (WS)
+        final hasKey = await E2eeService.getChatKey(widget.chatId.toString()) != null;
+        if (hasKey) {
+          E2eeService.shareChatKeyWithNewMembers(widget.chatId.toString());
+        } else {
+          E2eeService.requestChatKey(widget.chatId.toString());
+        }
       }
     } catch (e) {
       if (kDebugMode) print('Error loading messages: $e');
@@ -2621,7 +2615,12 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         
         // ✅ Загружаем и оригинал, и сжатое изображение
-        imageUrl = await _messagesService.uploadImage(bytes, fileName, originalBytes: originalBytes);
+        imageUrl = await _messagesService.uploadImage(
+          bytes,
+          fileName,
+          originalBytes: originalBytes,
+          chatId: widget.chatId.toString(),
+        );
         
         // ✅ Очищаем память после успешной загрузки
         if (mounted) {
@@ -3461,26 +3460,41 @@ SnackBar(
     
     if (result != null && result['content'] != null) {
       try {
-        await _messagesService.editMessage(message.id, content: result['content']!);
+        await _messagesService.editMessage(
+          message.id,
+          content: result['content']!,
+          chatId: widget.chatId.toString(),
+        );
         if (mounted) {
           setState(() {
             final index = _messages.indexWhere((m) => m.id == message.id);
             if (index != -1) {
+              final prev = _messages[index];
               _messages[index] = Message(
-                id: message.id,
-                chatId: message.chatId,
-                userId: message.userId,
+                id: prev.id,
+                chatId: prev.chatId,
+                userId: prev.userId,
                 content: result['content']!,
-                imageUrl: message.imageUrl,
-                originalImageUrl: message.originalImageUrl,
-                messageType: message.messageType,
-                senderEmail: message.senderEmail,
-                senderAvatarUrl: message.senderAvatarUrl,
-                createdAt: message.createdAt,
-                deliveredAt: message.deliveredAt,
+                imageUrl: prev.imageUrl,
+                originalImageUrl: prev.originalImageUrl,
+                fileUrl: prev.fileUrl,
+                fileName: prev.fileName,
+                fileSize: prev.fileSize,
+                fileMime: prev.fileMime,
+                messageType: prev.messageType,
+                senderEmail: prev.senderEmail,
+                senderAvatarUrl: prev.senderAvatarUrl,
+                createdAt: prev.createdAt,
+                deliveredAt: prev.deliveredAt,
                 editedAt: DateTime.now().toIso8601String(),
-                isRead: message.isRead,
-                readAt: message.readAt,
+                isRead: prev.isRead,
+                readAt: prev.readAt,
+                replyToMessageId: prev.replyToMessageId,
+                replyToMessage: prev.replyToMessage,
+                isPinned: prev.isPinned,
+                reactions: prev.reactions,
+                isForwarded: prev.isForwarded,
+                originalChatName: prev.originalChatName,
               );
             }
           });
@@ -3523,13 +3537,12 @@ SnackBar(
 
     try {
       await _messagesService.deleteMessage(message.id.toString(), widget.userId);
-      
+      await LocalMessagesService.removeMessage(widget.chatId, message.id);
       if (mounted) {
         setState(() {
           _messages.removeWhere((m) => m.id == message.id);
           _pinnedMessages.removeWhere((m) => m.id == message.id);
         });
-        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Сообщение удалено'),
@@ -3579,14 +3592,12 @@ SnackBar(
 
     try {
       await _messagesService.clearChat(widget.chatId, widget.userId);
-      
+      await LocalMessagesService.clearChat(widget.chatId);
       if (mounted) {
-        // Очищаем список сообщений и закрепленных
         setState(() {
           _messages.clear();
           _pinnedMessages.clear();
         });
-        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Чат успешно очищен'),
@@ -3758,7 +3769,8 @@ SnackBar(
             widget.chatId,
             selectedUsers.toList(),
           );
-          
+          // E2EE: отправить ключ чата новым участникам (как при входе по инвайту)
+          E2eeService.shareChatKeyWithNewMembers(widget.chatId.toString());
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -3814,6 +3826,7 @@ SnackBar(
         barrierColor: Colors.black,
         pageBuilder: (_, __, ___) => _FullScreenImageViewer(
           imageUrl: url,
+          chatId: widget.chatId.toString(),
           originalImageUrl: (msg.originalImageUrl ?? url),
           fileName: url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
           onDownload: () => _downloadImage(
@@ -4116,6 +4129,7 @@ SnackBar(
                   accent3: _accent3,
                   myUserId: widget.userId,
                   myAvatarUrl: widget.myAvatarUrl,
+                  chatId: widget.chatId.toString(),
                   myAvatarPlaceholder: _myAvatarPlaceholder(),
                   otherAvatarPlaceholder: _otherAvatarPlaceholder(msg.senderEmail),
                   memberByHandle: _memberByHandle,
@@ -4555,12 +4569,14 @@ SnackBar(
 /// Полноэкранный просмотр фото в стиле Telegram/WhatsApp: тёмный фон, зум, тап — закрыть.
 class _FullScreenImageViewer extends StatelessWidget {
   final String imageUrl;
+  final String? chatId;
   final String? originalImageUrl;
   final String fileName;
   final VoidCallback? onDownload;
 
   const _FullScreenImageViewer({
     required this.imageUrl,
+    this.chatId,
     this.originalImageUrl,
     required this.fileName,
     this.onDownload,
@@ -4573,7 +4589,6 @@ class _FullScreenImageViewer extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Тап по области закрывает (как в Telegram)
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             behavior: HitTestBehavior.opaque,
@@ -4581,18 +4596,18 @@ class _FullScreenImageViewer extends StatelessWidget {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 5.0,
-                child: CachedNetworkImage(
+                child: E2eeImage(
                   imageUrl: imageUrl,
+                  chatId: chatId,
                   fit: BoxFit.contain,
                   memCacheWidth: 1920,
-                  httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
                   placeholder: (_, __) => const Center(
                     child: CircularProgressIndicator(
                       color: Colors.white70,
                       strokeWidth: 2,
                     ),
                   ),
-                  errorWidget: (context, url, error) => const Center(
+                  errorWidget: (_, __, ___) => const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

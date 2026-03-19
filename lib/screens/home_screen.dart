@@ -10,6 +10,7 @@ import '../services/storage_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/e2ee_service.dart';
+import '../services/local_messages_service.dart';
 import '../theme/app_colors.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
@@ -258,6 +259,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _wsSubscription?.cancel();
     _wsSubscription = WebSocketService.instance.stream.listen((event) {
       if (!mounted) return;
+      if (event is Map && event['type'] == 'e2ee_request_key') {
+        final chatId = event['chatId']?.toString();
+        if (chatId != null) E2eeService.shareChatKeyWithNewMembers(chatId);
+        return;
+      }
       // Новое сообщение в любой чат: обновляем список чатов
       if (event is Map && event['chat_id'] != null && event['id'] != null) {
         final type = event['type']?.toString();
@@ -912,6 +918,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(context); // Закрываем диалог
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
+              await E2eeService.clearAll();
+              await LocalMessagesService.clearAll();
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
               if (mounted) {
@@ -1224,7 +1232,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await _authService.deleteAccount(widget.userId, password);
-      
+
+      await E2eeService.clearAll();
+      await LocalMessagesService.clearAll();
       // Закрываем индикатор загрузки
       if (mounted) {
         Navigator.pop(context);

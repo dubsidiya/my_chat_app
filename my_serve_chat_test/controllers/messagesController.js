@@ -395,12 +395,9 @@ export const searchMessages = async (req, res) => {
     const userId = req.user.userId;
     const q = (req.query.q || '').toString().trim();
     const requestedLimit = parseInt(req.query.limit);
-    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 20, 1), 50);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 300, 1), 500);
     const before = req.query.before ? parseInt(req.query.before, 10) : null;
 
-    if (!q) {
-      return res.status(400).json({ message: 'Параметр q обязателен' });
-    }
     if (q.length > 100) {
       return res.status(400).json({ message: 'Слишком длинный запрос' });
     }
@@ -411,17 +408,20 @@ export const searchMessages = async (req, res) => {
     }
     const chatIdNum = membership.chatIdNum;
 
-    const params = [chatIdNum, `%${q}%`, limit, userId];
+    const params = [chatIdNum, userId, limit];
     let beforeClause = '';
     if (Number.isFinite(before)) {
-      beforeClause = ' AND m.id < $5';
+      beforeClause = ' AND m.id < $4';
       params.push(before);
     }
 
+    // Отдаём последние сообщения с полным content; клиент расшифровывает и фильтрует по q (E2EE)
     const result = await pool.query(
       `
       SELECT
         m.id AS message_id,
+        m.chat_id,
+        m.user_id,
         m.content,
         m.message_type,
         m.image_url,
@@ -430,9 +430,8 @@ export const searchMessages = async (req, res) => {
         (mr.message_id IS NOT NULL) AS is_read
       FROM messages m
       JOIN users u ON u.id = m.user_id
-      LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = $4
+      LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = $2
       WHERE m.chat_id = $1
-        AND m.content ILIKE $2
         ${beforeClause}
       ORDER BY m.id DESC
       LIMIT $3
@@ -440,33 +439,19 @@ export const searchMessages = async (req, res) => {
       params
     );
 
-    const queryLower = q.toLowerCase();
-    const items = result.rows.map((row) => {
-      const content = (row.content || '').toString();
-      const idx = content.toLowerCase().indexOf(queryLower);
-      let snippet = content;
-      if (idx >= 0) {
-        const start = Math.max(0, idx - 40);
-        const end = Math.min(content.length, idx + queryLower.length + 40);
-        snippet = content.substring(start, end);
-        if (start > 0) snippet = '…' + snippet;
-        if (end < content.length) snippet = snippet + '…';
-      } else if (content.length > 120) {
-        snippet = content.substring(0, 120) + '…';
-      }
+    const items = result.rows.map((row) => ({
+      message_id: row.message_id?.toString(),
+      chat_id: row.chat_id?.toString(),
+      user_id: row.user_id?.toString(),
+      content: (row.content ?? '').toString(),
+      message_type: row.message_type,
+      image_url: row.image_url,
+      created_at: row.created_at,
+      sender_email: row.sender_email,
+      is_read: row.is_read === true,
+    }));
 
-      return {
-        message_id: row.message_id?.toString(),
-        content_snippet: snippet,
-        message_type: row.message_type,
-        image_url: row.image_url,
-        created_at: row.created_at,
-        sender_email: row.sender_email,
-        is_read: row.is_read === true,
-      };
-    });
-
-    return res.status(200).json({ results: items });
+    return res.status(200).json({ results: items, query: q });
   } catch (error) {
     console.error('Ошибка searchMessages:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });

@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
+import '../widgets/e2ee_image.dart';
 
 class PhotoViewerScreen extends StatelessWidget {
   final String imageUrl;
   final String? title;
+  final String? chatId;
 
   const PhotoViewerScreen({
     super.key,
     required this.imageUrl,
     this.title,
+    this.chatId,
   });
 
   @override
@@ -26,8 +28,9 @@ class PhotoViewerScreen extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.8,
           maxScale: 4.0,
-          child: CachedNetworkImage(
+          child: E2eeImage(
             imageUrl: imageUrl,
+            chatId: chatId,
             fit: BoxFit.contain,
             placeholder: (_, __) => const CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),

@@ -63,6 +63,11 @@ export function getWebSocketClients() {
   return clients;
 }
 
+// E2EE: рассылка участникам чата (кроме excludeUserId) — для запроса ключа новым участником
+export async function broadcastToChatMembers(chatIdNum, payload, { excludeUserId } = {}) {
+  return broadcastToChat(chatIdNum, payload, { excludeUserId });
+}
+
 export function setupWebSocket(server) {
   // Лимит размера одного сообщения (64 KB) — защита от DoS
   const MAX_WS_PAYLOAD = 64 * 1024;
