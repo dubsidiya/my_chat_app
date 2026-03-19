@@ -215,6 +215,20 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
+          final userData = await StorageService.getUserData();
+          if (userData != null) {
+            await StorageService.saveUserData(
+              userData['id'] ?? userId,
+              userData['email'] ?? '',
+              data['token'],
+              isSuperuser: userData['isSuperuser'] == 'true',
+              displayName: userData['displayName'],
+              avatarUrl: userData['avatarUrl'],
+            );
+          }
+        }
         return;
       } else if (response.statusCode == 401) {
         String errorMessage = 'Неверный текущий пароль';

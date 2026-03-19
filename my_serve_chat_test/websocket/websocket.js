@@ -44,7 +44,7 @@ export function setupWebSocket(server) {
   const MAX_WS_PAYLOAD = 64 * 1024;
   const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     // Получаем токен:
     // 1) из Authorization header (предпочтительно для mobile/desktop)
     // 2) из query параметра token (fallback для web)
@@ -68,13 +68,32 @@ export function setupWebSocket(server) {
       return;
     }
 
-    // Проверяем токен
     const decoded = verifyWebSocketToken(token);
     if (!decoded) {
       if (process.env.NODE_ENV === 'development') {
         console.log('WebSocket connection rejected: invalid token');
       }
       ws.close(1008, 'Недействительный токен');
+      return;
+    }
+
+    try {
+      const vRow = await pool.query('SELECT token_version FROM users WHERE id = $1', [decoded.userId]);
+      if (vRow.rows.length === 0) {
+        ws.close(1008, 'Пользователь не найден');
+        return;
+      }
+      const dbVersion = vRow.rows[0].token_version ?? 0;
+      const tokenVersion = decoded.tv ?? 0;
+      if (tokenVersion !== dbVersion) {
+        ws.close(1008, 'Сессия истекла');
+        return;
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('WebSocket token_version check failed:', err.message);
+      }
+      ws.close(1011, 'Ошибка сервера');
       return;
     }
 

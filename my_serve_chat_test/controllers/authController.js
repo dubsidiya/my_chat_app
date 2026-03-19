@@ -14,18 +14,24 @@ const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
   try {
     return await pool.query(
-      'SELECT id, email, password, display_name, avatar_url, timezone FROM users WHERE LOWER(TRIM(email)) = $1',
+      'SELECT id, email, password, display_name, avatar_url, timezone, token_version FROM users WHERE LOWER(TRIM(email)) = $1',
       [normalizedUsername]
     );
   } catch (error) {
-    // Если БД ещё не мигрирована (нет колонки avatar_url) — делаем фоллбек без неё,
-    // чтобы логин не падал с 500.
+    if (error?.code === '42703' && String(error?.message || '').includes('token_version')) {
+      const fallback = await pool.query(
+        'SELECT id, email, password, display_name, avatar_url, timezone FROM users WHERE LOWER(TRIM(email)) = $1',
+        [normalizedUsername]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, token_version: 0 }));
+      return fallback;
+    }
     if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
       const fallback = await pool.query(
         'SELECT id, email, password, display_name FROM users WHERE LOWER(TRIM(email)) = $1',
         [normalizedUsername]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE, token_version: 0 }));
       return fallback;
     }
     if (error?.code === '42703' && String(error?.message || '').includes('timezone')) {
@@ -33,7 +39,7 @@ async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
         'SELECT id, email, password, display_name, avatar_url FROM users WHERE LOWER(TRIM(email)) = $1',
         [normalizedUsername]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE, token_version: 0 }));
       return fallback;
     }
     throw error;
@@ -43,16 +49,24 @@ async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
 async function queryUserWithOptionalAvatarById(userId) {
   try {
     return await pool.query(
-      'SELECT id, email, display_name, avatar_url, timezone FROM users WHERE id = $1',
+      'SELECT id, email, display_name, avatar_url, timezone, token_version FROM users WHERE id = $1',
       [userId]
     );
   } catch (error) {
+    if (error?.code === '42703' && String(error?.message || '').includes('token_version')) {
+      const fallback = await pool.query(
+        'SELECT id, email, display_name, avatar_url, timezone FROM users WHERE id = $1',
+        [userId]
+      );
+      fallback.rows = fallback.rows.map((r) => ({ ...r, token_version: 0 }));
+      return fallback;
+    }
     if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
       const fallback = await pool.query(
         'SELECT id, email, display_name FROM users WHERE id = $1',
         [userId]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, avatar_url: null, timezone: DEFAULT_USER_TIMEZONE, token_version: 0 }));
       return fallback;
     }
     if (error?.code === '42703' && String(error?.message || '').includes('timezone')) {
@@ -60,7 +74,7 @@ async function queryUserWithOptionalAvatarById(userId) {
         'SELECT id, email, display_name, avatar_url FROM users WHERE id = $1',
         [userId]
       );
-      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE }));
+      fallback.rows = fallback.rows.map((r) => ({ ...r, timezone: DEFAULT_USER_TIMEZONE, token_version: 0 }));
       return fallback;
     }
     throw error;
@@ -110,15 +124,14 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const result = await pool.query(
-      'INSERT INTO users (email, password, timezone) VALUES ($1, $2, $3) RETURNING id, email, display_name, timezone',
+      'INSERT INTO users (email, password, timezone) VALUES ($1, $2, $3) RETURNING id, email, display_name, timezone, token_version',
       [normalizedUsername, hashedPassword, timezoneValue]
     );
 
     const newUser = result.rows[0];
     const privateAccess = hasPrivateAccess({ userId: newUser.id, username: newUser.email });
 
-    // Генерируем JWT токен (логин = email)
-    const token = generateToken(newUser.id, newUser.email, privateAccess);
+    const token = generateToken(newUser.id, newUser.email, privateAccess, newUser.token_version ?? 0);
 
     res.status(201).json({
       userId: newUser.id,
@@ -197,13 +210,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: 'Неверный логин или пароль' });
     }
 
-    // Доступ к отчётам/учёту занятий: по списку в env или по коду (unlock-private)
     const privateAccess = hasPrivateAccess({ userId: user.id, username: user.email });
 
-    // Генерируем JWT токен (используем логин вместо email)
-    const token = generateToken(user.id, user.email, privateAccess);
+    const token = generateToken(user.id, user.email, privateAccess, user.token_version ?? 0);
 
-    // Удаляем пароль из ответа
     delete user.password;
 
     res.status(200).json({
@@ -243,7 +253,10 @@ export const adminResetUserPassword = async (req, res) => {
     }
     const targetUserId = userResult.rows[0].id;
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, targetUserId]);
+    await pool.query(
+      'UPDATE users SET password = $1, token_version = token_version + 1 WHERE id = $2',
+      [hashedPassword, targetUserId]
+    );
     securityEvent('admin_reset_password', req, { targetUserId });
     return res.status(200).json({ message: 'Пароль успешно изменён' });
   } catch (error) {
@@ -342,9 +355,10 @@ export const unlockPrivateAccess = async (req, res) => {
       return res.status(403).json({ message: 'Неверный код' });
     }
 
-    // Берем username из токена (email/username уже содержит логин)
     const username = req.user.username || req.user.email;
-    const token = generateToken(req.user.userId, username, true);
+    const tvRow = await pool.query('SELECT token_version FROM users WHERE id = $1', [req.user.userId]);
+    const tv = tvRow.rows[0]?.token_version ?? 0;
+    const token = generateToken(req.user.userId, username, true, tv);
 
     return res.status(200).json({
       id: req.user.userId,
@@ -426,13 +440,40 @@ export const uploadAvatar = async (req, res) => {
   }
 };
 
-// Публичный профиль пользователя (для отображения аватара/ника у других)
+// Профиль пользователя (аватар/ник). Доступен только если запрашивающий
+// состоит хотя бы в одном общем чате с целевым пользователем — защита от перебора userId.
 export const getUserById = async (req, res) => {
   try {
-    const userId = parsePositiveInt(req.params?.userId);
-    if (!userId) return res.status(400).json({ message: 'Некорректный ID пользователя' });
+    const targetId = parsePositiveInt(req.params?.userId);
+    if (!targetId) return res.status(404).json({ message: 'Пользователь не найден' });
 
-    const row = await queryUserWithOptionalAvatarById(userId);
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) return res.status(401).json({ message: 'Требуется аутентификация' });
+
+    if (targetId === currentUserId) {
+      const row = await queryUserWithOptionalAvatarById(targetId);
+      const u = row.rows[0];
+      if (!u) return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(200).json({
+        id: u.id,
+        username: u.email,
+        displayName: u.display_name ?? null,
+        avatarUrl: u.avatar_url ?? null,
+      });
+    }
+
+    const sharedChat = await pool.query(
+      `SELECT 1 FROM chat_users a
+       JOIN chat_users b ON a.chat_id = b.chat_id
+       WHERE a.user_id = $1 AND b.user_id = $2
+       LIMIT 1`,
+      [currentUserId, targetId]
+    );
+    if (sharedChat.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    const row = await queryUserWithOptionalAvatarById(targetId);
     const u = row.rows[0];
     if (!u) return res.status(404).json({ message: 'Пользователь не найден' });
 
@@ -540,7 +581,10 @@ export const deleteAccount = async (req, res) => {
       await client.query('DELETE FROM chat_users WHERE user_id = $1', [userId]);
       console.log(`Удалено участие пользователя ${userId} в чатах`);
 
-      // 5. Удаляем самого пользователя
+      // 5. Инвалидируем все токены перед удалением
+      await client.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId]);
+
+      // 6. Удаляем самого пользователя
       await client.query('DELETE FROM users WHERE id = $1', [userId]);
       console.log(`Удален пользователь ${userId}`);
 
@@ -613,20 +657,22 @@ export const changePassword = async (req, res) => {
       return res.status(401).json({ message: 'Неверный текущий пароль' });
     }
 
-    // Хешируем новый пароль
     const saltRounds = 10;
     const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
 
-    // Обновляем пароль
-    await pool.query(
-      'UPDATE users SET password = $1 WHERE id = $2',
+    const updateResult = await pool.query(
+      'UPDATE users SET password = $1, token_version = token_version + 1 WHERE id = $2 RETURNING email, token_version',
       [hashedNewPassword, userId]
     );
+
+    const updatedUser = updateResult.rows[0];
+    const privateAccess = hasPrivateAccess({ userId: parseInt(userId, 10), username: updatedUser.email });
+    const newToken = generateToken(parseInt(userId, 10), updatedUser.email, privateAccess, updatedUser.token_version);
 
     console.log(`Пароль изменен для пользователя ${userId}`);
 
     securityEvent('password_changed', req);
-    res.status(200).json({ message: 'Пароль успешно изменен' });
+    res.status(200).json({ message: 'Пароль успешно изменен', token: newToken });
   } catch (error) {
     console.error('Ошибка смены пароля:', error);
     console.error('Stack:', error.stack);

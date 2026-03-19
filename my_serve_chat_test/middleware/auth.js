@@ -1,16 +1,18 @@
 import jwt from 'jsonwebtoken';
+import pool from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Middleware для проверки JWT токена
-export const authenticateToken = (req, res, next) => {
+// Middleware для проверки JWT токена.
+// После проверки подписи сверяет token_version (tv) из JWT с БД —
+// токены, выданные до смены пароля/сброса, автоматически отклоняются.
+export const authenticateToken = async (req, res, next) => {
   if (!JWT_SECRET) {
-    // Не можем безопасно проверять токены без секрета
     return res.status(500).json({ message: 'JWT_SECRET не настроен на сервере' });
   }
 
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (process.env.NODE_ENV === 'development') {
     console.log(`🔐 Auth check: ${req.method} ${req.path}`);
@@ -24,42 +26,63 @@ export const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: 'Токен доступа отсутствует' });
   }
 
-  // Ограничение длины токена — защита от DoS (огромная строка в jwt.verify)
   const MAX_TOKEN_LENGTH = 4096;
   if (token.length > MAX_TOKEN_LENGTH) {
     return res.status(401).json({ message: 'Токен доступа отсутствует' });
   }
 
-  jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }, (err, user) => {
-    if (err) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('JWT verification error:', err.message);
+  try {
+    const user = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+
+    let dbVersion = 0;
+    try {
+      const row = await pool.query(
+        'SELECT token_version FROM users WHERE id = $1',
+        [user.userId]
+      );
+      if (row.rows.length === 0) {
+        return res.status(401).json({ message: 'Пользователь не найден' });
       }
-      return res.status(403).json({ message: 'Недействительный токен' });
+      dbVersion = row.rows[0].token_version ?? 0;
+    } catch (dbErr) {
+      if (dbErr?.code === '42703') {
+        dbVersion = 0;
+      } else {
+        throw dbErr;
+      }
     }
-    
-    req.user = user; // Сохраняем данные пользователя в запросе
-    req.userId = user.userId; // Добавляем userId для удобства
-    // Доступ к отчётам и учёту занятий только по списку в env (PRIVATE_ACCESS_USERNAMES/IDS). Код не даёт доступа.
+
+    const tokenVersion = user.tv ?? 0;
+    if (tokenVersion !== dbVersion) {
+      return res.status(401).json({ message: 'Сессия истекла. Пожалуйста, войдите заново' });
+    }
+
+    req.user = user;
+    req.userId = user.userId;
     req.user.privateAccess = hasPrivateAccess(user);
-    // email в токене теперь содержит логин
     if (process.env.NODE_ENV === 'development') {
       console.log(`✅ JWT verified: userId=${user.userId}, username=${user.email || user.username}`);
     }
     next();
-  });
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('JWT verification error:', err.message);
+    }
+    return res.status(403).json({ message: 'Недействительный токен' });
+  }
 };
 
 // Генерация JWT токена
 // username - логин пользователя (хранится в поле email в БД для обратной совместимости)
-export const generateToken = (userId, username, privateAccess = false) => {
+// tokenVersion - текущая версия из БД (users.token_version); при смене пароля инкрементируется
+export const generateToken = (userId, username, privateAccess = false, tokenVersion = 0) => {
   if (!JWT_SECRET) {
     throw new Error('JWT_SECRET не настроен на сервере');
   }
   return jwt.sign(
-    { userId, email: username, username: username, privateAccess: privateAccess === true },
+    { userId, email: username, username: username, privateAccess: privateAccess === true, tv: tokenVersion },
     JWT_SECRET,
-    { expiresIn: '7d', algorithm: 'HS256' } // Токен действителен 7 дней; явный алгоритм против alg:none
+    { expiresIn: '7d', algorithm: 'HS256' }
   );
 };
 
