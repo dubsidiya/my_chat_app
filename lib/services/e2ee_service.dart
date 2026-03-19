@@ -24,6 +24,7 @@ class E2eeService {
     iterations: 100000,
     bits: 256,
   );
+  static final Map<String, DateTime> _lastRequestChatKeyAt = <String, DateTime>{};
 
   /// Check if local key pair exists.
   static Future<bool> hasLocalKeyPair() async {
@@ -310,6 +311,12 @@ class E2eeService {
 
   /// Запросить ключ чата у других участников (мы без ключа, например вошли по инвайту). Сервер шлёт им WS e2ee_request_key.
   static Future<void> requestChatKey(String chatId) async {
+    final now = DateTime.now();
+    final last = _lastRequestChatKeyAt[chatId];
+    if (last != null && now.difference(last) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastRequestChatKeyAt[chatId] = now;
     final token = await StorageService.getToken();
     if (token == null) return;
     try {
@@ -420,14 +427,16 @@ class E2eeService {
   /// Периодически запрашиваем GET /e2ee/chat-key, пока ключ не появится (кэш локально пуст при 404).
   static Future<bool> waitForChatKeyFromServer(
     String chatId, {
-    Duration timeout = const Duration(seconds: 25),
-    Duration interval = const Duration(milliseconds: 500),
+    Duration timeout = const Duration(seconds: 18),
+    Duration interval = const Duration(seconds: 3),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       final k = await getChatKey(chatId);
       if (k != null) return true;
-      await Future<void>.delayed(interval);
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      await Future<void>.delayed(remaining < interval ? remaining : interval);
     }
     return false;
   }

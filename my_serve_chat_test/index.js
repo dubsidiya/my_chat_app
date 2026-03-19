@@ -296,6 +296,17 @@ const getClientIp = (req) => {
   return ip || 'unknown';
 };
 
+// Ключ rate limit для авторизованных API: IP + фрагмент bearer-токена.
+// Это снижает ложные 429, когда несколько пользователей сидят за одним NAT/IP.
+const getAuthAwareKey = (req, prefix = 'api') => {
+  const ip = getClientIp(req);
+  const auth = (req.get?.('authorization') || '').toString();
+  const tokenPart = auth.toLowerCase().startsWith('bearer ')
+    ? auth.slice(7).trim().slice(0, 24)
+    : 'anon';
+  return `${prefix}_${ip}_${tokenPart}`;
+};
+
 // Глобальный rate limit (последняя линия от DoS — все запросы с одного IP)
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -326,11 +337,21 @@ const authLimiter = rateLimit({
 // Общий rate limit для API (защита от DoS)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 900,
   message: 'Слишком много запросов, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => getClientIp(req),
+  keyGenerator: (req) => getAuthAwareKey(req, 'api'),
+});
+
+// E2EE использует bursts при обмене ключами; выделяем более мягкий лимит.
+const e2eeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  message: 'Слишком много E2EE-запросов, попробуйте позже',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getAuthAwareKey(req, 'e2ee'),
 });
 
 // Более строгий лимит для загрузок
@@ -355,6 +376,7 @@ app.use('/reports', apiLimiter);
 app.use('/admin', apiLimiter);
 app.use('/bank-statement', apiLimiter);
 app.use('/setup', apiLimiter);
+app.use('/e2ee', e2eeLimiter);
 
 // Строгий лимит на upload endpoints (messages + bank statement)
 app.use('/messages/upload-image', uploadLimiter);

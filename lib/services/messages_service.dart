@@ -288,7 +288,7 @@ class MessagesService {
           }
         }
         if (encrypted == null) {
-          throw Exception('E2EE ключ для чата пока недоступен. Откройте чат у второго участника и повторите отправку.');
+          throw Exception('E2EE ключ для чата пока недоступен (возможен лимит запросов 429). Подождите 10-20 секунд и повторите отправку.');
         }
         contentToSend = jsonEncode(encrypted);
       }
