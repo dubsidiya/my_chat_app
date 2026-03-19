@@ -6,6 +6,7 @@ import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
+import 'e2ee_service.dart';
 
 // Результат пагинации сообщений
 class MessagesPaginationResult {
@@ -25,6 +26,27 @@ class MessagesPaginationResult {
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
+  static Future<List<Message>> _decryptMessages(String chatId, List<Message> messages) async {
+    final result = <Message>[];
+    for (final m in messages) {
+      if (E2eeService.isEncrypted(m.content)) {
+        final plain = await E2eeService.decryptMessage(chatId, m.content);
+        result.add(Message(
+          id: m.id, chatId: m.chatId, userId: m.userId, content: plain,
+          imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
+          fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
+          messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
+          createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
+          isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
+          replyToMessage: m.replyToMessage, isPinned: m.isPinned, reactions: m.reactions,
+          isForwarded: m.isForwarded, originalChatName: m.originalChatName,
+        ));
+      } else {
+        result.add(m);
+      }
+    }
+    return result;
+  }
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -117,17 +139,16 @@ class MessagesService {
                 }
               }
             }
-            
+            final decrypted = await _decryptMessages(chatId, messages);
             if (useCache && isOnline) {
               Future.delayed(const Duration(milliseconds: 100), () {
-                LocalMessagesService.saveMessages(chatId, messages);
+                LocalMessagesService.saveMessages(chatId, decrypted);
               });
             }
-            
             return MessagesPaginationResult(
-              messages: messages,
+              messages: decrypted,
               hasMore: paginationData['hasMore'] ?? false,
-              totalCount: paginationData['totalCount'] ?? messages.length,
+              totalCount: paginationData['totalCount'] ?? decrypted.length,
               oldestMessageId: paginationData['oldestMessageId']?.toString(),
             );
           } else if (decodedData is List<dynamic>) {
@@ -144,18 +165,16 @@ class MessagesService {
                 }
               }
             }
-            
-                   // ✅ Сохраняем сообщения в кэш
-                   if (useCache && isOnline) {
-                     await LocalMessagesService.saveMessages(chatId, messages);
-                   }
-                   
-                   return MessagesPaginationResult(
-                     messages: messages,
-                     hasMore: false,
-                     totalCount: messages.length,
-                     oldestMessageId: null,
-                   );
+            final decrypted = await _decryptMessages(chatId, messages);
+            if (useCache && isOnline) {
+              await LocalMessagesService.saveMessages(chatId, decrypted);
+            }
+            return MessagesPaginationResult(
+              messages: decrypted,
+              hasMore: false,
+              totalCount: decrypted.length,
+              oldestMessageId: null,
+            );
                  } else {
             // Неожиданный формат
             return MessagesPaginationResult(
@@ -244,17 +263,17 @@ class MessagesService {
     
     final headers = await _getAuthHeaders();
 
-    // E2EE: шифрование отключено до реализации UI управления ключами.
-    // Для включения: раскомментировать блок ниже и убедиться что chat key создан.
-    // String contentToSend = content;
-    // try {
-    //   final encrypted = await E2eeService.encryptMessage(chatId, content);
-    //   if (encrypted != null) contentToSend = jsonEncode(encrypted);
-    // } catch (_) {}
+    String contentToSend = content;
+    try {
+      final encrypted = await E2eeService.encryptMessage(chatId, content);
+      if (encrypted != null) {
+        contentToSend = jsonEncode(encrypted);
+      }
+    } catch (_) {}
 
     final body = jsonEncode({
       'chat_id': chatId,
-      'content': content,
+      'content': contentToSend,
       'image_url': imageUrl,
       'original_image_url': originalImageUrl,
       'file_url': fileUrl,
@@ -289,8 +308,20 @@ class MessagesService {
     try {
       final responseData = jsonDecode(response.body);
       
-      final sentMessage = Message.fromJson(responseData);
-      
+      var sentMessage = Message.fromJson(responseData);
+      if (E2eeService.isEncrypted(sentMessage.content)) {
+        final plain = await E2eeService.decryptMessage(chatId, sentMessage.content);
+        sentMessage = Message(
+          id: sentMessage.id, chatId: sentMessage.chatId, userId: sentMessage.userId, content: plain,
+          imageUrl: sentMessage.imageUrl, originalImageUrl: sentMessage.originalImageUrl,
+          fileUrl: sentMessage.fileUrl, fileName: sentMessage.fileName, fileSize: sentMessage.fileSize, fileMime: sentMessage.fileMime,
+          messageType: sentMessage.messageType, senderEmail: sentMessage.senderEmail, senderAvatarUrl: sentMessage.senderAvatarUrl,
+          createdAt: sentMessage.createdAt, deliveredAt: sentMessage.deliveredAt, editedAt: sentMessage.editedAt,
+          isRead: sentMessage.isRead, readAt: sentMessage.readAt, replyToMessageId: sentMessage.replyToMessageId,
+          replyToMessage: sentMessage.replyToMessage, isPinned: sentMessage.isPinned, reactions: sentMessage.reactions,
+          isForwarded: sentMessage.isForwarded, originalChatName: sentMessage.originalChatName,
+        );
+      }
       await LocalMessagesService.addMessage(chatId, sentMessage);
       return sentMessage;
     } catch (e, stackTrace) {
@@ -615,7 +646,8 @@ class MessagesService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       final messagesData = data['messages'] as List<dynamic>;
-      return messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      return _decryptMessages(chatId, list);
     } else {
       throw Exception('Ошибка при получении закрепленных сообщений');
     }
@@ -652,7 +684,8 @@ class MessagesService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final messagesData = (data['messages'] as List<dynamic>? ?? []);
-      return messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      return _decryptMessages(chatId, list);
     }
     throw Exception('Ошибка загрузки контекста: ${response.statusCode}');
   }

@@ -5,6 +5,7 @@ import '../models/chat.dart';
 import '../models/chat_folder.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
+import 'e2ee_service.dart';
 
 class ChatsService {
   final String baseUrl = ApiConfig.baseUrl;
@@ -93,15 +94,16 @@ class ChatsService {
             throw Exception('Неверный формат ответа сервера: ожидается объект');
           }
           final chat = Chat.fromJson(responseData);
-          // E2EE: автоматическое создание ключей отключено до реализации UI.
-          // При включении E2EE — раскомментировать:
-          // final alreadyExists = responseData['already_exists'] == true;
-          // if (!alreadyExists) {
-          //   final pubKeys = await E2eeService.fetchPublicKeys(userIds);
-          //   final members = userIds.map((uid) =>
-          //     <String, dynamic>{'id': uid, 'publicKey': pubKeys[uid] ?? ''}).toList();
-          //   await E2eeService.createChatKey(chat.id, members);
-          // }
+          final alreadyExists = responseData['already_exists'] == true;
+          if (!alreadyExists) {
+            try {
+              final pubKeys = await E2eeService.fetchPublicKeys(userIds);
+              final List<Map<String, dynamic>> members = userIds.map((uid) {
+                return <String, dynamic>{'id': uid, 'publicKey': pubKeys[uid] ?? ''};
+              }).toList();
+              await E2eeService.createChatKey(chat.id, members);
+            } catch (_) {}
+          }
           return chat;
         } catch (e) {
           throw Exception('Ошибка парсинга созданного чата: $e');
