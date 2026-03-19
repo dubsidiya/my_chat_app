@@ -17,6 +17,7 @@ import bankStatementRoutes from './routes/bankStatement.js';
 import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
 import moderationRoutes from './routes/moderation.js';
+import e2eeRoutes from './routes/e2ee.js';
 import { setupWebSocket } from './websocket/websocket.js';
 import pool from './db.js';
 
@@ -369,6 +370,7 @@ app.use('/bank-statement', bankStatementRoutes);
 app.use('/setup', setupRoutes);
 app.use('/admin', adminRoutes);
 app.use('/moderation', moderationRoutes);
+app.use('/e2ee', e2eeRoutes);
 
 // 404 — не раскрываем структуру API
 app.use((req, res) => {

@@ -445,13 +445,20 @@ export const applyPayments = async (req, res) => {
           continue;
         }
 
-        // Создаем транзакцию пополнения (из банковской выписки)
         const createdAt = date ? new Date(date) : new Date();
         if (Number.isNaN(createdAt.getTime())) {
-          errors.push({
-            payment,
-            error: 'Некорректная дата платежа'
-          });
+          errors.push({ payment, error: 'Некорректная дата платежа' });
+          continue;
+        }
+        const now = new Date();
+        const oneYearAgo = new Date(now);
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        if (createdAt > now) {
+          errors.push({ payment, error: 'Дата платежа не может быть в будущем' });
+          continue;
+        }
+        if (createdAt < oneYearAgo) {
+          errors.push({ payment, error: 'Дата платежа не может быть старше 1 года' });
           continue;
         }
         const amountNum = typeof amount === 'string' ? parseFloat(amount) : amount;

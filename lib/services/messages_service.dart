@@ -5,7 +5,8 @@ import '../models/message.dart';
 import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
-import 'local_messages_service.dart'; // ✅ Импорт сервиса кэширования
+import 'local_messages_service.dart';
+import 'e2ee_service.dart';
 
 // Результат пагинации сообщений
 class MessagesPaginationResult {
@@ -24,6 +25,29 @@ class MessagesPaginationResult {
 
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
+
+  /// Decrypt E2EE content in a list of messages (in-place replacement via copyWith).
+  static Future<List<Message>> _decryptMessages(String chatId, List<Message> messages) async {
+    final result = <Message>[];
+    for (final m in messages) {
+      if (E2eeService.isEncrypted(m.content)) {
+        final plain = await E2eeService.decryptMessage(chatId, m.content);
+        result.add(Message(
+          id: m.id, chatId: m.chatId, userId: m.userId, content: plain,
+          imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
+          fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
+          messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
+          createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
+          isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
+          replyToMessage: m.replyToMessage, isPinned: m.isPinned, reactions: m.reactions,
+          isForwarded: m.isForwarded, originalChatName: m.originalChatName,
+        ));
+      } else {
+        result.add(m);
+      }
+    }
+    return result;
+  }
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -117,18 +141,18 @@ class MessagesService {
               }
             }
             
-            // ✅ Сохраняем сообщения в кэш только если useCache = true
+            final decryptedMessages = await _decryptMessages(chatId, messages);
+
             if (useCache && isOnline) {
-              // Используем задержку, чтобы не триггерить перезагрузку UI
               Future.delayed(const Duration(milliseconds: 100), () {
-                LocalMessagesService.saveMessages(chatId, messages);
+                LocalMessagesService.saveMessages(chatId, decryptedMessages);
               });
             }
             
             return MessagesPaginationResult(
-              messages: messages,
+              messages: decryptedMessages,
               hasMore: paginationData['hasMore'] ?? false,
-              totalCount: paginationData['totalCount'] ?? messages.length,
+              totalCount: paginationData['totalCount'] ?? decryptedMessages.length,
               oldestMessageId: paginationData['oldestMessageId']?.toString(),
             );
           } else if (decodedData is List<dynamic>) {
@@ -244,9 +268,18 @@ class MessagesService {
     }
     
     final headers = await _getAuthHeaders();
+
+    String contentToSend = content;
+    try {
+      final encrypted = await E2eeService.encryptMessage(chatId, content);
+      if (encrypted != null) {
+        contentToSend = jsonEncode(encrypted);
+      }
+    } catch (_) {}
+
     final body = jsonEncode({
       'chat_id': chatId,
-      'content': content,
+      'content': contentToSend,
       'image_url': imageUrl,
       'original_image_url': originalImageUrl,
       'file_url': fileUrl,

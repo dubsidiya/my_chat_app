@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../config/api_config.dart';
 import 'storage_service.dart';
+import 'e2ee_service.dart';
 
 class AuthService {
   final String baseUrl = ApiConfig.baseUrl;
@@ -40,6 +41,7 @@ class AuthService {
           );
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
         }
+        try { await E2eeService.ensureKeyPair(); } catch (_) {}
         return data;
       } else if (response.statusCode == 500) {
         // Пробуем распарсить сообщение об ошибке
@@ -90,6 +92,7 @@ class AuthService {
           );
           await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
         }
+        try { await E2eeService.ensureKeyPair(); } catch (_) {}
         return true;
       } else if (response.statusCode == 400) {
         // Пробуем распарсить сообщение об ошибке

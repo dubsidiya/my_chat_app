@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import pool from '../db.js';
 import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 
@@ -99,11 +100,11 @@ const isOwner = async (chatId, userId) => {
 };
 
 const generateInviteCode = () => {
-  // 22 chars url-safe-ish
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = crypto.randomBytes(22);
   let s = '';
   for (let i = 0; i < 22; i++) {
-    s += alphabet[Math.floor(Math.random() * alphabet.length)];
+    s += alphabet[bytes[i] % alphabet.length];
   }
   return s;
 };
@@ -421,8 +422,16 @@ export const createChat = async (req, res) => {
       return res.status(400).json({ message: `Максимум ${MAX_USER_IDS} участников за раз` });
     }
 
-    // Создатель чата - текущий пользователь из токена
     const creatorId = req.user.userId;
+
+    const MAX_CHATS_PER_USER = 200;
+    const chatCount = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM chat_users WHERE user_id = $1',
+      [creatorId]
+    );
+    if ((chatCount.rows[0]?.c ?? 0) >= MAX_CHATS_PER_USER) {
+      return res.status(400).json({ message: `Максимум ${MAX_CHATS_PER_USER} чатов на пользователя` });
+    }
     
     // Добавляем создателя в список участников, если его там нет
     if (!userIds.includes(creatorId.toString())) {
@@ -543,24 +552,19 @@ export const deleteChat = async (req, res) => {
       });
     }
 
-    // Удаляем все сообщения чата (если CASCADE не работает)
+    const client = await pool.connect();
     try {
-      await pool.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
-    } catch (msgError) {
-      console.error('Ошибка удаления сообщений:', msgError);
-      // Продолжаем, даже если не удалось удалить сообщения
+      await client.query('BEGIN');
+      await client.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+      await client.query('DELETE FROM chat_users WHERE chat_id = $1', [chatId]);
+      await client.query('DELETE FROM chats WHERE id = $1', [chatId]);
+      await client.query('COMMIT');
+    } catch (txError) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw txError;
+    } finally {
+      client.release();
     }
-
-    // Удаляем всех участников чата (если CASCADE не работает)
-    try {
-      await pool.query('DELETE FROM chat_users WHERE chat_id = $1', [chatId]);
-    } catch (usersError) {
-      console.error('Ошибка удаления участников:', usersError);
-      // Продолжаем, даже если не удалось удалить участников
-    }
-
-    // Удаляем чат
-    await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
 
     res.status(200).json({ message: "Чат успешно удален" });
 
@@ -1056,6 +1060,7 @@ export const createInvite = async (req, res) => {
 };
 
 // ✅ Вступить в чат по коду (member)
+// Атомарная проверка и инкремент use_count через conditional UPDATE — защита от race condition.
 export const joinByInvite = async (req, res) => {
   try {
     const requesterId = req.user.userId;
@@ -1090,23 +1095,32 @@ export const joinByInvite = async (req, res) => {
 
     const chatId = invite.chat_id;
 
-    // Только групповые чаты (инвайты для 1-на-1 не поддерживаем)
     const groupCheck = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
     if (!groupCheck.rows[0]?.is_group) {
       return res.status(400).json({ message: 'Инвайт ведёт в чат 1-на-1 (это запрещено)' });
     }
 
-    // если уже участник — просто вернуть чат
     const already = await ensureChatMember(chatId, requesterId);
     if (!already) {
+      const claimed = await pool.query(
+        `UPDATE chat_invites
+         SET use_count = use_count + 1
+         WHERE id = $1 AND revoked = false
+           AND (max_uses IS NULL OR use_count < max_uses)
+           AND (expires_at IS NULL OR expires_at > NOW())
+         RETURNING id`,
+        [invite.id]
+      );
+      if (claimed.rows.length === 0) {
+        return res.status(400).json({ message: 'Инвайт больше недоступен' });
+      }
+
       await pool.query(
         `INSERT INTO chat_users (chat_id, user_id, role)
          VALUES ($1, $2, 'member')
          ON CONFLICT DO NOTHING`,
         [chatId, requesterId]
       );
-      await pool.query('UPDATE chat_invites SET use_count = use_count + 1 WHERE id = $1', [invite.id]);
-      // is_group уже true (см. проверку выше)
     }
 
     const chatRes = await pool.query('SELECT id, name, is_group FROM chats WHERE id = $1', [chatId]);

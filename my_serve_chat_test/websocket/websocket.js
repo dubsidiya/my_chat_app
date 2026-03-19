@@ -1,8 +1,32 @@
 import { WebSocketServer } from 'ws';
 import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
+import { sanitizeMessageContent } from '../utils/sanitize.js';
 
 const clients = new Map(); // userId -> ws
+
+class WsRateLimiter {
+  constructor(maxPerWindow, windowMs) {
+    this._max = maxPerWindow;
+    this._windowMs = windowMs;
+    this._counts = new Map();
+  }
+  allow(key) {
+    const now = Date.now();
+    let entry = this._counts.get(key);
+    if (!entry || now - entry.start > this._windowMs) {
+      entry = { start: now, count: 0 };
+    }
+    entry.count++;
+    this._counts.set(key, entry);
+    return entry.count <= this._max;
+  }
+}
+
+const sendLimiter = new WsRateLimiter(30, 10_000);
+const typingLimiter = new WsRateLimiter(20, 10_000);
+const markReadLimiter = new WsRateLimiter(60, 10_000);
+const subscribeLimiter = new WsRateLimiter(30, 10_000);
 
 async function ensureChatMember(chatId, userId) {
   const chatIdNum = parseInt(chatId, 10);
@@ -99,6 +123,7 @@ export function setupWebSocket(server) {
 
     const userId = decoded.userId.toString();
     const userEmail = decoded.email;
+    const tokenVersion = decoded.tv ?? 0;
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
@@ -106,14 +131,24 @@ export function setupWebSocket(server) {
     clients.set(userId, ws);
     ws.userId = userId;
     ws.userEmail = userEmail;
-    ws.subscriptions = new Set(); // chatIds (string)
+    ws.subscriptions = new Set();
+
+    const recheckInterval = setInterval(async () => {
+      try {
+        const r = await pool.query('SELECT token_version FROM users WHERE id = $1', [decoded.userId]);
+        if (r.rows.length === 0 || (r.rows[0].token_version ?? 0) !== tokenVersion) {
+          ws.close(1008, 'Сессия истекла');
+          clearInterval(recheckInterval);
+        }
+      } catch (_) {}
+    }, 5 * 60 * 1000);
 
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
         
-        // ✅ Подписка на presence/typing конкретного чата
         if (data.type === 'subscribe') {
+          if (!subscribeLimiter.allow(userId)) return;
           const chatId = data.chat_id || data.chatId;
           if (!chatId) return;
 
@@ -161,8 +196,8 @@ export function setupWebSocket(server) {
           return;
         }
 
-        // ✅ Индикатор "печатает"
         if (data.type === 'typing') {
+          if (!typingLimiter.allow(userId)) return;
           const chatId = data.chat_id || data.chatId;
           const isTyping = data.is_typing === true;
           if (!chatId) return;
@@ -183,8 +218,8 @@ export function setupWebSocket(server) {
           return;
         }
 
-        // ✅ Обработка события прочтения сообщения
         if (data.type === 'mark_read') {
+          if (!markReadLimiter.allow(userId)) return;
           const messageId = data.message_id;
           const chatId = data.chat_id;
           
@@ -233,16 +268,15 @@ export function setupWebSocket(server) {
         }
         
         if (data.type === 'send') {
-          // Используем userId из токена (безопасно)
+          if (!sendLimiter.allow(userId)) return;
           const chatIdFinal = data.chat_id || data.chatId;
           const content = data.content;
 
           if (!chatIdFinal || !content) {
             return;
           }
-          // Лимит длины текста сообщения (защита от DoS)
-          const contentStr = String(content);
-          if (contentStr.length > 65535) {
+          const contentStr = sanitizeMessageContent(String(content));
+          if (contentStr.length > 65535 || contentStr.length === 0) {
             return;
           }
 
@@ -299,7 +333,7 @@ export function setupWebSocket(server) {
     });
 
     ws.on('close', () => {
-      // Уведомляем чаты, на которые был подписан клиент, что он оффлайн
+      clearInterval(recheckInterval);
       try {
         const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
         subs.forEach((chatIdStr) => {

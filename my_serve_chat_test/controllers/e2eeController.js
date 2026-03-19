@@ -1,0 +1,141 @@
+import pool from '../db.js';
+import { parsePositiveInt } from '../utils/sanitize.js';
+
+const MAX_KEY_LENGTH = 256;
+
+export const uploadPublicKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { publicKey } = req.body || {};
+    if (!publicKey || typeof publicKey !== 'string' || publicKey.length > MAX_KEY_LENGTH) {
+      return res.status(400).json({ message: 'Некорректный publicKey' });
+    }
+    await pool.query(
+      'UPDATE users SET public_key = $1 WHERE id = $2',
+      [publicKey.trim(), userId]
+    );
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка uploadPublicKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getPublicKey = async (req, res) => {
+  try {
+    const targetId = parsePositiveInt(req.params?.userId);
+    if (!targetId) return res.status(400).json({ message: 'Некорректный userId' });
+
+    const row = await pool.query(
+      'SELECT public_key FROM users WHERE id = $1',
+      [targetId]
+    );
+    if (row.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+    return res.status(200).json({ publicKey: row.rows[0].public_key ?? null });
+  } catch (error) {
+    console.error('Ошибка getPublicKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getPublicKeys = async (req, res) => {
+  try {
+    const { userIds } = req.body || {};
+    if (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 100) {
+      return res.status(400).json({ message: 'userIds — массив от 1 до 100 элементов' });
+    }
+    const ids = userIds.map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    if (ids.length === 0) return res.status(400).json({ message: 'Некорректные userIds' });
+
+    const rows = await pool.query(
+      'SELECT id, public_key FROM users WHERE id = ANY($1)',
+      [ids]
+    );
+    const map = {};
+    rows.rows.forEach((r) => { map[r.id] = r.public_key ?? null; });
+    return res.status(200).json({ keys: map });
+  } catch (error) {
+    console.error('Ошибка getPublicKeys:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const storeChatKeys = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { chatId, keys } = req.body || {};
+    const chatIdNum = parsePositiveInt(chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    if (!Array.isArray(keys) || keys.length === 0 || keys.length > 100) {
+      return res.status(400).json({ message: 'keys — массив от 1 до 100 элементов' });
+    }
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const chatMembers = await pool.query(
+      'SELECT user_id FROM chat_users WHERE chat_id = $1',
+      [chatIdNum]
+    );
+    const memberIdSet = new Set(chatMembers.rows.map((r) => r.user_id));
+
+    for (const k of keys) {
+      if (!k.userId || !k.encryptedKey || !k.senderPublicKey || !k.nonce) continue;
+      const tgtId = parsePositiveInt(k.userId);
+      if (!tgtId || !memberIdSet.has(tgtId)) continue;
+      if (String(k.encryptedKey).length > 1024 || String(k.senderPublicKey).length > MAX_KEY_LENGTH || String(k.nonce).length > 128) continue;
+
+      await pool.query(
+        `INSERT INTO chat_keys (chat_id, user_id, encrypted_key, sender_public_key, nonce, updated_at)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+         ON CONFLICT (chat_id, user_id) DO NOTHING`,
+        [chatIdNum, tgtId, k.encryptedKey, k.senderPublicKey, k.nonce]
+      );
+    }
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка storeChatKeys:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const row = await pool.query(
+      'SELECT encrypted_key, sender_public_key, nonce FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (row.rows.length === 0) {
+      return res.status(404).json({ message: 'Ключ не найден' });
+    }
+    const r = row.rows[0];
+    return res.status(200).json({
+      encryptedKey: r.encrypted_key,
+      senderPublicKey: r.sender_public_key,
+      nonce: r.nonce,
+    });
+  } catch (error) {
+    console.error('Ошибка getChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};

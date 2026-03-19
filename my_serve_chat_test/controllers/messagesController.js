@@ -725,7 +725,6 @@ export const sendMessage = async (req, res) => {
     return res.status(400).json({ message: 'Нельзя отправлять изображение и файл в одном сообщении' });
   }
 
-  // Лимит длины URL и имени файла (защита от DoS и переполнения БД)
   const MAX_URL_LENGTH = 2048;
   const MAX_FILE_NAME_LENGTH = 255;
   if (image_url && String(image_url).length > MAX_URL_LENGTH) {
@@ -739,6 +738,26 @@ export const sendMessage = async (req, res) => {
   }
   if (file_name && String(file_name).length > MAX_FILE_NAME_LENGTH) {
     return res.status(400).json({ message: 'Имя файла не более 255 символов' });
+  }
+
+  const YANDEX_BUCKET = process.env.YANDEX_BUCKET_NAME;
+  const allowedUrlPrefixes = YANDEX_BUCKET
+    ? [
+        `https://${YANDEX_BUCKET}.storage.yandexcloud.net/`,
+        `https://storage.yandexcloud.net/${YANDEX_BUCKET}/`,
+      ]
+    : [];
+  if (allowedUrlPrefixes.length > 0) {
+    const checkUrl = (url, label) => {
+      if (!url) return null;
+      const s = String(url);
+      if (!allowedUrlPrefixes.some((p) => s.startsWith(p))) {
+        return res.status(400).json({ message: `${label}: допускаются только ссылки из хранилища приложения` });
+      }
+      return null;
+    };
+    const bad = checkUrl(image_url, 'image_url') || checkUrl(original_image_url, 'original_image_url') || checkUrl(file_url, 'file_url');
+    if (bad) return;
   }
   
   // ✅ Если пересылка сообщений (лимит числа чатов — защита от DoS)
@@ -1443,30 +1462,26 @@ export const markMessagesAsRead = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
     
-    // Получаем все непрочитанные сообщения в чате
+    const BATCH_SIZE = 500;
     const unreadMessages = await pool.query(`
       SELECT id, user_id 
       FROM messages 
       WHERE chat_id = $1 
-      AND id NOT IN (
-        SELECT message_id FROM message_reads WHERE user_id = $2
+      AND user_id <> $2
+      AND NOT EXISTS (
+        SELECT 1 FROM message_reads mr WHERE mr.message_id = messages.id AND mr.user_id = $2
       )
-    `, [chatId, userId]);
+      LIMIT $3
+    `, [chatId, userId, BATCH_SIZE]);
     
-    // Отмечаем все сообщения как прочитанные
     if (unreadMessages.rows.length > 0) {
-      const values = unreadMessages.rows.map((_, index) => 
-        `($${index * 2 + 1}, $${index * 2 + 2}, CURRENT_TIMESTAMP)`
-      ).join(', ');
-      
-      const params = unreadMessages.rows.flatMap(row => [row.id, userId]);
-      
+      const msgIds = unreadMessages.rows.map((r) => r.id);
       await pool.query(`
         INSERT INTO message_reads (message_id, user_id, read_at)
-        VALUES ${values}
-        ON CONFLICT (message_id, user_id) 
+        SELECT unnest($1::int[]), $2, CURRENT_TIMESTAMP
+        ON CONFLICT (message_id, user_id)
         DO UPDATE SET read_at = CURRENT_TIMESTAMP
-      `, params);
+      `, [msgIds, userId]);
       
       // Отправляем события через WebSocket всем отправителям
       const clients = getWebSocketClients();
@@ -1604,13 +1619,12 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
   }
 };
 
-// ✅ Закрепить сообщение
+// ✅ Закрепить сообщение (в группах — только owner/admin)
 export const pinMessage = async (req, res) => {
   try {
     const messageId = req.params.messageId;
     const userId = req.user.userId;
     
-    // Проверяем сообщение
     const messageCheck = await pool.query(
       'SELECT chat_id FROM messages WHERE id = $1',
       [messageId]
@@ -1622,14 +1636,21 @@ export const pinMessage = async (req, res) => {
     
     const chatId = messageCheck.rows[0].chat_id;
     
-    // Проверяем права (только участник чата может закрепить)
     const memberCheck = await pool.query(
-      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      'SELECT cu.role, c.is_group, c.created_by FROM chat_users cu JOIN chats c ON c.id = cu.chat_id WHERE cu.chat_id = $1 AND cu.user_id = $2',
       [chatId, userId]
     );
     
     if (memberCheck.rows.length === 0) {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const { role, is_group, created_by } = memberCheck.rows[0];
+    if (is_group) {
+      const isOwnerOrAdmin = role === 'owner' || role === 'admin' || (created_by && created_by.toString() === userId.toString());
+      if (!isOwnerOrAdmin) {
+        return res.status(403).json({ message: 'Закреплять сообщения может только owner/admin' });
+      }
     }
     
     // Проверяем лимит закрепленных сообщений (максимум 5)
@@ -1656,13 +1677,12 @@ export const pinMessage = async (req, res) => {
   }
 };
 
-// ✅ Открепить сообщение
+// ✅ Открепить сообщение (в группах — только owner/admin)
 export const unpinMessage = async (req, res) => {
   try {
     const messageId = req.params.messageId;
     const userId = req.user.userId;
     
-    // Проверяем сообщение
     const messageCheck = await pool.query(
       'SELECT chat_id FROM messages WHERE id = $1',
       [messageId]
@@ -1674,13 +1694,20 @@ export const unpinMessage = async (req, res) => {
     
     const chatId = messageCheck.rows[0].chat_id;
 
-    // Доступ только для участников чата
     const memberCheck = await pool.query(
-      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      'SELECT cu.role, c.is_group, c.created_by FROM chat_users cu JOIN chats c ON c.id = cu.chat_id WHERE cu.chat_id = $1 AND cu.user_id = $2',
       [chatId, userId]
     );
     if (memberCheck.rows.length === 0) {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const { role, is_group, created_by } = memberCheck.rows[0];
+    if (is_group) {
+      const isOwnerOrAdmin = role === 'owner' || role === 'admin' || (created_by && created_by.toString() === userId.toString());
+      if (!isOwnerOrAdmin) {
+        return res.status(403).json({ message: 'Откреплять сообщения может только owner/admin' });
+      }
     }
     
     // Удаляем закрепление
@@ -1759,6 +1786,15 @@ export const addReaction = async (req, res) => {
     
     if (process.env.NODE_ENV === 'development') {
       console.log('✅ Параметры запроса:', { messageId, userId, reaction });
+    }
+
+    const MAX_REACTIONS_PER_USER = 20;
+    const existingCount = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM message_reactions WHERE message_id = $1 AND user_id = $2',
+      [messageId, userId]
+    );
+    if ((existingCount.rows[0]?.c ?? 0) >= MAX_REACTIONS_PER_USER) {
+      return res.status(400).json({ message: `Максимум ${MAX_REACTIONS_PER_USER} реакций на сообщение` });
     }
     
     // Добавляем или обновляем реакцию

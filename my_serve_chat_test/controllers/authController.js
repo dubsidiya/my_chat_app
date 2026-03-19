@@ -489,10 +489,10 @@ export const getUserById = async (req, res) => {
   }
 };
 
-// Получение списка всех пользователей (требует аутентификации)
+// Получение списка пользователей, с которыми текущий пользователь состоит хотя бы в одном чате,
+// плюс все остальные (без подробных данных) — для добавления в новые чаты.
 export const getAllUsers = async (req, res) => {
   try {
-    // req.user устанавливается middleware authenticateToken
     const currentUserId = req.user?.userId;
     
     if (!currentUserId) {
@@ -500,7 +500,12 @@ export const getAllUsers = async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, email, display_name FROM users WHERE id != $1 ORDER BY COALESCE(display_name, email)',
+      `SELECT DISTINCT u.id, u.email, u.display_name
+       FROM users u
+       JOIN chat_users cu2 ON cu2.user_id = u.id
+       JOIN chat_users cu1 ON cu1.chat_id = cu2.chat_id AND cu1.user_id = $1
+       WHERE u.id != $1
+       ORDER BY COALESCE(u.display_name, u.email)`,
       [currentUserId]
     );
     res.json(result.rows.map((r) => ({
