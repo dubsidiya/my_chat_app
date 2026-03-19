@@ -314,11 +314,23 @@ class MessagesService {
     try {
       final responseData = jsonDecode(response.body);
       
-      final sentMessage = Message.fromJson(responseData);
+      var sentMessage = Message.fromJson(responseData);
+
+      if (E2eeService.isEncrypted(sentMessage.content)) {
+        final plain = await E2eeService.decryptMessage(chatId, sentMessage.content);
+        sentMessage = Message(
+          id: sentMessage.id, chatId: sentMessage.chatId, userId: sentMessage.userId, content: plain,
+          imageUrl: sentMessage.imageUrl, originalImageUrl: sentMessage.originalImageUrl,
+          fileUrl: sentMessage.fileUrl, fileName: sentMessage.fileName, fileSize: sentMessage.fileSize, fileMime: sentMessage.fileMime,
+          messageType: sentMessage.messageType, senderEmail: sentMessage.senderEmail, senderAvatarUrl: sentMessage.senderAvatarUrl,
+          createdAt: sentMessage.createdAt, deliveredAt: sentMessage.deliveredAt, editedAt: sentMessage.editedAt,
+          isRead: sentMessage.isRead, readAt: sentMessage.readAt, replyToMessageId: sentMessage.replyToMessageId,
+          replyToMessage: sentMessage.replyToMessage, isPinned: sentMessage.isPinned, reactions: sentMessage.reactions,
+          isForwarded: sentMessage.isForwarded, originalChatName: sentMessage.originalChatName,
+        );
+      }
       
       await LocalMessagesService.addMessage(chatId, sentMessage);
-      
-      // ✅ Возвращаем отправленное сообщение для возможного обновления UI
       return sentMessage;
     } catch (e, stackTrace) {
       if (kDebugMode) {
