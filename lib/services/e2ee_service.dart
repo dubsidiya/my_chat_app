@@ -8,7 +8,8 @@ import 'storage_service.dart';
 
 /// End-to-end encryption service.
 /// Uses X25519 for key agreement + AES-256-GCM for message encryption.
-/// Private keys never leave the device.
+/// Private key encrypted with user's password and backed up on server (PBKDF2 + AES-GCM).
+/// On new device: download backup → decrypt with password → restore key pair.
 class E2eeService {
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
   static const String _privateKeyKey = 'e2ee_private_key';
@@ -18,21 +19,44 @@ class E2eeService {
   static final _x25519 = X25519();
   static final _aesGcm = AesGcm.with256bits();
   static final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+  static final _pbkdf2 = Pbkdf2(
+    macAlgorithm: Hmac.sha256(),
+    iterations: 100000,
+    bits: 256,
+  );
 
-  /// Generate and persist X25519 key pair on device. Upload public key to server.
-  /// Call once after registration/login if no key pair exists.
-  static Future<void> ensureKeyPair() async {
+  /// Check if local key pair exists.
+  static Future<bool> hasLocalKeyPair() async {
+    final existing = await _secure.read(key: _privateKeyKey);
+    return existing != null && existing.isNotEmpty;
+  }
+
+  /// Generate key pair, persist locally, upload public key + encrypted backup to server.
+  /// [password] is the user's login password — used to encrypt the private key for backup.
+  static Future<void> ensureKeyPair({String? password}) async {
     final existing = await _secure.read(key: _privateKeyKey);
     if (existing != null && existing.isNotEmpty) return;
+
+    if (password != null && password.isNotEmpty) {
+      final restored = await _tryRestoreFromBackup(password);
+      if (restored) return;
+    }
 
     final keyPair = await _x25519.newKeyPair();
     final privateBytes = await keyPair.extractPrivateKeyBytes();
     final publicKey = await keyPair.extractPublicKey();
 
-    await _secure.write(key: _privateKeyKey, value: base64Encode(privateBytes));
-    await _secure.write(key: _publicKeyKey, value: base64Encode(publicKey.bytes));
+    final privB64 = base64Encode(privateBytes);
+    final pubB64 = base64Encode(publicKey.bytes);
 
-    await _uploadPublicKey(base64Encode(publicKey.bytes));
+    await _secure.write(key: _privateKeyKey, value: privB64);
+    await _secure.write(key: _publicKeyKey, value: pubB64);
+
+    await _uploadPublicKey(pubB64);
+
+    if (password != null && password.isNotEmpty) {
+      await _uploadKeyBackup(privB64, pubB64, password);
+    }
   }
 
   static Future<SimpleKeyPairData> _getKeyPair() async {
@@ -263,5 +287,105 @@ class E2eeService {
   static Future<void> clearAll() async {
     await _secure.delete(key: _privateKeyKey);
     await _secure.delete(key: _publicKeyKey);
+  }
+
+  // ─── Key backup (password-based) ───
+
+  /// Encrypt private key with password via PBKDF2 + AES-GCM and upload to server.
+  static Future<void> _uploadKeyBackup(String privB64, String pubB64, String password) async {
+    try {
+      final salt = _aesGcm.newNonce(); // 12 bytes of random salt
+      final derivedKey = await _pbkdf2.deriveKey(
+        secretKey: SecretKey(utf8.encode(password)),
+        nonce: salt,
+      );
+
+      final nonce = _aesGcm.newNonce();
+      final encrypted = await _aesGcm.encrypt(
+        utf8.encode(privB64),
+        secretKey: derivedKey,
+        nonce: nonce,
+      );
+
+      final encB64 = base64Encode(encrypted.cipherText + encrypted.mac.bytes);
+      final saltB64 = base64Encode(salt);
+      final nonceB64 = base64Encode(nonce);
+
+      final token = await StorageService.getToken();
+      if (token == null) return;
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/key-backup'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'encryptedPrivateKey': encB64,
+          'salt': saltB64,
+          'nonce': nonceB64,
+          'publicKey': pubB64,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  /// Try to restore key pair from server backup using password.
+  /// Returns true if restored successfully.
+  static Future<bool> _tryRestoreFromBackup(String password) async {
+    try {
+      final token = await StorageService.getToken();
+      if (token == null) return false;
+      final resp = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/key-backup'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode != 200) return false;
+
+      final data = jsonDecode(resp.body);
+      final encB64 = data['encryptedPrivateKey'] as String?;
+      final saltB64 = data['salt'] as String?;
+      final nonceB64 = data['nonce'] as String?;
+      final pubB64 = data['publicKey'] as String?;
+      if (encB64 == null || saltB64 == null || nonceB64 == null || pubB64 == null) return false;
+
+      final salt = base64Decode(saltB64);
+      final derivedKey = await _pbkdf2.deriveKey(
+        secretKey: SecretKey(utf8.encode(password)),
+        nonce: salt,
+      );
+
+      final encBytes = base64Decode(encB64);
+      final nonce = base64Decode(nonceB64);
+      const macLen = 16;
+      final cipherText = encBytes.sublist(0, encBytes.length - macLen);
+      final mac = Mac(encBytes.sublist(encBytes.length - macLen));
+
+      final decrypted = await _aesGcm.decrypt(
+        SecretBox(cipherText, nonce: nonce, mac: mac),
+        secretKey: derivedKey,
+      );
+
+      final privB64 = utf8.decode(decrypted);
+
+      await _secure.write(key: _privateKeyKey, value: privB64);
+      await _secure.write(key: _publicKeyKey, value: pubB64);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Manually trigger backup (e.g. from settings screen).
+  static Future<bool> backupKeysWithPassword(String password) async {
+    try {
+      final privB64 = await _secure.read(key: _privateKeyKey);
+      final pubB64 = await _secure.read(key: _publicKeyKey);
+      if (privB64 == null || pubB64 == null) return false;
+      await _uploadKeyBackup(privB64, pubB64, password);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

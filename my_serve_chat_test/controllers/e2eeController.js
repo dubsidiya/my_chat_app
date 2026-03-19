@@ -2,6 +2,7 @@ import pool from '../db.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
 
 const MAX_KEY_LENGTH = 256;
+const MAX_BACKUP_LENGTH = 2048;
 
 export const uploadPublicKey = async (req, res) => {
   try {
@@ -136,6 +137,59 @@ export const getChatKey = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка getChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const storeKeyBackup = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { encryptedPrivateKey, salt, nonce, publicKey } = req.body || {};
+    if (!encryptedPrivateKey || !salt || !nonce || !publicKey) {
+      return res.status(400).json({ message: 'encryptedPrivateKey, salt, nonce, publicKey обязательны' });
+    }
+    if (String(encryptedPrivateKey).length > MAX_BACKUP_LENGTH ||
+        String(salt).length > MAX_KEY_LENGTH ||
+        String(nonce).length > MAX_KEY_LENGTH ||
+        String(publicKey).length > MAX_KEY_LENGTH) {
+      return res.status(400).json({ message: 'Слишком длинные параметры' });
+    }
+
+    await pool.query(
+      `UPDATE users
+       SET encrypted_key_backup = $1, key_backup_salt = $2, key_backup_nonce = $3, public_key = $4
+       WHERE id = $5`,
+      [encryptedPrivateKey, salt, nonce, publicKey, userId]
+    );
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка storeKeyBackup:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getKeyBackup = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const row = await pool.query(
+      'SELECT encrypted_key_backup, key_backup_salt, key_backup_nonce, public_key FROM users WHERE id = $1',
+      [userId]
+    );
+    if (row.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+    const r = row.rows[0];
+    if (!r.encrypted_key_backup) {
+      return res.status(404).json({ message: 'Бэкап ключей не найден' });
+    }
+    return res.status(200).json({
+      encryptedPrivateKey: r.encrypted_key_backup,
+      salt: r.key_backup_salt,
+      nonce: r.key_backup_nonce,
+      publicKey: r.public_key,
+    });
+  } catch (error) {
+    console.error('Ошибка getKeyBackup:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

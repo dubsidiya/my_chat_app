@@ -23,7 +23,6 @@ import '../services/local_messages_service.dart'; // ✅ Импорт серви
 import '../services/notification_feedback_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
-import '../services/e2ee_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
@@ -846,7 +845,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _setupWebSocketListener() {
     _webSocketSubscription?.cancel();
     _webSocketSubscription = WebSocketService.instance.stream.listen(
-      (event) async {
+      (event) {
         if (!mounted) return;
         try {
           final data = event is Map ? event as Map<String, dynamic> : (event is String ? jsonDecode(event) as Map<String, dynamic>? : null);
@@ -1141,20 +1140,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (chatId == currentChatId) {
             if (kDebugMode) print('Message is for current chat');
             try {
-              var message = Message.fromJson(data);
-              if (E2eeService.isEncrypted(message.content)) {
-                final plain = await E2eeService.decryptMessage(widget.chatId.toString(), message.content);
-                message = Message(
-                  id: message.id, chatId: message.chatId, userId: message.userId, content: plain,
-                  imageUrl: message.imageUrl, originalImageUrl: message.originalImageUrl,
-                  fileUrl: message.fileUrl, fileName: message.fileName, fileSize: message.fileSize, fileMime: message.fileMime,
-                  messageType: message.messageType, senderEmail: message.senderEmail, senderAvatarUrl: message.senderAvatarUrl,
-                  createdAt: message.createdAt, deliveredAt: message.deliveredAt, editedAt: message.editedAt,
-                  isRead: message.isRead, readAt: message.readAt, replyToMessageId: message.replyToMessageId,
-                  replyToMessage: message.replyToMessage, isPinned: message.isPinned, reactions: message.reactions,
-                  isForwarded: message.isForwarded, originalChatName: message.originalChatName,
-                );
-              }
+              final message = Message.fromJson(data);
               if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               
               if (mounted) {

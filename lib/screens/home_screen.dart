@@ -9,7 +9,6 @@ import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
-import '../services/e2ee_service.dart';
 import '../theme/app_colors.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
@@ -282,26 +281,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadError = null;
     });
     try {
-      final rawChats = await _chatsService.fetchChats(widget.userId);
-      final List<Chat> chats = [];
-      for (final c in rawChats) {
-        if (c.lastMessageText != null && E2eeService.isEncrypted(c.lastMessageText!)) {
-          final plain = await E2eeService.decryptMessage(c.id, c.lastMessageText!);
-          chats.add(Chat(
-            id: c.id, name: c.name, isGroup: c.isGroup,
-            folderId: c.folderId, folderName: c.folderName,
-            otherUserId: c.otherUserId, otherUserAvatarUrl: c.otherUserAvatarUrl,
-            lastMessageId: c.lastMessageId, lastMessageText: plain,
-            lastMessageType: c.lastMessageType, lastMessageImageUrl: c.lastMessageImageUrl,
-            lastMessageFileUrl: c.lastMessageFileUrl, lastMessageFileName: c.lastMessageFileName,
-            lastMessageFileSize: c.lastMessageFileSize, lastMessageFileMime: c.lastMessageFileMime,
-            lastMessageAt: c.lastMessageAt, lastSenderEmail: c.lastSenderEmail,
-            unreadCount: c.unreadCount,
-          ));
-        } else {
-          chats.add(c);
-        }
-      }
+      final chats = await _chatsService.fetchChats(widget.userId);
       final order = await StorageService.getChatOrder(widget.userId);
       if (mounted) {
         setState(() {

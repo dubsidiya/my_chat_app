@@ -6,7 +6,6 @@ import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
-import 'e2ee_service.dart';
 
 // Результат пагинации сообщений
 class MessagesPaginationResult {
@@ -26,28 +25,6 @@ class MessagesPaginationResult {
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
-  /// Decrypt E2EE content in a list of messages (in-place replacement via copyWith).
-  static Future<List<Message>> _decryptMessages(String chatId, List<Message> messages) async {
-    final result = <Message>[];
-    for (final m in messages) {
-      if (E2eeService.isEncrypted(m.content)) {
-        final plain = await E2eeService.decryptMessage(chatId, m.content);
-        result.add(Message(
-          id: m.id, chatId: m.chatId, userId: m.userId, content: plain,
-          imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
-          fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
-          messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
-          createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
-          isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
-          replyToMessage: m.replyToMessage, isPinned: m.isPinned, reactions: m.reactions,
-          isForwarded: m.isForwarded, originalChatName: m.originalChatName,
-        ));
-      } else {
-        result.add(m);
-      }
-    }
-    return result;
-  }
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -141,18 +118,16 @@ class MessagesService {
               }
             }
             
-            final decryptedMessages = await _decryptMessages(chatId, messages);
-
             if (useCache && isOnline) {
               Future.delayed(const Duration(milliseconds: 100), () {
-                LocalMessagesService.saveMessages(chatId, decryptedMessages);
+                LocalMessagesService.saveMessages(chatId, messages);
               });
             }
             
             return MessagesPaginationResult(
-              messages: decryptedMessages,
+              messages: messages,
               hasMore: paginationData['hasMore'] ?? false,
-              totalCount: paginationData['totalCount'] ?? decryptedMessages.length,
+              totalCount: paginationData['totalCount'] ?? messages.length,
               oldestMessageId: paginationData['oldestMessageId']?.toString(),
             );
           } else if (decodedData is List<dynamic>) {
@@ -269,17 +244,17 @@ class MessagesService {
     
     final headers = await _getAuthHeaders();
 
-    String contentToSend = content;
-    try {
-      final encrypted = await E2eeService.encryptMessage(chatId, content);
-      if (encrypted != null) {
-        contentToSend = jsonEncode(encrypted);
-      }
-    } catch (_) {}
+    // E2EE: шифрование отключено до реализации UI управления ключами.
+    // Для включения: раскомментировать блок ниже и убедиться что chat key создан.
+    // String contentToSend = content;
+    // try {
+    //   final encrypted = await E2eeService.encryptMessage(chatId, content);
+    //   if (encrypted != null) contentToSend = jsonEncode(encrypted);
+    // } catch (_) {}
 
     final body = jsonEncode({
       'chat_id': chatId,
-      'content': contentToSend,
+      'content': content,
       'image_url': imageUrl,
       'original_image_url': originalImageUrl,
       'file_url': fileUrl,
@@ -314,21 +289,7 @@ class MessagesService {
     try {
       final responseData = jsonDecode(response.body);
       
-      var sentMessage = Message.fromJson(responseData);
-
-      if (E2eeService.isEncrypted(sentMessage.content)) {
-        final plain = await E2eeService.decryptMessage(chatId, sentMessage.content);
-        sentMessage = Message(
-          id: sentMessage.id, chatId: sentMessage.chatId, userId: sentMessage.userId, content: plain,
-          imageUrl: sentMessage.imageUrl, originalImageUrl: sentMessage.originalImageUrl,
-          fileUrl: sentMessage.fileUrl, fileName: sentMessage.fileName, fileSize: sentMessage.fileSize, fileMime: sentMessage.fileMime,
-          messageType: sentMessage.messageType, senderEmail: sentMessage.senderEmail, senderAvatarUrl: sentMessage.senderAvatarUrl,
-          createdAt: sentMessage.createdAt, deliveredAt: sentMessage.deliveredAt, editedAt: sentMessage.editedAt,
-          isRead: sentMessage.isRead, readAt: sentMessage.readAt, replyToMessageId: sentMessage.replyToMessageId,
-          replyToMessage: sentMessage.replyToMessage, isPinned: sentMessage.isPinned, reactions: sentMessage.reactions,
-          isForwarded: sentMessage.isForwarded, originalChatName: sentMessage.originalChatName,
-        );
-      }
+      final sentMessage = Message.fromJson(responseData);
       
       await LocalMessagesService.addMessage(chatId, sentMessage);
       return sentMessage;

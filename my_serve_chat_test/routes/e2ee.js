@@ -6,6 +6,8 @@ import {
   getPublicKeys,
   storeChatKeys,
   getChatKey,
+  storeKeyBackup,
+  getKeyBackup,
 } from '../controllers/e2eeController.js';
 
 const router = express.Router();
@@ -17,5 +19,7 @@ router.get('/public-key/:userId', getPublicKey);
 router.post('/public-keys', getPublicKeys);
 router.post('/chat-keys', storeChatKeys);
 router.get('/chat-key/:chatId', getChatKey);
+router.post('/key-backup', storeKeyBackup);
+router.get('/key-backup', getKeyBackup);
 
 export default router;
