@@ -129,6 +129,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoadingMore = false;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
+  bool _isWaitingForE2eeKey = false;
   static const int _messagesPerPage = 50;
   String? _selectedImagePath;
   Uint8List? _selectedImageBytes;
@@ -1064,6 +1065,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 );
                 LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
                 final displayMessage = await MessagesService.decryptMessageForChat(currentChatId, updatedRaw);
+                if (E2eeService.isEncrypted(updatedRaw.content) && displayMessage.content == '[зашифровано]') {
+                  unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
+                }
                 if (mounted) {
                   setState(() {
                     _messages[index] = displayMessage;
@@ -1153,6 +1157,9 @@ class _ChatScreenState extends State<ChatScreen> {
               final rawMessage = Message.fromJson(data);
               LocalMessagesService.updateMessage(widget.chatId, rawMessage);
               final message = await MessagesService.decryptMessageForChat(widget.chatId.toString(), rawMessage);
+              if (E2eeService.isEncrypted(rawMessage.content) && message.content == '[зашифровано]') {
+                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
+              }
               if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               if (mounted) {
                 setState(() {
@@ -1660,10 +1667,51 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// E2EE: после requestChatKey ждём появления ключа на сервере и перерисовываем сообщения (расшифровка чужих).
   Future<void> _retryChatKeyThenReloadMessages(String chatIdStr) async {
+    if (_isWaitingForE2eeKey) return;
+    _isWaitingForE2eeKey = true;
+    _showE2eeWaitingSnack();
     final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr);
+    _isWaitingForE2eeKey = false;
     if (obtained && mounted) {
+      _hideE2eeWaitingSnack();
+      _showE2eeReadySnack();
       await _loadMessages();
+    } else if (mounted) {
+      _hideE2eeWaitingSnack();
     }
+  }
+
+  Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr) async {
+    if (_isWaitingForE2eeKey) return;
+    await E2eeService.requestChatKey(chatIdStr);
+    unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
+  }
+
+  void _showE2eeWaitingSnack() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 20),
+        content: Text('Ожидаем ключ шифрования от собеседника...'),
+      ),
+    );
+  }
+
+  void _hideE2eeWaitingSnack() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  }
+
+  void _showE2eeReadySnack() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 2),
+        content: Text('Ключ шифрования получен. Сообщения обновлены.'),
+      ),
+    );
   }
 
   Future<void> _loadMessages() async {
@@ -2995,6 +3043,11 @@ SnackBar(
     } catch (e, stackTrace) {
       if (kDebugMode) print('❌ Error sending message: $e');
       if (kDebugMode) print('❌ Stack trace: $stackTrace');
+      final errorText = e.toString();
+      final isE2eeKeyError = errorText.contains('E2EE ключ для чата пока недоступен');
+      if (isE2eeKeyError) {
+        unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
+      }
       
       // ✅ Удаляем временное сообщение при ошибке
       if (mounted) {
@@ -3012,7 +3065,11 @@ SnackBar(
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка отправки сообщения: ${networkErrorMessage(e)}'),
+            content: Text(
+              isE2eeKeyError
+                  ? 'Ожидаем ключ шифрования. Попробуйте отправить снова через пару секунд.'
+                  : 'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
+            ),
           ),
         );
       }

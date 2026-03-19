@@ -278,11 +278,24 @@ class MessagesService {
 
     String contentToSend = content;
     try {
-      final encrypted = await E2eeService.encryptMessage(chatId, content);
-      if (encrypted != null) {
+      if (content.isNotEmpty) {
+        var encrypted = await E2eeService.encryptMessage(chatId, content);
+        if (encrypted == null) {
+          await E2eeService.requestChatKey(chatId);
+          final obtained = await E2eeService.waitForChatKeyFromServer(chatId);
+          if (obtained) {
+            encrypted = await E2eeService.encryptMessage(chatId, content);
+          }
+        }
+        if (encrypted == null) {
+          throw Exception('E2EE ключ для чата пока недоступен. Откройте чат у второго участника и повторите отправку.');
+        }
         contentToSend = jsonEncode(encrypted);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Ошибка E2EE при отправке: $e');
+    }
 
     final body = jsonEncode({
       'chat_id': chatId,
