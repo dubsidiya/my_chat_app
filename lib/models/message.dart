@@ -25,6 +25,7 @@ class Message {
   final List<MessageReaction>? reactions; // ✅ Реакции на сообщение
   final bool isForwarded; // ✅ Переслано ли сообщение
   final String? originalChatName; // ✅ Название оригинального чата (для пересланных)
+  final int keyVersion; // ✅ Версия ключа чата для E2EE
 
   Message({
     required this.id,
@@ -51,6 +52,7 @@ class Message {
     this.reactions,
     this.isForwarded = false,
     this.originalChatName,
+    this.keyVersion = 1,
   });
 
   bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
@@ -99,6 +101,9 @@ class Message {
             : null,
         isForwarded: json['is_forwarded'] == true || json['is_forwarded'] == 1,
         originalChatName: json['original_chat_name'] as String?,
+        keyVersion: json['key_version'] is int
+            ? (json['key_version'] as int)
+            : int.tryParse((json['key_version'] ?? '1').toString()) ?? 1,
       );
     } catch (e) {
       if (kDebugMode) {
@@ -135,6 +140,7 @@ class Message {
       'reactions': reactions?.map((r) => r.toJson()).toList(),
       'is_forwarded': isForwarded,
       'original_chat_name': originalChatName,
+      'key_version': keyVersion,
     };
   }
 }

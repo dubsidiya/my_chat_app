@@ -26,6 +26,8 @@ class E2eeService {
   );
   static final Map<String, DateTime> _lastRequestChatKeyAt = <String, DateTime>{};
   static bool _publicKeySyncAttemptedThisRun = false;
+  static String _chatCacheKey(String chatId, [int? keyVersion]) =>
+      keyVersion == null ? '$_chatKeyPrefix$chatId' : '$_chatKeyPrefix${chatId}_v$keyVersion';
 
   /// Check if local key pair exists.
   static Future<bool> hasLocalKeyPair() async {
@@ -146,8 +148,8 @@ class E2eeService {
   }
 
   /// Retrieve and decrypt the chat key from the server.
-  static Future<SecretKey?> getChatKey(String chatId) async {
-    final cached = await _secure.read(key: '$_chatKeyPrefix$chatId');
+  static Future<SecretKey?> getChatKey(String chatId, {int? keyVersion}) async {
+    final cached = await _secure.read(key: _chatCacheKey(chatId, keyVersion));
     if (cached != null && cached.isNotEmpty) {
       return SecretKey(base64Decode(cached));
     }
@@ -155,8 +157,13 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return null;
     try {
+      final uri = Uri.parse('${ApiConfig.baseUrl}/e2ee/chat-key/$chatId').replace(
+        queryParameters: {
+          if (keyVersion != null) 'keyVersion': keyVersion.toString(),
+        },
+      );
       final resp = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat-key/$chatId'),
+        uri,
         headers: {'Authorization': 'Bearer $token'},
       );
       if (resp.statusCode != 200) return null;
@@ -189,7 +196,20 @@ class E2eeService {
         secretKey: derivedKey,
       );
 
-      await _secure.write(key: '$_chatKeyPrefix$chatId', value: base64Encode(decrypted));
+      final respVersion = data['keyVersion'] is int
+          ? (data['keyVersion'] as int)
+          : int.tryParse((data['keyVersion'] ?? '').toString());
+      final effectiveVersion = keyVersion ?? respVersion;
+      await _secure.write(
+        key: _chatCacheKey(chatId, effectiveVersion),
+        value: base64Encode(decrypted),
+      );
+      if (keyVersion == null) {
+        await _secure.write(
+          key: _chatCacheKey(chatId),
+          value: base64Encode(decrypted),
+        );
+      }
       return SecretKey(decrypted);
     } catch (e) {
       return null;
@@ -216,13 +236,13 @@ class E2eeService {
     };
   }
 
-  static Future<String> decryptMessage(String chatId, String encryptedJson) async {
+  static Future<String> decryptMessage(String chatId, String encryptedJson, {int? keyVersion}) async {
     try {
       final data = jsonDecode(encryptedJson);
       if (data is! Map || data['v'] != '1') return _cannotDecryptLabel;
       final ct = base64Decode(data['ct'] as String);
       final nonce = base64Decode(data['n'] as String);
-      final key = await getChatKey(chatId);
+      final key = await getChatKey(chatId, keyVersion: keyVersion);
       if (key == null) return _cannotDecryptLabel;
 
       const macLen = 16;
@@ -330,7 +350,7 @@ class E2eeService {
     }
   }
 
-  static Future<void> _storeChatKeysOnServer(String chatId, List<Map<String, String>> keys) async {
+  static Future<void> _storeChatKeysOnServer(String chatId, List<Map<String, String>> keys, {int? keyVersion}) async {
     final token = await StorageService.getToken();
     if (token == null) return;
     await http.post(
@@ -339,24 +359,29 @@ class E2eeService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({'chatId': chatId, 'keys': keys}),
+      body: jsonEncode({'chatId': chatId, 'keys': keys, if (keyVersion != null) 'keyVersion': keyVersion}),
     );
   }
 
   /// Запросить ключ чата у других участников (мы без ключа, например вошли по инвайту). Сервер шлёт им WS e2ee_request_key.
-  static Future<void> requestChatKey(String chatId) async {
+  static Future<void> requestChatKey(String chatId, {int? keyVersion}) async {
     final now = DateTime.now();
-    final last = _lastRequestChatKeyAt[chatId];
+    final requestKey = '$chatId:${keyVersion ?? 0}';
+    final last = _lastRequestChatKeyAt[requestKey];
     if (last != null && now.difference(last) < const Duration(seconds: 10)) {
       return;
     }
-    _lastRequestChatKeyAt[chatId] = now;
+    _lastRequestChatKeyAt[requestKey] = now;
     final token = await StorageService.getToken();
     if (token == null) return;
     try {
       final resp = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/request-key'),
-        headers: {'Authorization': 'Bearer $token'},
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({if (keyVersion != null) 'keyVersion': keyVersion}),
       );
       if (resp.statusCode != 200 && resp.statusCode != 204) {
         // Не бросаем — вызывающий может опросить ключ позже
@@ -433,9 +458,9 @@ class E2eeService {
 
   /// Адресная отправка ключа конкретным пользователям (используем для WS e2ee_request_key,
   /// чтобы не делать лишний GET members-without-key под rate limit).
-  static Future<void> shareChatKeyWithUsers(String chatId, List<String> userIds) async {
+  static Future<void> shareChatKeyWithUsers(String chatId, List<String> userIds, {int? keyVersion}) async {
     if (userIds.isEmpty) return;
-    final chatKeyB64 = await _secure.read(key: '$_chatKeyPrefix$chatId');
+    final chatKeyB64 = await _secure.read(key: _chatCacheKey(chatId, keyVersion)) ?? await _secure.read(key: _chatCacheKey(chatId));
     if (chatKeyB64 == null || chatKeyB64.isEmpty) return;
     final chatKeyBytes = base64Decode(chatKeyB64);
     final pubKeys = await fetchPublicKeys(userIds);
@@ -475,7 +500,39 @@ class E2eeService {
       }
     }
     if (keysPayload.isNotEmpty) {
-      await _storeChatKeysOnServer(chatId, keysPayload);
+      await _storeChatKeysOnServer(chatId, keysPayload, keyVersion: keyVersion);
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPendingKeyRequests(String chatId) async {
+    final token = await StorageService.getToken();
+    if (token == null) return [];
+    try {
+      final resp = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/key-requests'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final list = (data['requests'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> processPendingKeyRequests(String chatId) async {
+    final pending = await getPendingKeyRequests(chatId);
+    if (pending.isEmpty) return;
+    final byVersion = <int, List<String>>{};
+    for (final r in pending) {
+      final uid = r['requesterUserId']?.toString();
+      final v = r['keyVersion'] is int ? r['keyVersion'] as int : int.tryParse((r['keyVersion'] ?? '1').toString()) ?? 1;
+      if (uid == null || uid.isEmpty) continue;
+      byVersion.putIfAbsent(v, () => <String>[]).add(uid);
+    }
+    for (final entry in byVersion.entries) {
+      await shareChatKeyWithUsers(chatId, entry.value.toSet().toList(), keyVersion: entry.key);
     }
   }
 
@@ -509,16 +566,23 @@ class E2eeService {
   /// Периодически запрашиваем GET /e2ee/chat-key, пока ключ не появится (кэш локально пуст при 404).
   static Future<bool> waitForChatKeyFromServer(
     String chatId, {
+    int? keyVersion,
     Duration timeout = const Duration(seconds: 18),
-    Duration interval = const Duration(seconds: 3),
+    Duration interval = const Duration(seconds: 2),
   }) async {
     final deadline = DateTime.now().add(timeout);
+    var attempt = 0;
     while (DateTime.now().isBefore(deadline)) {
-      final k = await getChatKey(chatId);
+      final k = await getChatKey(chatId, keyVersion: keyVersion);
       if (k != null) return true;
+      attempt += 1;
+      final mult = attempt < 3 ? 1 : (attempt < 6 ? 2 : 3);
+      final baseDelayMs = interval.inMilliseconds * mult;
+      final jitterMs = (DateTime.now().microsecondsSinceEpoch % 350);
+      final delay = Duration(milliseconds: baseDelayMs + jitterMs);
       final remaining = deadline.difference(DateTime.now());
       if (remaining <= Duration.zero) break;
-      await Future<void>.delayed(remaining < interval ? remaining : interval);
+      await Future<void>.delayed(remaining < delay ? remaining : delay);
     }
     return false;
   }

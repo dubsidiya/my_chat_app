@@ -4,6 +4,10 @@ import { broadcastToChatMembers } from '../websocket/websocket.js';
 
 const MAX_KEY_LENGTH = 256;
 const MAX_BACKUP_LENGTH = 2048;
+const parseKeyVersion = (x) => {
+  const n = parseInt(x, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 export const uploadPublicKey = async (req, res) => {
   try {
@@ -67,7 +71,7 @@ export const getPublicKeys = async (req, res) => {
 export const storeChatKeys = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { chatId, keys } = req.body || {};
+    const { chatId, keys, keyVersion } = req.body || {};
     const chatIdNum = parsePositiveInt(chatId);
     if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
 
@@ -83,6 +87,17 @@ export const storeChatKeys = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
+    const chatMeta = await pool.query(
+      'SELECT current_key_version FROM chats WHERE id = $1',
+      [chatIdNum]
+    );
+    if (chatMeta.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+    const effectiveVersion = Number.isFinite(parseInt(keyVersion, 10))
+      ? parseInt(keyVersion, 10)
+      : parseInt(chatMeta.rows[0].current_key_version, 10) || 1;
+
     const chatMembers = await pool.query(
       'SELECT user_id FROM chat_users WHERE chat_id = $1',
       [chatIdNum]
@@ -96,14 +111,21 @@ export const storeChatKeys = async (req, res) => {
       if (String(k.encryptedKey).length > 1024 || String(k.senderPublicKey).length > MAX_KEY_LENGTH || String(k.nonce).length > 128) continue;
 
       await pool.query(
-        `INSERT INTO chat_keys (chat_id, user_id, encrypted_key, sender_public_key, nonce, updated_at)
-         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (chat_id, user_id) DO UPDATE
+        `INSERT INTO chat_keys (chat_id, user_id, key_version, encrypted_key, sender_public_key, nonce, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+         ON CONFLICT (chat_id, user_id, key_version) DO UPDATE
          SET encrypted_key = EXCLUDED.encrypted_key,
              sender_public_key = EXCLUDED.sender_public_key,
              nonce = EXCLUDED.nonce,
              updated_at = CURRENT_TIMESTAMP`,
-        [chatIdNum, tgtId, k.encryptedKey, k.senderPublicKey, k.nonce]
+        [chatIdNum, tgtId, effectiveVersion, k.encryptedKey, k.senderPublicKey, k.nonce]
+      );
+      await pool.query(
+        `INSERT INTO chat_key_requests (chat_id, requester_user_id, key_version, status, updated_at)
+         VALUES ($1, $2, $3, 'fulfilled', CURRENT_TIMESTAMP)
+         ON CONFLICT (chat_id, requester_user_id, key_version) DO UPDATE
+         SET status = 'fulfilled', updated_at = CURRENT_TIMESTAMP`,
+        [chatIdNum, tgtId, effectiveVersion]
       );
     }
     return res.status(200).json({ success: true });
@@ -133,7 +155,11 @@ export const getMembersWithoutChatKey = async (req, res) => {
 
     const result = await pool.query(
       `SELECT cu.user_id FROM chat_users cu
-       LEFT JOIN chat_keys ck ON ck.chat_id = cu.chat_id AND ck.user_id = cu.user_id
+       JOIN chats c ON c.id = cu.chat_id
+       LEFT JOIN chat_keys ck
+         ON ck.chat_id = cu.chat_id
+        AND ck.user_id = cu.user_id
+        AND ck.key_version = c.current_key_version
        WHERE cu.chat_id = $1 AND ck.user_id IS NULL`,
       [chatIdNum]
     );
@@ -148,6 +174,7 @@ export const getMembersWithoutChatKey = async (req, res) => {
 /** E2EE: новый участник запрашивает ключ чата; сервер рассылает другим участникам WS, те отдают ключ через shareChatKeyWithNewMembers */
 export const requestChatKey = async (req, res) => {
   try {
+    const requestedVersion = parseKeyVersion(req.body?.keyVersion);
     const userId = req.user.userId;
     const chatIdNum = parsePositiveInt(req.params?.chatId);
     if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
@@ -160,19 +187,52 @@ export const requestChatKey = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
+    const chatMeta = await pool.query(
+      'SELECT current_key_version FROM chats WHERE id = $1',
+      [chatIdNum]
+    );
+    if (chatMeta.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+    const effectiveVersion = requestedVersion ?? parseInt(chatMeta.rows[0].current_key_version, 10) || 1;
+
+    // Если у requester уже есть ключ нужной версии, не создаём/не шлём лишние запросы.
+    const requesterHasKey = await pool.query(
+      'SELECT 1 FROM chat_keys WHERE chat_id = $1 AND user_id = $2 AND key_version = $3',
+      [chatIdNum, userId, effectiveVersion]
+    );
+    if (requesterHasKey.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO chat_key_requests (chat_id, requester_user_id, key_version, status, updated_at)
+         VALUES ($1, $2, $3, 'fulfilled', CURRENT_TIMESTAMP)
+         ON CONFLICT (chat_id, requester_user_id, key_version) DO UPDATE
+         SET status = 'fulfilled', updated_at = CURRENT_TIMESTAMP`,
+        [chatIdNum, userId, effectiveVersion]
+      );
+      return res.status(200).json({ success: true, alreadyHasKey: true, keyVersion: effectiveVersion });
+    }
+
+    await pool.query(
+      `INSERT INTO chat_key_requests (chat_id, requester_user_id, key_version, status, updated_at)
+       VALUES ($1, $2, $3, 'pending', CURRENT_TIMESTAMP)
+       ON CONFLICT (chat_id, requester_user_id, key_version) DO UPDATE
+       SET status = 'pending', updated_at = CURRENT_TIMESTAMP`,
+      [chatIdNum, userId, effectiveVersion]
+    );
+
     await broadcastToChatMembers(
       chatIdNum,
-      { type: 'e2ee_request_key', chatId: String(chatIdNum), userId: String(userId) },
+      { type: 'e2ee_request_key', chatId: String(chatIdNum), userId: String(userId), keyVersion: effectiveVersion },
       { excludeUserId: userId }
     );
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true, keyVersion: effectiveVersion });
   } catch (error) {
     console.error('Ошибка requestChatKey:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-export const getChatKey = async (req, res) => {
+export const getPendingKeyRequests = async (req, res) => {
   try {
     const userId = req.user.userId;
     const chatIdNum = parsePositiveInt(req.params?.chatId);
@@ -186,9 +246,60 @@ export const getChatKey = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
-    const row = await pool.query(
-      'SELECT encrypted_key, sender_public_key, nonce FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
+    const rows = await pool.query(
+      `SELECT requester_user_id, key_version, updated_at
+       FROM chat_key_requests
+       WHERE chat_id = $1
+         AND status = 'pending'
+         AND requester_user_id <> $2
+       ORDER BY updated_at DESC
+       LIMIT 100`,
       [chatIdNum, userId]
+    );
+    return res.status(200).json({
+      requests: rows.rows.map((r) => ({
+        requesterUserId: String(r.requester_user_id),
+        keyVersion: parseInt(r.key_version, 10) || 1,
+        updatedAt: r.updated_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Ошибка getPendingKeyRequests:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+    const requestedVersion = req.query?.keyVersion ? parseInt(req.query.keyVersion, 10) : null;
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const chatMeta = await pool.query(
+      'SELECT current_key_version FROM chats WHERE id = $1',
+      [chatIdNum]
+    );
+    if (chatMeta.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+    const effectiveVersion = Number.isFinite(requestedVersion)
+      ? requestedVersion
+      : parseInt(chatMeta.rows[0].current_key_version, 10) || 1;
+
+    const row = await pool.query(
+      `SELECT encrypted_key, sender_public_key, nonce, key_version
+       FROM chat_keys
+       WHERE chat_id = $1 AND user_id = $2 AND key_version = $3`,
+      [chatIdNum, userId, effectiveVersion]
     );
     if (row.rows.length === 0) {
       return res.status(404).json({ message: 'Ключ не найден' });
@@ -198,6 +309,7 @@ export const getChatKey = async (req, res) => {
       encryptedKey: r.encrypted_key,
       senderPublicKey: r.sender_public_key,
       nonce: r.nonce,
+      keyVersion: r.key_version,
     });
   } catch (error) {
     console.error('Ошибка getChatKey:', error);

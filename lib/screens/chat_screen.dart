@@ -870,9 +870,12 @@ class _ChatScreenState extends State<ChatScreen> {
           if (messageType == 'e2ee_request_key') {
             final chatId = data['chatId']?.toString();
             final requesterUserId = data['userId']?.toString();
+            final keyVersion = data['keyVersion'] is int
+                ? data['keyVersion'] as int
+                : int.tryParse((data['keyVersion'] ?? '').toString());
             if (chatId != null) {
               if (requesterUserId != null && requesterUserId.isNotEmpty) {
-                unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId]));
+                unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId], keyVersion: keyVersion));
               } else {
                 unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
               }
@@ -1071,7 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
                 final displayMessage = await MessagesService.decryptMessageForChat(currentChatId, updatedRaw);
                 if (E2eeService.isEncrypted(updatedRaw.content) && displayMessage.content == '[зашифровано]') {
-                  unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
+                  unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId, keyVersion: updatedRaw.keyVersion));
                 }
                 if (mounted) {
                   setState(() {
@@ -1163,7 +1166,7 @@ class _ChatScreenState extends State<ChatScreen> {
               LocalMessagesService.updateMessage(widget.chatId, rawMessage);
               final message = await MessagesService.decryptMessageForChat(widget.chatId.toString(), rawMessage);
               if (E2eeService.isEncrypted(rawMessage.content) && message.content == '[зашифровано]') {
-                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
+                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId, keyVersion: rawMessage.keyVersion));
               }
               if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               if (mounted) {
@@ -1671,11 +1674,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// E2EE: после requestChatKey ждём появления ключа на сервере и перерисовываем сообщения (расшифровка чужих).
-  Future<void> _retryChatKeyThenReloadMessages(String chatIdStr) async {
+  Future<void> _retryChatKeyThenReloadMessages(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
     _isWaitingForE2eeKey = true;
     _showE2eeWaitingSnack();
-    final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr);
+    final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr, keyVersion: keyVersion);
     _isWaitingForE2eeKey = false;
     if (obtained && mounted) {
       _hideE2eeWaitingSnack();
@@ -1686,10 +1689,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr) async {
+  Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
-    await E2eeService.requestChatKey(chatIdStr);
-    unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
+    await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
+    unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion));
   }
 
   void _showE2eeWaitingSnack() {
@@ -1797,6 +1800,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final hasKey = await E2eeService.getChatKey(chatIdStr) != null;
         if (hasKey) {
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
+          await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
           await E2eeService.requestChatKey(chatIdStr);
           unawaited(_retryChatKeyThenReloadMessages(chatIdStr));

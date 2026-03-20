@@ -8,6 +8,7 @@ import {
   getChatKey,
   getMembersWithoutChatKey,
   requestChatKey,
+  getPendingKeyRequests,
   storeKeyBackup,
   getKeyBackup,
 } from '../controllers/e2eeController.js';
@@ -22,6 +23,7 @@ router.post('/public-keys', getPublicKeys);
 router.post('/chat-keys', storeChatKeys);
 router.get('/chat-key/:chatId', getChatKey);
 router.get('/chat/:chatId/members-without-key', getMembersWithoutChatKey);
+router.get('/chat/:chatId/key-requests', getPendingKeyRequests);
 router.post('/chat/:chatId/request-key', requestChatKey);
 router.post('/key-backup', storeKeyBackup);
 router.get('/key-backup', getKeyBackup);

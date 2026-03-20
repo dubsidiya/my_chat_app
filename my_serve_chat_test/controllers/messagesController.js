@@ -162,6 +162,7 @@ export const getMessages = async (req, res) => {
           messages.id,
           messages.chat_id,
           messages.user_id,
+          messages.key_version,
           messages.content,
           messages.image_url,
           messages.original_image_url,
@@ -215,6 +216,7 @@ export const getMessages = async (req, res) => {
           messages.id,
           messages.chat_id,
           messages.user_id,
+          messages.key_version,
           messages.content,
           messages.image_url,
           messages.original_image_url,
@@ -323,6 +325,7 @@ export const getMessages = async (req, res) => {
         id: row.id,
         chat_id: row.chat_id,
         user_id: row.user_id,
+        key_version: row.key_version ?? 1,
         content: row.content,
         image_url: row.image_url,
         original_image_url: row.original_image_url,
@@ -633,6 +636,7 @@ export const getMessagesAround = async (req, res) => {
         id: row.id,
         chat_id: row.chat_id,
         user_id: row.user_id,
+        key_version: row.key_version ?? 1,
         content: row.content,
         image_url: row.image_url,
         original_image_url: row.original_image_url,
@@ -799,9 +803,15 @@ export const sendMessage = async (req, res) => {
     }
 
     const result = await pool.query(`
-      INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, delivered_at, reply_to_message_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, $11)
-      RETURNING id, chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, delivered_at, reply_to_message_id
+      INSERT INTO messages (
+        chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime,
+        message_type, delivered_at, reply_to_message_id, key_version
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10, CURRENT_TIMESTAMP, $11, COALESCE((SELECT current_key_version FROM chats WHERE id = $1), 1)
+      )
+      RETURNING id, chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, delivered_at, reply_to_message_id, key_version
     `, [
       chatIdNum,
       user_id,
@@ -853,6 +863,7 @@ export const sendMessage = async (req, res) => {
       id: message.id,
       chat_id: message.chat_id,
       user_id: message.user_id,
+      key_version: message.key_version ?? 1,
       content: message.content,
       image_url: message.image_url,
       original_image_url: message.original_image_url,
@@ -898,6 +909,7 @@ export const sendMessage = async (req, res) => {
         id: message.id,
         chat_id: String(message.chat_id),
         user_id: message.user_id,
+        key_version: message.key_version ?? 1,
         content: message.content != null ? String(message.content) : '',
         image_url: message.image_url ?? null,
         original_image_url: message.original_image_url ?? null,
@@ -1083,7 +1095,7 @@ export const editMessage = async (req, res) => {
       UPDATE messages 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, chat_id, user_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, edited_at
+      RETURNING id, chat_id, user_id, key_version, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, message_type, created_at, edited_at
     `;
     
     const result = await pool.query(updateQuery, updateValues);
@@ -1103,6 +1115,7 @@ export const editMessage = async (req, res) => {
         id: updatedMessage.id,
         chat_id: updatedMessage.chat_id.toString(),
         user_id: updatedMessage.user_id,
+        key_version: updatedMessage.key_version ?? 1,
         content: updatedMessage.content,
         image_url: updatedMessage.image_url,
         original_image_url: updatedMessage.original_image_url,
@@ -1130,6 +1143,7 @@ export const editMessage = async (req, res) => {
       id: updatedMessage.id,
       chat_id: updatedMessage.chat_id,
       user_id: updatedMessage.user_id,
+      key_version: updatedMessage.key_version ?? 1,
       content: updatedMessage.content,
       image_url: updatedMessage.image_url,
       original_image_url: updatedMessage.original_image_url,
@@ -1541,9 +1555,9 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
       
       // Создаем новое сообщение в целевом чате
       const result = await pool.query(`
-        INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at)
-        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-        RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at
+        INSERT INTO messages (chat_id, user_id, content, image_url, original_image_url, message_type, delivered_at, key_version)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, COALESCE((SELECT current_key_version FROM chats WHERE id = $1), 1))
+        RETURNING id, chat_id, user_id, content, image_url, original_image_url, message_type, created_at, delivered_at, key_version
       `, [
         toChatId,
         userId,
@@ -1572,6 +1586,7 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
         id: newMessage.id,
         chat_id: newMessage.chat_id.toString(),
         user_id: newMessage.user_id,
+        key_version: newMessage.key_version ?? 1,
         content: newMessage.content,
         image_url: newMessage.image_url,
         original_image_url: newMessage.original_image_url,

@@ -271,9 +271,12 @@ class _HomeScreenState extends State<HomeScreen> {
       if (event is Map && event['type'] == 'e2ee_request_key') {
         final chatId = event['chatId']?.toString();
         final requesterUserId = event['userId']?.toString();
+        final keyVersion = event['keyVersion'] is int
+            ? event['keyVersion'] as int
+            : int.tryParse((event['keyVersion'] ?? '').toString());
         if (chatId != null) {
           if (requesterUserId != null && requesterUserId.isNotEmpty) {
-            unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId]));
+            unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId], keyVersion: keyVersion));
           } else {
             unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
           }

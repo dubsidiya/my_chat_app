@@ -30,7 +30,7 @@ class MessagesService {
   static Future<Message> _decryptOne(String chatId, Message m) async {
     String content = m.content;
     if (E2eeService.isEncrypted(content)) {
-      content = await E2eeService.decryptMessage(chatId, content);
+      content = await E2eeService.decryptMessage(chatId, content, keyVersion: m.keyVersion);
     }
     Message? replyTo = m.replyToMessage;
     if (replyTo != null) {
@@ -45,6 +45,7 @@ class MessagesService {
       isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
       replyToMessage: replyTo, isPinned: m.isPinned, reactions: m.reactions,
       isForwarded: m.isForwarded, originalChatName: m.originalChatName,
+      keyVersion: m.keyVersion,
     );
   }
 
