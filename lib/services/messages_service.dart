@@ -270,6 +270,7 @@ class MessagesService {
         senderEmail: '',
         createdAt: DateTime.now().toIso8601String(),
         isRead: false,
+        keyVersion: 1,
       );
       await LocalMessagesService.addMessage(chatId, tempMessage);
       throw Exception('Нет подключения к интернету. Сообщение сохранено локально и будет отправлено при восстановлении связи.');
@@ -698,9 +699,12 @@ class MessagesService {
     final List<Map<String, dynamic>> out = [];
     for (final item in list) {
       final rawContent = (item['content'] ?? '').toString();
+      final keyVersion = item['key_version'] is int
+          ? item['key_version'] as int
+          : int.tryParse((item['key_version'] ?? '').toString());
       String plain = rawContent;
       if (E2eeService.isEncrypted(rawContent)) {
-        plain = await E2eeService.decryptMessage(chatId, rawContent);
+        plain = await E2eeService.decryptMessage(chatId, rawContent, keyVersion: keyVersion);
       }
       if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower)) continue;
       out.add(_searchResultToSnippet(item, plain, queryLower));
@@ -721,6 +725,7 @@ class MessagesService {
     }
     return {
       'message_id': item['message_id'],
+      'key_version': item['key_version'] ?? 1,
       'content_snippet': snippet,
       'message_type': item['message_type'],
       'image_url': item['image_url'],

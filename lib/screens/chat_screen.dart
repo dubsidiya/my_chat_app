@@ -130,6 +130,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   bool _isWaitingForE2eeKey = false;
+  String _e2eeKeyState = 'missing'; // ready | missing | requesting | retryBackoff | failed
   static const int _messagesPerPage = 50;
   String? _selectedImagePath;
   Uint8List? _selectedImageBytes;
@@ -566,6 +567,7 @@ class _ChatScreenState extends State<ChatScreen> {
       reactions: incoming.reactions ?? existing.reactions,
       isForwarded: incoming.isForwarded,
       originalChatName: incoming.originalChatName ?? existing.originalChatName,
+      keyVersion: incoming.keyVersion > 0 ? incoming.keyVersion : existing.keyVersion,
     );
   }
 
@@ -987,6 +989,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     editedAt: msg.editedAt,
                     isRead: true,
                     readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                    keyVersion: msg.keyVersion,
                   );
                   _messages[index] = updatedMessage;
                   
@@ -1027,6 +1030,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       editedAt: msg.editedAt,
                       isRead: true,
                       readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                      keyVersion: msg.keyVersion,
                     );
                   }
                 }
@@ -1070,6 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   reactions: msg.reactions,
                   isForwarded: msg.isForwarded,
                   originalChatName: msg.originalChatName,
+                  keyVersion: msg.keyVersion,
                 );
                 LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
                 final displayMessage = await MessagesService.decryptMessageForChat(currentChatId, updatedRaw);
@@ -1142,6 +1147,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     reactions: currentReactions,
                     isForwarded: msg.isForwarded,
                     originalChatName: msg.originalChatName,
+                    keyVersion: msg.keyVersion,
                   );
                   
                   // Обновляем в кэше
@@ -1677,22 +1683,43 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _retryChatKeyThenReloadMessages(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
     _isWaitingForE2eeKey = true;
+    if (mounted) setState(() => _e2eeKeyState = 'requesting');
     _showE2eeWaitingSnack();
     final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr, keyVersion: keyVersion);
     _isWaitingForE2eeKey = false;
     if (obtained && mounted) {
+      setState(() => _e2eeKeyState = 'ready');
       _hideE2eeWaitingSnack();
       _showE2eeReadySnack();
       await _loadMessages();
     } else if (mounted) {
+      setState(() => _e2eeKeyState = 'retryBackoff');
       _hideE2eeWaitingSnack();
     }
   }
 
   Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
+    if (mounted) setState(() => _e2eeKeyState = 'requesting');
     await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
     unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion));
+  }
+
+  String? _e2eeStatusText() {
+    switch (_e2eeKeyState) {
+      case 'ready':
+        return null;
+      case 'missing':
+        return 'Ключ шифрования отсутствует. Запрашиваем...';
+      case 'requesting':
+        return 'Ожидаем ключ шифрования от собеседника...';
+      case 'retryBackoff':
+        return 'Ключ не получен, повторим запрос автоматически.';
+      case 'failed':
+        return 'Не удалось получить ключ шифрования.';
+      default:
+        return 'Ключ шифрования отсутствует. Запрашиваем...';
+    }
   }
 
   void _showE2eeWaitingSnack() {
@@ -1799,15 +1826,18 @@ class _ChatScreenState extends State<ChatScreen> {
         final chatIdStr = widget.chatId.toString();
         final hasKey = await E2eeService.getChatKey(chatIdStr) != null;
         if (hasKey) {
+          if (mounted) setState(() => _e2eeKeyState = 'ready');
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
           await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
+          if (mounted) setState(() => _e2eeKeyState = 'missing');
           await E2eeService.requestChatKey(chatIdStr);
           unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
         }
       }
     } catch (e) {
       if (kDebugMode) print('Error loading messages: $e');
+      if (mounted) setState(() => _e2eeKeyState = 'failed');
       // ✅ Если ошибка, но есть кэш - не показываем ошибку
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2630,6 +2660,16 @@ class _ChatScreenState extends State<ChatScreen> {
       if (kDebugMode) print('⚠️ Widget not mounted, returning');
       return;
     }
+    if (_e2eeKeyState != 'ready') {
+      unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Ключ шифрования ещё не готов. Подождите немного.'),
+        ),
+      );
+      return;
+    }
     
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
@@ -2812,6 +2852,7 @@ SnackBar(
       isRead: false,
       replyToMessageId: replyToMessageId,
       replyToMessage: replyToMessage,
+      keyVersion: 1,
     );
     
     // ✅ Добавляем сообщение оптимистично в список (без перезагрузки)
@@ -3579,6 +3620,7 @@ SnackBar(
                 reactions: prev.reactions,
                 isForwarded: prev.isForwarded,
                 originalChatName: prev.originalChatName,
+                keyVersion: prev.keyVersion,
               );
             }
           });
@@ -4612,6 +4654,25 @@ SnackBar(
                               constraints: const BoxConstraints(),
                             ),
                           ],
+                        ),
+                      ),
+                    if (_e2eeStatusText() != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
+                        ),
+                        child: Text(
+                          _e2eeStatusText()!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurface.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     // ✅ Индикатор записи голосового
