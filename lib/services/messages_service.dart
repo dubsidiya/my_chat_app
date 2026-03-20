@@ -24,6 +24,13 @@ class MessagesPaginationResult {
   });
 }
 
+/// Результат загрузки сжатого и опционально оригинального изображения.
+class UploadImageUrls {
+  final String imageUrl;
+  final String? originalImageUrl;
+  const UploadImageUrls({required this.imageUrl, this.originalImageUrl});
+}
+
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
@@ -253,6 +260,8 @@ class MessagesService {
     int? fileSize,
     String? fileMime,
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
+    String? forwardOriginalMessageId,
+    String? forwardOriginalChatId,
   }) async {
     // ✅ Проверяем подключение
     final isOnline = await _isOnline();
@@ -302,7 +311,7 @@ class MessagesService {
       throw Exception('Ошибка E2EE при отправке: $e');
     }
 
-    final body = jsonEncode({
+    final bodyMap = <String, dynamic>{
       'chat_id': chatId,
       'content': contentToSend,
       'image_url': imageUrl,
@@ -312,7 +321,15 @@ class MessagesService {
       'file_size': fileSize,
       'file_mime': fileMime,
       'reply_to_message_id': replyToMessageId,
-    });
+    };
+    if (forwardOriginalMessageId != null &&
+        forwardOriginalMessageId.isNotEmpty &&
+        forwardOriginalChatId != null &&
+        forwardOriginalChatId.isNotEmpty) {
+      bodyMap['forward_original_message_id'] = forwardOriginalMessageId;
+      bodyMap['forward_original_chat_id'] = forwardOriginalChatId;
+    }
+    final body = jsonEncode(bodyMap);
 
     final response = await http.post(
       Uri.parse('$baseUrl/messages'),
@@ -355,7 +372,12 @@ class MessagesService {
   }
 
   // Загрузка изображения. При [chatId] и наличии ключа — E2EE шифрование перед отправкой.
-  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes, String? chatId}) async {
+  Future<UploadImageUrls> uploadImageWithUrls(
+    List<int> imageBytes,
+    String fileName, {
+    List<int>? originalBytes,
+    String? chatId,
+  }) async {
     final token = await StorageService.getToken();
     if (token == null) throw Exception('Токен не найден');
 
@@ -407,37 +429,33 @@ class MessagesService {
       }
 
       if (response.statusCode == 200) {
-        // Проверяем, что ответ действительно JSON
         if (response.body.trim().startsWith('<')) {
           throw Exception('Сервер вернул HTML вместо JSON. Возможно, эндпоинт не найден или произошла ошибка на сервере.');
         }
-        
+
         try {
-          final data = jsonDecode(response.body);
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
           if (data['image_url'] != null) {
-            // Сохраняем original_image_url, если есть (для будущего использования)
-            if (data['original_image_url'] != null) {
-              if (kDebugMode) {
-                // ignore: avoid_print
-                print('Original image URL returned');
-              }
+            if (data['original_image_url'] != null && kDebugMode) {
+              // ignore: avoid_print
+              print('Original image URL returned');
             }
-            return data['image_url'] as String;
-          } else {
-            throw Exception('Сервер не вернул image_url');
+            return UploadImageUrls(
+              imageUrl: data['image_url'] as String,
+              originalImageUrl: data['original_image_url'] as String?,
+            );
           }
+          throw Exception('Сервер не вернул image_url');
         } catch (e) {
           throw Exception('Ошибка парсинга ответа сервера: $e');
         }
       } else {
-        // Пытаемся распарсить ошибку
         String errorMessage = 'Не удалось загрузить изображение (${response.statusCode})';
         try {
           if (response.body.trim().startsWith('{')) {
             final error = jsonDecode(response.body);
             errorMessage = error['message'] ?? errorMessage;
           } else {
-            // Если это HTML, берем первые 200 символов
             errorMessage = 'Сервер вернул ошибку: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}';
           }
         } catch (_) {
@@ -451,6 +469,52 @@ class MessagesService {
       }
       throw Exception('Неожиданная ошибка при загрузке изображения: $e');
     }
+  }
+
+  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes, String? chatId}) async {
+    final u = await uploadImageWithUrls(imageBytes, fileName, originalBytes: originalBytes, chatId: chatId);
+    return u.imageUrl;
+  }
+
+  static const int _forwardDownloadMaxBytes = 40 * 1024 * 1024;
+
+  static Future<Uint8List> _downloadUrlBytes(String url) async {
+    final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 120));
+    if (r.statusCode != 200) {
+      throw Exception('Не удалось скачать файл для пересылки: HTTP ${r.statusCode}');
+    }
+    if (r.bodyBytes.length > _forwardDownloadMaxBytes) {
+      throw Exception('Вложение слишком большое для пересылки');
+    }
+    return Uint8List.fromList(r.bodyBytes);
+  }
+
+  static Future<Uint8List> _unwrapForwardImageBytes(
+    String sourceChatId,
+    Uint8List bytes,
+    int keyVersion,
+  ) async {
+    if (!E2eeService.looksLikeEncryptedBytes(bytes)) {
+      return bytes;
+    }
+    final d = await E2eeService.decryptBytes(sourceChatId, bytes, keyVersion: keyVersion);
+    if (d == null) {
+      throw Exception(
+        'Не удалось расшифровать изображение для пересылки. Откройте исходный чат и дождитесь ключа.',
+      );
+    }
+    return d;
+  }
+
+  static String _forwardImageStubName(String imageUrl) {
+    try {
+      final segs = Uri.parse(imageUrl).pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segs.isNotEmpty) {
+        var seg = segs.last.replaceAll(RegExp(r'\.e2ee$', caseSensitive: false), '');
+        if (seg.contains('.') && seg.length <= 200) return seg;
+      }
+    } catch (_) {}
+    return 'forward.jpg';
   }
 
   // Загрузка файла (attachment)
@@ -600,36 +664,118 @@ class MessagesService {
   }
 
   // ✅ Переслать сообщение
-  Future<void> forwardMessage(String messageId, List<String> toChatIds) async {
-    final headers = await _getAuthHeaders();
-    // ✅ Сервер требует content или image_url даже для пересылки
-    // Отправляем пробел, так как пустая строка не проходит валидацию (!content = true для '')
-    final body = jsonEncode({
-      'forward_from_message_id': messageId,
-      'forward_to_chat_ids': toChatIds,
-      'chat_id': toChatIds.first, // Для совместимости
-      'content': ' ', // Пробел для прохождения валидации сервера (не пустая строка)
-    });
-    
-    final response = await http.post(
-      Uri.parse('$baseUrl/messages'),
-      headers: headers,
-      body: body,
-    );
+  /// E2EE: расшифровка в [sourceChatId], затем для каждого целевого чата — обычная отправка
+  /// (шифрование под ключ целевого чата). Сервер только сохраняет метаданные [message_forwards].
+  static const int _maxForwardChats = 20;
 
-    if (response.statusCode != 201) {
-      String errorMessage = 'Ошибка при пересылке сообщения';
-      try {
-        if (response.body.trim().startsWith('{')) {
-          final error = jsonDecode(response.body);
-          errorMessage = error['message'] ?? error['error'] ?? errorMessage;
-        } else {
-          errorMessage = response.body;
-        }
-      } catch (e) {
-        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+  Future<void> forwardMessage(
+    Message sourceMessage,
+    String sourceChatId,
+    List<String> toChatIds,
+  ) async {
+    if (toChatIds.isEmpty) return;
+    final targets = toChatIds.length > _maxForwardChats
+        ? toChatIds.sublist(0, _maxForwardChats)
+        : List<String>.from(toChatIds);
+
+    await E2eeService.ensureKeyPair();
+
+    var plain = sourceMessage.content;
+    final hadEncryptedText =
+        plain.trim().isNotEmpty && E2eeService.isEncrypted(plain);
+    if (hadEncryptedText) {
+      plain = await E2eeService.decryptMessage(
+        sourceChatId,
+        plain,
+        keyVersion: sourceMessage.keyVersion,
+      );
+      if (plain == '[зашифровано]') {
+        throw Exception(
+          'Не удалось переслать: сообщение не расшифровано в исходном чате. Откройте чат и дождитесь ключа, затем повторите.',
+        );
       }
-      throw Exception(errorMessage);
+    }
+
+    final hasImage =
+        sourceMessage.imageUrl != null && sourceMessage.imageUrl!.trim().isNotEmpty;
+    final hasMedia = hasImage ||
+        (sourceMessage.fileUrl != null && sourceMessage.fileUrl!.trim().isNotEmpty);
+
+    if (!hasMedia && plain.trim().isEmpty) {
+      throw Exception('Не удалось переслать: пустой текст (и нет вложения)');
+    }
+
+    Uint8List? mainPlainBytes;
+    Uint8List? origPlainBytes;
+    var imagePayloadE2ee = false;
+
+    if (hasImage) {
+      final rawMain = await _downloadUrlBytes(sourceMessage.imageUrl!);
+      imagePayloadE2ee = E2eeService.looksLikeEncryptedBytes(rawMain);
+      mainPlainBytes = await _unwrapForwardImageBytes(
+        sourceChatId,
+        rawMain,
+        sourceMessage.keyVersion,
+      );
+
+      final origUrl = sourceMessage.originalImageUrl?.trim();
+      if (origUrl != null &&
+          origUrl.isNotEmpty &&
+          origUrl != sourceMessage.imageUrl!.trim()) {
+        final rawOrig = await _downloadUrlBytes(origUrl);
+        origPlainBytes = await _unwrapForwardImageBytes(
+          sourceChatId,
+          rawOrig,
+          sourceMessage.keyVersion,
+        );
+      } else {
+        origPlainBytes = null;
+      }
+    }
+
+    for (final toId in targets) {
+      String? outImage = sourceMessage.imageUrl;
+      String? outOriginal = sourceMessage.originalImageUrl;
+
+      if (hasImage && imagePayloadE2ee) {
+        final stub = _forwardImageStubName(sourceMessage.imageUrl!);
+        final existingTargetKey = await E2eeService.getChatKey(toId);
+        if (existingTargetKey == null) {
+          await E2eeService.requestChatKey(toId);
+          final ok = await E2eeService.waitForChatKeyFromServer(toId);
+          if (!ok) {
+            throw Exception(
+              'Нет ключа шифрования для чата $toId — не удалось переслать фото. Откройте этот чат или попробуйте позже.',
+            );
+          }
+        }
+        final urls = await uploadImageWithUrls(
+          mainPlainBytes!.toList(),
+          stub,
+          originalBytes: origPlainBytes?.toList(),
+          chatId: toId,
+        );
+        outImage = urls.imageUrl;
+        outOriginal = urls.originalImageUrl;
+      }
+
+      final sent = await sendMessage(
+        toId,
+        plain,
+        imageUrl: outImage,
+        originalImageUrl: outOriginal,
+        fileUrl: sourceMessage.fileUrl,
+        fileName: sourceMessage.fileName,
+        fileSize: sourceMessage.fileSize,
+        fileMime: sourceMessage.fileMime,
+        forwardOriginalMessageId: sourceMessage.id,
+        forwardOriginalChatId: sourceChatId,
+      );
+      if (sent == null) {
+        throw Exception(
+          'Пересылка в чат $toId: сервер ответил успешно, но не удалось разобрать ответ. Проверьте чат вручную.',
+        );
+      }
     }
   }
 

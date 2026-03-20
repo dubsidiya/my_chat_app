@@ -3431,7 +3431,7 @@ SnackBar(
     
     if (selectedChats != null && selectedChats.isNotEmpty) {
       try {
-        await _messagesService.forwardMessage(message.id, selectedChats);
+        await _messagesService.forwardMessage(message, widget.chatId.toString(), selectedChats);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(duration: const Duration(seconds: 3), content: Text('Сообщение переслано в ${selectedChats.length} чат(ов)')),

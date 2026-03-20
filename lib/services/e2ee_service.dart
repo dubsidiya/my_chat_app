@@ -262,9 +262,9 @@ class E2eeService {
   static const String _cannotDecryptLabel = '[зашифровано]';
 
   /// Шифрование произвольных байт (медиа). Возвращает JSON-строку { v, ct, n } в utf8.
-  static Future<Uint8List?> encryptBytes(String chatId, Uint8List plainBytes) async {
+  static Future<Uint8List?> encryptBytes(String chatId, Uint8List plainBytes, {int? keyVersion}) async {
     if (plainBytes.isEmpty) return null;
-    final key = await getChatKey(chatId);
+    final key = await getChatKey(chatId, keyVersion: keyVersion);
     if (key == null) return null;
     final nonce = _aesGcm.newNonce();
     final encrypted = await _aesGcm.encrypt(plainBytes, secretKey: key, nonce: nonce);
@@ -277,7 +277,7 @@ class E2eeService {
   }
 
   /// Расшифровка байт (медиа). [encryptedBytes] — JSON { v, ct, n } в utf8 или сырые байты (вернёт null).
-  static Future<Uint8List?> decryptBytes(String chatId, Uint8List encryptedBytes) async {
+  static Future<Uint8List?> decryptBytes(String chatId, Uint8List encryptedBytes, {int? keyVersion}) async {
     try {
     final s = utf8.decode(encryptedBytes);
     if (!s.startsWith('{')) return null;
@@ -285,7 +285,7 @@ class E2eeService {
     if (data is! Map || data['v'] != '1') return null;
     final ct = base64Decode(data['ct'] as String);
     final nonce = base64Decode(data['n'] as String);
-    final key = await getChatKey(chatId);
+    final key = await getChatKey(chatId, keyVersion: keyVersion);
     if (key == null) return null;
     const macLen = 16;
     final cipherText = ct.sublist(0, ct.length - macLen);

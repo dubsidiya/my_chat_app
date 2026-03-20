@@ -101,6 +101,17 @@ UI behavior:
 - shows explicit status text/snackbars;
 - auto-reloads messages when key arrives.
 
+### 4.4 Forwarding between chats (E2EE-correct)
+Legacy server path copied ciphertext into the target chat (wrong key → `[зашифровано]`). Current behavior:
+
+1. Client decrypts the source message with the **source** chat key (`keyVersion` from the message).
+2. For each target chat, client calls normal `sendMessage` (encrypts with the **target** chat key).
+3. Optional body fields `forward_original_message_id` + `forward_original_chat_id` let the server insert `message_forwards` and set `is_forwarded` / `original_chat_name` in the API and WS payload.
+
+If the source text is still `[зашифровано]`, forward is aborted with a user-visible error until the key is available.
+
+**Encrypted images:** the client downloads ciphertext, decrypts with the source chat key (message `key_version`), then uploads via `upload-image` with the target `chatId` so the blob is re-encrypted for the destination chat. Plain (non-E2EE) images keep the same CDN URLs.
+
 ---
 
 ## 5) Key Delivery and Reliability

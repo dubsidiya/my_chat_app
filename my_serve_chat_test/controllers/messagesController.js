@@ -675,7 +675,7 @@ export const getMessagesAround = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   // Приложение отправляет: { chat_id, content, image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids }
-  const { chat_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids } = req.body;
+  const { chat_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids, forward_original_message_id, forward_original_chat_id } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
@@ -776,6 +776,41 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
+    /** E2EE: клиент присылает уже зашифрованный под целевой чат content + метаданные пересылки */
+    let forwardRegistry = null;
+    const hasFwdMsg = forward_original_message_id != null && String(forward_original_message_id).trim() !== '';
+    const hasFwdChat = forward_original_chat_id != null && String(forward_original_chat_id).trim() !== '';
+    if (hasFwdMsg !== hasFwdChat) {
+      return res.status(400).json({ message: 'Укажите оба поля пересылки: forward_original_message_id и forward_original_chat_id' });
+    }
+    if (hasFwdMsg && hasFwdChat) {
+      const origMsgId = parseInt(forward_original_message_id, 10);
+      const origChatId = parseInt(forward_original_chat_id, 10);
+      if (isNaN(origMsgId) || isNaN(origChatId)) {
+        return res.status(400).json({ message: 'Некорректные данные пересылки' });
+      }
+      const srcMemberCheck = await pool.query(
+        'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+        [origChatId, user_id]
+      );
+      if (srcMemberCheck.rows.length === 0) {
+        return res.status(403).json({ message: 'Нет доступа к исходному чату пересылки' });
+      }
+      const origRow = await pool.query(
+        'SELECT id FROM messages WHERE id = $1 AND chat_id = $2',
+        [origMsgId, origChatId]
+      );
+      if (origRow.rows.length === 0) {
+        return res.status(400).json({ message: 'Исходное сообщение не найдено' });
+      }
+      const nameRow = await pool.query('SELECT name FROM chats WHERE id = $1', [origChatId]);
+      forwardRegistry = {
+        origMsgId,
+        origChatId,
+        originalChatName: nameRow.rows[0]?.name ?? null,
+      };
+    }
+
     // Определяем тип сообщения
     let message_type = 'text';
     if (file_url && content) {
@@ -829,6 +864,15 @@ export const sendMessage = async (req, res) => {
     ]);
 
     const message = result.rows[0];
+
+    if (forwardRegistry) {
+      await pool.query(
+        `INSERT INTO message_forwards (message_id, original_chat_id, original_message_id, forwarded_by)
+         VALUES ($1, $2, $3, $4)`,
+        [message.id, forwardRegistry.origChatId, forwardRegistry.origMsgId, user_id]
+      );
+    }
+
     const senderEmail = (await getSenderDisplayName(req.user.userId)) || req.user.email;
     let senderAvatarUrl = null;
     try {
@@ -883,7 +927,8 @@ export const sendMessage = async (req, res) => {
       reply_to_message: replyToMessage,
       is_pinned: false,
       reactions: [],
-      is_forwarded: false,
+      is_forwarded: Boolean(forwardRegistry),
+      original_chat_name: forwardRegistry ? forwardRegistry.originalChatName : null,
       sender_email: senderEmail,
       sender_avatar_url: senderAvatarUrl
     };
@@ -926,7 +971,9 @@ export const sendMessage = async (req, res) => {
         is_read: false,
         read_at: null,
         sender_email: senderEmail || '',
-        sender_avatar_url: senderAvatarUrl ?? null
+        sender_avatar_url: senderAvatarUrl ?? null,
+        is_forwarded: Boolean(forwardRegistry),
+        original_chat_name: forwardRegistry ? forwardRegistry.originalChatName : null,
       };
 
       if (process.env.NODE_ENV === 'development') {
