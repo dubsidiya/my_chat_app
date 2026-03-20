@@ -194,7 +194,7 @@ export const requestChatKey = async (req, res) => {
     if (chatMeta.rows.length === 0) {
       return res.status(404).json({ message: 'Чат не найден' });
     }
-    const effectiveVersion = requestedVersion ?? parseInt(chatMeta.rows[0].current_key_version, 10) || 1;
+    const effectiveVersion = requestedVersion ?? (parseInt(chatMeta.rows[0].current_key_version, 10) || 1);
 
     // Если у requester уже есть ключ нужной версии, не создаём/не шлём лишние запросы.
     const requesterHasKey = await pool.query(
