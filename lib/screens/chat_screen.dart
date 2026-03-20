@@ -71,6 +71,12 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  static const String _e2eeReady = 'ready';
+  static const String _e2eeMissing = 'missing';
+  static const String _e2eeRequesting = 'requesting';
+  static const String _e2eeRetryBackoff = 'retryBackoff';
+  static const String _e2eeFailed = 'failed';
+
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
   static const Color _accent3 = AppColors.accent;
@@ -130,7 +136,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   bool _isWaitingForE2eeKey = false;
-  String _e2eeKeyState = 'missing'; // ready | missing | requesting | retryBackoff | failed
+  String _e2eeKeyState = _e2eeMissing;
   static const int _messagesPerPage = 50;
   String? _selectedImagePath;
   Uint8List? _selectedImageBytes;
@@ -1683,39 +1689,39 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _retryChatKeyThenReloadMessages(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
     _isWaitingForE2eeKey = true;
-    if (mounted) setState(() => _e2eeKeyState = 'requesting');
+    if (mounted) setState(() => _e2eeKeyState = _e2eeRequesting);
     _showE2eeWaitingSnack();
     final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr, keyVersion: keyVersion);
     _isWaitingForE2eeKey = false;
     if (obtained && mounted) {
-      setState(() => _e2eeKeyState = 'ready');
+      setState(() => _e2eeKeyState = _e2eeReady);
       _hideE2eeWaitingSnack();
       _showE2eeReadySnack();
       await _loadMessages();
     } else if (mounted) {
-      setState(() => _e2eeKeyState = 'retryBackoff');
+      setState(() => _e2eeKeyState = _e2eeRetryBackoff);
       _hideE2eeWaitingSnack();
     }
   }
 
   Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr, {int? keyVersion}) async {
     if (_isWaitingForE2eeKey) return;
-    if (mounted) setState(() => _e2eeKeyState = 'requesting');
+    if (mounted) setState(() => _e2eeKeyState = _e2eeRequesting);
     await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
     unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion));
   }
 
   String? _e2eeStatusText() {
     switch (_e2eeKeyState) {
-      case 'ready':
+      case _e2eeReady:
         return null;
-      case 'missing':
+      case _e2eeMissing:
         return 'Ключ шифрования отсутствует. Запрашиваем...';
-      case 'requesting':
+      case _e2eeRequesting:
         return 'Ожидаем ключ шифрования от собеседника...';
-      case 'retryBackoff':
+      case _e2eeRetryBackoff:
         return 'Ключ не получен, повторим запрос автоматически.';
-      case 'failed':
+      case _e2eeFailed:
         return 'Не удалось получить ключ шифрования.';
       default:
         return 'Ключ шифрования отсутствует. Запрашиваем...';
@@ -1826,18 +1832,18 @@ class _ChatScreenState extends State<ChatScreen> {
         final chatIdStr = widget.chatId.toString();
         final hasKey = await E2eeService.getChatKey(chatIdStr) != null;
         if (hasKey) {
-          if (mounted) setState(() => _e2eeKeyState = 'ready');
+          if (mounted) setState(() => _e2eeKeyState = _e2eeReady);
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
           await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
-          if (mounted) setState(() => _e2eeKeyState = 'missing');
+          if (mounted) setState(() => _e2eeKeyState = _e2eeMissing);
           await E2eeService.requestChatKey(chatIdStr);
           unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
         }
       }
     } catch (e) {
       if (kDebugMode) print('Error loading messages: $e');
-      if (mounted) setState(() => _e2eeKeyState = 'failed');
+      if (mounted) setState(() => _e2eeKeyState = _e2eeFailed);
       // ✅ Если ошибка, но есть кэш - не показываем ошибку
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2660,7 +2666,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (kDebugMode) print('⚠️ Widget not mounted, returning');
       return;
     }
-    if (_e2eeKeyState != 'ready') {
+    if (_e2eeKeyState != _e2eeReady) {
       unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
