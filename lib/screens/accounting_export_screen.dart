@@ -604,8 +604,14 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final totals = _data?['totals'] as Map<String, dynamic>?;
     final teachers = (_data?['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+    final students = (_data?['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final tree = (_data?['tree'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final debug = _data?['debug'] as Map<String, dynamic>?;
+    final bankTransferStudentIds = students
+        .where((s) => s['payByBankTransfer'] == true)
+        .map((s) => _parseStudentId(s['id']))
+        .whereType<int>()
+        .toSet();
 
     final q = _norm(_query);
 
@@ -966,6 +972,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                           ...students.map((s) {
                             final studentName = (s['studentName'] ?? '').toString();
                             final studentId = _parseStudentId(s['studentId']);
+                            final isBankTransferStudent = studentId != null && bankTransferStudentIds.contains(studentId);
                             final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
                             final unpaidCount = lessons.where((x) => x['isPaid'] != true).length;
                             final unpaidSum = lessons.fold<double>(
@@ -981,15 +988,21 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(18),
+                                  color: isBankTransferStudent
+                                      ? Colors.indigo.withAlpha(24)
+                                      : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(18),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color: (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(40),
+                                    color: isBankTransferStudent
+                                        ? Colors.indigo.withAlpha(70)
+                                        : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(40),
                                   ),
                                 ),
                                 child: Icon(
-                                  Icons.person_rounded,
-                                  color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                                  isBankTransferStudent ? Icons.account_balance_rounded : Icons.person_rounded,
+                                  color: isBankTransferStudent
+                                      ? Colors.indigo.shade700
+                                      : (unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700),
                                 ),
                               ),
                               title: Text(
@@ -1012,6 +1025,12 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                       label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
                                       color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
                                     ),
+                                    if (isBankTransferStudent)
+                                      _chip(
+                                        icon: Icons.account_balance_rounded,
+                                        label: 'расчётный счёт',
+                                        color: Colors.indigo.shade700,
+                                      ),
                                     if (overallDebt > 0)
                                       _chip(
                                         icon: Icons.account_balance_wallet_rounded,
