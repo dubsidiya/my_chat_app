@@ -301,9 +301,11 @@ export const exportAccounting = async (req, res) => {
         cancelSameDayCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day').length,
         cancelSameDayFreeCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && !x.isChargeable).length,
         cancelSameDayPaidCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && x.isChargeable).length,
-        makeupPendingCount:
+        makeupPendingCount: Math.max(
           lessonsInPeriod.filter((x) => x.status === 'missed' || x.status === 'cancel_same_day').length -
-          lessonsInPeriod.filter((x) => x.status === 'makeup').length,
+            lessonsInPeriod.filter((x) => x.status === 'makeup').length,
+          0
+        ),
       },
       teachers: teacherOut,
       students: studentsOut,

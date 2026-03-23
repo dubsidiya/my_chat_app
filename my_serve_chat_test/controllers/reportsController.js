@@ -70,7 +70,7 @@ const parseReportContent = (content, reportDate, userId) => {
             timeEnd: endTime,
             status: isCancelled ? 'cancel_same_day' : 'attended',
             originLessonId: null,
-            notes: isCancelled ? 'Отмена в день проведения (оплачивается)' : null
+            notes: isCancelled ? 'Отмена в день проведения' : null
           });
         }
       }

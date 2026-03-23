@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken, requirePrivateAccess, requireSuperuser, isSuperuser } from '../middleware/auth.js';
 import {
   getAllStudents,
+  getMakeupPendingSummary,
   createStudent,
   searchStudentSuggestions,
   linkExistingStudent,
@@ -32,6 +33,7 @@ const requirePrivateOrSuperuser = (req, res, next) => {
 
 // Маршруты для студентов
 router.get('/', requirePrivateAccess, getAllStudents);
+router.get('/makeup-pending', requirePrivateAccess, getMakeupPendingSummary);
 router.post('/', requirePrivateAccess, createStudent);
 router.get('/search', requirePrivateOrSuperuser, searchStudentSuggestions);
 router.post('/link-existing', requirePrivateAccess, linkExistingStudent);

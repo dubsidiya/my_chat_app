@@ -24,6 +24,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
   List<Student> _students = [];
   bool _isLoading = false;
   String _searchQuery = '';
+  int _makeupPendingTotal = 0;
+  List<Map<String, dynamic>> _makeupPendingItems = [];
   
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
@@ -54,9 +56,16 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
     try {
       final students = await _studentsService.getAllStudents();
+      final makeup = await _studentsService.getMakeupPendingSummary();
+      final itemsRaw = (makeup['items'] as List?) ?? const [];
       if (mounted) {
         setState(() {
           _students = students;
+          _makeupPendingTotal = (makeup['totalPending'] as num?)?.toInt() ?? 0;
+          _makeupPendingItems = itemsRaw
+              .whereType<Map>()
+              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+              .toList();
         });
       }
     } catch (e) {
@@ -210,6 +219,54 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
                 ),
+                if (_makeupPendingTotal > 0)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'К отработке: $_makeupPendingTotal занятий',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        ..._makeupPendingItems.take(6).map((item) {
+                          final name = (item['studentName'] ?? '').toString();
+                          final pending = (item['pendingCount'] as num?)?.toInt() ?? 0;
+                          final studentId = (item['studentId'] as num?)?.toInt();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: studentId == null
+                                  ? null
+                                  : () {
+                                      final student = _students.where((s) => s.id == studentId).toList();
+                                      if (student.isEmpty) return;
+                                      _openStudentDetail(student.first);
+                                    },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Text('• $name — $pending'),
+                              ),
+                            ),
+                          );
+                        }),
+                        if (_makeupPendingItems.length > 6)
+                          Text(
+                            'И еще: ${_makeupPendingItems.length - 6}',
+                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
+                          ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: _students.isEmpty
                       ? Center(

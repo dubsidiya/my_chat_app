@@ -193,19 +193,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'missed':
-        return Colors.orange;
-      case 'makeup':
-        return Colors.teal;
-      case 'cancel_same_day':
-        return Colors.deepPurple;
-      default:
-        return Colors.green;
-    }
-  }
-
   Future<void> _cancelDeposit(Transaction tx) async {
     if (!_showAllAccountingData) return; // только суперпользователь
     if (tx.type != 'deposit') return;
@@ -573,9 +560,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                 DateFormat('dd.MM.yyyy')
                                     .format(lesson.lessonDate),
                               ),
-                              subtitle: lesson.lessonTime != null
-                                  ? Text('Время: ${lesson.lessonTime}')
-                                  : Text(_statusLabel(lesson.status)),
+                              subtitle: Text(
+                                [
+                                  if (lesson.lessonTime != null) 'Время: ${lesson.lessonTime}',
+                                  _statusLabel(lesson.status),
+                                ].join(' · '),
+                              ),
                               trailing: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -585,14 +575,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     '${lesson.price.toStringAsFixed(0)} ₽',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    _statusLabel(lesson.status),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _statusColor(lesson.status),
-                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   const SizedBox(height: 2),

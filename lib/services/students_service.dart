@@ -64,6 +64,21 @@ class StudentsService {
     }
   }
 
+  Future<Map<String, dynamic>> getMakeupPendingSummary() async {
+    final headers = await _getAuthHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/students/makeup-pending'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) return data;
+      return const {'totalPending': 0, 'studentsCount': 0, 'items': []};
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось загрузить сводку отработок');
+  }
+
   // Создание студента
   Future<CreateStudentResult> createStudent({
     required String name,

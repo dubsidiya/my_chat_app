@@ -80,6 +80,56 @@ export const getAllStudents = async (req, res) => {
   }
 };
 
+// Сводка "к отработке" для преподавателя:
+// pending = (пропуски + отмены в день) - отработки, только по урокам текущего преподавателя.
+export const getMakeupPendingSummary = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await pool.query(
+      `WITH base AS (
+         SELECT
+           s.id AS student_id,
+           s.name AS student_name,
+           COUNT(*) FILTER (WHERE l.status IN ('missed', 'cancel_same_day'))::int AS missed_count,
+           COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
+         FROM teacher_students ts
+         JOIN students s ON s.id = ts.student_id
+         LEFT JOIN lessons l
+           ON l.student_id = s.id
+          AND l.created_by = $1
+         WHERE ts.teacher_id = $1
+         GROUP BY s.id, s.name
+       )
+       SELECT
+         student_id,
+         student_name,
+         missed_count,
+         makeup_count,
+         GREATEST(missed_count - makeup_count, 0)::int AS pending_count
+       FROM base
+       WHERE GREATEST(missed_count - makeup_count, 0) > 0
+       ORDER BY pending_count DESC, student_name ASC`,
+      [userId]
+    );
+
+    const totalPending = result.rows.reduce((acc, r) => acc + Number(r.pending_count || 0), 0);
+    return res.json({
+      totalPending,
+      studentsCount: result.rows.length,
+      items: result.rows.map((r) => ({
+        studentId: r.student_id,
+        studentName: r.student_name,
+        missedCount: Number(r.missed_count || 0),
+        makeupCount: Number(r.makeup_count || 0),
+        pendingCount: Number(r.pending_count || 0),
+      })),
+    });
+  } catch (error) {
+    console.error('Ошибка получения сводки отработок:', error);
+    return res.status(500).json({ message: 'Ошибка получения сводки отработок' });
+  }
+};
+
 // Создание нового студента (или возврат существующего, если уже есть)
 export const createStudent = async (req, res) => {
   const userId = req.user.userId;
