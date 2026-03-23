@@ -20,8 +20,10 @@ class StudentsScreen extends StatefulWidget {
 
 class _StudentsScreenState extends State<StudentsScreen> {
   final StudentsService _studentsService = StudentsService();
+  final TextEditingController _searchController = TextEditingController();
   List<Student> _students = [];
   bool _isLoading = false;
+  String _searchQuery = '';
   
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
@@ -30,6 +32,20 @@ class _StudentsScreenState extends State<StudentsScreen> {
   void initState() {
     super.initState();
     _loadStudents();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  bool _matchesStudent(Student student, String q) {
+    if (q.isEmpty) return true;
+    final query = q.toLowerCase();
+    final name = student.name.toLowerCase();
+    final parent = (student.parentName ?? '').toLowerCase();
+    return name.contains(query) || parent.contains(query);
   }
 
   Future<void> _loadStudents() async {
@@ -116,6 +132,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final q = _searchQuery.trim().toLowerCase();
+    final filteredStudents = _students.where((s) => _matchesStudent(s, q)).toList();
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
@@ -167,8 +185,34 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 strokeWidth: 3,
               ),
             )
-          : _students.isEmpty
-              ? Center(
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                    decoration: InputDecoration(
+                      hintText: 'Глобальный поиск по детям',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchQuery.trim().isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () {
+                                setState(() {
+                                  _searchQuery = '';
+                                  _searchController.clear();
+                                });
+                              },
+                            ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _students.isEmpty
+                      ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -259,13 +303,48 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: _loadStudents,
-                  child: ListView.builder(
-                    itemCount: _students.length,
+                      : filteredStudents.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off_rounded,
+                                      size: 44,
+                                      color: scheme.onSurface.withValues(alpha: 0.45),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Ничего не найдено',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: scheme.onSurface.withValues(alpha: 0.75),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    OutlinedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _searchQuery = '';
+                                          _searchController.clear();
+                                        });
+                                      },
+                                      icon: const Icon(Icons.clear_all_rounded),
+                                      label: const Text('Сбросить поиск'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _loadStudents,
+                              child: ListView.builder(
+                    itemCount: filteredStudents.length,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemBuilder: (context, index) {
-                      final student = _students[index];
+                      final student = filteredStudents[index];
                       return Dismissible(
                         key: Key('student_${student.id}'),
                         direction: DismissDirection.endToStart,
@@ -406,8 +485,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         ),
                       );
                     },
-                  ),
+                              ),
+                            ),
                 ),
+              ],
+            ),
       floatingActionButton: FloatingActionButton(
         heroTag: "add",
         onPressed: _addStudent,
