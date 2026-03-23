@@ -9,6 +9,7 @@ import {
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
 
 const hasStudentAccess = async (client, teacherId, studentId) => {
   const r = await client.query(
@@ -65,8 +66,21 @@ export const getStudentLessons = async (req, res) => {
 export const createLesson = async (req, res) => {
   const userId = req.user.userId;
   const student_id = parsePositiveInt(req.params?.studentId);
-  const { lesson_date, lesson_time, duration_minutes, price, notes } = req.body;
+  const {
+    lesson_date,
+    lesson_time,
+    duration_minutes,
+    price,
+    notes,
+    status: rawStatus,
+    origin_lesson_id,
+  } = req.body;
   const idempotencyKey = getIdempotencyKey(req);
+  const status = typeof rawStatus === 'string' ? rawStatus.trim() : 'attended';
+  const originLessonId =
+    origin_lesson_id == null || origin_lesson_id === ''
+      ? null
+      : parsePositiveInt(origin_lesson_id);
 
   // Преобразуем price в число, если это строка
   const priceNum = typeof price === 'string' ? parseFloat(price) : price;
@@ -76,6 +90,9 @@ export const createLesson = async (req, res) => {
   }
   if (!ISO_DATE_RE.test(String(lesson_date))) {
     return res.status(400).json({ message: 'lesson_date должен быть в формате YYYY-MM-DD' });
+  }
+  if (!LESSON_STATUSES.has(status)) {
+    return res.status(400).json({ message: 'Некорректный статус занятия' });
   }
 
   // Создание урока + транзакции должно быть атомарным
@@ -94,6 +111,8 @@ export const createLesson = async (req, res) => {
         duration_minutes: duration_minutes || 60,
         price: priceNum,
         notes: notes || null,
+        status,
+        origin_lesson_id: originLessonId,
       }),
     });
     if (idem.replay) {
@@ -128,28 +147,83 @@ export const createLesson = async (req, res) => {
       return res.status(409).json({ message: 'Занятие на эту дату/время уже существует' });
     }
 
+    let isChargeable = true;
+    if (status === 'missed') {
+      isChargeable = false;
+    } else if (status === 'makeup') {
+      isChargeable = false;
+    } else if (status === 'cancel_same_day') {
+      // 1 отмена в день проведения за всё время бесплатна, остальные платные.
+      const freeUsed = await client.query(
+        `SELECT id
+         FROM lessons
+         WHERE student_id = $1
+           AND status = 'cancel_same_day'
+           AND is_chargeable = false
+         LIMIT 1`,
+        [student_id]
+      );
+      isChargeable = freeUsed.rows.length > 0;
+    }
+
+    if (status === 'makeup' && originLessonId) {
+      const originResult = await client.query(
+        `SELECT id, student_id, status
+         FROM lessons
+         WHERE id = $1
+         LIMIT 1`,
+        [originLessonId]
+      );
+      if (originResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Исходный пропуск для отработки не найден' });
+      }
+      const origin = originResult.rows[0];
+      if (origin.student_id !== student_id) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Отработка должна ссылаться на занятие этого же ребенка' });
+      }
+      if (!['missed', 'cancel_same_day'].includes(origin.status)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Отрабатывать можно только пропуск или отмену в день' });
+      }
+      isChargeable = false;
+    }
+
     // Создаем занятие
     const lessonResult = await client.query(
-      `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [student_id, lesson_date, lessonTimeValue, duration_minutes || 60, priceNum, notes || null, userId]
+      [
+        student_id,
+        lesson_date,
+        lessonTimeValue,
+        duration_minutes || 60,
+        priceNum,
+        status,
+        isChargeable,
+        originLessonId,
+        notes || null,
+        userId,
+      ]
     );
 
     const lesson = lessonResult.rows[0];
 
-    // Создаем транзакцию списания
-    await client.query(
-      `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
-       VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-      [
-        student_id,
-        priceNum,
-        `Занятие ${lesson_date}${lesson_time ? ' в ' + lesson_time : ''}`,
-        lesson.id,
-        userId,
-      ]
-    );
+    if (isChargeable) {
+      await client.query(
+        `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
+         VALUES ($1, $2, 'lesson', $3, $4, $5)`,
+        [
+          student_id,
+          priceNum,
+          `Занятие ${lesson_date}${lesson_time ? ' в ' + lesson_time : ''}`,
+          lesson.id,
+          userId,
+        ]
+      );
+    }
     await completeIdempotent(client, {
       userId,
       scope: 'lessons:create',
@@ -167,6 +241,8 @@ export const createLesson = async (req, res) => {
         lessonDate: lesson_date,
         lessonTime: lessonTimeValue,
         price: priceNum,
+        status,
+        isChargeable,
       },
     });
 

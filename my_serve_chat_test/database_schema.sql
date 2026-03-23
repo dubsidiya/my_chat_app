@@ -86,6 +86,9 @@ CREATE TABLE IF NOT EXISTS lessons (
     lesson_time TIME,
     duration_minutes INTEGER DEFAULT 60,
     price DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'attended' CHECK (status IN ('attended', 'missed', 'makeup', 'cancel_same_day')),
+    is_chargeable BOOLEAN NOT NULL DEFAULT true,
+    origin_lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
     notes TEXT,
     created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -110,6 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_students_name_trgm
 ON students USING gin (LOWER(REPLACE(TRIM(name), 'ё', 'е')) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_lessons_student_id ON lessons(student_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(lesson_date DESC);
+CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
+CREATE INDEX IF NOT EXISTS idx_lessons_origin_lesson_id ON lessons(origin_lesson_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_student_status_chargeable ON lessons(student_id, status, is_chargeable);
 CREATE INDEX IF NOT EXISTS idx_transactions_student_id ON transactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);

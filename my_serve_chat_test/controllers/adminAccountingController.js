@@ -116,6 +116,9 @@ export const exportAccounting = async (req, res) => {
               l.lesson_time,
               l.duration_minutes,
               l.price,
+              l.status,
+              COALESCE(l.is_chargeable, true) as is_chargeable,
+              l.origin_lesson_id,
               l.notes,
               l.created_by as teacher_id,
               COALESCE(u.email, '(unknown)') as teacher_username
@@ -191,6 +194,9 @@ export const exportAccounting = async (req, res) => {
         teacherId: l.teacher_id,
         teacherUsername: l.teacher_username || teacherById.get(l.teacher_id) || '',
         notes: l.notes || null,
+        status: (l.status || 'attended').toString(),
+        isChargeable: l.is_chargeable === true,
+        originLessonId: l.origin_lesson_id || null,
       };
       lessonsInPeriod.push(row);
 
@@ -264,6 +270,9 @@ export const exportAccounting = async (req, res) => {
         unpaidAmount: l.unpaidAmount,
         isPaid: l.isPaid,
         notes: l.notes,
+        status: l.status,
+        isChargeable: l.isChargeable,
+        originLessonId: l.originLessonId,
       });
     }
 
@@ -287,6 +296,14 @@ export const exportAccounting = async (req, res) => {
         lessonsAmount: lessonsInPeriod.reduce((acc, x) => acc + x.price, 0),
         paidAmount: lessonsInPeriod.reduce((acc, x) => acc + x.paidAmount, 0),
         unpaidAmount: lessonsInPeriod.reduce((acc, x) => acc + x.unpaidAmount, 0),
+        missedCount: lessonsInPeriod.filter((x) => x.status === 'missed').length,
+        makeupCount: lessonsInPeriod.filter((x) => x.status === 'makeup').length,
+        cancelSameDayCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day').length,
+        cancelSameDayFreeCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && !x.isChargeable).length,
+        cancelSameDayPaidCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && x.isChargeable).length,
+        makeupPendingCount:
+          lessonsInPeriod.filter((x) => x.status === 'missed' || x.status === 'cancel_same_day').length -
+          lessonsInPeriod.filter((x) => x.status === 'makeup').length,
       },
       teachers: teacherOut,
       students: studentsOut,

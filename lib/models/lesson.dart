@@ -6,6 +6,9 @@ class Lesson {
   final int durationMinutes;
   final double price;
   final String? notes;
+  final String status;
+  final bool isChargeable;
+  final int? originLessonId;
   final DateTime createdAt;
 
   Lesson({
@@ -16,6 +19,9 @@ class Lesson {
     required this.durationMinutes,
     required this.price,
     this.notes,
+    this.status = 'attended',
+    this.isChargeable = true,
+    this.originLessonId,
     required this.createdAt,
   });
 
@@ -30,6 +36,9 @@ class Lesson {
           ? json['price'] as double 
           : double.tryParse(json['price'].toString()) ?? 0.0,
       notes: json['notes'] as String?,
+      status: (json['status'] ?? 'attended').toString(),
+      isChargeable: json['is_chargeable'] == null ? true : json['is_chargeable'] == true,
+      originLessonId: json['origin_lesson_id'] as int?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

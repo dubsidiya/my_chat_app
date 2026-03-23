@@ -249,6 +249,8 @@ class StudentsService {
     int? durationMinutes,
     required double price,
     String? notes,
+    String status = 'attended',
+    int? originLessonId,
   }) async {
     final headers = await _getAuthHeaders();
     if (_enableIdempotencyHeaders) {
@@ -263,6 +265,8 @@ class StudentsService {
         if (durationMinutes != null) 'duration_minutes': durationMinutes,
         'price': price,
         'notes': notes,
+        'status': status,
+        if (originLessonId != null) 'origin_lesson_id': originLessonId,
       }),
     );
 

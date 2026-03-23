@@ -24,6 +24,8 @@ class _SlotDraft {
   int durationMinutes = 60;
   int? student1Id;
   int? student2Id;
+  String status1 = 'attended';
+  String status2 = 'attended';
 
   void dispose() {
     startController.dispose();
@@ -93,12 +95,14 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
             if (chunk.isNotEmpty) {
               slot.student1Id = int.tryParse(chunk[0]['student_id'].toString());
+              slot.status1 = (chunk[0]['status'] ?? 'attended').toString();
               final p1 = chunk[0]['price'];
               slot.price1Controller.text =
                   p1 is num ? p1.toString() : (double.tryParse(p1.toString())?.toString() ?? '');
             }
             if (chunk.length > 1) {
               slot.student2Id = int.tryParse(chunk[1]['student_id'].toString());
+              slot.status2 = (chunk[1]['status'] ?? 'attended').toString();
               final p2 = chunk[1]['price'];
               slot.price2Controller.text =
                   p2 is num ? p2.toString() : (double.tryParse(p2.toString())?.toString() ?? '');
@@ -334,7 +338,17 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       slotsPayload.add({
         'timeStart': start,
         'timeEnd': end,
-        'students': students,
+        'students': [
+          {
+            ...students[0],
+            'status': slot.status1,
+          },
+          if (students.length > 1)
+            {
+              ...students[1],
+              'status': slot.status2,
+            },
+        ],
       });
     }
 
@@ -487,6 +501,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                               setState(() {
                                 slot.student1Id = v;
                                 slot.price1Controller.text = '';
+                                slot.status1 = 'attended';
                               });
                               await _prefillLastPriceForStudent(
                                 controller: slot.price1Controller,
@@ -497,6 +512,8 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                               setState(() {});
                             },
                             priceController: slot.price1Controller,
+                            status: slot.status1,
+                            onStatusChanged: (v) => setState(() => slot.status1 = v),
                           ),
                           const SizedBox(height: 10),
                           _StudentPickerRow(
@@ -508,6 +525,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                               setState(() {
                                 slot.student2Id = v;
                                 slot.price2Controller.text = '';
+                                slot.status2 = 'attended';
                               });
                               if (v == null) return;
                               await _prefillLastPriceForStudent(
@@ -519,6 +537,8 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                               setState(() {});
                             },
                             priceController: slot.price2Controller,
+                            status: slot.status2,
+                            onStatusChanged: (v) => setState(() => slot.status2 = v),
                           ),
                         ],
                       ),
@@ -551,6 +571,8 @@ class _StudentPickerRow extends StatefulWidget {
   final ValueChanged<int?> onChanged;
   final TextEditingController priceController;
   final bool allowEmpty;
+  final String status;
+  final ValueChanged<String> onStatusChanged;
 
   const _StudentPickerRow({
     required this.label,
@@ -558,6 +580,8 @@ class _StudentPickerRow extends StatefulWidget {
     required this.value,
     required this.onChanged,
     required this.priceController,
+    required this.status,
+    required this.onStatusChanged,
     this.allowEmpty = false,
   });
 
@@ -657,6 +681,25 @@ class _StudentPickerRowState extends State<_StudentPickerRow> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: widget.status,
+          items: const [
+            DropdownMenuItem(value: 'attended', child: Text('Проведено')),
+            DropdownMenuItem(value: 'missed', child: Text('Пропуск')),
+            DropdownMenuItem(value: 'cancel_same_day', child: Text('Отмена в день')),
+            DropdownMenuItem(value: 'makeup', child: Text('Отработка')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            widget.onStatusChanged(v);
+          },
+          decoration: const InputDecoration(
+            labelText: 'Статус',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
         ),
       ],
     );

@@ -173,6 +173,21 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final isPaid = l['isPaid'] == true;
     final color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
     final bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
+    final status = (l['status'] ?? 'attended').toString();
+    String statusLabel;
+    switch (status) {
+      case 'missed':
+        statusLabel = 'Пропуск';
+        break;
+      case 'makeup':
+        statusLabel = 'Отработка';
+        break;
+      case 'cancel_same_day':
+        statusLabel = 'Отмена в день';
+        break;
+      default:
+        statusLabel = 'Проведено';
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -204,6 +219,15 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                 Text(
                   'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
                   style: TextStyle(color: scheme.onSurface.withValues(alpha:0.75)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'статус: $statusLabel',
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -907,6 +931,13 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     Text('Сумма занятий: ${(totals['lessonsAmount'] ?? 0).toString()}'),
                     Text('Оплачено: ${(totals['paidAmount'] ?? 0).toString()}'),
                     Text('Долг: ${(totals['unpaidAmount'] ?? 0).toString()}'),
+                    const SizedBox(height: 6),
+                    Text('Пропусков: ${totals['missedCount'] ?? 0}'),
+                    Text('Отработок: ${totals['makeupCount'] ?? 0}'),
+                    Text('Отмен в день: ${totals['cancelSameDayCount'] ?? 0}'),
+                    Text('Бесплатных отмен в день: ${totals['cancelSameDayFreeCount'] ?? 0}'),
+                    Text('Платных отмен в день: ${totals['cancelSameDayPaidCount'] ?? 0}'),
+                    Text('К отработке: ${totals['makeupPendingCount'] ?? 0}'),
                     if ((totals['lessonsCount'] ?? 0) == 0) ...[
                       const SizedBox(height: 8),
                       const Text(

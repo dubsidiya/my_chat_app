@@ -180,6 +180,32 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'missed':
+        return 'Пропуск';
+      case 'makeup':
+        return 'Отработка';
+      case 'cancel_same_day':
+        return 'Отмена в день';
+      default:
+        return 'Проведено';
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'missed':
+        return Colors.orange;
+      case 'makeup':
+        return Colors.teal;
+      case 'cancel_same_day':
+        return Colors.deepPurple;
+      default:
+        return Colors.green;
+    }
+  }
+
   Future<void> _cancelDeposit(Transaction tx) async {
     if (!_showAllAccountingData) return; // только суперпользователь
     if (tx.type != 'deposit') return;
@@ -314,6 +340,10 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     final isDebtor = _balance < 0;
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final makeupPending = _lessons
+            .where((l) => l.status == 'missed' || l.status == 'cancel_same_day')
+            .length -
+        _lessons.where((l) => l.status == 'makeup').length;
 
     return Scaffold(
       appBar: AppBar(
@@ -482,6 +512,18 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           Expanded(
             child: Column(
               children: [
+                if (_lessons.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        Chip(
+                          label: Text('К отработке: ${makeupPending < 0 ? 0 : makeupPending}'),
+                          avatar: const Icon(Icons.replay_rounded, size: 16),
+                        ),
+                      ],
+                    ),
+                  ),
                 TabBar(
                   controller: _tabController,
                   tabs: [
@@ -533,7 +575,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               ),
                               subtitle: lesson.lessonTime != null
                                   ? Text('Время: ${lesson.lessonTime}')
-                                  : null,
+                                  : Text(_statusLabel(lesson.status)),
                               trailing: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -543,6 +585,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     '${lesson.price.toStringAsFixed(0)} ₽',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    _statusLabel(lesson.status),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _statusColor(lesson.status),
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   const SizedBox(height: 2),

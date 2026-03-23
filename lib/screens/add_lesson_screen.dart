@@ -24,6 +24,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
   DateTime _selectedDate = DateTime.now();
   int _durationMinutes = 60;
   bool _isLoading = false;
+  String _lessonStatus = 'attended';
 
   static const double _largeAmountWarn = 10000;
   static const double _maxAmount = 1000000;
@@ -64,6 +65,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
         lessonTime: _timeController.text.isEmpty ? null : _timeController.text,
         durationMinutes: _durationMinutes,
         price: double.parse(_priceController.text),
+        status: _lessonStatus,
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -209,6 +211,27 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<String>(
+              value: _lessonStatus,
+              decoration: const InputDecoration(
+                labelText: 'Статус занятия',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'attended', child: Text('Проведено')),
+                DropdownMenuItem(value: 'missed', child: Text('Пропуск')),
+                DropdownMenuItem(value: 'makeup', child: Text('Отработка')),
+                DropdownMenuItem(value: 'cancel_same_day', child: Text('Отмена в день')),
+              ],
+              onChanged: _isLoading
+                  ? null
+                  : (v) {
+                      if (v == null) return;
+                      setState(() => _lessonStatus = v);
+                    },
             ),
             const SizedBox(height: 16),
 

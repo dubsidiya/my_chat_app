@@ -68,7 +68,8 @@ const parseReportContent = (content, reportDate, userId) => {
             price,
             timeStart: startTime,
             timeEnd: endTime,
-            isCancelled,
+            status: isCancelled ? 'cancel_same_day' : 'attended',
+            originLessonId: null,
             notes: isCancelled ? 'Отмена в день проведения (оплачивается)' : null
           });
         }
@@ -85,6 +86,7 @@ const parseReportContent = (content, reportDate, userId) => {
 const MAX_SLOTS_PER_DAY = 10;
 const MAX_STUDENTS_PER_SLOT = 2;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
 
 const isValidTimeHHMM = (t) => typeof t === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
 
@@ -161,11 +163,30 @@ const validateSlots = (slots) => {
     for (const st of slot.students) {
       const id = parseInt(st?.studentId, 10);
       const price = typeof st?.price === 'string' ? parseFloat(st.price) : st?.price;
+      const status = typeof st?.status === 'string' ? st.status.trim() : 'attended';
+      const originLessonId = st?.originLessonId == null ? null : parseInt(st.originLessonId, 10);
       if (!id || Number.isNaN(id)) return 'Некорректный ученик в занятии';
       if (!Number.isFinite(price) || price <= 0) return 'Укажите стоимость для каждого ученика';
+      if (!LESSON_STATUSES.has(status)) return 'Некорректный статус занятия';
+      if (originLessonId != null && Number.isNaN(originLessonId)) return 'Некорректный originLessonId';
     }
   }
   return null;
+};
+
+const resolveChargeableByStatus = async (client, { studentId, status, originLessonId }) => {
+  if (status === 'missed' || status === 'makeup') return false;
+  if (status !== 'cancel_same_day') return true;
+  const freeUsed = await client.query(
+    `SELECT id
+     FROM lessons
+     WHERE student_id = $1
+       AND status = 'cancel_same_day'
+       AND is_chargeable = false
+     LIMIT 1`,
+    [studentId]
+  );
+  return freeUsed.rows.length > 0;
 };
 
 const isValidISODate = (value) => typeof value === 'string' && ISO_DATE_RE.test(value);
@@ -504,12 +525,13 @@ export const createReport = async (req, res) => {
           studentId: parseInt(st.studentId, 10),
           studentName: idToName.get(parseInt(st.studentId, 10)) || '',
           price: typeof st.price === 'string' ? parseFloat(st.price) : st.price,
+          status: typeof st.status === 'string' ? st.status.trim() : 'attended',
+          originLessonId: st.originLessonId == null ? null : parseInt(st.originLessonId, 10),
           timeStart,
           timeEnd,
           lessonTimeHHMM: timeStart,
           durationMinutes,
           notes: null,
-          isCancelled: false,
         }));
       });
     }
@@ -532,7 +554,9 @@ export const createReport = async (req, res) => {
     // Создаем занятия для каждого найденного ученика
     const createdLessons = [];
     for (const item of parsedLessons) {
-      const { price, notes, isCancelled } = item;
+      const { price, notes } = item;
+      const status = typeof item.status === 'string' ? item.status : 'attended';
+      const originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
 
       // studentId может прийти из slots напрямую
       let studentId = item.studentId;
@@ -575,14 +599,29 @@ export const createReport = async (req, res) => {
       // Формируем описание с временем
       let description = `Занятие ${report_date}`;
       if (item.timeStart && item.timeEnd) description += ` ${item.timeStart}-${item.timeEnd}`;
-      if (isCancelled) {
-        description += ' (отмена, оплачивается)';
+      if (status === 'cancel_same_day') description += ' (отмена в день)';
+      if (status === 'missed') description += ' (пропуск)';
+      if (status === 'makeup') description += ' (отработка)';
+
+      if (status === 'makeup' && originLessonId) {
+        const originResult = await client.query(
+          `SELECT id, student_id, status
+           FROM lessons
+           WHERE id = $1
+           LIMIT 1`,
+          [originLessonId]
+        );
+        if (originResult.rows.length === 0) continue;
+        const origin = originResult.rows[0];
+        if (origin.student_id !== studentId) continue;
+        if (!['missed', 'cancel_same_day'].includes(origin.status)) continue;
       }
+      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
 
       // Создаем занятие
       const lessonResult = await client.query(
-        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
         [
           studentId,
@@ -590,6 +629,9 @@ export const createReport = async (req, res) => {
           lessonTime,
           item.durationMinutes || 60,
           price,
+          status,
+          isChargeable,
+          originLessonId,
           notes || null,
           userId,
         ]
@@ -597,12 +639,13 @@ export const createReport = async (req, res) => {
 
       const lesson = lessonResult.rows[0];
 
-      // Создаем транзакцию списания
-      await client.query(
-        `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
-         VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-        [studentId, price, description, lesson.id, userId]
-      );
+      if (isChargeable) {
+        await client.query(
+          `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
+           VALUES ($1, $2, 'lesson', $3, $4, $5)`,
+          [studentId, price, description, lesson.id, userId]
+        );
+      }
 
       // Связываем занятие с отчетом
       await client.query(
@@ -789,12 +832,13 @@ export const updateReport = async (req, res) => {
           studentId: parseInt(st.studentId, 10),
           studentName: idToName.get(parseInt(st.studentId, 10)) || '',
           price: typeof st.price === 'string' ? parseFloat(st.price) : st.price,
+          status: typeof st.status === 'string' ? st.status.trim() : 'attended',
+          originLessonId: st.originLessonId == null ? null : parseInt(st.originLessonId, 10),
           timeStart,
           timeEnd,
           lessonTimeHHMM: timeStart,
           durationMinutes,
           notes: null,
-          isCancelled: false,
         }));
       });
     }
@@ -826,7 +870,9 @@ export const updateReport = async (req, res) => {
     const createdLessons = [];
 
     for (const item of parsedLessons) {
-      const { price, notes, isCancelled } = item;
+      const { price, notes } = item;
+      const status = typeof item.status === 'string' ? item.status : 'attended';
+      const originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
 
       let studentId = item.studentId;
       let studentName = item.studentName;
@@ -865,21 +911,51 @@ export const updateReport = async (req, res) => {
 
       let description = `Занятие ${report_date}`;
       if (item.timeStart && item.timeEnd) description += ` ${item.timeStart}-${item.timeEnd}`;
-      if (isCancelled) description += ' (отмена, оплачивается)';
+      if (status === 'cancel_same_day') description += ' (отмена в день)';
+      if (status === 'missed') description += ' (пропуск)';
+      if (status === 'makeup') description += ' (отработка)';
+
+      if (status === 'makeup' && originLessonId) {
+        const originResult = await client.query(
+          `SELECT id, student_id, status
+           FROM lessons
+           WHERE id = $1
+           LIMIT 1`,
+          [originLessonId]
+        );
+        if (originResult.rows.length === 0) continue;
+        const origin = originResult.rows[0];
+        if (origin.student_id !== studentId) continue;
+        if (!['missed', 'cancel_same_day'].includes(origin.status)) continue;
+      }
+      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
 
       const lessonResult = await client.query(
-        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
-        [studentId, report_date, lessonTime, item.durationMinutes || 60, price, notes || null, userId]
+        [
+          studentId,
+          report_date,
+          lessonTime,
+          item.durationMinutes || 60,
+          price,
+          status,
+          isChargeable,
+          originLessonId,
+          notes || null,
+          userId,
+        ]
       );
       const lesson = lessonResult.rows[0];
 
-      await client.query(
-        `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
-         VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-        [studentId, price, description, lesson.id, userId]
-      );
+      if (isChargeable) {
+        await client.query(
+          `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
+           VALUES ($1, $2, 'lesson', $3, $4, $5)`,
+          [studentId, price, description, lesson.id, userId]
+        );
+      }
 
       await client.query(
         `INSERT INTO report_lessons (report_id, lesson_id)
