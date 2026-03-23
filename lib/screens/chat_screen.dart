@@ -891,6 +891,19 @@ class _ChatScreenState extends State<ChatScreen> {
             return;
           }
 
+          // ✅ E2EE rotation after member leave/remove: leader bootstraps a fresh key for new version.
+          if (messageType == 'e2ee_key_rotated') {
+            final chatId = data['chatId']?.toString();
+            final keyVersion = data['keyVersion'] is int
+                ? data['keyVersion'] as int
+                : int.tryParse((data['keyVersion'] ?? '').toString());
+            final leaderUserId = data['leaderUserId']?.toString();
+            if (chatId == widget.chatId.toString() && keyVersion != null && keyVersion > 0) {
+              unawaited(_handleE2eeKeyRotation(chatId!, keyVersion, leaderUserId));
+            }
+            return;
+          }
+
           // ✅ Новое сообщение (realtime) — type == 'message' просто не возвращаемся, идём к обработке chat_id ниже
 
           // ✅ Presence: начальное состояние
@@ -1709,6 +1722,36 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() => _e2eeKeyState = _e2eeRequesting);
     await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
     unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion));
+  }
+
+  Future<void> _handleE2eeKeyRotation(String chatIdStr, int keyVersion, String? leaderUserId) async {
+    if (!mounted) return;
+    setState(() => _e2eeKeyState = _e2eeMissing);
+
+    final myId = widget.userId.toString();
+    final isLeader = leaderUserId != null && leaderUserId == myId;
+    if (isLeader) {
+      try {
+        await E2eeService.ensureKeyPair();
+        final members = await _chatsService.getChatMembers(chatIdStr);
+        final memberIds = members.map((m) => m['id']?.toString() ?? '').where((x) => x.isNotEmpty).toList();
+        final pubKeys = await E2eeService.fetchPublicKeys(memberIds);
+        final keysMembers = memberIds
+            .map((id) => <String, dynamic>{'id': id, 'publicKey': pubKeys[id] ?? ''})
+            .toList();
+        await E2eeService.createChatKey(chatIdStr, keysMembers, keyVersion: keyVersion);
+        if (mounted) {
+          setState(() => _e2eeKeyState = _e2eeReady);
+          _showE2eeReadySnack();
+        }
+        await _loadMessages();
+        return;
+      } catch (_) {
+        // Fall through to request/retry path.
+      }
+    }
+
+    await _ensureE2eeKeyAndReloadIfMissing(chatIdStr, keyVersion: keyVersion);
   }
 
   String? _e2eeStatusText() {

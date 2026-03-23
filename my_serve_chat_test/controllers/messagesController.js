@@ -1036,7 +1036,31 @@ export const sendMessage = async (req, res) => {
           const chatName = chatInfo.rows[0]?.name || 'Чат';
           const isGroup = chatInfo.rows[0]?.is_group ?? true;
           const title = 'Новое сообщение';
-          const body = `${senderEmail}: ${(contentStr || '').trim().slice(0, 80)}${(contentStr || '').length > 80 ? '…' : ''}`.trim() || 'Сообщение в чате';
+          const looksLikeEncryptedText = (() => {
+            const raw = String(contentStr || '').trim();
+            if (!raw.startsWith('{')) return false;
+            try {
+              const d = JSON.parse(raw);
+              return Boolean(d && d.v === '1' && d.ct);
+            } catch (_) {
+              return false;
+            }
+          })();
+          const plainPreview = String(contentStr || '').trim();
+          const isFile = Boolean(file_url);
+          const mime = String(file_mime || '').toLowerCase();
+          const isVoice = isFile && (mime.startsWith('audio/') || String(file_name || '').toLowerCase().endsWith('.m4a'));
+          const isImage = Boolean(image_url);
+          const preview = looksLikeEncryptedText
+            ? '🔐 Зашифрованное сообщение'
+            : isVoice
+              ? '🎤 Голосовое сообщение'
+              : isImage
+                ? (plainPreview ? `📷 ${plainPreview}` : '📷 Изображение')
+                : isFile
+                  ? (plainPreview ? `📎 ${plainPreview}` : '📎 Файл')
+                  : (plainPreview || 'Сообщение в чате');
+          const body = `${senderEmail}: ${preview.slice(0, 80)}${preview.length > 80 ? '…' : ''}`.trim();
           await sendPushToTokens(tokens, title, body, {
             chatId: chatIdNum.toString(),
             messageId: message.id.toString(),

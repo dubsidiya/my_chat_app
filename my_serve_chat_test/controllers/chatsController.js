@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import pool from '../db.js';
 import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
+import { getWebSocketClients } from '../websocket/websocket.js';
 
 const normalizeRole = (role) => (role || '').toString().toLowerCase();
 
@@ -112,6 +113,47 @@ const generateInviteCode = () => {
 const ensureChatMember = async (chatId, userId) => {
   const r = await pool.query('SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
   return r.rows.length > 0;
+};
+
+const notifyChatKeyRotated = async (chatId, keyVersion) => {
+  try {
+    const members = await pool.query(
+      'SELECT user_id FROM chat_users WHERE chat_id = $1 ORDER BY user_id ASC',
+      [chatId]
+    );
+    if (!members.rows.length) return;
+
+    const clients = getWebSocketClients();
+    let leaderUserId = null;
+    for (const row of members.rows) {
+      const uid = row.user_id?.toString();
+      if (!uid) continue;
+      const ws = clients.get(uid);
+      if (ws && ws.readyState === 1) {
+        leaderUserId = uid;
+        break;
+      }
+    }
+    if (!leaderUserId) {
+      leaderUserId = members.rows[0]?.user_id?.toString() || null;
+    }
+    const payload = JSON.stringify({
+      type: 'e2ee_key_rotated',
+      chatId: String(chatId),
+      keyVersion,
+      leaderUserId,
+    });
+    for (const row of members.rows) {
+      const uid = row.user_id?.toString();
+      if (!uid) continue;
+      const ws = clients.get(uid);
+      if (ws && ws.readyState === 1) {
+        ws.send(payload);
+      }
+    }
+  } catch (e) {
+    console.error('Ошибка notifyChatKeyRotated:', e);
+  }
 };
 
 // Получение всех чатов пользователя
@@ -809,12 +851,33 @@ export const removeMemberFromChat = async (req, res) => {
       [chatId]
     );
     const newCountValue = parseInt(newCount.rows[0].count);
-    
+
+    let rotatedToVersion = null;
+    if (newCountValue > 0) {
+      // E2EE hardening: rotate active chat key version after member removal.
+      const rotated = await pool.query(
+        'UPDATE chats SET current_key_version = current_key_version + 1 WHERE id = $1 RETURNING current_key_version',
+        [chatId]
+      );
+      rotatedToVersion = parseInt(rotated.rows[0]?.current_key_version, 10) || null;
+      if (rotatedToVersion != null) {
+        // Ensure the new version starts clean; history keys for old versions remain intact.
+        await pool.query(
+          'DELETE FROM chat_keys WHERE chat_id = $1 AND key_version = $2',
+          [chatId, rotatedToVersion]
+        );
+      }
+    }
+
     if (newCountValue <= 1) {
       await pool.query(
         'UPDATE chats SET is_group = false WHERE id = $1',
         [chatId]
       );
+    }
+
+    if (rotatedToVersion != null) {
+      await notifyChatKeyRotated(chatId, rotatedToVersion);
     }
 
     res.status(200).json({ message: "Участник успешно удален из чата" });
@@ -901,12 +964,32 @@ export const leaveChat = async (req, res) => {
       [chatId]
     );
     const newCountValue = parseInt(newCount.rows[0].count);
-    
+
+    let rotatedToVersion = null;
+    if (newCountValue > 0) {
+      // E2EE hardening: rotate active chat key version after a member leaves.
+      const rotated = await pool.query(
+        'UPDATE chats SET current_key_version = current_key_version + 1 WHERE id = $1 RETURNING current_key_version',
+        [chatId]
+      );
+      rotatedToVersion = parseInt(rotated.rows[0]?.current_key_version, 10) || null;
+      if (rotatedToVersion != null) {
+        await pool.query(
+          'DELETE FROM chat_keys WHERE chat_id = $1 AND key_version = $2',
+          [chatId, rotatedToVersion]
+        );
+      }
+    }
+
     if (newCountValue <= 1) {
       await pool.query(
         'UPDATE chats SET is_group = false WHERE id = $1',
         [chatId]
       );
+    }
+
+    if (rotatedToVersion != null) {
+      await notifyChatKeyRotated(chatId, rotatedToVersion);
     }
 
     res.status(200).json({ message: "Вы успешно вышли из чата" });

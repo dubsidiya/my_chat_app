@@ -103,11 +103,23 @@ class E2eeService {
   // ─── Chat key management ───
 
   /// Generate a random AES-256 chat key, encrypt it for each member, and upload.
-  static Future<void> createChatKey(String chatId, List<Map<String, dynamic>> members) async {
+  static Future<void> createChatKey(
+    String chatId,
+    List<Map<String, dynamic>> members, {
+    int? keyVersion,
+  }) async {
     final chatKey = await _aesGcm.newSecretKey();
     final chatKeyBytes = await chatKey.extractBytes();
 
-    await _secure.write(key: '$_chatKeyPrefix$chatId', value: base64Encode(chatKeyBytes));
+    await _secure.write(
+      key: _chatCacheKey(chatId, keyVersion),
+      value: base64Encode(chatKeyBytes),
+    );
+    // Keep compatibility cache key as pointer to "latest known" key for chat.
+    await _secure.write(
+      key: _chatCacheKey(chatId),
+      value: base64Encode(chatKeyBytes),
+    );
 
     final myKeyPair = await _getKeyPair();
     final myPubB64 = await getMyPublicKeyBase64();
@@ -144,7 +156,7 @@ class E2eeService {
       });
     }
 
-    await _storeChatKeysOnServer(chatId, keysPayload);
+    await _storeChatKeysOnServer(chatId, keysPayload, keyVersion: keyVersion);
   }
 
   /// Retrieve and decrypt the chat key from the server.

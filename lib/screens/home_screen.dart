@@ -283,6 +283,17 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         return;
       }
+      if (event is Map && event['type'] == 'e2ee_key_rotated') {
+        final chatId = event['chatId']?.toString();
+        final keyVersion = event['keyVersion'] is int
+            ? event['keyVersion'] as int
+            : int.tryParse((event['keyVersion'] ?? '').toString());
+        final leaderUserId = event['leaderUserId']?.toString();
+        if (chatId != null && keyVersion != null && keyVersion > 0) {
+          unawaited(_handleE2eeKeyRotationEvent(chatId, keyVersion, leaderUserId));
+        }
+        return;
+      }
       // Новое сообщение в любой чат: обновляем список чатов
       if (event is Map && event['chat_id'] != null && event['id'] != null) {
         final type = event['type']?.toString();
@@ -291,6 +302,29 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     });
+  }
+
+  Future<void> _handleE2eeKeyRotationEvent(String chatId, int keyVersion, String? leaderUserId) async {
+    final myId = widget.userId.toString();
+    if (leaderUserId != null && leaderUserId == myId) {
+      try {
+        await E2eeService.ensureKeyPair();
+        final members = await _chatsService.getChatMembers(chatId);
+        final memberIds = members.map((m) => m['id']?.toString() ?? '').where((x) => x.isNotEmpty).toList();
+        final pubKeys = await E2eeService.fetchPublicKeys(memberIds);
+        final keysMembers = memberIds
+            .map((id) => <String, dynamic>{'id': id, 'publicKey': pubKeys[id] ?? ''})
+            .toList();
+        await E2eeService.createChatKey(chatId, keysMembers, keyVersion: keyVersion);
+        return;
+      } catch (_) {
+        // fall back to request path
+      }
+    }
+    try {
+      await E2eeService.requestChatKey(chatId, keyVersion: keyVersion);
+      await E2eeService.waitForChatKeyFromServer(chatId, keyVersion: keyVersion);
+    } catch (_) {}
   }
 
   @override
