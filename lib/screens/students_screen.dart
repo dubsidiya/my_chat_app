@@ -87,16 +87,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
   }
 
   void _openStudentDetail(Student student) async {
-    final result = await Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => StudentDetailScreen(student: student),
       ),
     );
-
-    if (result == true) {
-      _loadStudents();
-    }
+    _loadStudents();
   }
 
   void _addStudent() async {
@@ -138,6 +135,92 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
+  void _openMakeupPendingSheet() {
+    if (_makeupPendingItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Сейчас нет занятий к отработке'),
+        ),
+      );
+      return;
+    }
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.replay_rounded),
+                  const SizedBox(width: 8),
+                  Text(
+                    'К отработке: $_makeupPendingTotal',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Запись исчезнет из списка автоматически, когда добавите занятие со статусом "Отработка".',
+                style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _makeupPendingItems.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final item = _makeupPendingItems[index];
+                    final name = (item['studentName'] ?? '').toString();
+                    final pending = (item['pendingCount'] as num?)?.toInt() ?? 0;
+                    final missed = (item['missedCount'] as num?)?.toInt() ?? 0;
+                    final makeup = (item['makeupCount'] as num?)?.toInt() ?? 0;
+                    final studentId = (item['studentId'] as num?)?.toInt();
+                    return ListTile(
+                      leading: const Icon(Icons.person_rounded),
+                      title: Text(name),
+                      subtitle: Text('Пропуски: $missed • Отработано: $makeup'),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$pending',
+                          style: TextStyle(
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      onTap: studentId == null
+                          ? null
+                          : () {
+                              final student = _students.where((s) => s.id == studentId).toList();
+                              if (student.isEmpty) return;
+                              Navigator.pop(ctx);
+                              _openStudentDetail(student.first);
+                            },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -156,6 +239,43 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.replay_rounded, color: Colors.orange),
+                  onPressed: _openMakeupPendingSheet,
+                  tooltip: 'К отработке',
+                ),
+                if (_makeupPendingTotal > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade600,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        _makeupPendingTotal > 99 ? '99+' : _makeupPendingTotal.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
@@ -219,54 +339,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
                 ),
-                if (_makeupPendingTotal > 0)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'К отработке: $_makeupPendingTotal занятий',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 8),
-                        ..._makeupPendingItems.take(6).map((item) {
-                          final name = (item['studentName'] ?? '').toString();
-                          final pending = (item['pendingCount'] as num?)?.toInt() ?? 0;
-                          final studentId = (item['studentId'] as num?)?.toInt();
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: studentId == null
-                                  ? null
-                                  : () {
-                                      final student = _students.where((s) => s.id == studentId).toList();
-                                      if (student.isEmpty) return;
-                                      _openStudentDetail(student.first);
-                                    },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
-                                child: Text('• $name — $pending'),
-                              ),
-                            ),
-                          );
-                        }),
-                        if (_makeupPendingItems.length > 6)
-                          Text(
-                            'И еще: ${_makeupPendingItems.length - 6}',
-                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
-                          ),
-                      ],
-                    ),
-                  ),
                 Expanded(
                   child: _students.isEmpty
                       ? Center(
