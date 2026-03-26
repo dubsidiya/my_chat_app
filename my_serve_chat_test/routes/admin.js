@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken, requireSuperuser } from '../middleware/auth.js';
 import { exportAccounting, exportAccountingTransactions } from '../controllers/adminAccountingController.js';
-import { adminResetUserPassword } from '../controllers/authController.js';
+import { adminResetUserPassword } from '../controllers/auth/index.js';
 
 const router = express.Router();
 

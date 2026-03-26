@@ -1,5 +1,4 @@
 import pool from '../db.js';
-import { getDateInTimeZoneISO, getUserTimeZone } from '../utils/timezone.js';
 import {
   beginIdempotent,
   completeIdempotent,
@@ -8,207 +7,38 @@ import {
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
 import { isSuperuser } from '../middleware/auth.js';
-
-// Парсинг текста отчета для извлечения занятий
-// Новый формат:
-// 17 декабря
-// за какой день отчет
-// 14-16 Антон Нгуен 2.0 / Алексей курганский 2.0
-// 16-18 Элина 2.0/ Иван удодов 2.1 ?????
-// 18-20 Илья Мищенко 2.1/ Майкл 1.8
-const parseReportContent = (content, reportDate, userId) => {
-  const lines = content.split('\n').map(line => line.trim()).filter(line => line);
-  const lessons = [];
-  
-  // Пропускаем первую строку с датой (например, "17 декабря")
-  let startIndex = 0;
-  if (lines.length > 0 && /^\d+\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i.test(lines[0])) {
-    startIndex = 1;
-  }
-
-  for (let i = startIndex; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
-
-    // Формат: "14-16 Антон Нгуен 2.0 / Алексей курганский 2.0"
-    // или: "16-18 Элина 2.0/ Иван удодов 2.1 ??????"
-    const timePattern = /^(\d{1,2})-(\d{1,2})\s+(.+)$/;
-    const timeMatch = line.match(timePattern);
-    
-    if (!timeMatch) continue;
-
-    const startTime = timeMatch[1];
-    const endTime = timeMatch[2];
-    const restOfLine = timeMatch[3];
-
-    // Проверяем на отмену (??????)
-    const isCancelled = /\?{3,}/.test(restOfLine);
-    const cleanLine = restOfLine.replace(/\?{3,}/g, '').trim();
-
-    // Разделяем учеников по "/"
-    const students = cleanLine.split('/').map(s => s.trim()).filter(s => s);
-
-    for (const studentStr of students) {
-      // Ищем имя и цену в формате "Имя 2.0" или "Имя 2.1"
-      // Цена может быть в формате: 2.0 = 2000, 2.1 = 2100, 1.8 = 1800
-      const studentPattern = /^(.+?)\s+(\d+)\.(\d+)\s*$/;
-      const studentMatch = studentStr.match(studentPattern);
-
-      if (studentMatch) {
-        const studentName = studentMatch[1].trim();
-        const priceInt = parseInt(studentMatch[2]);
-        const priceDec = parseInt(studentMatch[3]);
-        
-        // Преобразуем "2.0" в 2000, "2.1" в 2100, "1.8" в 1800
-        const price = priceInt * 1000 + priceDec * 100;
-
-        if (studentName && price > 0) {
-          lessons.push({
-            studentName,
-            price,
-            timeStart: startTime,
-            timeEnd: endTime,
-            status: isCancelled ? 'cancel_same_day' : 'attended',
-            originLessonId: null,
-            notes: isCancelled ? 'Отмена в день проведения' : null
-          });
-        }
-      }
-    }
-  }
-
-  return lessons;
-};
-
-// -----------------------------
-// Структурные отчеты (конструктор)
-// -----------------------------
-const MAX_SLOTS_PER_DAY = 10;
-const MAX_STUDENTS_PER_SLOT = 2;
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
-
-const isValidTimeHHMM = (t) => typeof t === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
-
-const toMinutes = (t) => {
-  const [h, m] = t.split(':').map((x) => parseInt(x, 10));
-  return h * 60 + m;
-};
-
-const formatPriceK = (priceRub) => {
-  const n = typeof priceRub === 'string' ? parseFloat(priceRub) : priceRub;
-  if (!Number.isFinite(n)) return '0.0';
-  return (n / 1000).toFixed(1);
-};
-
-const buildReportContentFromSlots = (reportDate, slots, studentIdToName) => {
-  const lines = [];
-  lines.push(String(reportDate));
-  lines.push('');
-  for (const slot of slots) {
-    const start = slot.timeStart;
-    const end = slot.timeEnd;
-    const studentParts = (slot.students || []).map((s) => {
-      const name = studentIdToName.get(s.studentId) || `ID:${s.studentId}`;
-      return `${name} ${formatPriceK(s.price)}`;
-    });
-    lines.push(`${start}-${end} ${studentParts.join(' / ')}`.trim());
-  }
-  return lines.join('\n').trim();
-};
-
-const minutesToHHMM = (mins) => {
-  const m = Math.max(0, Math.min(23 * 60 + 59, mins));
-  const hh = String(Math.floor(m / 60)).padStart(2, '0');
-  const mm = String(m % 60).padStart(2, '0');
-  return `${hh}:${mm}`;
-};
-
-const normalizeSlots = (rawSlots) => {
-  if (!Array.isArray(rawSlots)) return [];
-  return rawSlots
-    .map((s) => ({
-      timeStart: typeof s?.timeStart === 'string' ? s.timeStart.trim() : '',
-      timeEnd: typeof s?.timeEnd === 'string' ? s.timeEnd.trim() : '',
-      students: Array.isArray(s?.students) ? s.students : [],
-    }))
-    .filter((s) => s.timeStart && s.timeEnd);
-};
-
-const validateSlots = (slots) => {
-  if (!Array.isArray(slots) || slots.length === 0) {
-    return 'Нужно добавить хотя бы одно занятие';
-  }
-  if (slots.length > MAX_SLOTS_PER_DAY) {
-    return `Максимум ${MAX_SLOTS_PER_DAY} занятий в день`;
-  }
-  for (const slot of slots) {
-    if (!isValidTimeHHMM(slot.timeStart) || !isValidTimeHHMM(slot.timeEnd)) {
-      return 'Время должно быть в формате ЧЧ:ММ';
-    }
-    const a = toMinutes(slot.timeStart);
-    const b = toMinutes(slot.timeEnd);
-    if (b <= a) return 'Время окончания должно быть позже времени начала';
-    if (!Array.isArray(slot.students) || slot.students.length === 0) {
-      return 'В каждом времени должен быть выбран хотя бы один ученик';
-    }
-    if (slot.students.length > MAX_STUDENTS_PER_SLOT) {
-      return `В одном времени максимум ${MAX_STUDENTS_PER_SLOT} ученика`;
-    }
-    const ids = slot.students.map((x) => x?.studentId).filter(Boolean);
-    const unique = new Set(ids);
-    if (ids.length !== unique.size) {
-      return 'В одном времени нельзя выбрать одного и того же ученика дважды';
-    }
-    for (const st of slot.students) {
-      const id = parseInt(st?.studentId, 10);
-      const price = typeof st?.price === 'string' ? parseFloat(st.price) : st?.price;
-      const status = typeof st?.status === 'string' ? st.status.trim() : 'attended';
-      const originLessonId = st?.originLessonId == null ? null : parseInt(st.originLessonId, 10);
-      if (!id || Number.isNaN(id)) return 'Некорректный ученик в занятии';
-      if (!Number.isFinite(price) || price <= 0) return 'Укажите стоимость для каждого ученика';
-      if (!LESSON_STATUSES.has(status)) return 'Некорректный статус занятия';
-      if (originLessonId != null && Number.isNaN(originLessonId)) return 'Некорректный originLessonId';
-    }
-  }
-  return null;
-};
-
-const resolveChargeableByStatus = async (client, { studentId, status, originLessonId }) => {
-  if (status === 'missed' || status === 'makeup') return false;
-  if (status !== 'cancel_same_day') return true;
-  const freeUsed = await client.query(
-    `SELECT id
-     FROM lessons
-     WHERE student_id = $1
-       AND status = 'cancel_same_day'
-       AND is_chargeable = false
-     LIMIT 1`,
-    [studentId]
-  );
-  return freeUsed.rows.length > 0;
-};
-
-const isValidISODate = (value) => typeof value === 'string' && ISO_DATE_RE.test(value);
-const getTodayByUserTimezone = async (db, userId) => {
-  const tz = await getUserTimeZone(db, userId);
-  return { tz, todayIso: getDateInTimeZoneISO(tz) };
-};
+import {
+  buildReportContentFromSlots,
+  getTodayByUserTimezone,
+  isValidISODate,
+  normalizeSlots,
+  parseReportContent,
+  resolveChargeableByStatus,
+  toMinutes,
+  validateSlots,
+} from '../services/reports/reportHelpers.js';
+import {
+  findAllReportsByUser,
+  findMonthlyBreakdown,
+  findMonthlyNoReportAmount,
+  findMonthlyTotals,
+  findReportByIdForViewer,
+  findReportLessons,
+  findReportsList,
+  findUserEmailById,
+  markReportAsNotLate,
+} from '../repositories/reports/reportsRepository.js';
+import {
+  validateMonthlySalaryQuery,
+  validateReportInput,
+} from '../validators/reports/reportValidator.js';
 
 // Получение всех отчетов пользователя
 export const getAllReports = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const result = await pool.query(
-      `SELECT r.*, COUNT(rl.lesson_id) as lessons_count
-       FROM reports r
-       LEFT JOIN report_lessons rl ON r.id = rl.report_id
-       WHERE r.created_by = $1
-       GROUP BY r.id
-       ORDER BY r.report_date DESC, r.created_at DESC`,
-      [userId]
-    );
+    const result = await findAllReportsByUser(pool, userId);
 
     res.json(result.rows);
   } catch (error) {
@@ -231,38 +61,7 @@ export const getReportsList = async (req, res) => {
     const dateTo = req.query.date_to;
     const isLate = req.query.is_late; // 'true' | 'false' | не задан
 
-    const conditions = [];
-    const params = [];
-    let idx = 1;
-    if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
-      conditions.push(`r.report_date >= $${idx}::date`);
-      params.push(dateFrom);
-      idx++;
-    }
-    if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
-      conditions.push(`r.report_date <= $${idx}::date`);
-      params.push(dateTo);
-      idx++;
-    }
-    if (isLate === 'true') {
-      conditions.push('r.is_late = true');
-    } else if (isLate === 'false') {
-      conditions.push('r.is_late = false');
-    }
-
-    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const result = await pool.query(
-      `SELECT r.*, u.email AS created_by_email,
-              COUNT(rl.lesson_id)::int AS lessons_count
-       FROM reports r
-       LEFT JOIN users u ON r.created_by = u.id
-       LEFT JOIN report_lessons rl ON r.id = rl.report_id
-       ${whereClause}
-       GROUP BY r.id, u.email
-       ORDER BY r.report_date DESC, r.created_at DESC`,
-      params
-    );
+    const result = await findReportsList(pool, { dateFrom, dateTo, isLate });
 
     const rows = result.rows.map((row) => ({
       id: row.id,
@@ -287,11 +86,11 @@ export const getReportsList = async (req, res) => {
 export const getMonthlySalaryReport = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const year = parseInt(req.query.year, 10);
-    const month = parseInt(req.query.month, 10);
-    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-      return res.status(400).json({ message: 'Укажите год и месяц: year, month (1–12)' });
+    const validated = validateMonthlySalaryQuery({ year: req.query.year, month: req.query.month });
+    if (validated.error) {
+      return res.status(400).json({ message: validated.error });
     }
+    const { year, month } = validated;
     const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0);
     const lastDayStr = lastDay.getFullYear() + '-' +
@@ -299,22 +98,7 @@ export const getMonthlySalaryReport = async (req, res) => {
       String(lastDay.getDate()).padStart(2, '0');
 
     // Доход за месяц по всем занятиям преподавателя (lesson_date в месяце)
-    const totalsResult = await pool.query(
-      `WITH month_lessons AS (
-         SELECT l.id, l.lesson_date, l.price, r.id AS report_id, r.is_late
-         FROM lessons l
-         LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
-         LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
-         WHERE l.created_by = $1
-           AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
-       )
-       SELECT
-         COALESCE(SUM(price), 0) AS total_all,
-         COALESCE(SUM(CASE WHEN is_late = true THEN price ELSE 0 END), 0) AS late_amount,
-         COALESCE(SUM(CASE WHEN is_late IS DISTINCT FROM true THEN price ELSE 0 END), 0) AS income_counted
-       FROM month_lessons`,
-      [userId, firstDay, lastDayStr]
-    );
+    const totalsResult = await findMonthlyTotals(pool, { userId, firstDay, lastDayStr });
     const row = totalsResult.rows[0];
     const totalAll = Number(row?.total_all ?? 0);
     const lateAmount = Number(row?.late_amount ?? 0);
@@ -322,18 +106,7 @@ export const getMonthlySalaryReport = async (req, res) => {
     const salary = Math.round(incomeCounted * 0.5);
 
     // Разбивка по отчётам за месяц (дата, поздний/нет, сумма)
-    const breakdownResult = await pool.query(
-      `SELECT r.id AS report_id, r.report_date, r.is_late,
-              COALESCE(SUM(l.price), 0) AS amount
-       FROM reports r
-       LEFT JOIN report_lessons rl ON rl.report_id = r.id
-       LEFT JOIN lessons l ON l.id = rl.lesson_id
-       WHERE r.created_by = $1
-         AND r.report_date >= $2::date AND r.report_date <= $3::date
-       GROUP BY r.id, r.report_date, r.is_late
-       ORDER BY r.report_date ASC`,
-      [userId, firstDay, lastDayStr]
-    );
+    const breakdownResult = await findMonthlyBreakdown(pool, { userId, firstDay, lastDayStr });
     const reportBreakdown = breakdownResult.rows.map((r) => ({
       report_id: r.report_id,
       report_date: r.report_date,
@@ -342,14 +115,7 @@ export const getMonthlySalaryReport = async (req, res) => {
     }));
 
     // Занятия без отчёта (ручные) за этот месяц — входят в доход
-    const noReportResult = await pool.query(
-      `SELECT COALESCE(SUM(l.price), 0) AS amount
-       FROM lessons l
-       WHERE l.created_by = $1
-         AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
-         AND NOT EXISTS (SELECT 1 FROM report_lessons rl WHERE rl.lesson_id = l.id)`,
-      [userId, firstDay, lastDayStr]
-    );
+    const noReportResult = await findMonthlyNoReportAmount(pool, { userId, firstDay, lastDayStr });
     const lessonsWithoutReportAmount = Number(noReportResult.rows[0]?.amount ?? 0);
 
     res.json({
@@ -377,12 +143,7 @@ export const getReport = async (req, res) => {
     const isSuper = isSuperuser(req.user);
     const { id } = req.params;
 
-    const reportResult = await pool.query(
-      isSuper
-        ? 'SELECT * FROM reports WHERE id = $1'
-        : 'SELECT * FROM reports WHERE id = $1 AND created_by = $2',
-      isSuper ? [id] : [id, userId]
-    );
+    const reportResult = await findReportByIdForViewer(pool, { reportId: id, userId, isSuper });
 
     if (reportResult.rows.length === 0) {
       return res.status(404).json({ message: 'Отчет не найден' });
@@ -391,20 +152,12 @@ export const getReport = async (req, res) => {
     const report = reportResult.rows[0];
     const reportOwnerId = report.created_by;
 
-    const lessonsResult = await pool.query(
-      `SELECT l.*, s.name as student_name
-       FROM report_lessons rl
-       JOIN lessons l ON rl.lesson_id = l.id
-       JOIN students s ON l.student_id = s.id
-       WHERE rl.report_id = $1
-       ORDER BY l.lesson_date, l.lesson_time`,
-      [id]
-    );
+    const lessonsResult = await findReportLessons(pool, id);
 
     report.lessons = lessonsResult.rows;
     report.lessons_count = lessonsResult.rows.length;
     if (isSuper && reportOwnerId != null) {
-      const u = await pool.query('SELECT email FROM users WHERE id = $1', [reportOwnerId]);
+      const u = await findUserEmailById(pool, reportOwnerId);
       report.created_by_email = u.rows[0]?.email ?? '';
     }
 
@@ -415,9 +168,6 @@ export const getReport = async (req, res) => {
   }
 };
 
-// Лимит длины текста отчёта (защита от DoS)
-const MAX_REPORT_CONTENT_LENGTH = 200000;
-
 // Создание отчета и автоматическое создание занятий
 export const createReport = async (req, res) => {
   const userId = req.user.userId;
@@ -425,14 +175,13 @@ export const createReport = async (req, res) => {
   const idempotencyKey = getIdempotencyKey(req);
 
   const hasSlots = Array.isArray(rawSlots);
-  if (!report_date || (!content && !hasSlots)) {
-    return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
-  }
-  if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
-    return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
-  }
-  if (!isValidISODate(report_date)) {
-    return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
+  const inputValidation = validateReportInput({
+    reportDate: report_date,
+    content,
+    hasSlots,
+  });
+  if (inputValidation.error) {
+    return res.status(400).json({ message: inputValidation.error });
   }
 
   // Дата/таймзона — до транзакции (отдельное соединение), чтобы ошибка/отсутствие колонки timezone не давала 25P02
@@ -726,14 +475,13 @@ export const updateReport = async (req, res) => {
   const { report_date, content, slots: rawSlots } = req.body;
 
   const hasSlots = Array.isArray(rawSlots);
-  if (!report_date || (!content && !hasSlots)) {
-    return res.status(400).json({ message: 'Дата обязательна. Укажите либо content, либо slots' });
-  }
-  if (content != null && String(content).length > MAX_REPORT_CONTENT_LENGTH) {
-    return res.status(400).json({ message: `Текст отчёта не более ${MAX_REPORT_CONTENT_LENGTH} символов` });
-  }
-  if (!isValidISODate(report_date)) {
-    return res.status(400).json({ message: 'report_date должен быть в формате YYYY-MM-DD' });
+  const inputValidation = validateReportInput({
+    reportDate: report_date,
+    content,
+    hasSlots,
+  });
+  if (inputValidation.error) {
+    return res.status(400).json({ message: inputValidation.error });
   }
 
   let tz;
@@ -1090,10 +838,7 @@ export const setReportNotLate = async (req, res) => {
     return res.status(400).json({ message: 'Некорректный id отчёта' });
   }
   try {
-    const result = await pool.query(
-      `UPDATE reports SET is_late = false WHERE id = $1 RETURNING *`,
-      [reportId]
-    );
+    const result = await markReportAsNotLate(pool, reportId);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Отчёт не найден' });
     }

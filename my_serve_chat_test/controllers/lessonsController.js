@@ -154,6 +154,13 @@ export const createLesson = async (req, res) => {
       isChargeable = false;
     } else if (status === 'cancel_same_day') {
       // 1 отмена в день проведения за всё время бесплатна, остальные платные.
+      await client.query(
+        `SELECT id
+         FROM students
+         WHERE id = $1
+         FOR UPDATE`,
+        [student_id]
+      );
       const freeUsed = await client.query(
         `SELECT id
          FROM lessons

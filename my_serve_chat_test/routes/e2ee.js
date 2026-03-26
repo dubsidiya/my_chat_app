@@ -11,7 +11,7 @@ import {
   getPendingKeyRequests,
   storeKeyBackup,
   getKeyBackup,
-} from '../controllers/e2eeController.js';
+} from '../controllers/e2ee/index.js';
 
 const router = express.Router();
 

@@ -9,7 +9,7 @@ import {
   updateReport,
   deleteReport,
   setReportNotLate
-} from '../controllers/reportsController.js';
+} from '../controllers/reports/index.js';
 
 const router = express.Router();
 

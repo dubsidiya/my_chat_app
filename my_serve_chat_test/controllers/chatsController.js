@@ -2,23 +2,25 @@ import crypto from 'crypto';
 import pool from '../db.js';
 import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 import { getWebSocketClients } from '../websocket/websocket.js';
-
-const normalizeRole = (role) => (role || '').toString().toLowerCase();
+import { findChatMemberIds } from '../repositories/chats/chatsCommonRepository.js';
+import {
+  hasChatFoldersTable,
+  hasChatUsersFolderColumn,
+  hasChatUsersFolderIdColumn,
+} from '../repositories/chats/chatsSchemaRepository.js';
+import {
+  ensureChatMember as ensureChatMemberAccess,
+  getChatCreatorId as getChatCreatorIdAccess,
+  getMemberRole as getMemberRoleAccess,
+  isOwner as isOwnerAccess,
+  isOwnerOrAdmin as isOwnerOrAdminAccess,
+} from '../services/chats/accessControl.js';
 
 let _chatUsersFolderColumnExists = null;
 const chatUsersFolderColumnExists = async () => {
   if (_chatUsersFolderColumnExists !== null) return _chatUsersFolderColumnExists;
   try {
-    const r = await pool.query(
-      `
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'chat_users'
-        AND column_name = 'folder'
-      LIMIT 1
-      `
-    );
+    const r = await hasChatUsersFolderColumn(pool);
     _chatUsersFolderColumnExists = r.rows.length > 0;
     return _chatUsersFolderColumnExists;
   } catch (e) {
@@ -32,16 +34,7 @@ let _chatUsersFolderIdColumnExists = null;
 const chatUsersFolderIdColumnExists = async () => {
   if (_chatUsersFolderIdColumnExists !== null) return _chatUsersFolderIdColumnExists;
   try {
-    const r = await pool.query(
-      `
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'chat_users'
-        AND column_name = 'folder_id'
-      LIMIT 1
-      `
-    );
+    const r = await hasChatUsersFolderIdColumn(pool);
     _chatUsersFolderIdColumnExists = r.rows.length > 0;
     return _chatUsersFolderIdColumnExists;
   } catch (_) {
@@ -54,15 +47,7 @@ let _chatFoldersTableExists = null;
 const chatFoldersTableExists = async () => {
   if (_chatFoldersTableExists !== null) return _chatFoldersTableExists;
   try {
-    const r = await pool.query(
-      `
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name = 'chat_folders'
-      LIMIT 1
-      `
-    );
+    const r = await hasChatFoldersTable(pool);
     _chatFoldersTableExists = r.rows.length > 0;
     return _chatFoldersTableExists;
   } catch (_) {
@@ -71,34 +56,10 @@ const chatFoldersTableExists = async () => {
   }
 };
 
-const getChatCreatorId = async (chatId) => {
-  const r = await pool.query('SELECT created_by FROM chats WHERE id = $1', [chatId]);
-  return r.rows.length ? r.rows[0].created_by?.toString() : null;
-};
-
-const getMemberRole = async (chatId, userId) => {
-  const r = await pool.query(
-    'SELECT role FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-    [chatId, userId]
-  );
-  if (!r.rows.length) return null;
-  return normalizeRole(r.rows[0].role);
-};
-
-const isOwnerOrAdmin = async (chatId, userId) => {
-  const role = await getMemberRole(chatId, userId);
-  if (role === 'owner' || role === 'admin') return true;
-  // fallback: если роль ещё не проставлена, считаем создателя owner
-  const creatorId = await getChatCreatorId(chatId);
-  return creatorId && creatorId.toString() === userId.toString();
-};
-
-const isOwner = async (chatId, userId) => {
-  const role = await getMemberRole(chatId, userId);
-  if (role === 'owner') return true;
-  const creatorId = await getChatCreatorId(chatId);
-  return creatorId && creatorId.toString() === userId.toString();
-};
+const getChatCreatorId = async (chatId) => getChatCreatorIdAccess(pool, chatId);
+const getMemberRole = async (chatId, userId) => getMemberRoleAccess(pool, chatId, userId);
+const isOwnerOrAdmin = async (chatId, userId) => isOwnerOrAdminAccess(pool, chatId, userId);
+const isOwner = async (chatId, userId) => isOwnerAccess(pool, chatId, userId);
 
 const generateInviteCode = () => {
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -110,17 +71,11 @@ const generateInviteCode = () => {
   return s;
 };
 
-const ensureChatMember = async (chatId, userId) => {
-  const r = await pool.query('SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
-  return r.rows.length > 0;
-};
+const ensureChatMember = async (chatId, userId) => ensureChatMemberAccess(pool, chatId, userId);
 
 const notifyChatKeyRotated = async (chatId, keyVersion) => {
   try {
-    const members = await pool.query(
-      'SELECT user_id FROM chat_users WHERE chat_id = $1 ORDER BY user_id ASC',
-      [chatId]
-    );
+    const members = await findChatMemberIds(pool, chatId);
     if (!members.rows.length) return;
 
     const clients = getWebSocketClients();

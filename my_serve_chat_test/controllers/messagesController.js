@@ -4,13 +4,23 @@ import { sanitizeMessageContent } from '../utils/sanitize.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 import { sendPushToTokens } from '../utils/pushNotifications.js';
+import { parseLimit, parseOffset, parseOptionalInt } from '../services/messages/pagination.js';
+import { enrichMessageRow } from '../services/messages/enrichMessageRow.js';
+import { findChatMembership, findSenderDisplayName } from '../repositories/messages/messagesCommonRepository.js';
+import {
+  getAroundNewerMessages,
+  getAroundOlderMessages,
+  isMessageInChat,
+  searchMessagesForChat,
+} from '../repositories/messages/messagesReadRepository.js';
+import { validateAroundQuery, validateSearchQuery } from '../validators/messages/queryValidator.js';
 
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
 
 // Как видят отправителя другие (ник или логин)
 const getSenderDisplayName = async (userId) => {
-  const r = await pool.query('SELECT COALESCE(display_name, email) AS n FROM users WHERE id = $1', [userId]);
+  const r = await findSenderDisplayName(pool, userId);
   return r.rows[0]?.n ?? null;
 };
 
@@ -18,10 +28,7 @@ const ensureChatMember = async (chatId, userId) => {
   const chatIdNum = parseInt(chatId, 10);
   if (isNaN(chatIdNum)) return { ok: false, status: 400, message: 'Некорректный chatId' };
 
-  const memberCheck = await pool.query(
-    'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-    [chatIdNum, userId]
-  );
+  const memberCheck = await findChatMembership(pool, chatIdNum, userId);
   if (memberCheck.rows.length === 0) {
     return { ok: false, status: 403, message: 'Вы не являетесь участником этого чата' };
   }
@@ -32,8 +39,7 @@ export const getChatMedia = async (req, res) => {
   const chatId = req.params.chatId;
   const currentUserId = req.user.userId;
 
-  const requestedLimit = parseInt(req.query.limit, 10);
-  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 60, 1), 200);
+  const limit = parseLimit(req.query.limit, { defaultValue: 60 });
   const before = req.query.before; // message id cursor
 
   try {
@@ -48,8 +54,8 @@ export const getChatMedia = async (req, res) => {
 
     let beforeIdNum = null;
     if (before !== undefined && before !== null && String(before).trim().length > 0) {
-      const n = parseInt(String(before), 10);
-      if (isNaN(n)) return res.status(400).json({ message: 'Некорректный параметр before' });
+      const n = parseOptionalInt(before);
+      if (n === null) return res.status(400).json({ message: 'Некорректный параметр before' });
       beforeIdNum = n;
     }
 
@@ -131,10 +137,8 @@ export const getMessages = async (req, res) => {
   const currentUserId = req.user.userId;
   
   // Параметры пагинации
-  const requestedLimit = parseInt(req.query.limit);
-  const requestedOffset = parseInt(req.query.offset);
-  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 200);
-  const offset = Math.max(Number.isFinite(requestedOffset) ? requestedOffset : 0, 0);
+  const limit = parseLimit(req.query.limit, { defaultValue: 50 });
+  const offset = parseOffset(req.query.offset);
   const beforeMessageId = req.query.before; // ID сообщения, до которого загружать (для cursor-based)
 
   try {
@@ -245,110 +249,9 @@ export const getMessages = async (req, res) => {
     const totalCount = parseInt(totalCountResult.rows[0].total);
 
     // Форматируем в формат, который ожидает приложение
-    const formattedMessages = await Promise.all(result.rows.map(async (row) => {
-      // Проверяем, прочитал ли текущий пользователь это сообщение
-      const readCheck = await pool.query(
-        'SELECT read_at FROM message_reads WHERE message_id = $1 AND user_id = $2',
-        [row.id, currentUserId]
-      );
-      
-      const isRead = readCheck.rows.length > 0;
-      const readAt = isRead ? readCheck.rows[0].read_at : null;
-      
-      // ✅ Получаем сообщение, на которое отвечают (если есть)
-      let replyToMessage = null;
-      if (row.reply_to_message_id) {
-        const replyCheck = await pool.query(`
-          SELECT 
-            messages.id,
-            messages.content,
-            messages.image_url,
-            messages.user_id,
-            COALESCE(users.display_name, users.email) AS sender_email
-          FROM messages
-          JOIN users ON messages.user_id = users.id
-          WHERE messages.id = $1
-        `, [row.reply_to_message_id]);
-        if (replyCheck.rows.length > 0) {
-          replyToMessage = {
-            id: replyCheck.rows[0].id,
-            content: replyCheck.rows[0].content,
-            image_url: replyCheck.rows[0].image_url,
-            user_id: replyCheck.rows[0].user_id,
-            sender_email: replyCheck.rows[0].sender_email,
-          };
-        }
-      }
-      
-      // ✅ Получаем реакции на сообщение
-      const reactionsResult = await pool.query(`
-        SELECT 
-          message_reactions.id,
-          message_reactions.message_id,
-          message_reactions.user_id,
-          message_reactions.reaction,
-          message_reactions.created_at,
-          COALESCE(users.display_name, users.email) AS user_email
-        FROM message_reactions
-        JOIN users ON message_reactions.user_id = users.id
-        WHERE message_reactions.message_id = $1
-        ORDER BY message_reactions.created_at ASC
-      `, [row.id]);
-      
-      const reactions = reactionsResult.rows.map(r => ({
-        id: r.id,
-        message_id: r.message_id,
-        user_id: r.user_id,
-        reaction: r.reaction,
-        created_at: r.created_at,
-        user_email: r.user_email,
-      }));
-      
-      // ✅ Проверяем, переслано ли сообщение
-      const forwardCheck = await pool.query(
-        'SELECT original_chat_id FROM message_forwards WHERE message_id = $1 LIMIT 1',
-        [row.id]
-      );
-      const isForwarded = forwardCheck.rows.length > 0;
-      let originalChatName = null;
-      if (isForwarded && forwardCheck.rows[0].original_chat_id) {
-        const chatCheck = await pool.query(
-          'SELECT name FROM chats WHERE id = $1',
-          [forwardCheck.rows[0].original_chat_id]
-        );
-        if (chatCheck.rows.length > 0) {
-          originalChatName = chatCheck.rows[0].name;
-        }
-      }
-      
-      return {
-        id: row.id,
-        chat_id: row.chat_id,
-        user_id: row.user_id,
-        key_version: row.key_version ?? 1,
-        content: row.content,
-        image_url: row.image_url,
-        original_image_url: row.original_image_url,
-        file_url: row.file_url,
-        file_name: row.file_name,
-        file_size: row.file_size,
-        file_mime: row.file_mime,
-        message_type: row.message_type || 'text',
-        created_at: row.created_at,
-        delivered_at: row.delivered_at,
-        edited_at: row.edited_at,
-        is_read: isRead,
-        read_at: readAt,
-        reply_to_message_id: row.reply_to_message_id,
-        reply_to_message: replyToMessage,
-        is_pinned: row.is_pinned || false,
-        reactions: reactions,
-        is_forwarded: isForwarded,
-        original_chat_name: originalChatName,
-        sender_email: row.sender_email,
-        sender_avatar_url: row.sender_avatar_url ?? null
-      };
-    }));
+    const formattedMessages = await Promise.all(
+      result.rows.map((row) => enrichMessageRow(pool, row, currentUserId))
+    );
 
     // Определяем, есть ли еще сообщения для загрузки
     let hasMore;
@@ -396,14 +299,15 @@ export const searchMessages = async (req, res) => {
   try {
     const chatId = req.params.chatId;
     const userId = req.user.userId;
-    const q = (req.query.q || '').toString().trim();
-    const requestedLimit = parseInt(req.query.limit);
-    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 300, 1), 500);
-    const before = req.query.before ? parseInt(req.query.before, 10) : null;
-
-    if (q.length > 100) {
-      return res.status(400).json({ message: 'Слишком длинный запрос' });
+    const validated = validateSearchQuery({
+      q: req.query.q,
+      limit: req.query.limit,
+      before: req.query.before,
+    });
+    if (validated.error) {
+      return res.status(400).json({ message: validated.error });
     }
+    const { q, limit, before } = validated;
 
     const membership = await ensureChatMember(chatId, userId);
     if (!membership.ok) {
@@ -411,37 +315,8 @@ export const searchMessages = async (req, res) => {
     }
     const chatIdNum = membership.chatIdNum;
 
-    const params = [chatIdNum, userId, limit];
-    let beforeClause = '';
-    if (Number.isFinite(before)) {
-      beforeClause = ' AND m.id < $4';
-      params.push(before);
-    }
-
     // Отдаём последние сообщения с полным content; клиент расшифровывает и фильтрует по q (E2EE)
-    const result = await pool.query(
-      `
-      SELECT
-        m.id AS message_id,
-        m.chat_id,
-        m.user_id,
-        m.key_version,
-        m.content,
-        m.message_type,
-        m.image_url,
-        m.created_at,
-        COALESCE(u.display_name, u.email) AS sender_email,
-        (mr.message_id IS NOT NULL) AS is_read
-      FROM messages m
-      JOIN users u ON u.id = m.user_id
-      LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = $2
-      WHERE m.chat_id = $1
-        ${beforeClause}
-      ORDER BY m.id DESC
-      LIMIT $3
-      `,
-      params
-    );
+    const result = await searchMessagesForChat(pool, { chatIdNum, userId, limit, before });
 
     const items = result.rows.map((row) => ({
       message_id: row.message_id?.toString(),
@@ -467,14 +342,15 @@ export const searchMessages = async (req, res) => {
 export const getMessagesAround = async (req, res) => {
   try {
     const chatId = req.params.chatId;
-    const messageId = parseInt(req.params.messageId, 10);
     const userId = req.user.userId;
-    const requestedLimit = parseInt(req.query.limit);
-    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 10), 200);
-
-    if (isNaN(messageId)) {
-      return res.status(400).json({ message: 'Некорректный messageId' });
+    const validated = validateAroundQuery({
+      messageId: req.params.messageId,
+      limit: req.query.limit,
+    });
+    if (validated.error) {
+      return res.status(400).json({ message: validated.error });
     }
+    const { messageId, limit } = validated;
 
     const membership = await ensureChatMember(chatId, userId);
     if (!membership.ok) {
@@ -486,182 +362,23 @@ export const getMessagesAround = async (req, res) => {
     await ensureUserBlocksTable();
 
     // Проверяем, что сообщение принадлежит чату
-    const msgCheck = await pool.query(
-      'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
-      [messageId, chatIdNum]
-    );
+    const msgCheck = await isMessageInChat(pool, { messageId, chatIdNum });
     if (msgCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Сообщение не найдено' });
     }
 
     const half = Math.floor(limit / 2);
 
-    const older = await pool.query(
-      `
-      SELECT 
-        m.id,
-        m.chat_id,
-        m.user_id,
-        m.content,
-        m.image_url,
-        m.original_image_url,
-        m.file_url,
-        m.file_name,
-        m.file_size,
-        m.file_mime,
-        m.message_type,
-        m.created_at,
-        m.delivered_at,
-        m.edited_at,
-        m.reply_to_message_id,
-        COALESCE(u.display_name, u.email) AS sender_email,
-        u.avatar_url AS sender_avatar_url,
-        pm.id IS NOT NULL AS is_pinned
-      FROM messages m
-      JOIN users u ON m.user_id = u.id
-      LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
-      WHERE m.chat_id = $1 AND m.id < $2
-      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
-      ORDER BY m.id DESC
-      LIMIT $3
-      `,
-      [chatIdNum, messageId, half, userId]
-    );
+    const older = await getAroundOlderMessages(pool, { chatIdNum, messageId, limit: half, userId });
 
-    const newer = await pool.query(
-      `
-      SELECT 
-        m.id,
-        m.chat_id,
-        m.user_id,
-        m.content,
-        m.image_url,
-        m.original_image_url,
-        m.file_url,
-        m.file_name,
-        m.file_size,
-        m.file_mime,
-        m.message_type,
-        m.created_at,
-        m.delivered_at,
-        m.edited_at,
-        m.reply_to_message_id,
-        COALESCE(u.display_name, u.email) AS sender_email,
-        u.avatar_url AS sender_avatar_url,
-        pm.id IS NOT NULL AS is_pinned
-      FROM messages m
-      JOIN users u ON m.user_id = u.id
-      LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
-      WHERE m.chat_id = $1 AND m.id >= $2
-      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
-      ORDER BY m.id ASC
-      LIMIT $3
-      `,
-      [chatIdNum, messageId, half + 1, userId]
-    );
+    const newer = await getAroundNewerMessages(pool, { chatIdNum, messageId, limit: half + 1, userId });
 
     const rows = [...older.rows.reverse(), ...newer.rows];
 
     // Обогащаем данными как в getMessages (read status, reply, reactions, forwarded, original chat name)
-    const formattedMessages = await Promise.all(rows.map(async (row) => {
-      const readCheck = await pool.query(
-        'SELECT read_at FROM message_reads WHERE message_id = $1 AND user_id = $2',
-        [row.id, userId]
-      );
-      const isRead = readCheck.rows.length > 0;
-      const readAt = isRead ? readCheck.rows[0].read_at : null;
-
-      let replyToMessage = null;
-      if (row.reply_to_message_id) {
-        const replyCheck = await pool.query(`
-          SELECT 
-            m.id,
-            m.content,
-            m.image_url,
-            m.user_id,
-            COALESCE(u.display_name, u.email) AS sender_email
-          FROM messages m
-          JOIN users u ON m.user_id = u.id
-          WHERE m.id = $1
-        `, [row.reply_to_message_id]);
-        if (replyCheck.rows.length > 0) {
-          replyToMessage = {
-            id: replyCheck.rows[0].id,
-            content: replyCheck.rows[0].content,
-            image_url: replyCheck.rows[0].image_url,
-            user_id: replyCheck.rows[0].user_id,
-            sender_email: replyCheck.rows[0].sender_email,
-          };
-        }
-      }
-
-      const reactionsResult = await pool.query(`
-        SELECT 
-          mr.id,
-          mr.message_id,
-          mr.user_id,
-          mr.reaction,
-          mr.created_at,
-          COALESCE(u.display_name, u.email) AS user_email
-        FROM message_reactions mr
-        JOIN users u ON mr.user_id = u.id
-        WHERE mr.message_id = $1
-        ORDER BY mr.created_at ASC
-      `, [row.id]);
-
-      const reactions = reactionsResult.rows.map(r => ({
-        id: r.id,
-        message_id: r.message_id,
-        user_id: r.user_id,
-        reaction: r.reaction,
-        created_at: r.created_at,
-        user_email: r.user_email,
-      }));
-
-      const forwardCheck = await pool.query(
-        'SELECT original_chat_id FROM message_forwards WHERE message_id = $1 LIMIT 1',
-        [row.id]
-      );
-      const isForwarded = forwardCheck.rows.length > 0;
-      let originalChatName = null;
-      if (isForwarded && forwardCheck.rows[0].original_chat_id) {
-        const chatCheck = await pool.query(
-          'SELECT name FROM chats WHERE id = $1',
-          [forwardCheck.rows[0].original_chat_id]
-        );
-        if (chatCheck.rows.length > 0) {
-          originalChatName = chatCheck.rows[0].name;
-        }
-      }
-
-      return {
-        id: row.id,
-        chat_id: row.chat_id,
-        user_id: row.user_id,
-        key_version: row.key_version ?? 1,
-        content: row.content,
-        image_url: row.image_url,
-        original_image_url: row.original_image_url,
-        file_url: row.file_url,
-        file_name: row.file_name,
-        file_size: row.file_size,
-        file_mime: row.file_mime,
-        message_type: row.message_type || 'text',
-        created_at: row.created_at,
-        delivered_at: row.delivered_at,
-        edited_at: row.edited_at,
-        is_read: isRead,
-        read_at: readAt,
-        reply_to_message_id: row.reply_to_message_id,
-        reply_to_message: replyToMessage,
-        is_pinned: row.is_pinned || false,
-        reactions: reactions,
-        is_forwarded: isForwarded,
-        original_chat_name: originalChatName,
-        sender_email: row.sender_email,
-        sender_avatar_url: row.sender_avatar_url ?? null
-      };
-    }));
+    const formattedMessages = await Promise.all(
+      rows.map((row) => enrichMessageRow(pool, row, userId))
+    );
 
     return res.status(200).json({
       messages: formattedMessages,
