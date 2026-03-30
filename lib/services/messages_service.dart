@@ -9,6 +9,17 @@ import 'storage_service.dart';
 import 'local_messages_service.dart';
 import 'e2ee_service.dart';
 
+/// Фрагмент текста только для текста уведомления FCM при E2EE (не хранится в БД как шифротекст).
+const int _maxPushPreviewChars = 200;
+
+String? _pushPreviewPlainForFcm(String originalPlain, String contentSent) {
+  final t = originalPlain.trim();
+  if (t.isEmpty) return null;
+  if (contentSent == originalPlain) return null;
+  if (t.length <= _maxPushPreviewChars) return t;
+  return '${t.substring(0, _maxPushPreviewChars)}…';
+}
+
 // Результат пагинации сообщений
 class MessagesPaginationResult {
   final List<Message> messages;
@@ -328,6 +339,10 @@ class MessagesService {
         forwardOriginalChatId.isNotEmpty) {
       bodyMap['forward_original_message_id'] = forwardOriginalMessageId;
       bodyMap['forward_original_chat_id'] = forwardOriginalChatId;
+    }
+    final previewForPush = _pushPreviewPlainForFcm(content, contentToSend);
+    if (previewForPush != null) {
+      bodyMap['push_preview'] = previewForPush;
     }
     final body = jsonEncode(bodyMap);
 

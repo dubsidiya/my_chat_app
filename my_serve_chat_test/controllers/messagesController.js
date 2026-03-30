@@ -17,6 +17,8 @@ import { validateAroundQuery, validateSearchQuery } from '../validators/messages
 
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
+/** Только для текста push (E2EE): не пишется в messages, только notification body */
+const MAX_PUSH_PREVIEW_LENGTH = 200;
 
 // Как видят отправителя другие (ник или логин)
 const getSenderDisplayName = async (userId) => {
@@ -391,8 +393,8 @@ export const getMessagesAround = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  // Приложение отправляет: { chat_id, content, image_url, reply_to_message_id, forward_from_message_id, forward_to_chat_ids }
-  const { chat_id, content, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids, forward_original_message_id, forward_original_chat_id } = req.body;
+  // Приложение отправляет: { chat_id, content, push_preview?, image_url, ... }
+  const { chat_id, content, push_preview, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids, forward_original_message_id, forward_original_chat_id } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
@@ -427,6 +429,10 @@ export const sendMessage = async (req, res) => {
   if (contentStr.length > MAX_MESSAGE_CONTENT_LENGTH) {
     return res.status(400).json({ message: `Текст сообщения не более ${MAX_MESSAGE_CONTENT_LENGTH} символов` });
   }
+
+  const pushPreviewRaw = push_preview != null && String(push_preview).trim() !== ''
+    ? sanitizeMessageContent(String(push_preview)).slice(0, MAX_PUSH_PREVIEW_LENGTH)
+    : '';
 
   // Пока упрощаем: нельзя одновременно image и file в одном сообщении (чтобы не плодить message_type)
   if (image_url && file_url) {
@@ -769,7 +775,7 @@ export const sendMessage = async (req, res) => {
           const isVoice = isFile && (mime.startsWith('audio/') || String(file_name || '').toLowerCase().endsWith('.m4a'));
           const isImage = Boolean(image_url);
           const preview = looksLikeEncryptedText
-            ? '🔐 Зашифрованное сообщение'
+            ? (pushPreviewRaw.trim() || '🔐 Зашифрованное сообщение')
             : isVoice
               ? '🎤 Голосовое сообщение'
               : isImage
