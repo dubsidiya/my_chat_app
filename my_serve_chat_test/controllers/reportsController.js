@@ -20,6 +20,7 @@ import {
 import {
   findAllReportsByUser,
   findMonthlyBreakdown,
+  findMonthlyLessonCountsByPrice,
   findMonthlyNoReportAmount,
   findMonthlyTotals,
   findReportByIdForViewer,
@@ -118,6 +119,12 @@ export const getMonthlySalaryReport = async (req, res) => {
     const noReportResult = await findMonthlyNoReportAmount(pool, { userId, firstDay, lastDayStr });
     const lessonsWithoutReportAmount = Number(noReportResult.rows[0]?.amount ?? 0);
 
+    const byPriceResult = await findMonthlyLessonCountsByPrice(pool, { userId, firstDay, lastDayStr });
+    const lessonsByPrice = byPriceResult.rows.map((p) => ({
+      price: Number(p.price),
+      lessons_count: p.lessons_count,
+    }));
+
     res.json({
       year,
       month,
@@ -129,6 +136,7 @@ export const getMonthlySalaryReport = async (req, res) => {
       salary,
       report_breakdown: reportBreakdown,
       lessons_without_report_amount: lessonsWithoutReportAmount,
+      lessons_by_price: lessonsByPrice,
     });
   } catch (error) {
     console.error('Ошибка расчёта зарплаты за месяц:', error);

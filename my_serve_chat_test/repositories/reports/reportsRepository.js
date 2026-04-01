@@ -90,6 +90,19 @@ export const findMonthlyNoReportAmount = async (db, { userId, firstDay, lastDayS
   );
 };
 
+/** Сколько занятий в месяце на каждом ценнике (как в расчёте выручки за месяц). */
+export const findMonthlyLessonCountsByPrice = async (db, { userId, firstDay, lastDayStr }) => {
+  return db.query(
+    `SELECT l.price::float8 AS price, COUNT(*)::int AS lessons_count
+     FROM lessons l
+     WHERE l.created_by = $1
+       AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+     GROUP BY l.price
+     ORDER BY l.price ASC`,
+    [userId, firstDay, lastDayStr]
+  );
+};
+
 export const findReportByIdForViewer = async (db, { reportId, userId, isSuper }) => {
   return db.query(
     isSuper

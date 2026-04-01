@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import { sqlUserAccountingName, sqlUserAccountingNameOrEmpty } from '../utils/userAccountingDisplaySql.js';
 
 const isValidISODate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
@@ -53,12 +54,17 @@ export const exportAccounting = async (req, res) => {
     }
 
     // 1) Преподаватели
-    const teachersRes = await pool.query('SELECT id, email FROM users ORDER BY email');
-    const teacherById = new Map(teachersRes.rows.map((r) => [r.id, r.email]));
+    const teachersRes = await pool.query(
+      `SELECT id, email, display_name,
+              ${sqlUserAccountingName('u')} AS accounting_name
+       FROM users u
+       ORDER BY accounting_name`
+    );
+    const teacherById = new Map(teachersRes.rows.map((r) => [r.id, r.accounting_name || r.email || '']));
 
     // 2) Связи преподаватель-ученик
     const linksRes = await pool.query(
-      `SELECT ts.teacher_id, ts.student_id, u.email as teacher_username
+      `SELECT ts.teacher_id, ts.student_id, ${sqlUserAccountingName('u')} AS teacher_username
        FROM teacher_students ts
        JOIN users u ON u.id = ts.teacher_id`
     );
@@ -121,7 +127,7 @@ export const exportAccounting = async (req, res) => {
               l.origin_lesson_id,
               l.notes,
               l.created_by as teacher_id,
-              COALESCE(u.email, '(unknown)') as teacher_username
+              ${sqlUserAccountingName('u')} AS teacher_username
        FROM lessons l
        LEFT JOIN users u ON u.id = l.created_by
        WHERE l.lesson_date <= $1::date
@@ -374,7 +380,8 @@ export const exportAccountingTransactions = async (req, res) => {
               t.lesson_id,
               t.created_at,
               t.created_by,
-              COALESCE(u.email, '') as created_by_email
+              COALESCE(u.email, '') AS created_by_email,
+              ${sqlUserAccountingNameOrEmpty('u')} AS created_by_display_name
        FROM transactions t
        LEFT JOIN students s ON s.id = t.student_id
        LEFT JOIN users u ON u.id = t.created_by
@@ -399,6 +406,7 @@ export const exportAccountingTransactions = async (req, res) => {
         'lesson_id',
         'created_at',
         'created_by',
+        'created_by_display_name',
         'created_by_email',
       ];
       const csvRows = [header];
@@ -413,6 +421,7 @@ export const exportAccountingTransactions = async (req, res) => {
           r.lesson_id || '',
           (r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at || '').toString()),
           r.created_by || '',
+          r.created_by_display_name || r.created_by_email || '',
           r.created_by_email || '',
         ]);
       }
@@ -438,6 +447,7 @@ export const exportAccountingTransactions = async (req, res) => {
         lessonId: r.lesson_id || null,
         createdAt: r.created_at,
         createdBy: r.created_by || null,
+        createdByDisplayName: r.created_by_display_name || r.created_by_email || null,
         createdByEmail: r.created_by_email || null,
       })),
     });

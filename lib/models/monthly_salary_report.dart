@@ -10,6 +10,8 @@ class MonthlySalaryReport {
   final int salary;
   final List<ReportDayRow> reportBreakdown;
   final double lessonsWithoutReportAmount;
+  /// Занятия в месяце, сгруппированные по цене за занятие (тариф).
+  final List<LessonPriceCountRow> lessonsByPrice;
 
   const MonthlySalaryReport({
     required this.year,
@@ -22,10 +24,12 @@ class MonthlySalaryReport {
     required this.salary,
     required this.reportBreakdown,
     required this.lessonsWithoutReportAmount,
+    this.lessonsByPrice = const [],
   });
 
   factory MonthlySalaryReport.fromJson(Map<String, dynamic> json) {
     final list = json['report_breakdown'] as List<dynamic>?;
+    final byPrice = json['lessons_by_price'] as List<dynamic>?;
     return MonthlySalaryReport(
       year: json['year'] as int,
       month: json['month'] as int,
@@ -39,8 +43,14 @@ class MonthlySalaryReport {
           ? list.map((e) => ReportDayRow.fromJson(e as Map<String, dynamic>)).toList()
           : const [],
       lessonsWithoutReportAmount: _numToDouble(json['lessons_without_report_amount']),
+      lessonsByPrice: byPrice != null
+          ? byPrice.map((e) => LessonPriceCountRow.fromJson(e as Map<String, dynamic>)).toList()
+          : const [],
     );
   }
+
+  int get totalLessonsInMonth =>
+      lessonsByPrice.fold<int>(0, (sum, row) => sum + row.lessonsCount);
 }
 
 double _numToDouble(dynamic v) {
@@ -48,6 +58,25 @@ double _numToDouble(dynamic v) {
   if (v is int) return v.toDouble();
   if (v is double) return v;
   return double.tryParse(v.toString()) ?? 0;
+}
+
+/// Одна строка: цена занятия и сколько таких занятий в месяце.
+class LessonPriceCountRow {
+  final double price;
+  final int lessonsCount;
+
+  const LessonPriceCountRow({
+    required this.price,
+    required this.lessonsCount,
+  });
+
+  factory LessonPriceCountRow.fromJson(Map<String, dynamic> json) {
+    final c = json['lessons_count'];
+    return LessonPriceCountRow(
+      price: _numToDouble(json['price']),
+      lessonsCount: c is int ? c : int.tryParse(c?.toString() ?? '') ?? 0,
+    );
+  }
 }
 
 /// Один день (отчёт) в разбивке: дата, поздний/нет, сумма.

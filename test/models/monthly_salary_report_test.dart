@@ -15,6 +15,10 @@ void main() {
         'salary': 45000,
         'report_breakdown': [],
         'lessons_without_report_amount': 0,
+        'lessons_by_price': [
+          {'price': 2000, 'lessons_count': 120},
+          {'price': 2100, 'lessons_count': 40},
+        ],
       });
       expect(r.year, 2025);
       expect(r.month, 3);
@@ -23,6 +27,11 @@ void main() {
       expect(r.incomeCounted, 90000.0);
       expect(r.salary, 45000);
       expect(r.reportBreakdown, isEmpty);
+      expect(r.lessonsByPrice.length, 2);
+      expect(r.lessonsByPrice[0].price, 2000.0);
+      expect(r.lessonsByPrice[0].lessonsCount, 120);
+      expect(r.lessonsByPrice[1].lessonsCount, 40);
+      expect(r.totalLessonsInMonth, 160);
     });
 
     test('report_breakdown парсится', () {

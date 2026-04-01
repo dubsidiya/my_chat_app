@@ -1,6 +1,7 @@
 import pool from '../db.js';
 import { isSuperuser } from '../middleware/auth.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
+import { sqlUserAccountingNameOrEmpty } from '../utils/userAccountingDisplaySql.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
 import {
   beginIdempotent,
@@ -671,7 +672,7 @@ export const getStudentTransactions = async (req, res) => {
     const result = isSuper
       ? (mine
         ? await pool.query(
-            `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+            `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
              FROM transactions t
              LEFT JOIN lessons l ON t.lesson_id = l.id
              LEFT JOIN users u ON t.created_by = u.id
@@ -680,7 +681,7 @@ export const getStudentTransactions = async (req, res) => {
             [id, userId]
           )
         : await pool.query(
-            `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+            `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
              FROM transactions t
              LEFT JOIN lessons l ON t.lesson_id = l.id
              LEFT JOIN users u ON t.created_by = u.id
@@ -689,7 +690,7 @@ export const getStudentTransactions = async (req, res) => {
             [id]
           ))
       : await pool.query(
-          `SELECT t.*, l.lesson_date, l.lesson_time, u.email as teacher_username
+          `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
            FROM transactions t
            LEFT JOIN lessons l ON t.lesson_id = l.id
            LEFT JOIN users u ON t.created_by = u.id

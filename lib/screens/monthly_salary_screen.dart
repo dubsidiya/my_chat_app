@@ -77,6 +77,14 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
     return NumberFormat('#,##0', 'ru_RU').format(value.round()) + ' ₽';
   }
 
+  static String _lessonsLabel(int n) {
+    if (n % 10 == 1 && n % 100 != 11) return '$n занятие';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
+      return '$n занятия';
+    }
+    return '$n занятий';
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -270,6 +278,75 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
             'Всего выручка за месяц',
             _formatMoney(r.totalAll),
           ),
+          if (r.lessonsByPrice.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Text(
+              'Занятий по тарифу',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Всего проведено занятий: ${r.totalLessonsInMonth}',
+              style: TextStyle(
+                fontSize: 13,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < r.lessonsByPrice.length; i++)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          border: i < r.lessonsByPrice.length - 1
+                              ? Border(
+                                  bottom: BorderSide(
+                                    color: scheme.outline.withValues(alpha: 0.12),
+                                  ),
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _formatMoney(r.lessonsByPrice[i].price),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _lessonsLabel(r.lessonsByPrice[i].lessonsCount),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _accent1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
 
           // Разбивка по дням
