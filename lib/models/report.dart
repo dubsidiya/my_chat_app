@@ -25,9 +25,29 @@ class Report {
     this.createdByEmail,
   });
 
+  static int? _parseInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   factory Report.fromJson(Map<String, dynamic> json) {
+    final reportId = _parseInt(json['id']);
+    if (reportId == null) {
+      throw const FormatException('Invalid report id');
+    }
+
+    final lessonsRaw = json['lessons'];
+    final lessonsParsed = lessonsRaw is List
+        ? lessonsRaw
+            .whereType<Map>()
+            .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
+            .toList()
+        : null;
+
     return Report(
-      id: json['id'] as int,
+      id: reportId,
       reportDate: DateTime.parse(json['report_date'] as String),
       content: json['content'] as String,
       isLate: json['is_late'] == true,
@@ -36,14 +56,10 @@ class Report {
           ? DateTime.parse(json['updated_at'] as String)
           : null,
       lessonsCount: json['lessons_count'] != null
-          ? (json['lessons_count'] is int
-              ? json['lessons_count'] as int
-              : int.tryParse(json['lessons_count'].toString()))
+          ? _parseInt(json['lessons_count'])
           : null,
-      lessons: json['lessons'] != null
-          ? (json['lessons'] as List).cast<Map<String, dynamic>>()
-          : null,
-      createdBy: json['created_by'] != null ? int.tryParse(json['created_by'].toString()) : null,
+      lessons: lessonsParsed,
+      createdBy: _parseInt(json['created_by']),
       createdByEmail: json['created_by_email']?.toString(),
     );
   }

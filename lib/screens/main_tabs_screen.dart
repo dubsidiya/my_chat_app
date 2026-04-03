@@ -45,6 +45,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
         _versionCheckInfo!.result != VersionCheckResult.upToDate;
 
     return Scaffold(
+      backgroundColor: AppColors.backgroundDark,
       body: Column(
         children: [
           if (showUpdateBanner) _buildUpdateBanner(context),

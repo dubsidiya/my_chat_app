@@ -67,4 +67,20 @@ class AppColors {
   static Color get errorDark => const Color(0xFFE57373);
   static Color get successDark => const Color(0xFF81C784);
   static Color get warningDark => const Color(0xFFFFB74D);
+
+  /// Градиент фона списка чатов (верх совпадает с [backgroundDark] под AppBar).
+  static const LinearGradient homeBodyGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: [0.0, 0.45, 1.0],
+    colors: [
+      backgroundDark,
+      Color(0xFF120A24),
+      surfaceDark,
+    ],
+  );
+
+  /// Лёгкая подсветка «стекла» для полей поиска и панелей.
+  static Color glassOverlay(ColorScheme scheme) =>
+      scheme.surfaceContainerHighest.withValues(alpha: 0.45);
 }

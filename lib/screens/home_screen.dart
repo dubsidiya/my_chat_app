@@ -454,9 +454,9 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
           color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
       confirmDismiss: (direction) async {
@@ -502,19 +502,26 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: unread > 0
+                ? scheme.primary.withValues(alpha: 0.38)
+                : scheme.outline.withValues(alpha: 0.22),
+            width: 1,
+          ),
         ),
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        color: scheme.surfaceContainerHighest.withValues(alpha: unread > 0 ? 0.58 : 0.42),
         clipBehavior: Clip.antiAlias,
+        shadowColor: AppColors.primary.withValues(alpha: 0.07),
         child: InkWell(
           onTap: () => _openChat(chat),
           onLongPress: () => _showChatFolderPicker(chat),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             child: Row(
               children: [
                 GestureDetector(
@@ -1415,10 +1422,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final initial = displayLabel.isNotEmpty ? displayLabel[0].toUpperCase() : '?';
 
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: scheme.surface,
+        backgroundColor: AppColors.backgroundDark,
         leading: Padding(
           padding: const EdgeInsets.only(left: 4),
           child: GestureDetector(
@@ -1448,12 +1455,10 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(
           displayLabel,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurface,
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-            letterSpacing: 0.2,
-          ),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
         ),
         actions: [
           IconButton(
@@ -1479,8 +1484,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: SafeArea(
-        child: _isLoading
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: AppColors.homeBodyGradient,
+        ),
+        child: SafeArea(
+          child: _isLoading
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1549,20 +1559,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(14),
+                          color: AppColors.glassOverlay(scheme),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: scheme.outline.withValues(alpha: 0.2),
+                            color: scheme.primary.withValues(alpha: 0.14),
                             width: 1,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.06),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                         ),
                         child: TextField(
                           controller: _searchController,
                           onChanged: (v) => setState(() => _query = v),
+                          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w500),
                           decoration: InputDecoration(
                             hintText: 'Поиск по чатам',
-                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)),
-                            prefixIcon: Icon(Icons.search_rounded, color: scheme.onSurface.withValues(alpha: 0.6), size: 22),
+                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.48)),
+                            prefixIcon: Icon(Icons.search_rounded, color: scheme.primary.withValues(alpha: 0.75), size: 22),
                             suffixIcon: _query.isEmpty
                                 ? null
                                 : IconButton(
@@ -1725,6 +1743,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+        ),
       ),
     );
   }

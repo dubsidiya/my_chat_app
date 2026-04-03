@@ -139,7 +139,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       ),
     );
     if (result == true) {
-      _loadReports();
+      await _onRefresh();
     }
   }
 
@@ -151,7 +151,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       ),
     );
     if (result == true) {
-      _loadReports();
+      await _onRefresh();
     }
   }
 
@@ -164,7 +164,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     );
 
     if (result == true) {
-      _loadReports();
+      await _onRefresh();
     }
   }
 
@@ -196,7 +196,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
     try {
       await _reportsService.deleteReport(report.id);
-      _loadReports();
+      await _onRefresh();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -290,11 +290,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                 selected: {_allReportsMode},
                 onSelectionChanged: (Set<bool> selected) {
                   final all = selected.first;
-                  setState(() {
-                    _allReportsMode = all;
-                    if (all) _loadReportsList();
-                    else _loadReports();
-                  });
+                  setState(() => _allReportsMode = all);
+                  if (all) {
+                    _loadReportsList();
+                  } else {
+                    _loadReports();
+                  }
                 },
               ),
             ),
@@ -657,7 +658,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                                 onPressed: () async {
                                                   try {
                                                     await _reportsService.setReportNotLate(report.id);
-                                                    if (mounted) await _loadReports();
+                                                    if (mounted) await _onRefresh();
                                                     if (mounted) {
                                                       ScaffoldMessenger.of(context).showSnackBar(
                                                         const SnackBar(duration: Duration(seconds: 3), content: Text('Отчёт учтён как сдан вовремя')),

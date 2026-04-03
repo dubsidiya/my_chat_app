@@ -32,6 +32,19 @@ class Lesson {
     return int.tryParse(v.toString());
   }
 
+  static double _parseDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? fallback;
+  }
+
+  static bool _parseBool(dynamic v, {bool fallback = true}) {
+    if (v == null) return fallback;
+    if (v is bool) return v;
+    final s = v.toString().toLowerCase();
+    return s == 'true' || s == '1';
+  }
+
   factory Lesson.fromJson(Map<String, dynamic> json) {
     final id = _parseInt(json['id']);
     final studentId = _parseInt(json['student_id']);
@@ -43,13 +56,11 @@ class Lesson {
       studentId: studentId,
       lessonDate: DateTime.parse(json['lesson_date'] as String),
       lessonTime: json['lesson_time'] as String?,
-      durationMinutes: json['duration_minutes'] as int? ?? 60,
-      price: (json['price'] ?? 0.0) is double 
-          ? json['price'] as double 
-          : double.tryParse(json['price'].toString()) ?? 0.0,
+      durationMinutes: _parseInt(json['duration_minutes']) ?? 60,
+      price: _parseDouble(json['price']),
       notes: json['notes'] as String?,
       status: (json['status'] ?? 'attended').toString(),
-      isChargeable: json['is_chargeable'] == null ? true : json['is_chargeable'] == true,
+      isChargeable: _parseBool(json['is_chargeable']),
       originLessonId: _parseInt(json['origin_lesson_id']),
       createdAt: DateTime.parse(json['created_at'] as String),
     );
