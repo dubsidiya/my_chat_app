@@ -8,17 +8,27 @@
 Все сервисы используют `HttpService` для запросов:
 ```dart
 // Пример: lib/services/auth_service.dart
-final response = await _httpService.post('/auth/login', {
-  'email': email,
-  'password': password,
-}, requireAuth: false);
+Future<void> loginExample(HttpService httpService, String email, String password) async {
+  final response = await httpService.post(
+    '/auth/login',
+    {
+      'email': email,
+      'password': password,
+    },
+    requireAuth: false,
+  );
+  print(response.statusCode);
+}
 ```
 
 #### Хранение токена
 ```dart
 // lib/services/storage_service.dart
-await StorageService.saveUserData(userId, email, token);
-final token = await StorageService.getToken();
+Future<void> tokenExample(String userId, String email, String token) async {
+  await StorageService.saveUserData(userId, email, token);
+  final savedToken = await StorageService.getToken();
+  print(savedToken);
+}
 ```
 
 #### Навигация
@@ -81,7 +91,7 @@ const result = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
 - **Flutter**: 
   - `lib/services/reports_service.dart`
   - `lib/screens/reports_chat_screen.dart`
-  - `lib/screens/edit_report_screen.dart`
+  - `lib/screens/report_text_view_screen.dart` — просмотр и копирование текста отчёта
 - **Сервер**: 
   - `controllers/reportsController.js`
   - `routes/reports.js`
@@ -99,7 +109,10 @@ final String baseUrl = 'https://my-server-chat.onrender.com';
 ### Изменить стиль приложения
 ```dart
 // lib/main.dart, строки 34-93
-theme: ThemeData(...)
+final theme = ThemeData(
+  colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+  useMaterial3: true,
+);
 ```
 
 ### Добавить новый API endpoint
@@ -120,8 +133,10 @@ theme: ThemeData(...)
 ### Проверить токен
 ```dart
 // lib/services/storage_service.dart
-final token = await StorageService.getToken();
-print('Token: $token');
+Future<void> debugToken() async {
+  final token = await StorageService.getToken();
+  print('Token: $token');
+}
 ```
 
 ### Логи сервера

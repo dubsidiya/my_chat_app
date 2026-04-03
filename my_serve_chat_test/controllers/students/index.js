@@ -1,6 +1,7 @@
 export {
   createStudent,
   deleteStudent,
+  deleteStudentFull,
   getAllStudents,
   getMakeupPendingSummary,
   getStudentBalance,

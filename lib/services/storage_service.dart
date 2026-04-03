@@ -15,6 +15,7 @@ class StorageService {
   static const String _privateUnlockedPrefix = 'private_features_unlocked_';
   static const String _chatOrderPrefix = 'chat_order_';
   static const String _eulaAcceptedPrefix = 'eula_accepted_';
+  static const String _hiddenStudentsPrefix = 'hidden_students_';
 
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
@@ -262,6 +263,53 @@ class StorageService {
       }
       return true;
     }
+  }
+
+  /// Локально скрытые ученики (по userId). Не удаляет ученика на сервере.
+  static Future<Set<int>> getHiddenStudentIds(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_hiddenStudentsPrefix$userId');
+      if (raw == null || raw.isEmpty) return <int>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <int>{};
+      return decoded
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .where((id) => id > 0)
+          .toSet();
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getHiddenStudentIds error: $e');
+      }
+      return <int>{};
+    }
+  }
+
+  static Future<void> setHiddenStudentIds(String userId, Set<int> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = ids.where((id) => id > 0).toSet().toList()..sort();
+      await prefs.setString('$_hiddenStudentsPrefix$userId', jsonEncode(normalized));
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.setHiddenStudentIds error: $e');
+      }
+    }
+  }
+
+  static Future<void> hideStudent(String userId, int studentId) async {
+    final ids = await getHiddenStudentIds(userId);
+    ids.add(studentId);
+    await setHiddenStudentIds(userId, ids);
+  }
+
+  static Future<void> unhideStudent(String userId, int studentId) async {
+    final ids = await getHiddenStudentIds(userId);
+    ids.remove(studentId);
+    await setHiddenStudentIds(userId, ids);
   }
 }
 

@@ -223,6 +223,20 @@ class StudentsService {
     }
   }
 
+  /// Полное каскадное удаление ученика (только суперпользователь).
+  Future<void> deleteStudentFull(int id) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/students/$id/full'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось удалить ученика полностью');
+    }
+  }
+
   // Получение занятий студента
   Future<List<Lesson>> getStudentLessons(int studentId) async {
     final headers = await _getAuthHeaders();

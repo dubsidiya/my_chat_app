@@ -43,7 +43,7 @@
 - `deposit_screen.dart` - пополнение баланса
 - `bank_statement_screen.dart` - выписка по счету
 - `reports_chat_screen.dart` - создание отчетов
-- `edit_report_screen.dart` - редактирование отчета
+- `report_text_view_screen.dart` - просмотр и копирование текста отчёта (правка — через конструктор)
 - `add_members_dialog.dart` - диалог добавления участников
 - `chat_members_dialog.dart` - список участников чата
 

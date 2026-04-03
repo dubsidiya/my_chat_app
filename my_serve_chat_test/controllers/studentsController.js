@@ -520,8 +520,7 @@ export const updateStudent = async (req, res) => {
   }
 };
 
-// Удаление студента из списка преподавателя (и удаление из БД, если больше ни у кого не привязан).
-// Суперпользователь может удалить любого ученика (в т.ч. без своей связи в teacher_students).
+// Удаление связи текущего пользователя с учеником (без полного удаления ученика из БД).
 export const deleteStudent = async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
@@ -532,64 +531,81 @@ export const deleteStudent = async (req, res) => {
     await client.query('BEGIN');
 
     const isSuper = isSuperuser(req.user);
-    const hasAccess = isSuper || (await assertTeacherHasStudentAccess(client, userId, id));
-    if (!hasAccess) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Студент не найден' });
-    }
-
-    if (isSuper) {
-      // Суперпользователь: проверяем существование и удаляем студента полностью
-      const studentExists = await client.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
-      if (studentExists.rows.length === 0) {
+    if (!isSuper) {
+      const hasAccess = await assertTeacherHasStudentAccess(client, userId, id);
+      if (!hasAccess) {
         await client.query('ROLLBACK');
         return res.status(404).json({ message: 'Студент не найден' });
       }
-      await client.query('DELETE FROM teacher_students WHERE student_id = $1', [id]);
-      await client.query('DELETE FROM students WHERE id = $1', [id]);
-      await logAccountingEvent({
-        userId,
-        eventType: 'student_deleted_full',
-        entityType: 'student',
-        entityId: id,
-        payload: { bySuperuser: true },
-      });
     } else {
-      // Обычный преподаватель: снимаем только свою привязку
-      await client.query(
-        'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
-        [userId, id]
-      );
-      const stillLinked = await client.query(
-        'SELECT 1 FROM teacher_students WHERE student_id = $1 LIMIT 1',
-        [id]
-      );
-      if (stillLinked.rows.length === 0) {
-        await client.query('DELETE FROM students WHERE id = $1', [id]);
-        await logAccountingEvent({
-          userId,
-          eventType: 'student_deleted_full',
-          entityType: 'student',
-          entityId: id,
-          payload: { bySuperuser: false },
-        });
-      } else {
-        await logAccountingEvent({
-          userId,
-          eventType: 'student_unlinked',
-          entityType: 'student',
-          entityId: id,
-          payload: {},
-        });
+      const exists = await client.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+      if (exists.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Студент не найден' });
       }
     }
 
+    const unlinkRes = await client.query(
+      'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
+      [userId, id]
+    );
+    await logAccountingEvent({
+      userId,
+      eventType: 'student_unlinked',
+      entityType: 'student',
+      entityId: id,
+      payload: { removedLink: unlinkRes.rowCount > 0 },
+    });
+
     await client.query('COMMIT');
-    return res.json({ message: 'Студент удален' });
+    return res.json({ message: 'Связь с учеником удалена' });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка удаления студента:', error);
     return res.status(500).json({ message: 'Ошибка удаления студента' });
+  } finally {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    client.release();
+  }
+};
+
+// Полное каскадное удаление ученика (только суперпользователь).
+export const deleteStudentFull = async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+
+  if (!isSuperuser(req.user)) {
+    return res.status(403).json({ message: 'Полное удаление доступно только суперпользователю' });
+  }
+
+  const client = await pool.connect();
+  try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    await client.query('BEGIN');
+
+    const studentExists = await client.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+    if (studentExists.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Студент не найден' });
+    }
+
+    await client.query('DELETE FROM teacher_students WHERE student_id = $1', [id]);
+    await client.query('DELETE FROM students WHERE id = $1', [id]);
+
+    await logAccountingEvent({
+      userId,
+      eventType: 'student_deleted_full',
+      entityType: 'student',
+      entityId: id,
+      payload: { bySuperuser: true },
+    });
+
+    await client.query('COMMIT');
+    return res.json({ message: 'Ученик удален полностью' });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Ошибка полного удаления студента:', error);
+    return res.status(500).json({ message: 'Ошибка полного удаления студента' });
   } finally {
     try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();

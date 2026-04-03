@@ -5,7 +5,7 @@ import '../theme/app_colors.dart';
 import '../models/report.dart';
 import '../services/reports_service.dart';
 import '../utils/network_error_helper.dart';
-import 'edit_report_screen.dart';
+import 'report_text_view_screen.dart';
 import 'report_builder_screen.dart';
 import 'monthly_salary_screen.dart';
 
@@ -155,17 +155,13 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     }
   }
 
-  Future<void> _editReport(Report report) async {
-    final result = await Navigator.push(
+  Future<void> _openReportText(Report report) async {
+    await Navigator.push<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => EditReportScreen(report: report),
+      MaterialPageRoute<void>(
+        builder: (_) => ReportTextViewScreen(report: report),
       ),
     );
-
-    if (result == true) {
-      await _onRefresh();
-    }
   }
 
   Future<void> _deleteReport(Report report) async {
@@ -412,7 +408,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Дата отчета',
+                              'Дата для нового отчёта',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: scheme.onSurface.withValues(alpha:0.65),
@@ -426,6 +422,15 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 fontSize: 16,
                                 color: scheme.onSurface,
                                 fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Только для кнопки «Сформировать отчёт». Список ниже — все ваши отчёты.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: scheme.onSurface.withValues(alpha: 0.55),
                               ),
                             ),
                           ],
@@ -757,12 +762,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       ),
                                     ),
                                     const PopupMenuItem(
-                                      value: 'edit_text',
+                                      value: 'view_text',
                                       child: Row(
                                         children: [
-                                          Icon(Icons.text_snippet_outlined, size: 20),
+                                          Icon(Icons.content_copy_rounded, size: 20),
                                           SizedBox(width: 8),
-                                          Text('Редактировать (текст)'),
+                                          Text('Текст отчёта (копировать)'),
                                         ],
                                       ),
                                     ),
@@ -781,8 +786,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   onSelected: (value) {
                                     if (value == 'edit') {
                                       _openBuilderEdit(report.id);
-                                    } else if (value == 'edit_text') {
-                                      _editReport(report);
+                                    } else if (value == 'view_text') {
+                                      _openReportText(report);
                                     } else if (value == 'delete') {
                                       _deleteReport(report);
                                     }

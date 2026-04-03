@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createStudent,
   deleteStudent,
+  deleteStudentFull,
   getAllStudents,
   getMakeupPendingSummary,
   getStudentBalance,
@@ -18,6 +19,7 @@ router.post('/', createStudent);
 router.post('/link-existing', linkExistingStudent);
 router.put('/:id', updateStudent);
 router.delete('/:id', deleteStudent);
+router.delete('/:id/full', deleteStudentFull);
 router.get('/:id/balance', getStudentBalance);
 router.get('/:id/transactions', getStudentTransactions);
 

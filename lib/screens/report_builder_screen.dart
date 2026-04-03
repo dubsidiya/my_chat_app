@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../services/students_service.dart';
 import '../services/reports_service.dart';
+import '../services/storage_service.dart';
 
 class ReportBuilderScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -61,6 +62,12 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     setState(() => _isLoading = true);
     try {
       final students = await _studentsService.getAllStudents();
+      final userData = await StorageService.getUserData();
+      final userId = userData?['id'];
+      final hiddenIds = userId == null
+          ? <int>{}
+          : await StorageService.getHiddenStudentIds(userId);
+      final visibleStudents = students.where((s) => !hiddenIds.contains(s.id)).toList();
 
       // Если редактирование — грузим отчет и заполняем слоты
       if (widget.reportId != null) {
@@ -118,7 +125,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
         if (!mounted) return;
         setState(() {
-          _students = students;
+          _students = visibleStudents;
           _selectedDate = reportDate;
           _dateController.text = DateFormat('dd.MM.yyyy').format(reportDate);
           _slots.clear();
@@ -127,7 +134,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       } else {
         if (!mounted) return;
         setState(() {
-          _students = students;
+          _students = visibleStudents;
           if (_slots.isEmpty) _slots.add(_SlotDraft());
         });
       }
@@ -684,7 +691,7 @@ class _StudentPickerRowState extends State<_StudentPickerRow> {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: widget.status,
+          initialValue: widget.status,
           items: const [
             DropdownMenuItem(value: 'attended', child: Text('Проведено')),
             DropdownMenuItem(value: 'missed', child: Text('Пропуск')),

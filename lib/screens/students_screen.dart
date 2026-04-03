@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import '../theme/app_colors.dart';
 import '../models/student.dart';
 import '../services/students_service.dart';
+import '../services/storage_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
 import 'accounting_export_screen.dart';
@@ -24,6 +25,9 @@ class _StudentsScreenState extends State<StudentsScreen> {
   List<Student> _students = [];
   bool _isLoading = false;
   String _searchQuery = '';
+  Set<int> _hiddenStudentIds = <int>{};
+  bool _showHidden = false;
+  bool _isSuperuser = false;
   int _makeupPendingTotal = 0;
   List<Map<String, dynamic>> _makeupPendingItems = [];
   
@@ -33,7 +37,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadStudents();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    final userData = await StorageService.getUserData();
+    _isSuperuser = userData?['isSuperuser'] == 'true';
+    await _loadHiddenStudents();
+    await _loadStudents();
   }
 
   @override
@@ -48,6 +59,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final name = student.name.toLowerCase();
     final parent = (student.parentName ?? '').toLowerCase();
     return name.contains(query) || parent.contains(query);
+  }
+
+  Future<void> _loadHiddenStudents() async {
+    final ids = await StorageService.getHiddenStudentIds(widget.userId);
+    if (!mounted) return;
+    setState(() => _hiddenStudentIds = ids);
   }
 
   Future<void> _loadStudents() async {
@@ -96,6 +113,43 @@ class _StudentsScreenState extends State<StudentsScreen> {
     _loadStudents();
   }
 
+  Future<void> _hideStudent(Student student) async {
+    await StorageService.hideStudent(widget.userId, student.id);
+    if (!mounted) return;
+    setState(() {
+      _hiddenStudentIds = {..._hiddenStudentIds, student.id};
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        content: Text('Ученик "${student.name}" скрыт'),
+        action: SnackBarAction(
+          label: 'Отменить',
+          onPressed: () async {
+            await _unhideStudent(student, silent: true);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(duration: Duration(seconds: 2), content: Text('Скрытие отменено')),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unhideStudent(Student student, {bool silent = false}) async {
+    await StorageService.unhideStudent(widget.userId, student.id);
+    if (!mounted) return;
+    setState(() {
+      _hiddenStudentIds = {..._hiddenStudentIds}..remove(student.id);
+    });
+    if (!silent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ученик "${student.name}" снова отображается')),
+      );
+    }
+  }
+
   void _addStudent() async {
     final result = await Navigator.push(
       context,
@@ -109,7 +163,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
-  Future<void> _deleteStudent(Student student) async {
+  Future<bool> _deleteStudent(Student student) async {
     try {
       await _studentsService.deleteStudent(student.id);
       if (mounted) {
@@ -122,6 +176,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         );
         _loadStudents();
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,11 +187,45 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ),
         );
       }
+      return false;
+    }
+  }
+
+  Future<bool> _deleteStudentFully(Student student) async {
+    try {
+      await _studentsService.deleteStudentFull(student.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ученик "${student.name}" удален полностью'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadStudents();
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ошибка полного удаления: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
     }
   }
 
   void _openMakeupPendingSheet() {
-    if (_makeupPendingItems.isEmpty) {
+    final visibleMakeupItems = _showHidden
+        ? _makeupPendingItems
+        : _makeupPendingItems
+            .where((item) => !_hiddenStudentIds.contains((item['studentId'] as num?)?.toInt()))
+            .toList();
+    if (visibleMakeupItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           duration: Duration(seconds: 2),
@@ -161,7 +250,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   const Icon(Icons.replay_rounded),
                   const SizedBox(width: 8),
                   Text(
-                    'К отработке: $_makeupPendingTotal',
+                    'К отработке: ${visibleMakeupItems.fold<int>(0, (acc, item) => acc + ((item['pendingCount'] as num?)?.toInt() ?? 0))}',
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -175,10 +264,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
-                  itemCount: _makeupPendingItems.length,
+                    itemCount: visibleMakeupItems.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, index) {
-                    final item = _makeupPendingItems[index];
+                    final item = visibleMakeupItems[index];
                     final name = (item['studentName'] ?? '').toString();
                     final pending = (item['pendingCount'] as num?)?.toInt() ?? 0;
                     final missed = (item['missedCount'] as num?)?.toInt() ?? 0;
@@ -225,7 +314,19 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final q = _searchQuery.trim().toLowerCase();
-    final filteredStudents = _students.where((s) => _matchesStudent(s, q)).toList();
+    final visibleMakeupTotal = _showHidden
+        ? _makeupPendingTotal
+        : _makeupPendingItems.fold<int>(
+            0,
+            (acc, item) => _hiddenStudentIds.contains((item['studentId'] as num?)?.toInt())
+                ? acc
+                : acc + ((item['pendingCount'] as num?)?.toInt() ?? 0),
+          );
+    final filteredStudents = _students.where((s) {
+      if (!_showHidden && _hiddenStudentIds.contains(s.id)) return false;
+      return _matchesStudent(s, q);
+    }).toList();
+    final hiddenVisibleCount = _students.where((s) => _hiddenStudentIds.contains(s.id)).length;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
@@ -253,7 +354,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   onPressed: _openMakeupPendingSheet,
                   tooltip: 'К отработке',
                 ),
-                if (_makeupPendingTotal > 0)
+                if (visibleMakeupTotal > 0)
                   Positioned(
                     right: 6,
                     top: 6,
@@ -264,7 +365,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        _makeupPendingTotal > 99 ? '99+' : _makeupPendingTotal.toString(),
+                        visibleMakeupTotal > 99 ? '99+' : visibleMakeupTotal.toString(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
@@ -274,6 +375,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
               ],
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: (_showHidden ? Colors.teal : Colors.grey).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(_showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: _showHidden ? Colors.teal : Colors.grey),
+              onPressed: () => setState(() => _showHidden = !_showHidden),
+              tooltip: _showHidden ? 'Скрыть выпускников' : 'Показать скрытых ($hiddenVisibleCount)',
             ),
           ),
           Container(
@@ -318,25 +431,43 @@ class _StudentsScreenState extends State<StudentsScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (v) => setState(() => _searchQuery = v),
-                    decoration: InputDecoration(
-                      hintText: 'Глобальный поиск по детям',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: _searchQuery.trim().isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close_rounded),
-                              onPressed: () {
-                                setState(() {
-                                  _searchQuery = '';
-                                  _searchController.clear();
-                                });
-                              },
-                            ),
-                      border: const OutlineInputBorder(),
-                    ),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (v) => setState(() => _searchQuery = v),
+                        decoration: InputDecoration(
+                          hintText: 'Глобальный поиск по детям',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: _searchQuery.trim().isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close_rounded),
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _searchController.clear();
+                                    });
+                                  },
+                                ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      if (!_showHidden && hiddenVisibleCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.visibility_off_rounded, size: 16, color: scheme.onSurface.withValues(alpha: 0.6)),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Скрыто выпускников: $hiddenVisibleCount',
+                                style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -491,32 +622,71 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           ),
                         ),
                         confirmDismiss: (direction) async {
-                          final result = await showDialog<bool>(
+                          final result = await showDialog<String>(
                             context: context,
                             builder: (context) => AlertDialog(
-                              title: const Text('Удалить ученика?'),
+                              title: const Text('Что сделать с учеником?'),
                               content: Text(
-                                'Вы уверены, что хотите удалить "${student.name}"?\n\n'
-                                'Это действие удалит вашу связь с учеником.\n'
-                                'Если ученик привязан к другим преподавателям, его данные останутся у них.\n\n'
-                                'Это действие нельзя отменить!',
+                                'Ученик: "${student.name}"\n\n'
+                                'Удалить — только снять вашу связь с учеником.\n'
+                                'Скрыть — оставить в базе, но убрать из ваших списков.',
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () => Navigator.pop(context, 'cancel'),
                                   child: const Text('Отмена'),
                                 ),
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('Удалить', style: TextStyle(color: Colors.red)),
+                                  onPressed: () => Navigator.pop(context, 'hide'),
+                                  child: const Text('Скрыть'),
+                                ),
+                                if (_isSuperuser)
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, 'delete_full'),
+                                    child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
+                                  ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, 'delete'),
+                                  child: const Text('Удалить связь'),
                                 ),
                               ],
                             ),
                           );
-                          if (result == true) {
-                            await _deleteStudent(student);
+                          if (result == 'hide') {
+                            await _hideStudent(student);
+                            return false;
                           }
-                          return result ?? false;
+                          if (result == 'delete_full') {
+                            final confirmFull = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Подтвердите полное удаление'),
+                                content: Text(
+                                  'Ученик "${student.name}" будет удален полностью из базы.\n\n'
+                                  'Будут удалены все занятия и транзакции по этому ученику.\n'
+                                  'Действие необратимо.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Отмена'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmFull == true) {
+                              return await _deleteStudentFully(student);
+                            }
+                            return false;
+                          }
+                          if (result == 'delete') {
+                            return await _deleteStudent(student);
+                          }
+                          return false;
                         },
                         child: Card(
                         margin: const EdgeInsets.symmetric(vertical: 4),

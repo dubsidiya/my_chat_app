@@ -237,12 +237,12 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Удалить ученика?'),
+        title: const Text('Удалить связь с учеником?'),
         content: Text(
           'Вы уверены, что хотите удалить "${_student.name}"?\n\n'
           'Это действие удалит вашу связь с учеником.\n'
-          'Если ученик привязан к другим преподавателям, его данные останутся у них.\n\n'
-          'Это действие нельзя отменить!',
+          'Данные ученика останутся в системе.\n\n'
+          'Это действие можно выполнить только для вашей учетной записи.',
         ),
         actions: [
           TextButton(
@@ -251,7 +251,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
+            child: const Text('Удалить связь'),
           ),
         ],
       ),
@@ -277,6 +277,56 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           SnackBar(
             duration: const Duration(seconds: 3),
             content: Text('Ошибка удаления: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteStudentFully() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить ученика полностью?'),
+        content: Text(
+          'Ученик "${_student.name}" будет удален полностью из базы.\n\n'
+          'Будут удалены все занятия и транзакции по этому ученику.\n'
+          'Действие необратимо.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _studentsService.deleteStudentFull(_student.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ученик "${_student.name}" удален полностью'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ошибка полного удаления: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -343,8 +393,41 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: () => _deleteStudent(),
-            tooltip: 'Удалить ученика',
+            onPressed: () async {
+              if (_showAllAccountingData) {
+                final action = await showModalBottomSheet<String>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (context) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.link_off_rounded),
+                          title: const Text('Удалить связь'),
+                          subtitle: const Text('Только отвязать от текущего пользователя'),
+                          onTap: () => Navigator.pop(context, 'unlink'),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                          title: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
+                          subtitle: const Text('Только суперпользователь'),
+                          onTap: () => Navigator.pop(context, 'full'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+                if (action == 'full') {
+                  await _deleteStudentFully();
+                } else if (action == 'unlink') {
+                  await _deleteStudent();
+                }
+              } else {
+                await _deleteStudent();
+              }
+            },
+            tooltip: 'Удаление ученика',
           ),
         ],
       ),
