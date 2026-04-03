@@ -80,9 +80,9 @@ class _DepositPickStudentScreenState extends State<DepositPickStudentScreen> {
   }
 
   Future<void> _select(Map<String, dynamic> s) async {
-    final id = s['id'];
+    final id = _parseStudentId(s['id']);
     final name = (s['name'] ?? '').toString().trim();
-    if (id is! int || id <= 0 || name.isEmpty) return;
+    if (id == null || name.isEmpty) return;
 
     final tx = await Navigator.push<Transaction?>(
       context,
@@ -95,6 +95,18 @@ class _DepositPickStudentScreenState extends State<DepositPickStudentScreen> {
       context,
       DepositPickResult(studentId: id, studentName: name, transaction: tx),
     );
+  }
+
+  int? _parseStudentId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v > 0 ? v : null;
+    if (v is num) {
+      final i = v.toInt();
+      return i > 0 ? i : null;
+    }
+    final i = int.tryParse(v.toString());
+    if (i == null || i <= 0) return null;
+    return i;
   }
 
   @override

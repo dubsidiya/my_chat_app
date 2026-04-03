@@ -45,25 +45,38 @@ class Transaction {
     return 'Наличные';
   }
 
+  static int _parseRequiredInt(dynamic v, String fieldName) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    final parsed = int.tryParse(v?.toString() ?? '');
+    if (parsed == null) {
+      throw FormatException('Invalid $fieldName');
+    }
+    return parsed;
+  }
+
+  static int? _parseOptionalInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
+  static double _parseDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? fallback;
+  }
+
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
-      studentId: json['student_id'] is int 
-          ? json['student_id'] 
-          : int.parse(json['student_id'].toString()),
-      amount: json['amount'] is double 
-          ? json['amount'] 
-          : double.parse(json['amount'].toString()),
-      type: json['type'] as String,
+      id: _parseRequiredInt(json['id'], 'transaction id'),
+      studentId: _parseRequiredInt(json['student_id'], 'student_id'),
+      amount: _parseDouble(json['amount']),
+      type: json['type']?.toString() ?? '',
       description: json['description'] as String?,
-      lessonId: json['lesson_id'] != null 
-          ? (json['lesson_id'] is int 
-              ? json['lesson_id'] 
-              : int.parse(json['lesson_id'].toString()))
-          : null,
-      createdBy: json['created_by'] is int 
-          ? json['created_by'] 
-          : int.parse(json['created_by'].toString()),
+      lessonId: _parseOptionalInt(json['lesson_id']),
+      createdBy: _parseRequiredInt(json['created_by'], 'created_by'),
       createdAt: DateTime.parse(json['created_at']),
       lessonDate: json['lesson_date'] != null 
           ? DateTime.parse(json['lesson_date'])
