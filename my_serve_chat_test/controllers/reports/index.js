@@ -4,6 +4,7 @@ export {
   getAllReports,
   getMonthlySalaryReport,
   getReport,
+  getReportAudit,
   getReportsList,
   setReportNotLate,
   updateReport,

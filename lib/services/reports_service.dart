@@ -4,6 +4,7 @@ import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import '../models/report.dart';
 import '../models/monthly_salary_report.dart';
+import '../models/report_audit_event.dart';
 import 'storage_service.dart';
 
 class ReportsService {
@@ -237,6 +238,27 @@ class ReportsService {
       final error = jsonDecode(response.body);
       throw Exception(error['message'] ?? 'Не удалось загрузить отчёт по зарплате');
     }
+  }
+
+  /// Журнал аудита по отчёту (события из audit_events).
+  Future<List<ReportAuditEvent>> getReportAudit(int reportId) async {
+    final headers = await _getAuthHeaders();
+    final response = await timedGet(
+      Uri.parse('$baseUrl/reports/$reportId/audit'),
+      headers: headers,
+      timeout: const Duration(seconds: 15),
+    );
+
+    if (response.statusCode != 200) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Не удалось загрузить журнал');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = data['events'] as List<dynamic>? ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => ReportAuditEvent.fromJson(Map<String, dynamic>.from(e.map((k, v) => MapEntry(k.toString(), v)))))
+        .toList();
   }
 
   // Удаление отчета

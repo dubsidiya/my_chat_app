@@ -35,5 +35,21 @@ void main() {
       expect(l.notes, 'Повторение');
       expect(l.durationMinutes, 90);
     });
+
+    test('linked_report_id и linked_report_date', () {
+      final l = Lesson.fromJson({
+        'id': 3,
+        'student_id': 10,
+        'lesson_date': '2025-03-10',
+        'duration_minutes': 60,
+        'price': 1000,
+        'created_at': '2025-03-10T12:00:00Z',
+        'linked_report_id': 42,
+        'linked_report_date': '2025-03-10',
+      });
+      expect(l.linkedReportId, 42);
+      expect(l.linkedReportDate, DateTime(2025, 3, 10));
+      expect(l.isFromDailyReport, isTrue);
+    });
   });
 }

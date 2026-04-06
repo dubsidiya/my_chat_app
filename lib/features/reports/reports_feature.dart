@@ -5,4 +5,7 @@ export '../../screens/report_text_view_screen.dart';
 export '../../screens/monthly_salary_screen.dart';
 export '../../screens/report_builder_screen.dart';
 export '../../screens/reports_chat_screen.dart';
+export '../../screens/report_audit_screen.dart';
+export '../../screens/lessons_calendar_screen.dart';
 export '../../services/reports_service.dart';
+export '../../models/report_slot.dart';

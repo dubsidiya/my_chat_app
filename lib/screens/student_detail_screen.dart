@@ -8,6 +8,7 @@ import '../services/students_service.dart';
 import '../services/storage_service.dart';
 import 'add_lesson_screen.dart';
 import 'edit_student_screen.dart';
+import 'report_builder_screen.dart';
 
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
@@ -335,16 +336,36 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   }
 
   Future<void> _deleteLesson(Lesson lesson) async {
+    final fromReport = lesson.isFromDailyReport;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Удалить занятие?'),
-        content: const Text('Это действие нельзя отменить'),
+        content: Text(
+          fromReport
+              ? 'Занятие привязано к дневному отчёту №${lesson.linkedReportId}. '
+                  'Удаление уберёт его из учёта. Суммы в отчёте лучше править через «Отчёты» → конструктор.\n\n'
+                  'Продолжить удаление?'
+              : 'Это действие нельзя отменить',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Отмена'),
           ),
+          if (fromReport && lesson.linkedReportId != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, false);
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => ReportBuilderScreen(reportId: lesson.linkedReportId),
+                  ),
+                );
+              },
+              child: const Text('Открыть отчёт'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Удалить', style: TextStyle(color: Colors.red)),
@@ -606,7 +627,39 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     controller: _tabController,
                     children: [
                       // Вкладка занятий
-                      _isLoading
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: Material(
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Занятия из дневного отчёта помечены и правятся через «Отчёты» → конструктор. '
+                                        'Точечные занятия здесь — вне отчёта.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          height: 1.35,
+                                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _lessons.isEmpty
                     ? Center(
@@ -638,16 +691,42 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
+                              isThreeLine: lesson.isFromDailyReport,
                               leading: const Icon(Icons.event),
+                              onTap: lesson.linkedReportId != null
+                                  ? () {
+                                      Navigator.push<bool>(
+                                        context,
+                                        MaterialPageRoute<bool>(
+                                          builder: (_) => ReportBuilderScreen(reportId: lesson.linkedReportId!),
+                                        ),
+                                      ).then((_) => _refreshData());
+                                    }
+                                  : null,
                               title: Text(
                                 DateFormat('dd.MM.yyyy')
                                     .format(lesson.lessonDate),
                               ),
-                              subtitle: Text(
-                                [
-                                  if (lesson.lessonTime != null) 'Время: ${lesson.lessonTime}',
-                                  _statusLabel(lesson.status),
-                                ].join(' · '),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    [
+                                      if (lesson.lessonTime != null) 'Время: ${lesson.lessonTime}',
+                                      _statusLabel(lesson.status),
+                                    ].join(' · '),
+                                  ),
+                                  if (lesson.isFromDailyReport && lesson.linkedReportId != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        'Отчёт №${lesson.linkedReportId}'
+                                        '${lesson.linkedReportDate != null ? ' · ${DateFormat('dd.MM.yyyy').format(lesson.linkedReportDate!)}' : ''} · нажмите, чтобы открыть',
+                                        style: TextStyle(fontSize: 11, color: scheme.primary, fontWeight: FontWeight.w500),
+                                      ),
+                                    ),
+                                ],
                               ),
                               trailing: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -675,6 +754,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                         },
                                   ),
                                 ),
+                          ),
+                        ],
+                      ),
                       // Вкладка транзакций
                       _isLoading
                           ? const Center(child: CircularProgressIndicator())

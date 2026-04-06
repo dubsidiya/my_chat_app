@@ -41,17 +41,24 @@ export const getStudentLessons = async (req, res) => {
     }
 
     const onlyMine = mine || !isSuperuser(req.user);
+    const linkSelect = `
+      (SELECT rl.report_id FROM report_lessons rl WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_id,
+      (SELECT rep.report_date::text FROM report_lessons rl
+        JOIN reports rep ON rep.id = rl.report_id AND rep.created_by = l.created_by
+        WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_date`;
     const result = onlyMine
         ? await pool.query(
-            `SELECT * FROM lessons
-             WHERE student_id = $1 AND created_by = $2
-             ORDER BY lesson_date DESC, lesson_time DESC`,
+            `SELECT l.*, ${linkSelect}
+             FROM lessons l
+             WHERE l.student_id = $1 AND l.created_by = $2
+             ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
             [studentId, userId]
           )
         : await pool.query(
-            `SELECT * FROM lessons
-             WHERE student_id = $1
-             ORDER BY lesson_date DESC, lesson_time DESC`,
+            `SELECT l.*, ${linkSelect}
+             FROM lessons l
+             WHERE l.student_id = $1
+             ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
             [studentId]
           );
 
@@ -59,6 +66,32 @@ export const getStudentLessons = async (req, res) => {
   } catch (error) {
     console.error('Ошибка получения занятий:', error);
     res.status(500).json({ message: 'Ошибка получения занятий' });
+  }
+};
+
+/**
+ * GET /students/calendar-summary?from=YYYY-MM-DD&to=YYYY-MM-DD
+ * Количество занятий по дням для текущего пользователя (created_by).
+ */
+export const getLessonsCalendarSummary = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { from, to } = req.query;
+    if (!from || !to || !ISO_DATE_RE.test(String(from)) || !ISO_DATE_RE.test(String(to))) {
+      return res.status(400).json({ message: 'Укажите from и to в формате YYYY-MM-DD' });
+    }
+    const result = await pool.query(
+      `SELECT lesson_date::text AS date, COUNT(*)::int AS count
+       FROM lessons
+       WHERE created_by = $1 AND lesson_date >= $2::date AND lesson_date <= $3::date
+       GROUP BY lesson_date
+       ORDER BY lesson_date`,
+      [userId, from, to]
+    );
+    return res.json({ days: result.rows });
+  } catch (error) {
+    console.error('getLessonsCalendarSummary:', error);
+    return res.status(500).json({ message: 'Ошибка календаря занятий' });
   }
 };
 

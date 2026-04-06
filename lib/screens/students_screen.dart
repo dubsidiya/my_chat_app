@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
 import 'accounting_export_screen.dart';
+import 'lessons_calendar_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String userId;
@@ -387,6 +388,23 @@ class _StudentsScreenState extends State<StudentsScreen> {
               icon: Icon(_showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: _showHidden ? Colors.teal : Colors.grey),
               onPressed: () => setState(() => _showHidden = !_showHidden),
               tooltip: _showHidden ? 'Скрыть выпускников' : 'Показать скрытых ($hiddenVisibleCount)',
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.teal.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.calendar_month_rounded, color: Colors.teal),
+              onPressed: () {
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(builder: (_) => const LessonsCalendarScreen()),
+                );
+              },
+              tooltip: 'Календарь занятий',
             ),
           ),
           Container(

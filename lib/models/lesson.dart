@@ -10,6 +10,9 @@ class Lesson {
   final bool isChargeable;
   final int? originLessonId;
   final DateTime createdAt;
+  /// Связь с дневным отчётом (если занятие создано из отчёта).
+  final int? linkedReportId;
+  final DateTime? linkedReportDate;
 
   Lesson({
     required this.id,
@@ -23,7 +26,11 @@ class Lesson {
     this.isChargeable = true,
     this.originLessonId,
     required this.createdAt,
+    this.linkedReportId,
+    this.linkedReportDate,
   });
+
+  bool get isFromDailyReport => linkedReportId != null;
 
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
@@ -51,6 +58,13 @@ class Lesson {
     if (id == null || studentId == null) {
       throw const FormatException('Invalid lesson id or student_id');
     }
+    final linkedDateRaw = json['linked_report_date'];
+    DateTime? linkedReportDate;
+    if (linkedDateRaw != null && linkedDateRaw.toString().isNotEmpty) {
+      final p = linkedDateRaw.toString().split('T').first;
+      final d = DateTime.tryParse(p);
+      linkedReportDate = d == null ? null : DateTime(d.year, d.month, d.day);
+    }
     return Lesson(
       id: id,
       studentId: studentId,
@@ -63,6 +77,8 @@ class Lesson {
       isChargeable: _parseBool(json['is_chargeable']),
       originLessonId: _parseInt(json['origin_lesson_id']),
       createdAt: DateTime.parse(json['created_at'] as String),
+      linkedReportId: _parseInt(json['linked_report_id']),
+      linkedReportDate: linkedReportDate,
     );
   }
 }

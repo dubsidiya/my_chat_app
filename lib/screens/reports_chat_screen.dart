@@ -35,6 +35,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   /// null = все, true = только поздние, false = только вовремя
   bool? _filterOnlyLate;
 
+  /// Напоминание: вчера не было отчёта (только свой режим, не бухгалтер).
+  bool _yesterdayReminder = false;
+  bool _yesterdayReminderDismissed = false;
+
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
 
@@ -51,6 +55,26 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     super.dispose();
   }
 
+  void _syncYesterdayReminder() {
+    if (!mounted) return;
+    if (_allReportsMode) {
+      _yesterdayReminder = false;
+      return;
+    }
+    if (_yesterdayReminderDismissed) {
+      _yesterdayReminder = false;
+      return;
+    }
+    final now = DateTime.now();
+    final y = now.subtract(const Duration(days: 1));
+    final yd = DateTime(y.year, y.month, y.day);
+    final has = _reports.any((r) {
+      final d = r.reportDate;
+      return d.year == yd.year && d.month == yd.month && d.day == yd.day;
+    });
+    _yesterdayReminder = !has;
+  }
+
   Future<void> _loadReportsList() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -60,7 +84,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         dateTo: _filterDateTo,
         isLate: _filterOnlyLate,
       );
-      if (mounted) setState(() => _reports = reports);
+      if (mounted) {
+        setState(() {
+          _reports = reports;
+          _syncYesterdayReminder();
+        });
+      }
     } catch (e) {
       if (kDebugMode) print('Ошибка загрузки списка отчётов: $e');
       if (mounted) {
@@ -87,6 +116,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       if (mounted) {
         setState(() {
           _reports = reports;
+          _syncYesterdayReminder();
         });
       }
     } catch (e) {
@@ -278,6 +308,37 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
+          if (_yesterdayReminder && !_allReportsMode)
+            Material(
+              color: Colors.amber.withValues(alpha: isDark ? 0.22 : 0.35),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.amber.shade700, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'За вчера (${DateFormat('dd.MM.yyyy').format(DateTime.now().subtract(const Duration(days: 1)))}) отчёт не найден.',
+                        style: TextStyle(fontSize: 13, color: scheme.onSurface, height: 1.25),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _openBuilder,
+                      child: const Text('Создать'),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => setState(() {
+                        _yesterdayReminderDismissed = true;
+                        _yesterdayReminder = false;
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (widget.isSuperuser) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

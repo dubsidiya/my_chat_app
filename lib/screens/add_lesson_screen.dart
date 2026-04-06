@@ -25,9 +25,17 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
   int _durationMinutes = 60;
   bool _isLoading = false;
   String _lessonStatus = 'attended';
+  /// Дополнительные копии занятия через 1…N недель (0 — только выбранная дата).
+  int _repeatExtraWeeks = 0;
 
   static const double _largeAmountWarn = 10000;
   static const double _maxAmount = 1000000;
+
+  static String _weeksWord(int n) {
+    if (n % 10 == 1 && n % 100 != 11) return 'неделя';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'недели';
+    return 'недель';
+  }
 
   @override
   void dispose() {
@@ -59,26 +67,32 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final lesson = await _studentsService.createLesson(
-        studentId: widget.studentId,
-        lessonDate: _selectedDate,
-        lessonTime: _timeController.text.isEmpty ? null : _timeController.text,
-        durationMinutes: _durationMinutes,
-        price: double.parse(_priceController.text),
-        status: _lessonStatus,
-        notes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
-      );
+      final price = double.parse(_priceController.text);
+      final notes = _notesController.text.trim().isEmpty ? null : _notesController.text.trim();
+      final time = _timeController.text.isEmpty ? null : _timeController.text;
+      Lesson? lastLesson;
+      for (var w = 0; w <= _repeatExtraWeeks; w++) {
+        final base = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+        final lessonDate = base.add(Duration(days: 7 * w));
+        lastLesson = await _studentsService.createLesson(
+          studentId: widget.studentId,
+          lessonDate: lessonDate,
+          lessonTime: time,
+          durationMinutes: _durationMinutes,
+          price: price,
+          status: _lessonStatus,
+          notes: notes,
+        );
+      }
 
       // Запомним последнюю цену для выбранной длительности
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setDouble('lesson_price_$_durationMinutes', double.parse(_priceController.text));
+        await prefs.setDouble('lesson_price_$_durationMinutes', price);
       } catch (_) {}
 
       if (mounted) {
-        Navigator.pop<Lesson>(context, lesson);
+        Navigator.pop<Lesson>(context, lastLesson);
       }
     } catch (e) {
       if (mounted) {
@@ -211,6 +225,33 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<int>(
+              decoration: const InputDecoration(
+                labelText: 'Повторить по неделям',
+                border: OutlineInputBorder(),
+                helperText: 'Создаёт такие же занятия через 7, 14, … дней (отдельные записи)',
+              ),
+              initialValue: _repeatExtraWeeks,
+              items: [
+                for (var i = 0; i <= 8; i++)
+                  DropdownMenuItem(
+                    value: i,
+                    child: Text(
+                      i == 0
+                          ? 'Только эта дата'
+                          : 'Плюс $i ${_weeksWord(i)}',
+                    ),
+                  ),
+              ],
+              onChanged: _isLoading
+                  ? null
+                  : (v) {
+                      if (v == null) return;
+                      setState(() => _repeatExtraWeeks = v);
+                    },
             ),
             const SizedBox(height: 16),
 

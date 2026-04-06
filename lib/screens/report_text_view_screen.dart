@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/report.dart';
+import 'report_audit_screen.dart';
 
 /// Просмотр сгенерированного текста отчёта для копирования в параллельный учёт (тестирование).
 /// Правка занятий — только через конструктор отчёта.
@@ -28,6 +29,18 @@ class ReportTextViewScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Текст отчёта'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Журнал изменений',
+            onPressed: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => ReportAuditScreen(reportId: report.id),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.copy_rounded),
             tooltip: 'Копировать весь текст',

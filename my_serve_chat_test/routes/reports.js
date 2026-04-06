@@ -4,6 +4,7 @@ import {
   getAllReports,
   getReportsList,
   getReport,
+  getReportAudit,
   getMonthlySalaryReport,
   createReport,
   updateReport,
@@ -19,6 +20,7 @@ router.use(authenticateToken, requirePrivateAccess);
 router.get('/salary', getMonthlySalaryReport);
 router.get('/list', requireSuperuser, getReportsList);
 router.get('/', getAllReports);
+router.get('/:id/audit', getReportAudit);
 router.get('/:id', getReport);
 router.post('/', createReport);
 router.put('/:id', updateReport);

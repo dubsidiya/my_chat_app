@@ -271,6 +271,42 @@ class StudentsService {
     }
   }
 
+  static String _dateToIso(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Занятия по дням (только созданные текущим пользователем), для календаря.
+  Future<Map<DateTime, int>> getLessonsCalendarSummary({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse('$baseUrl/students/calendar-summary').replace(
+      queryParameters: {
+        'from': _dateToIso(from),
+        'to': _dateToIso(to),
+      },
+    );
+    final response = await timedGet(uri, headers: headers);
+    if (response.statusCode != 200) {
+      throw Exception('Не удалось загрузить календарь: ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final days = data['days'] as List<dynamic>? ?? [];
+    final out = <DateTime, int>{};
+    for (final row in days) {
+      if (row is! Map) continue;
+      final ds = row['date']?.toString();
+      final c = row['count'];
+      if (ds == null) continue;
+      final dt = DateTime.tryParse(ds);
+      if (dt == null) continue;
+      final key = DateTime(dt.year, dt.month, dt.day);
+      final n = c is int ? c : int.tryParse(c.toString()) ?? 0;
+      out[key] = n;
+    }
+    return out;
+  }
+
   // Создание занятия
   Future<Lesson> createLesson({
     required int studentId,

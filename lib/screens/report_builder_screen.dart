@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/student.dart';
+import '../models/report_slot.dart';
 import '../services/students_service.dart';
 import '../services/reports_service.dart';
 import '../services/storage_service.dart';
+import '../services/report_builder_draft_storage.dart';
 
 class ReportBuilderScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -49,10 +53,17 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   List<Student> _students = [];
   final List<_SlotDraft> _slots = [];
   final Map<int, double> _lastPriceByStudent = {};
+  Timer? _draftTimer;
+  String? _userId;
 
   @override
   void initState() {
     super.initState();
+    _draftTimer = Timer.periodic(const Duration(seconds: 30), (_) => unawaited(_persistDraftSafe()));
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final u = await StorageService.getUserData();
+      if (mounted) setState(() => _userId = u?['id']);
+    });
     _selectedDate = widget.initialDate ?? DateTime.now();
     _dateController.text = DateFormat('dd.MM.yyyy').format(_selectedDate);
     _init();
@@ -137,6 +148,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
           _students = visibleStudents;
           if (_slots.isEmpty) _slots.add(_SlotDraft());
         });
+        if (widget.reportId == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_offerRestoreDraft()));
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -151,11 +165,101 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
+    unawaited(_persistDraftSafe());
     _dateController.dispose();
     for (final s in _slots) {
       s.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _persistDraftSafe() async {
+    if (!mounted || widget.reportId != null) return;
+    final uid = _userId ?? (await StorageService.getUserData())?['id'];
+    if (uid == null) return;
+    final map = _serializeDraft();
+    if (map == null) return;
+    await ReportBuilderDraftStorage.save(uid, map);
+  }
+
+  Map<String, dynamic>? _serializeDraft() {
+    var any = false;
+    final slots = <Map<String, dynamic>>[];
+    for (final s in _slots) {
+      if (s.startController.text.trim().isNotEmpty || s.student1Id != null) any = true;
+      slots.add({
+        'start': s.startController.text,
+        'duration': s.durationMinutes,
+        's1': s.student1Id,
+        's2': s.student2Id,
+        'p1': s.price1Controller.text,
+        'p2': s.price2Controller.text,
+        'st1': s.status1,
+        'st2': s.status2,
+      });
+    }
+    if (!any) return null;
+    return {
+      'version': 1,
+      'reportDate': _selectedDate.toIso8601String(),
+      'slots': slots,
+    };
+  }
+
+  Future<void> _offerRestoreDraft() async {
+    if (widget.reportId != null || !mounted) return;
+    final uid = _userId ?? (await StorageService.getUserData())?['id'];
+    if (uid == null) return;
+    _userId = uid;
+    final draft = await ReportBuilderDraftStorage.load(uid);
+    if (draft == null || !mounted) return;
+    if (draft['version'] != 1) return;
+    final slotsRaw = draft['slots'];
+    if (slotsRaw is! List || slotsRaw.isEmpty) return;
+
+    final want = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Восстановить черновик?'),
+        content: const Text('Найден несохранённый черновик отчёта на этом устройстве.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Нет')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Восстановить')),
+        ],
+      ),
+    );
+    if (want != true || !mounted) return;
+
+    for (final s in _slots) {
+      s.dispose();
+    }
+    _slots.clear();
+
+    final dateStr = draft['reportDate']?.toString();
+    if (dateStr != null) {
+      final d = DateTime.tryParse(dateStr);
+      if (d != null) {
+        _selectedDate = DateTime(d.year, d.month, d.day);
+        _dateController.text = DateFormat('dd.MM.yyyy').format(_selectedDate);
+      }
+    }
+
+    for (final row in slotsRaw) {
+      if (row is! Map) continue;
+      final slot = _SlotDraft();
+      slot.startController.text = row['start']?.toString() ?? '';
+      slot.durationMinutes = row['duration'] is int ? row['duration'] as int : int.tryParse(row['duration']?.toString() ?? '') ?? 60;
+      slot.student1Id = row['s1'] == null ? null : int.tryParse(row['s1'].toString());
+      slot.student2Id = row['s2'] == null ? null : int.tryParse(row['s2'].toString());
+      slot.price1Controller.text = row['p1']?.toString() ?? '';
+      slot.price2Controller.text = row['p2']?.toString() ?? '';
+      slot.status1 = row['st1']?.toString() ?? 'attended';
+      slot.status2 = row['st2']?.toString() ?? 'attended';
+      _slots.add(slot);
+    }
+    if (_slots.isEmpty) _slots.add(_SlotDraft());
+    setState(() {});
   }
 
   Future<void> _pickDate() async {
@@ -170,6 +274,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       _selectedDate = picked;
       _dateController.text = DateFormat('dd.MM.yyyy').format(picked);
     });
+    unawaited(_persistDraftSafe());
   }
 
   void _addSlot() {
@@ -253,22 +358,41 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     }
   }
 
-  Future<void> _save() async {
-    // локальная валидация
+  List<String> _priceWarningsForBuilt(List<ReportStructuredSlot> built) {
+    final ref = Map<int, double>.from(_lastPriceByStudent);
+    final w = <String>[];
+    for (final sl in built) {
+      for (final st in sl.students) {
+        final prev = ref[st.studentId];
+        if (prev != null && prev > 0 && st.price > 0) {
+          final ratio = st.price / prev;
+          if (ratio > 1.35 || ratio < 0.65) {
+            w.add(
+              'Ученик #${st.studentId}: ${st.price.toStringAsFixed(0)} ₽ заметно отличается от последней цены (${prev.toStringAsFixed(0)} ₽).',
+            );
+          }
+        }
+        ref[st.studentId] = st.price;
+      }
+    }
+    return w;
+  }
+
+  List<ReportStructuredSlot>? _buildStructuredSlotsOrNull() {
     if (_slots.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(duration: Duration(seconds: 3), content: Text('Добавьте хотя бы одно занятие'), backgroundColor: Colors.orange),
       );
-      return;
+      return null;
     }
     if (_slots.length > _maxSlots) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(duration: Duration(seconds: 3), content: Text('Максимум $_maxSlots занятий в день'), backgroundColor: Colors.orange),
       );
-      return;
+      return null;
     }
 
-    final slotsPayload = <Map<String, dynamic>>[];
+    final out = <ReportStructuredSlot>[];
 
     for (int i = 0; i < _slots.length; i++) {
       final slot = _slots[i];
@@ -281,23 +405,21 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: проверьте время'), backgroundColor: Colors.orange),
         );
-        return;
+        return null;
       }
 
       if (_toMinutes(end) <= _toMinutes(start)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: конец должен быть позже начала'), backgroundColor: Colors.orange),
         );
-        return;
+        return null;
       }
-
-      final students = <Map<String, dynamic>>[];
 
       if (slot.student1Id == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: выберите ученика 1'), backgroundColor: Colors.orange),
         );
-        return;
+        return null;
       }
 
       final p1 = _parsePrice(slot.price1Controller.text);
@@ -305,59 +427,74 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: укажите цену для 1 ребёнка'), backgroundColor: Colors.orange),
         );
-        return;
+        return null;
       }
 
-      students.add({'studentId': slot.student1Id, 'price': p1});
-      _lastPriceByStudent[slot.student1Id!] = p1;
+      final rowStudents = <ReportStructuredStudent>[
+        ReportStructuredStudent(studentId: slot.student1Id!, price: p1, status: slot.status1),
+      ];
 
       if (slot.student2Id != null) {
         if (slot.student2Id == slot.student1Id) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: дети должны быть разными'), backgroundColor: Colors.orange),
           );
-          return;
+          return null;
         }
         final p2 = _parsePrice(slot.price2Controller.text);
         if (p2 == null || p2 <= 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: укажите цену для 2 ребёнка'), backgroundColor: Colors.orange),
           );
-          return;
+          return null;
         }
-        students.add({'studentId': slot.student2Id, 'price': p2});
-        _lastPriceByStudent[slot.student2Id!] = p2;
+        rowStudents.add(ReportStructuredStudent(studentId: slot.student2Id!, price: p2, status: slot.status2));
       }
 
-      if (students.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: выберите ученика'), backgroundColor: Colors.orange),
-        );
-        return;
-      }
-      if (students.length > _maxStudentsPerSlot) {
+      if (rowStudents.length > _maxStudentsPerSlot) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: максимум $_maxStudentsPerSlot ученика'), backgroundColor: Colors.orange),
         );
-        return;
+        return null;
       }
 
-      slotsPayload.add({
-        'timeStart': start,
-        'timeEnd': end,
-        'students': [
-          {
-            ...students[0],
-            'status': slot.status1,
-          },
-          if (students.length > 1)
-            {
-              ...students[1],
-              'status': slot.status2,
-            },
-        ],
-      });
+      out.add(ReportStructuredSlot(timeStart: start, timeEnd: end, students: rowStudents));
     }
+
+    return out;
+  }
+
+  Future<void> _save() async {
+    final built = _buildStructuredSlotsOrNull();
+    if (built == null) return;
+
+    final warnings = _priceWarningsForBuilt(built);
+    if (warnings.isNotEmpty && mounted) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Проверьте цены'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Обнаружены сильные отличия от последних цен по ученикам:'),
+                const SizedBox(height: 8),
+                ...warnings.map((s) => Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('• $s'))),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Исправить')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Всё верно, сохранить')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+
+    final slotsPayload = built.map((e) => e.toJson()).toList();
 
     setState(() => _isLoading = true);
     try {
@@ -373,6 +510,8 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
           slots: slotsPayload,
         );
       }
+      final uid = _userId ?? (await StorageService.getUserData())?['id'];
+      if (uid != null) await ReportBuilderDraftStorage.clear(uid);
       if (!mounted) return;
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(

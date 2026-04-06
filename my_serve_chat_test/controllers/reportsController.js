@@ -864,3 +864,49 @@ export const setReportNotLate = async (req, res) => {
   }
 };
 
+/**
+ * Журнал аудита по отчёту (audit_events). Доступ: автор отчёта или суперпользователь.
+ * GET /reports/:id/audit
+ */
+export const getReportAudit = async (req, res) => {
+  const userId = req.user.userId;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Некорректный id отчёта' });
+  }
+  try {
+    const own = await pool.query(
+      'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
+      [id, userId]
+    );
+    if (own.rows.length === 0) {
+      if (!isSuperuser(req.user)) {
+        return res.status(403).json({ message: 'Нет доступа к этому отчёту' });
+      }
+      const exists = await pool.query('SELECT id FROM reports WHERE id = $1', [id]);
+      if (exists.rows.length === 0) {
+        return res.status(404).json({ message: 'Отчёт не найден' });
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT ae.id, ae.user_id, ae.event_type, ae.entity_type, ae.entity_id, ae.payload, ae.created_at,
+              u.email AS user_email
+       FROM audit_events ae
+       LEFT JOIN users u ON u.id = ae.user_id
+       WHERE ae.entity_type = 'report' AND ae.entity_id = $1
+       ORDER BY ae.created_at DESC
+       LIMIT 100`,
+      [String(id)]
+    );
+    return res.json({ events: result.rows });
+  } catch (error) {
+    const msg = error?.message || String(error);
+    if (/relation "audit_events" does not exist/i.test(msg)) {
+      return res.json({ events: [], message: 'Таблица аудита не развёрнута на сервере' });
+    }
+    console.error('getReportAudit:', error);
+    return res.status(500).json({ message: 'Ошибка загрузки журнала' });
+  }
+};
+
