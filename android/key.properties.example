@@ -1,0 +1,7 @@
+# Скопируйте в android/key.properties и заполните (key.properties в .gitignore).
+# Положите .jks в android/app/ и укажите имя файла ниже.
+
+storePassword=ВАШ_STORE_PASSWORD
+keyPassword=ВАШ_KEY_PASSWORD
+keyAlias=upload
+storeFile=upload-keystore.jks

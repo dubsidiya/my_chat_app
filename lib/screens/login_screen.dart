@@ -133,7 +133,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: 120,
                           height: 120,
                     decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: const LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
@@ -202,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                         const SizedBox(height: 12),
-                  Text(
+                  const Text(
                     'Войдите в свой аккаунт',
                     style: TextStyle(
                             fontSize: 18,
@@ -246,29 +246,29 @@ class _LoginScreenState extends State<LoginScreen> {
                               TextField(
                                   controller: _usernameController,
                                   keyboardType: TextInputType.text,
-                                  style: TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
+                                  style: const TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
                             decoration: InputDecoration(
                                     labelText: 'Логин',
                                     prefixIcon: const Icon(
                                       Icons.person_outlined,
                                       color: AppColors.primaryGlow,
                                     ),
-                                    labelStyle: TextStyle(
+                                    labelStyle: const TextStyle(
                                       color: AppColors.onSurfaceVariantDark,
                                       fontWeight: FontWeight.w500,
                                     ),
                                     filled: true,
                                     fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    border: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.borderDark),
                                     ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    enabledBorder: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.borderDark),
                                     ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    focusedBorder: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
                                     ),
                                   ),
@@ -277,29 +277,29 @@ class _LoginScreenState extends State<LoginScreen> {
                               // Поле пароля
                               TextField(
                             controller: _passwordController,
-                                  style: TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
+                                  style: const TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
                             decoration: InputDecoration(
                               labelText: 'Пароль',
                                     prefixIcon: const Icon(
                                       Icons.lock_outlined,
                                       color: AppColors.primaryGlow,
                                     ),
-                                    labelStyle: TextStyle(
+                                    labelStyle: const TextStyle(
                                       color: AppColors.onSurfaceVariantDark,
                                       fontWeight: FontWeight.w500,
                                     ),
                                     filled: true,
                                     fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    border: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.borderDark),
                                     ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    enabledBorder: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.borderDark),
                                     ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    focusedBorder: const OutlineInputBorder(
+                                      borderRadius: BorderRadius.all(Radius.circular(12)),
                                       borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
                                     ),
                             ),
@@ -328,7 +328,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   Expanded(
                                     child: Text(
                                       _errorMessage!,
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             color: AppColors.onSurfaceDark,
                                             fontSize: 14,
                                             fontWeight: FontWeight.w500,
@@ -424,7 +424,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        Text(
+                        const Text(
                           'Нет аккаунта?',
                           style: TextStyle(
                             fontSize: 16,

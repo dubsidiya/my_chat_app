@@ -215,7 +215,8 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<String>(
-              value: _lessonStatus,
+              key: ValueKey<String>(_lessonStatus),
+              initialValue: _lessonStatus,
               decoration: const InputDecoration(
                 labelText: 'Статус занятия',
                 border: OutlineInputBorder(),

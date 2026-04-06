@@ -785,7 +785,7 @@
       "name": "my_chat_app",
       "rootUri": "../",
       "packageUri": "lib/",
-      "languageVersion": "2.18"
+      "languageVersion": "3.9"
     }
   ],
   "generator": "pub",

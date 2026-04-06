@@ -107,7 +107,9 @@ class Message {
       );
     } catch (e) {
       if (kDebugMode) {
+        // ignore: avoid_print
         print('Error parsing Message from JSON: $e');
+        // ignore: avoid_print
         print('JSON: $json');
       }
       rethrow;

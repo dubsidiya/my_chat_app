@@ -14,7 +14,7 @@ void main() {
 
   testWidgets('ChatLoadingRow с кастомным accentColor', (WidgetTester tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: ChatLoadingRow(accentColor: Colors.red),
         ),

@@ -6,7 +6,7 @@ import 'package:my_chat_app/utils/network_error_helper.dart';
 void main() {
   group('networkErrorMessage', () {
     test('SocketException -> сообщение о нет подключения', () {
-      final msg = networkErrorMessage(SocketException('Connection refused'));
+      final msg = networkErrorMessage(const SocketException('Connection refused'));
       expect(msg, contains('интернет'));
       expect(msg, isNot(contains('Connection refused')));
     });
@@ -18,7 +18,7 @@ void main() {
     });
 
     test('HandshakeException -> сообщение о соединении', () {
-      final msg = networkErrorMessage(HandshakeException('certificate'));
+      final msg = networkErrorMessage(const HandshakeException('certificate'));
       expect(msg, contains('соединен'));
       expect(msg, isNot(contains('certificate')));
     });

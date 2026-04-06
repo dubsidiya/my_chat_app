@@ -49,7 +49,7 @@ class Lesson {
     final id = _parseInt(json['id']);
     final studentId = _parseInt(json['student_id']);
     if (id == null || studentId == null) {
-      throw FormatException('Invalid lesson id or student_id');
+      throw const FormatException('Invalid lesson id or student_id');
     }
     return Lesson(
       id: id,

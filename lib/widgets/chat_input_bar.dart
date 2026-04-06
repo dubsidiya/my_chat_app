@@ -9,6 +9,8 @@ class ChatInputBar extends StatelessWidget {
   final TextEditingController controller;
   final bool isUploadingImage;
   final bool isUploadingFile;
+  /// Пока true — кнопка отправки отключена (идёт сетевой запрос).
+  final bool isSendingMessage;
   final bool isRecordingVoice;
   final Duration voiceRecordDuration;
   final VoidCallback onCancelVoiceRecording;
@@ -30,6 +32,7 @@ class ChatInputBar extends StatelessWidget {
     required this.controller,
     required this.isUploadingImage,
     required this.isUploadingFile,
+    this.isSendingMessage = false,
     required this.isRecordingVoice,
     required this.voiceRecordDuration,
     required this.onCancelVoiceRecording,
@@ -224,7 +227,7 @@ class ChatInputBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (isUploadingImage || isUploadingFile)
+            if (isUploadingImage || isUploadingFile || isSendingMessage)
               const Padding(
                 padding: EdgeInsets.all(12),
                 child: SizedBox(
@@ -245,7 +248,7 @@ class ChatInputBar extends StatelessWidget {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.send, color: Colors.white),
-                  onPressed: isRecordingVoice ? null : onSend,
+                  onPressed: (isRecordingVoice || isSendingMessage) ? null : onSend,
                   tooltip: 'Отправить',
                 ),
               ),

@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
 class AdminService {
@@ -9,7 +9,7 @@ class AdminService {
   /// Сбросить пароль пользователя (только суперпользователь)
   Future<void> resetUserPassword(String username, String newPassword) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/admin/reset-user-password'),
       headers: headers,
       body: jsonEncode({'username': username.trim(), 'newPassword': newPassword}),
@@ -48,7 +48,7 @@ class AdminService {
     final headers = await _getAuthHeaders();
     final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
     final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=json$bank');
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
 
     final bodyText = utf8.decode(response.bodyBytes);
     final body = _tryDecodeJson(bodyText);
@@ -78,7 +78,7 @@ class AdminService {
     final headers = await _getAuthHeaders();
     final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
     final uri = Uri.parse('$baseUrl/admin/accounting/export?from=$from&to=$to&format=csv$bank');
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
 
     if (response.statusCode == 200) {
       return utf8.decode(response.bodyBytes);
@@ -103,7 +103,7 @@ class AdminService {
     final headers = await _getAuthHeaders();
     final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
     final uri = Uri.parse('$baseUrl/admin/accounting/transactions-export?from=$from&to=$to&format=csv$bank');
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
 
     if (response.statusCode == 200) {
       return utf8.decode(response.bodyBytes);

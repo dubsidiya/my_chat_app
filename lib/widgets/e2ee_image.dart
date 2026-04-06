@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/e2ee_service.dart';
+import '../utils/timed_http.dart';
 
 /// Изображение по URL; при [chatId] и зашифрованном ответе — расшифровывает ключом чата.
 class E2eeImage extends StatelessWidget {
@@ -63,7 +63,7 @@ class E2eeImage extends StatelessWidget {
   /// Возвращает расшифрованные байты изображения или сырые, если не E2EE. null при ошибке.
   static Future<Uint8List?> _fetchAndDecrypt(String url, String chatId) async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final response = await timedGet(Uri.parse(url), timeout: kHttpUploadTimeout);
       if (response.statusCode != 200) return null;
       final bytes = Uint8List.fromList(response.bodyBytes);
       if (bytes.isEmpty) return null;

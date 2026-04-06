@@ -129,7 +129,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           width: 120,
                           height: 120,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: const LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
@@ -198,7 +198,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Text(
+                        const Text(
                           'Зарегистрируйтесь для начала общения',
                           style: TextStyle(
                             fontSize: 18,
@@ -249,7 +249,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     Icons.person_outlined,
                                     color: AppColors.primaryGlow,
                                   ),
-                                  labelStyle: TextStyle(
+                                  labelStyle: const TextStyle(
                                     color: AppColors.onSurfaceVariantDark,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -260,16 +260,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ),
                                   filled: true,
                                   fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: AppColors.borderDark),
+                                  border: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                                    borderSide: BorderSide(color: AppColors.borderDark),
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: AppColors.borderDark),
+                                  enabledBorder: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                                    borderSide: BorderSide(color: AppColors.borderDark),
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
                                     borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
                                   ),
                                 ),
@@ -285,22 +285,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     Icons.lock_outlined,
                                     color: AppColors.primaryGlow,
                                   ),
-                                  labelStyle: TextStyle(
+                                  labelStyle: const TextStyle(
                                     color: AppColors.onSurfaceVariantDark,
                                     fontWeight: FontWeight.w500,
                                   ),
                                   filled: true,
                                   fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: AppColors.borderDark),
+                                  border: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                                    borderSide: BorderSide(color: AppColors.borderDark),
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: AppColors.borderDark),
+                                  enabledBorder: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                                    borderSide: BorderSide(color: AppColors.borderDark),
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderRadius: BorderRadius.all(Radius.circular(12)),
                                     borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
                                   ),
                                 ),
@@ -421,7 +421,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
+                          const Text(
                             'Уже есть аккаунт? ',
                             style: TextStyle(
                               fontSize: 16,

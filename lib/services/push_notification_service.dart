@@ -4,7 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
+import '../utils/timed_http.dart';
 import '../config/api_config.dart';
 import '../screens/chat_screen.dart';
 import 'storage_service.dart';
@@ -229,7 +229,7 @@ class PushNotificationService {
 
     final url = Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token');
     try {
-      final response = await http.post(
+      final response = await timedPost(
         url,
         headers: {
           'Content-Type': 'application/json',
@@ -253,7 +253,7 @@ class PushNotificationService {
 
     final url = Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token');
     try {
-      final response = await http.post(
+      final response = await timedPost(
         url,
         headers: {
           'Content-Type': 'application/json',

@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/link_preview.dart';
+import '../utils/timed_http.dart';
 
 class LinkPreviewService {
   static final LinkPreviewService instance = LinkPreviewService._();
@@ -106,15 +107,14 @@ class LinkPreviewService {
       }
 
       // On web, CORS will often block HTML fetch. We'll try best-effort anyway.
-      final resp = await http
-          .get(
-            uri,
-            headers: const {
-              'Accept': 'text/html,application/xhtml+xml',
-              'User-Agent': 'my_chat_app/1.0',
-            },
-          )
-          .timeout(const Duration(seconds: 5));
+      final resp = await timedGet(
+        uri,
+        headers: const {
+          'Accept': 'text/html,application/xhtml+xml',
+          'User-Agent': 'my_chat_app/1.0',
+        },
+        timeout: const Duration(seconds: 5),
+      );
 
       final ct = (resp.headers['content-type'] ?? '').toLowerCase();
       if (!ct.contains('text/html') && !ct.contains('application/xhtml+xml')) {

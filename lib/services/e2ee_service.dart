@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
 /// End-to-end encryption service.
@@ -174,7 +174,7 @@ class E2eeService {
           if (keyVersion != null) 'keyVersion': keyVersion.toString(),
         },
       );
-      final resp = await http.get(
+      final resp = await timedGet(
         uri,
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -199,7 +199,7 @@ class E2eeService {
 
       final encBytes = base64Decode(encKeyB64);
       final nonce = base64Decode(nonceB64);
-      final macLen = 16;
+      const macLen = 16;
       final cipherText = encBytes.sublist(0, encBytes.length - macLen);
       final mac = Mac(encBytes.sublist(encBytes.length - macLen));
 
@@ -336,7 +336,7 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return false;
     try {
-      var resp = await http.post(
+      var resp = await timedPost(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/public-key'),
         headers: {
           'Content-Type': 'application/json',
@@ -347,7 +347,7 @@ class E2eeService {
       // При burst/429 делаем одну отложенную попытку.
       if (resp.statusCode == 429) {
         await Future<void>.delayed(const Duration(seconds: 3));
-        resp = await http.post(
+        resp = await timedPost(
           Uri.parse('${ApiConfig.baseUrl}/e2ee/public-key'),
           headers: {
             'Content-Type': 'application/json',
@@ -365,7 +365,7 @@ class E2eeService {
   static Future<void> _storeChatKeysOnServer(String chatId, List<Map<String, String>> keys, {int? keyVersion}) async {
     final token = await StorageService.getToken();
     if (token == null) return;
-    await http.post(
+    await timedPost(
       Uri.parse('${ApiConfig.baseUrl}/e2ee/chat-keys'),
       headers: {
         'Content-Type': 'application/json',
@@ -387,7 +387,7 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return;
     try {
-      final resp = await http.post(
+      final resp = await timedPost(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/request-key'),
         headers: {
           'Authorization': 'Bearer $token',
@@ -406,7 +406,7 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return [];
     try {
-      final resp = await http.get(
+      final resp = await timedGet(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/members-without-key'),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -520,7 +520,7 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return [];
     try {
-      final resp = await http.get(
+      final resp = await timedGet(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/key-requests'),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -553,7 +553,7 @@ class E2eeService {
     final token = await StorageService.getToken();
     if (token == null) return {};
     try {
-      final resp = await http.post(
+      final resp = await timedPost(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/public-keys'),
         headers: {
           'Content-Type': 'application/json',
@@ -638,7 +638,7 @@ class E2eeService {
 
       final token = await StorageService.getToken();
       if (token == null) return;
-      await http.post(
+      await timedPost(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/key-backup'),
         headers: {
           'Content-Type': 'application/json',
@@ -660,7 +660,7 @@ class E2eeService {
     try {
       final token = await StorageService.getToken();
       if (token == null) return false;
-      final resp = await http.get(
+      final resp = await timedGet(
         Uri.parse('${ApiConfig.baseUrl}/e2ee/key-backup'),
         headers: {'Authorization': 'Bearer $token'},
       );

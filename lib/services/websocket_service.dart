@@ -40,6 +40,9 @@ class WebSocketService {
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
+      // Web: браузерный WebSocket API не поддерживает произвольные заголовки (Authorization),
+      // поэтому токен передаётся в query. Риск: попадание в логи прокси/сервера и в history/referrer.
+      // Предпочтительно на бэкенде: краткоживущий ticket по POST или первое сообщение с auth.
       if (kIsWeb) {
         _channel = WebSocketChannel.connect(
           Uri.parse('$wsUrl?token=$token'),

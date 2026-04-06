@@ -75,7 +75,9 @@ class Chat {
       );
     } catch (e) {
       if (kDebugMode) {
+        // ignore: avoid_print
         print('Error parsing Chat from JSON: $e');
+        // ignore: avoid_print
         print('JSON: $json');
       }
       rethrow;

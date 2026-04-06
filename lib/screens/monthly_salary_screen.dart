@@ -74,7 +74,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
   }
 
   String _formatMoney(num value) {
-    return NumberFormat('#,##0', 'ru_RU').format(value.round()) + ' ₽';
+    return '${NumberFormat('#,##0', 'ru_RU').format(value.round())} ₽';
   }
 
   static String _lessonsLabel(int n) {
@@ -237,7 +237,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _formatMoney(r.salary),
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       color: _accent1,
@@ -334,7 +334,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                             ),
                             Text(
                               _lessonsLabel(r.lessonsByPrice[i].lessonsCount),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: _accent1,
                               ),

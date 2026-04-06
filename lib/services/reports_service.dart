@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:async';
-import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import '../models/report.dart';
 import '../models/monthly_salary_report.dart';
 import 'storage_service.dart';
@@ -12,7 +11,7 @@ class ReportsService {
   final Random _rnd = Random();
   static const int _idempotencyRandomMax = 1000000000;
   static const bool _enableIdempotencyHeaders =
-      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: false);
+      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: true);
 
   String _newIdempotencyKey(String scope) {
     final t = DateTime.now().microsecondsSinceEpoch;
@@ -34,12 +33,11 @@ class ReportsService {
   // Получение всех отчетов
   Future<List<Report>> getAllReports() async {
     final headers = await _getAuthHeaders();
-    final response = await http
-        .get(Uri.parse('$baseUrl/reports'), headers: headers)
-        .timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => throw TimeoutException('reports'),
-        );
+    final response = await timedGet(
+      Uri.parse('$baseUrl/reports'),
+      headers: headers,
+      timeout: const Duration(seconds: 15),
+    );
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
@@ -71,9 +69,10 @@ class ReportsService {
     if (isLate == false) query['is_late'] = 'false';
 
     final uri = Uri.parse('$baseUrl/reports/list').replace(queryParameters: query.isEmpty ? null : query);
-    final response = await http.get(uri, headers: headers).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => throw TimeoutException('reports'),
+    final response = await timedGet(
+      uri,
+      headers: headers,
+      timeout: const Duration(seconds: 15),
     );
 
     if (response.statusCode == 200) {
@@ -93,7 +92,7 @@ class ReportsService {
   // Получение одного отчета
   Future<Report> getReport(int id) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
     );
@@ -116,7 +115,7 @@ class ReportsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('report-create');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
@@ -144,7 +143,7 @@ class ReportsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('report-create-structured');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
       body: jsonEncode({
@@ -169,7 +168,7 @@ class ReportsService {
     required String content,
   }) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
@@ -194,7 +193,7 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
       body: jsonEncode({
@@ -216,7 +215,7 @@ class ReportsService {
   /// [year] — год, [month] — 1–12.
   Future<MonthlySalaryReport> getMonthlySalaryReport(int year, int month) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/reports/salary').replace(queryParameters: {
         'year': year.toString(),
         'month': month.toString(),
@@ -243,7 +242,7 @@ class ReportsService {
   // Удаление отчета
   Future<void> deleteReport(int id) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/reports/$id'),
       headers: headers,
     );
@@ -257,7 +256,7 @@ class ReportsService {
   /// Снять пометку «поздний отчёт» (только суперпользователь). Отчёт начнёт учитываться в доходе/зарплате.
   Future<Report> setReportNotLate(int reportId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.patch(
+    final response = await timedPatch(
       Uri.parse('$baseUrl/reports/$reportId/set-not-late'),
       headers: headers,
     );

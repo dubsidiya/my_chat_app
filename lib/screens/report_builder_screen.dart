@@ -628,12 +628,12 @@ class _StudentPickerRowState extends State<_StudentPickerRow> {
         TextField(
           controller: _searchController,
           focusNode: _searchFocus,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'Поиск ученика',
             hintText: 'Введите имя...',
-            prefixIcon: const Icon(Icons.search_rounded, size: 22),
-            border: const OutlineInputBorder(),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            prefixIcon: Icon(Icons.search_rounded, size: 22),
+            border: OutlineInputBorder(),
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             isDense: true,
           ),
           onChanged: (_) => setState(() {}),

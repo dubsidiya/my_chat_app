@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
 class ModerationService {
@@ -15,7 +15,7 @@ class ModerationService {
   }
 
   Future<void> reportMessage(String messageId) async {
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/moderation/report-message/$messageId'),
       headers: await _headers(),
     );
@@ -26,7 +26,7 @@ class ModerationService {
   }
 
   Future<void> blockUser(String userId) async {
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/moderation/block-user'),
       headers: await _headers(),
       body: jsonEncode({'user_id': userId}),
@@ -38,7 +38,7 @@ class ModerationService {
   }
 
   Future<List<String>> getBlockedUserIds() async {
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/moderation/blocked-ids'),
       headers: await _headers(),
     );

@@ -23,7 +23,7 @@ ThemeData buildAppTheme() {
   const card = AppColors.cardDark;
   const outline = AppColors.borderDark;
 
-  final baseText = Typography.whiteMountainView;
+  const baseText = Typography.whiteMountainView;
   final textTheme = baseText
       .apply(
         bodyColor: scheme.onSurface,
@@ -189,7 +189,7 @@ ThemeData buildAppTheme() {
       behavior: SnackBarBehavior.floating,
       elevation: 4,
       backgroundColor: AppColors.cardElevatedDark,
-      contentTextStyle: TextStyle(
+      contentTextStyle: const TextStyle(
         color: AppColors.onSurfaceDark,
         fontSize: 14,
         fontWeight: FontWeight.w500,
@@ -220,7 +220,7 @@ ThemeData buildAppTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.primaryGlow, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.primaryGlow, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     ),

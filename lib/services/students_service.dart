@@ -5,6 +5,7 @@ import '../models/student.dart';
 import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
 class CreateStudentResult {
@@ -22,7 +23,7 @@ class StudentsService {
   final Random _rnd = Random();
   static const int _idempotencyRandomMax = 1000000000;
   static const bool _enableIdempotencyHeaders =
-      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: false);
+      bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: true);
 
   String _newIdempotencyKey(String scope) {
     final t = DateTime.now().microsecondsSinceEpoch;
@@ -44,7 +45,7 @@ class StudentsService {
   // Получение всех студентов
   Future<List<Student>> getAllStudents() async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students'),
       headers: headers,
     );
@@ -66,7 +67,7 @@ class StudentsService {
 
   Future<Map<String, dynamic>> getMakeupPendingSummary() async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/makeup-pending'),
       headers: headers,
     );
@@ -92,7 +93,7 @@ class StudentsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('student-create');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/students'),
       headers: headers,
       body: jsonEncode({
@@ -131,7 +132,7 @@ class StudentsService {
         'limit': limit.toString(),
       },
     );
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.cast<Map<String, dynamic>>();
@@ -148,7 +149,7 @@ class StudentsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('student-link-existing');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/students/link-existing'),
       headers: headers,
       body: jsonEncode({'student_id': studentId}),
@@ -176,7 +177,7 @@ class StudentsService {
     bool payByBankTransfer = false,
   }) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/students/$id'),
       headers: headers,
       body: jsonEncode({
@@ -197,7 +198,7 @@ class StudentsService {
       final balanceUrl = isSuperuser
           ? '$baseUrl/students/$id/balance'
           : '$baseUrl/students/$id/balance?mine=1';
-      final balanceResponse = await http.get(
+      final balanceResponse = await timedGet(
         Uri.parse(balanceUrl),
         headers: headers,
       );
@@ -212,7 +213,7 @@ class StudentsService {
   // Удаление студента
   Future<void> deleteStudent(int id) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/students/$id'),
       headers: headers,
     );
@@ -226,7 +227,7 @@ class StudentsService {
   /// Полное каскадное удаление ученика (только суперпользователь).
   Future<void> deleteStudentFull(int id) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/students/$id/full'),
       headers: headers,
     );
@@ -240,7 +241,7 @@ class StudentsService {
   // Получение занятий студента
   Future<List<Lesson>> getStudentLessons(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/lessons'),
       headers: headers,
     );
@@ -257,7 +258,7 @@ class StudentsService {
   /// Важно для автоподстановок (разные цены у разных преподавателей).
   Future<List<Lesson>> getStudentLessonsMine(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/lessons?mine=1'),
       headers: headers,
     );
@@ -285,7 +286,7 @@ class StudentsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('lesson-create');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/students/$studentId/lessons'),
       headers: headers,
       body: jsonEncode({
@@ -311,7 +312,7 @@ class StudentsService {
   // Удаление занятия
   Future<void> deleteLesson(int lessonId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/students/lessons/$lessonId'),
       headers: headers,
     );
@@ -332,7 +333,7 @@ class StudentsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('deposit-create');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/students/$studentId/deposit'),
       headers: headers,
       body: jsonEncode({
@@ -359,7 +360,7 @@ class StudentsService {
 
   Future<void> deleteTransaction(int transactionId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/students/transactions/$transactionId'),
       headers: headers,
     );
@@ -395,8 +396,7 @@ class StudentsService {
       ),
     );
 
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
+    final response = await timedMultipart(request);
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -412,7 +412,7 @@ class StudentsService {
     if (_enableIdempotencyHeaders) {
       headers['Idempotency-Key'] = _newIdempotencyKey('bank-statement-apply');
     }
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/bank-statement/apply'),
       headers: headers,
       body: jsonEncode({
@@ -431,7 +431,7 @@ class StudentsService {
   // Получение транзакций студента
   Future<List<Transaction>> getStudentTransactions(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/transactions'),
       headers: headers,
     );
@@ -446,7 +446,7 @@ class StudentsService {
 
   Future<double> getStudentBalance(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/balance'),
       headers: headers,
     );
@@ -464,7 +464,7 @@ class StudentsService {
   /// Получение транзакций студента, созданных текущим пользователем.
   Future<List<Transaction>> getStudentTransactionsMine(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/transactions?mine=1'),
       headers: headers,
     );
@@ -480,7 +480,7 @@ class StudentsService {
   /// Получение баланса только по операциям текущего пользователя.
   Future<double> getStudentBalanceMine(int studentId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/students/$studentId/balance?mine=1'),
       headers: headers,
     );

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/message.dart';
 import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
 import 'e2ee_service.dart';
@@ -18,6 +19,17 @@ String? _pushPreviewPlainForFcm(String originalPlain, String contentSent) {
   if (contentSent == originalPlain) return null;
   if (t.length <= _maxPushPreviewChars) return t;
   return '${t.substring(0, _maxPushPreviewChars)}…';
+}
+
+/// Минимальный числовой id в списке (временные `temp_*` и прочие нечисловые id пропускаются).
+String? _oldestNumericMessageId(List<Message> messages) {
+  if (messages.isEmpty) return null;
+  int? best;
+  for (final m in messages) {
+    final n = int.tryParse(m.id);
+    if (n != null && (best == null || n < best)) best = n;
+  }
+  return best?.toString();
 }
 
 // Результат пагинации сообщений
@@ -83,7 +95,7 @@ class MessagesService {
   Future<bool> _isOnline() async {
     try {
       final uri = Uri.parse(baseUrl);
-      await http.get(uri).timeout(const Duration(seconds: 3));
+      await timedGet(uri, timeout: const Duration(seconds: 3));
       return true;
     } catch (_) {
       return false;
@@ -132,9 +144,7 @@ class MessagesService {
         messages: decrypted,
         hasMore: false,
         totalCount: decrypted.length,
-        oldestMessageId: decrypted.isNotEmpty
-            ? decrypted.map((m) => int.tryParse(m.id) ?? 0).reduce((a, b) => a < b ? a : b).toString()
-            : null,
+        oldestMessageId: _oldestNumericMessageId(decrypted),
       );
     }
     
@@ -148,7 +158,7 @@ class MessagesService {
       );
 
       final headers = await _getAuthHeaders();
-      final response = await http.get(uri, headers: headers);
+      final response = await timedGet(uri, headers: headers);
 
       if (response.statusCode == 200) {
         try {
@@ -219,47 +229,51 @@ class MessagesService {
         } catch (e) {
           throw Exception('Ошибка парсинга сообщений: $e');
         }
-             } else {
-               // ✅ Если ошибка сервера, пытаемся загрузить из кэша
-               if (useCache) {
-                 if (kDebugMode) {
-                   // ignore: avoid_print
-                   print('MessagesService: server error, trying cache');
-                 }
-                 final cachedMessages = await LocalMessagesService.getMessages(chatId);
-                 if (cachedMessages.isNotEmpty) {
-                   return MessagesPaginationResult(
-                     messages: cachedMessages,
-                     hasMore: false,
-                     totalCount: cachedMessages.length,
-                     oldestMessageId: cachedMessages.isNotEmpty 
-                         ? cachedMessages.map((m) => int.parse(m.id)).reduce((a, b) => a < b ? a : b).toString()
-                         : null,
-                   );
-                 }
-               }
-               throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
-             }
-           } catch (e) {
-             // ✅ Если ошибка сети, пытаемся загрузить из кэша
-             if (useCache && e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
-               if (kDebugMode) {
-                 // ignore: avoid_print
-                 print('MessagesService: network error, using cache');
-               }
-               final cachedMessages = await LocalMessagesService.getMessages(chatId);
-               if (cachedMessages.isNotEmpty) {
-                 return MessagesPaginationResult(
-                   messages: cachedMessages,
-                   hasMore: false,
-                   totalCount: cachedMessages.length,
-                   oldestMessageId: null,
-                 );
-               }
-             }
-             rethrow;
-           }
-         }
+      } else {
+        // ✅ Если ошибка сервера, пытаемся загрузить из кэша (с расшифровкой E2EE, как при офлайне)
+        if (useCache) {
+          if (kDebugMode) {
+            // ignore: avoid_print
+            print('MessagesService: server error, trying cache');
+          }
+          final cachedMessages = await LocalMessagesService.getMessages(chatId);
+          if (cachedMessages.isNotEmpty) {
+            final decrypted = await _decryptMessages(chatId, cachedMessages);
+            return MessagesPaginationResult(
+              messages: decrypted,
+              hasMore: false,
+              totalCount: decrypted.length,
+              oldestMessageId: _oldestNumericMessageId(decrypted),
+            );
+          }
+        }
+        throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
+      }
+    } catch (e) {
+      // ✅ Если ошибка сети, пытаемся загрузить из кэша
+      final es = e.toString();
+      final looksNet = es.contains('SocketException') ||
+          es.contains('Failed host lookup') ||
+          es.contains('TimeoutException');
+      if (useCache && looksNet) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('MessagesService: network error, using cache');
+        }
+        final cachedMessages = await LocalMessagesService.getMessages(chatId);
+        if (cachedMessages.isNotEmpty) {
+          final decrypted = await _decryptMessages(chatId, cachedMessages);
+          return MessagesPaginationResult(
+            messages: decrypted,
+            hasMore: false,
+            totalCount: decrypted.length,
+            oldestMessageId: _oldestNumericMessageId(decrypted),
+          );
+        }
+      }
+      rethrow;
+    }
+  }
 
   Future<Message?> sendMessage(
     String chatId, 
@@ -346,7 +360,7 @@ class MessagesService {
     }
     final body = jsonEncode(bodyMap);
 
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/messages'),
       headers: headers,
       body: body,
@@ -435,8 +449,7 @@ class MessagesService {
         print('Uploading image: $fileName, size: ${imageBytes.length} bytes');
       }
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final response = await timedMultipart(request);
 
       if (kDebugMode) {
         // ignore: avoid_print
@@ -494,7 +507,7 @@ class MessagesService {
   static const int _forwardDownloadMaxBytes = 40 * 1024 * 1024;
 
   static Future<Uint8List> _downloadUrlBytes(String url) async {
-    final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 120));
+    final r = await timedGet(Uri.parse(url), timeout: const Duration(seconds: 120));
     if (r.statusCode != 200) {
       throw Exception('Не удалось скачать файл для пересылки: HTTP ${r.statusCode}');
     }
@@ -555,8 +568,7 @@ class MessagesService {
         ),
       );
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final response = await timedMultipart(request);
 
       if (response.statusCode == 200) {
         if (response.body.trim().startsWith('<')) {
@@ -585,11 +597,10 @@ class MessagesService {
       final url = Uri.parse('$baseUrl/messages/message/$messageId?userId=$userId');
       
       final headers = await _getAuthHeaders();
-      final response = await http.delete(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при удалении сообщения');
-        },
+      final response = await timedDelete(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -628,7 +639,7 @@ class MessagesService {
   // ✅ Отметить сообщение как прочитанное
   Future<void> markMessageAsRead(String messageId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/messages/message/$messageId/read'),
       headers: headers,
     );
@@ -641,7 +652,7 @@ class MessagesService {
   // ✅ Отметить все сообщения в чате как прочитанные
   Future<void> markChatAsRead(String chatId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/messages/chat/$chatId/read-all'),
       headers: headers,
     );
@@ -667,7 +678,7 @@ class MessagesService {
     }
     if (imageUrl != null) body['image_url'] = imageUrl;
 
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/messages/message/$messageId'),
       headers: headers,
       body: jsonEncode(body),
@@ -797,7 +808,7 @@ class MessagesService {
   // ✅ Закрепить сообщение
   Future<void> pinMessage(String messageId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/messages/message/$messageId/pin'),
       headers: headers,
     );
@@ -810,7 +821,7 @@ class MessagesService {
   // ✅ Открепить сообщение
   Future<void> unpinMessage(String messageId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/messages/message/$messageId/pin'),
       headers: headers,
     );
@@ -823,7 +834,7 @@ class MessagesService {
   // ✅ Получить закрепленные сообщения
   Future<List<Message>> getPinnedMessages(String chatId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/messages/chat/$chatId/pinned'),
       headers: headers,
     );
@@ -848,7 +859,7 @@ class MessagesService {
         if (before != null) 'before': before,
       },
     );
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
     if (response.statusCode != 200) {
       throw Exception('Ошибка поиска: ${response.statusCode}');
     }
@@ -880,9 +891,10 @@ class MessagesService {
       final idx = plainContent.toLowerCase().indexOf(queryLower);
       final start = idx > 40 ? idx - 40 : 0;
       final end = (idx + queryLower.length + 40).clamp(0, plainContent.length);
-      snippet = (start > 0 ? '…' : '') + plainContent.substring(start, end) + (end < plainContent.length ? '…' : '');
+      snippet =
+          '${start > 0 ? '…' : ''}${plainContent.substring(start, end)}${end < plainContent.length ? '…' : ''}';
     } else if (plainContent.length > 120) {
-      snippet = plainContent.substring(0, 120) + '…';
+      snippet = '${plainContent.substring(0, 120)}…';
     }
     return {
       'message_id': item['message_id'],
@@ -904,7 +916,7 @@ class MessagesService {
         'limit': limit.toString(),
       },
     );
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final messagesData = (data['messages'] as List<dynamic>? ?? []);
@@ -922,7 +934,7 @@ class MessagesService {
         if (beforeMessageId != null && beforeMessageId.trim().isNotEmpty) 'before': beforeMessageId.trim(),
       },
     );
-    final response = await http.get(uri, headers: headers);
+    final response = await timedGet(uri, headers: headers);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List<dynamic>? ?? []);
@@ -946,7 +958,7 @@ class MessagesService {
       'reaction': reaction,
     });
     
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
       body: body,
@@ -974,7 +986,7 @@ class MessagesService {
     // ✅ Убеждаемся, что Content-Type установлен
     headers['Content-Type'] = 'application/json';
     
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
       body: jsonEncode({
@@ -999,11 +1011,10 @@ class MessagesService {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');
       
       final headers = await _getAuthHeaders();
-      final response = await http.delete(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при очистке чата');
-        },
+      final response = await timedDelete(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {

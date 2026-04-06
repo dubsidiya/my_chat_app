@@ -142,6 +142,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isUploadingImage = false;
+  /// Защита от двойного нажатия «Отправить» пока идёт отправка.
+  bool _isSendingMessage = false;
   String? _selectedFilePath;
   Uint8List? _selectedFileBytes;
   String? _selectedFileName;
@@ -2730,7 +2732,12 @@ class _ChatScreenState extends State<ChatScreen> {
       if (kDebugMode) print('⚠️ Text is empty and no attachments, returning');
       return;
     }
-    
+
+    if (_isSendingMessage) return;
+    _isSendingMessage = true;
+    if (mounted) setState(() {});
+
+    try {
     if (kDebugMode) print('✅ Proceeding with message send');
 
     // ✅ Останавливаем typing-индикатор перед отправкой
@@ -3178,6 +3185,10 @@ SnackBar(
           ),
         );
       }
+    }
+    } finally {
+      _isSendingMessage = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -4441,7 +4452,7 @@ SnackBar(
                                                               ? '${pinned.content.substring(0, 40)}...'
                                                               : pinned.content)
                                                           : 'Фото',
-                                                      style: TextStyle(
+                                                      style: const TextStyle(
                                                         fontSize: 12,
                                                         fontWeight: FontWeight.w400,
                                                         color: AppColors.onSurfaceVariantDark,
@@ -4732,6 +4743,7 @@ SnackBar(
                       controller: _controller,
                       isUploadingImage: _isUploadingImage,
                       isUploadingFile: _isUploadingFile,
+                      isSendingMessage: _isSendingMessage,
                       isRecordingVoice: _isRecordingVoice,
                       voiceRecordDuration: _voiceRecordDuration,
                       onCancelVoiceRecording: _cancelVoiceRecording,

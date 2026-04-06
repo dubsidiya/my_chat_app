@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
 import '../models/chat_folder.dart';
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'e2ee_service.dart';
 
@@ -33,7 +33,7 @@ class ChatsService {
     try {
       final headers = await _getAuthHeaders();
       
-      final response = await http.get(
+      final response = await timedGet(
         Uri.parse('$baseUrl/chats'),
         headers: headers,
       );
@@ -72,7 +72,7 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats');
       
       final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await timedPost(
         url,
         headers: headers,
         body: jsonEncode({
@@ -80,11 +80,7 @@ class ChatsService {
           'userIds': userIds,
           'is_group': isGroup,
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при создании чата');
-        },
+        timeout: const Duration(seconds: 10),
     );
 
     if (response.statusCode == 201 || response.statusCode == 200) {
@@ -136,11 +132,10 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/auth/users');
       
       final headers = await _getAuthHeaders();
-      final response = await http.get(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при получении списка пользователей');
-        },
+      final response = await timedGet(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -176,11 +171,10 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/members');
       
       final headers = await _getAuthHeaders();
-      final response = await http.get(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при получении участников чата');
-        },
+      final response = await timedGet(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -218,17 +212,13 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/members');
       
       final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await timedPost(
         url,
         headers: headers,
         body: jsonEncode({
           'userIds': userIds,
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при добавлении участников');
-        },
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -260,11 +250,10 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/members/$userId');
       
       final headers = await _getAuthHeaders();
-      final response = await http.delete(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при удалении участника');
-        },
+      final response = await timedDelete(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -296,11 +285,10 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId');
       
       final headers = await _getAuthHeaders();
-      final response = await http.delete(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при удалении чата');
-        },
+      final response = await timedDelete(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200 || response.statusCode == 204) {
@@ -341,11 +329,10 @@ class ChatsService {
       final url = Uri.parse('$baseUrl/chats/$chatId/leave');
       
       final headers = await _getAuthHeaders();
-      final response = await http.post(url, headers: headers).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при выходе из чата');
-        },
+      final response = await timedPost(
+        url,
+        headers: headers,
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -388,7 +375,7 @@ class ChatsService {
     if (ttlMinutes != null) body['ttlMinutes'] = ttlMinutes;
     if (maxUses != null) body['maxUses'] = maxUses;
 
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/chats/$chatId/invites'),
       headers: headers,
       body: jsonEncode(body),
@@ -408,7 +395,7 @@ class ChatsService {
   // ✅ Вступить по коду
   Future<Map<String, dynamic>> joinByInviteCode(String code) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/chats/join'),
       headers: headers,
       body: jsonEncode({'code': code}),
@@ -428,7 +415,7 @@ class ChatsService {
   // ✅ Переименовать групповой чат (owner/admin)
   Future<Map<String, dynamic>> renameChat(String chatId, String name) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/chats/$chatId/name'),
       headers: headers,
       body: jsonEncode({'name': name}),
@@ -453,7 +440,7 @@ class ChatsService {
 
   Future<List<ChatFolder>> fetchFolders() async {
     final headers = await _getAuthHeaders();
-    final response = await http.get(
+    final response = await timedGet(
       Uri.parse('$baseUrl/chats/folders'),
       headers: headers,
     );
@@ -472,7 +459,7 @@ class ChatsService {
 
   Future<ChatFolder> createFolder(String name) async {
     final headers = await _getAuthHeaders();
-    final response = await http.post(
+    final response = await timedPost(
       Uri.parse('$baseUrl/chats/folders'),
       headers: headers,
       body: jsonEncode({'name': name}),
@@ -490,7 +477,7 @@ class ChatsService {
 
   Future<void> renameFolder(String folderId, String name) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/chats/folders/$folderId'),
       headers: headers,
       body: jsonEncode({'name': name}),
@@ -506,7 +493,7 @@ class ChatsService {
 
   Future<void> deleteFolder(String folderId) async {
     final headers = await _getAuthHeaders();
-    final response = await http.delete(
+    final response = await timedDelete(
       Uri.parse('$baseUrl/chats/folders/$folderId'),
       headers: headers,
     );
@@ -521,7 +508,7 @@ class ChatsService {
 
   Future<void> setChatFolderId(String chatId, {String? folderId}) async {
     final headers = await _getAuthHeaders();
-    final response = await http.put(
+    final response = await timedPut(
       Uri.parse('$baseUrl/chats/$chatId/folder'),
       headers: headers,
       body: jsonEncode({'folderId': folderId}),

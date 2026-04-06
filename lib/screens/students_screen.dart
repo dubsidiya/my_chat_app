@@ -652,6 +652,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               ],
                             ),
                           );
+                          if (!context.mounted) return false;
                           if (result == 'hide') {
                             await _hideStudent(student);
                             return false;

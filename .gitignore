@@ -38,6 +38,7 @@ node_modules/
 # Gradle
 **/.gradle/
 android/.gradle/
+android/key.properties
 
 # iOS/macOS Pods
 **/Pods/

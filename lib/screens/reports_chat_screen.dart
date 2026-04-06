@@ -112,8 +112,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   }
 
   Future<void> _onRefresh() async {
-    if (_allReportsMode) await _loadReportsList();
-    else await _loadReports();
+    if (_allReportsMode) {
+      await _loadReportsList();
+    } else {
+      await _loadReports();
+    }
   }
 
   Future<void> _selectDate() async {
@@ -663,18 +666,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                                 onPressed: () async {
                                                   try {
                                                     await _reportsService.setReportNotLate(report.id);
-                                                    if (mounted) await _onRefresh();
-                                                    if (mounted) {
-                                                      ScaffoldMessenger.of(context).showSnackBar(
-                                                        const SnackBar(duration: Duration(seconds: 3), content: Text('Отчёт учтён как сдан вовремя')),
-                                                      );
-                                                    }
+                                                    if (!context.mounted) return;
+                                                    await _onRefresh();
+                                                    if (!context.mounted) return;
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(duration: Duration(seconds: 3), content: Text('Отчёт учтён как сдан вовремя')),
+                                                    );
                                                   } catch (e) {
-                                                    if (mounted) {
-                                                      ScaffoldMessenger.of(context).showSnackBar(
-                                                        SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString()), backgroundColor: Colors.red),
-                                                      );
-                                                    }
+                                                    if (!context.mounted) return;
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString()), backgroundColor: Colors.red),
+                                                    );
                                                   }
                                                 },
                                                 child: Text(

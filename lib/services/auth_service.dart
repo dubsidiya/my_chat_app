@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'e2ee_service.dart';
 
@@ -11,16 +11,12 @@ class AuthService {
 
   Future<Map<String, dynamic>?> loginUser(String username, String password) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/auth/login'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'username': username, 'password': password}),
-          )
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () => throw TimeoutException('login'),
-          );
+      final response = await timedPost(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+        timeout: const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -66,16 +62,12 @@ class AuthService {
 
   Future<bool> registerUser(String username, String password) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/auth/register'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'username': username, 'password': password}),
-          )
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () => throw TimeoutException('register'),
-          );
+      final response = await timedPost(
+        Uri.parse('$baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+        timeout: const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -133,18 +125,14 @@ class AuthService {
 
       final url = Uri.parse('$baseUrl/auth/user/$userId');
 
-      final response = await http.delete(
+      final response = await timedDelete(
         url,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
         body: jsonEncode({'password': password}),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при удалении аккаунта');
-        },
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -200,7 +188,7 @@ class AuthService {
 
       final url = Uri.parse('$baseUrl/auth/user/$userId/password');
 
-      final response = await http.put(
+      final response = await timedPut(
         url,
         headers: {
           'Content-Type': 'application/json',
@@ -210,11 +198,7 @@ class AuthService {
           'oldPassword': oldPassword,
           'newPassword': newPassword,
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Таймаут при смене пароля');
-        },
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -285,7 +269,7 @@ class AuthService {
   Future<void> updateProfile(String displayName) async {
     final token = await StorageService.getToken();
     if (token == null) throw Exception('Требуется авторизация');
-    final response = await http.patch(
+    final response = await timedPatch(
       Uri.parse('$baseUrl/auth/me'),
       headers: {
         'Content-Type': 'application/json',
@@ -314,8 +298,7 @@ class AuthService {
       bytes,
       filename: filename.isEmpty ? 'avatar.jpg' : filename,
     ));
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
+    final response = await timedMultipart(request);
     if (response.statusCode != 200) {
       try {
         final err = jsonDecode(response.body);
@@ -338,7 +321,7 @@ class AuthService {
     final token = await StorageService.getToken();
     if (token == null) return null;
     try {
-      final response = await http.get(
+      final response = await timedGet(
         Uri.parse('$baseUrl/auth/me'),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -358,12 +341,10 @@ class AuthService {
     if (id.isEmpty) throw Exception('Некорректный userId');
 
     try {
-      final response = await http.get(
+      final response = await timedGet(
         Uri.parse('$baseUrl/auth/users/$id'),
         headers: {'Authorization': 'Bearer $token'},
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw Exception('Таймаут при загрузке профиля'),
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode == 200) {
@@ -397,7 +378,7 @@ class AuthService {
     }
 
     try {
-      final response = await http.post(
+      final response = await timedPost(
         Uri.parse('$baseUrl/auth/unlock-private'),
         headers: {
           'Content-Type': 'application/json',

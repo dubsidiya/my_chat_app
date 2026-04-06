@@ -247,7 +247,7 @@ class ChatMessageTile extends StatelessWidget {
                                 chatId: chatId,
                                 fit: BoxFit.contain,
                                 memCacheWidth: 500,
-                                placeholder: (context, __) => SkeletonPlaceholder(
+                                placeholder: (context, __) => const SkeletonPlaceholder(
                                   width: 250,
                                   height: 200,
                                   borderRadius: BorderRadius.all(Radius.circular(8)),
