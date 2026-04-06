@@ -250,14 +250,24 @@ class ReportsService {
     );
 
     if (response.statusCode != 200) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось загрузить журнал');
+      try {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Не удалось загрузить журнал');
+      } catch (_) {
+        throw Exception('Не удалось загрузить журнал');
+      }
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['events'] as List<dynamic>? ?? [];
     return list
         .whereType<Map>()
-        .map((e) => ReportAuditEvent.fromJson(Map<String, dynamic>.from(e.map((k, v) => MapEntry(k.toString(), v)))))
+        .map(
+          (e) => ReportAuditEvent.fromJson(
+            Map<String, dynamic>.from(
+              e.map((k, v) => MapEntry(k.toString(), v)),
+            ),
+          ),
+        )
         .toList();
   }
 

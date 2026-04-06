@@ -279,6 +279,9 @@ class StudentsService {
     required DateTime from,
     required DateTime to,
   }) async {
+    if (to.isBefore(from)) {
+      throw Exception('Некорректный период: дата "до" раньше даты "от"');
+    }
     final headers = await _getAuthHeaders();
     final uri = Uri.parse('$baseUrl/students/calendar-summary').replace(
       queryParameters: {

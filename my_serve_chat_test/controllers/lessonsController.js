@@ -46,21 +46,46 @@ export const getStudentLessons = async (req, res) => {
       (SELECT rep.report_date::text FROM report_lessons rl
         JOIN reports rep ON rep.id = rl.report_id AND rep.created_by = l.created_by
         WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_date`;
-    const result = onlyMine
-        ? await pool.query(
-            `SELECT l.*, ${linkSelect}
-             FROM lessons l
-             WHERE l.student_id = $1 AND l.created_by = $2
-             ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
-            [studentId, userId]
-          )
-        : await pool.query(
-            `SELECT l.*, ${linkSelect}
-             FROM lessons l
-             WHERE l.student_id = $1
-             ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
-            [studentId]
-          );
+    let result;
+    try {
+      result = onlyMine
+          ? await pool.query(
+              `SELECT l.*, ${linkSelect}
+               FROM lessons l
+               WHERE l.student_id = $1 AND l.created_by = $2
+               ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
+              [studentId, userId]
+            )
+          : await pool.query(
+              `SELECT l.*, ${linkSelect}
+               FROM lessons l
+               WHERE l.student_id = $1
+               ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
+              [studentId]
+            );
+    } catch (error) {
+      // Совместимость со старыми БД без таблиц отчётов/связок:
+      // возвращаем занятия без полей linked_report_*.
+      if (error?.code === '42P01') {
+        result = onlyMine
+            ? await pool.query(
+                `SELECT l.*, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                 FROM lessons l
+                 WHERE l.student_id = $1 AND l.created_by = $2
+                 ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
+                [studentId, userId]
+              )
+            : await pool.query(
+                `SELECT l.*, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                 FROM lessons l
+                 WHERE l.student_id = $1
+                 ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
+                [studentId]
+              );
+      } else {
+        throw error;
+      }
+    }
 
     res.json(result.rows);
   } catch (error) {
