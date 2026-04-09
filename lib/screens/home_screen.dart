@@ -268,6 +268,16 @@ class _HomeScreenState extends State<HomeScreen> {
     _wsSubscription?.cancel();
     _wsSubscription = WebSocketService.instance.stream.listen((event) {
       if (!mounted) return;
+      if (event is Map && event['type'] == '_ws_reconnected') {
+        // Единая точка мягкого восстановления после реконнекта:
+        // обновляем список чатов и пробуем закрыть отложенные E2EE key-requests.
+        _loadChats();
+        final chatIds = _chats.map((c) => c.id).where((id) => id.isNotEmpty).toSet();
+        for (final chatId in chatIds) {
+          unawaited(E2eeService.processPendingKeyRequests(chatId));
+        }
+        return;
+      }
       if (event is Map && event['type'] == 'e2ee_request_key') {
         final chatId = event['chatId']?.toString();
         final requesterUserId = event['userId']?.toString();

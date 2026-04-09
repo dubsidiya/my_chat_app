@@ -7,6 +7,7 @@ import '../models/message.dart';
 class LocalMessagesService {
   static const String _boxName = 'messages_cache';
   static Box? _box;
+  static String _pendingUploadsKey(String chatId) => 'chat_${chatId}_pending_upload_drafts';
 
   /// Инициализация Hive и открытие бокса
   static Future<void> init() async {
@@ -216,6 +217,7 @@ class LocalMessagesService {
     try {
       await _box!.delete('chat_$chatId');
       await _box!.delete('chat_${chatId}_timestamp');
+      await _box!.delete(_pendingUploadsKey(chatId));
       if (kDebugMode) {
         // ignore: avoid_print
         print('Cache cleared for $chatId');
@@ -272,6 +274,91 @@ class LocalMessagesService {
       return _box!.length;
     } catch (e) {
       return 0;
+    }
+  }
+
+  /// Сохранить/обновить черновик отложенной отправки вложения.
+  static Future<void> savePendingUploadDraft(
+    String chatId,
+    String tempId,
+    Map<String, dynamic> draft,
+  ) async {
+    if (_box == null) await init();
+    try {
+      final key = _pendingUploadsKey(chatId);
+      final raw = _box!.get(key);
+      final Map<String, dynamic> drafts = {};
+      if (raw is Map) {
+        raw.forEach((k, v) => drafts[k.toString()] = v);
+      }
+      drafts[tempId] = draft;
+      await _box!.put(key, drafts);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache pending draft save error: $e');
+      }
+    }
+  }
+
+  /// Получить все черновики отложенной отправки для чата.
+  static Future<Map<String, Map<String, dynamic>>> getPendingUploadDrafts(String chatId) async {
+    if (_box == null) await init();
+    try {
+      final key = _pendingUploadsKey(chatId);
+      final raw = _box!.get(key);
+      if (raw is! Map) return {};
+      final result = <String, Map<String, dynamic>>{};
+      raw.forEach((k, v) {
+        if (v is Map) {
+          final draft = <String, dynamic>{};
+          v.forEach((dk, dv) => draft[dk.toString()] = dv);
+          result[k.toString()] = draft;
+        }
+      });
+      return result;
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache pending drafts load error: $e');
+      }
+      return {};
+    }
+  }
+
+  /// Удалить один черновик отложенной отправки.
+  static Future<void> removePendingUploadDraft(String chatId, String tempId) async {
+    if (_box == null) await init();
+    try {
+      final key = _pendingUploadsKey(chatId);
+      final raw = _box!.get(key);
+      if (raw is! Map) return;
+      final drafts = <String, dynamic>{};
+      raw.forEach((k, v) => drafts[k.toString()] = v);
+      drafts.remove(tempId);
+      if (drafts.isEmpty) {
+        await _box!.delete(key);
+      } else {
+        await _box!.put(key, drafts);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache pending draft remove error: $e');
+      }
+    }
+  }
+
+  /// Удалить все черновики отложенной отправки для чата.
+  static Future<void> clearPendingUploadDrafts(String chatId) async {
+    if (_box == null) await init();
+    try {
+      await _box!.delete(_pendingUploadsKey(chatId));
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache pending drafts clear error: $e');
+      }
     }
   }
 }

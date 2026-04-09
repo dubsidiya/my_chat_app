@@ -16,6 +16,7 @@ class ChatInputBar extends StatelessWidget {
   final VoidCallback onCancelVoiceRecording;
   final VoidCallback onPickFile;
   final VoidCallback onPickImage;
+  final VoidCallback onPickCamera;
   final VoidCallback onToggleVoiceRecording;
   final void Function() onVoiceLongPressStart;
   final void Function() onVoiceLongPressEnd;
@@ -38,6 +39,7 @@ class ChatInputBar extends StatelessWidget {
     required this.onCancelVoiceRecording,
     required this.onPickFile,
     required this.onPickImage,
+    required this.onPickCamera,
     required this.onToggleVoiceRecording,
     required this.onVoiceLongPressStart,
     required this.onVoiceLongPressEnd,
@@ -171,7 +173,19 @@ class ChatInputBar extends StatelessWidget {
               child: IconButton(
                 icon: Icon(Icons.image_rounded, color: accent1, size: 22),
                 onPressed: isRecordingVoice ? null : onPickImage,
-                tooltip: 'Прикрепить изображение',
+                tooltip: 'Выбрать фото из галереи',
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              decoration: BoxDecoration(
+                color: accent1.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.photo_camera_rounded, color: accent1, size: 22),
+                onPressed: isRecordingVoice ? null : onPickCamera,
+                tooltip: 'Снять фото на камеру',
               ),
             ),
             const SizedBox(width: 8),

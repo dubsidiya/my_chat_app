@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart';
@@ -26,6 +27,7 @@ import '../services/e2ee_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
+import '../utils/download_text_file.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/e2ee_image.dart';
@@ -45,6 +47,37 @@ class _LoadMoreEntry extends _ListEntry {}
 class _LoadingEntry extends _ListEntry {}
 class _DateHeaderEntry extends _ListEntry { final String label; _DateHeaderEntry(this.label); }
 class _MessageEntry extends _ListEntry { final int index; _MessageEntry(this.index); }
+enum _OutgoingUiState { queued, sending, error }
+class _PendingUploadDraft {
+  final String text;
+  final String? replyToMessageId;
+  final Message? replyToMessage;
+  final Uint8List? imageBytes;
+  final String? imagePath;
+  final String? imageName;
+  final Uint8List? fileBytes;
+  final String? filePath;
+  final String? fileName;
+  final int? fileSize;
+  final String? fileMime;
+
+  const _PendingUploadDraft({
+    required this.text,
+    this.replyToMessageId,
+    this.replyToMessage,
+    this.imageBytes,
+    this.imagePath,
+    this.imageName,
+    this.fileBytes,
+    this.filePath,
+    this.fileName,
+    this.fileSize,
+    this.fileMime,
+  });
+
+  bool get hasImage => imageBytes != null || (imagePath != null && imagePath!.isNotEmpty);
+  bool get hasFile => fileBytes != null || (filePath != null && filePath!.isNotEmpty);
+}
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -144,6 +177,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isUploadingImage = false;
   /// Защита от двойного нажатия «Отправить» пока идёт отправка.
   bool _isSendingMessage = false;
+  bool _isExportingChat = false;
+  bool _isRetryingQueuedMessages = false;
+  final Map<String, _OutgoingUiState> _tempMessageStates = {};
+  final Map<String, _PendingUploadDraft> _pendingUploadDrafts = {};
   String? _selectedFilePath;
   Uint8List? _selectedFileBytes;
   String? _selectedFileName;
@@ -486,6 +523,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Опрос последних сообщений с сервера — подхватывает то, что не пришло по WebSocket.
   Future<void> _pollForNewMessages() async {
     if (!mounted || _isLoading) return;
+    unawaited(_retryQueuedMessages());
     try {
       final result = await _messagesService.fetchMessagesPaginated(
         widget.chatId,
@@ -872,6 +910,15 @@ class _ChatScreenState extends State<ChatScreen> {
             if (mounted) {
               _subscribedToChatRealtime = false;
               _subscribeToChatRealtime();
+              final currentChatId = widget.chatId.toString();
+              // После восстановления сокета подбираем отложенные E2EE-запросы.
+              unawaited(E2eeService.processPendingKeyRequests(currentChatId));
+              // Если ключ недоступен/в бэкоффе — мягко перезапускаем цикл запроса.
+              if (_e2eeKeyState != _e2eeReady) {
+                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
+              }
+              // Единая точка ретрая очереди исходящих temp-сообщений.
+              unawaited(_retryQueuedMessages());
             }
             return;
           }
@@ -1220,15 +1267,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     final newMessages = List<Message>.from(_messages);
                     final tempId = newMessages[tempIndex].id; // Сохраняем ID временного сообщения
                     newMessages[tempIndex] = merged;
-                    
-                    // ✅ Удаляем все остальные временные сообщения от этого пользователя
-                    newMessages.removeWhere((m) => 
-                      m.id.startsWith('temp_') && 
-                      m.userId == widget.userId.toString() &&
-                      m.id != tempId // НЕ удаляем то, что только что заменили
-                    );
-                    
                     _messages = newMessages;
+                    _tempMessageStates.remove(tempId);
+                    _pendingUploadDrafts.remove(tempId);
+                    unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempId));
                     if (kDebugMode) print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
                   } else {
                     // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
@@ -1813,6 +1855,9 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await E2eeService.ensureKeyPair();
     } catch (_) {}
+
+    // Восстанавливаем отложенные вложения/голосовые, пережившие перезапуск приложения.
+    await _restorePendingUploadDrafts();
     
     // ✅ Сначала загружаем из кэша для быстрого отображения
     final existingTempMessages = _messages.where((m) => 
@@ -2004,6 +2049,30 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ✅ Виджет для отображения статуса сообщения
   Widget _buildMessageStatus(Message msg) {
+    if (msg.id.startsWith('temp_')) {
+      final state = _tempMessageStates[msg.id] ?? _OutgoingUiState.sending;
+      switch (state) {
+        case _OutgoingUiState.queued:
+          return Icon(
+            Icons.schedule_rounded,
+            size: 14,
+            color: Colors.orange.shade300,
+          );
+        case _OutgoingUiState.sending:
+          return Icon(
+            Icons.schedule_send_rounded,
+            size: 14,
+            color: Colors.white.withValues(alpha: 0.7),
+          );
+        case _OutgoingUiState.error:
+          return Icon(
+            Icons.error_outline_rounded,
+            size: 14,
+            color: Colors.red.shade300,
+          );
+      }
+    }
+
     final status = msg.status;
     IconData icon;
     Color color;
@@ -2028,6 +2097,316 @@ class _ChatScreenState extends State<ChatScreen> {
       size: 14,
       color: color,
     );
+  }
+
+  bool _isQueueableSendError(Object e) {
+    final text = e.toString().toLowerCase();
+    return text.contains('нет подключения к интернету') ||
+        text.contains('socketexception') ||
+        text.contains('timeout') ||
+        text.contains('timed out') ||
+        text.contains('connection');
+  }
+
+  void _cleanupTempStateCache() {
+    final liveTempIds = _messages.where((m) => m.id.startsWith('temp_')).map((m) => m.id).toSet();
+    for (final id in liveTempIds) {
+      _tempMessageStates.putIfAbsent(id, () => _OutgoingUiState.queued);
+    }
+    _tempMessageStates.removeWhere((id, _) => !liveTempIds.contains(id));
+    final toRemove = _pendingUploadDrafts.keys.where((id) => !liveTempIds.contains(id)).toList();
+    for (final id in toRemove) {
+      _pendingUploadDrafts.remove(id);
+      unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, id));
+    }
+  }
+
+  String _pendingPlaceholderText(_PendingUploadDraft draft) {
+    if (draft.text.trim().isNotEmpty) return draft.text.trim();
+    if (draft.hasImage) return '🖼️ Изображение (в очереди)';
+    if (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)) {
+      return '🎤 Голосовое сообщение (в очереди)';
+    }
+    if (draft.hasFile) return '📎 Файл (в очереди)';
+    return 'Сообщение в очереди';
+  }
+
+  Map<String, dynamic> _pendingDraftToJson(_PendingUploadDraft draft) {
+    return {
+      'text': draft.text,
+      'replyToMessageId': draft.replyToMessageId,
+      'replyToMessage': draft.replyToMessage?.toJson(),
+      'imageBytesB64': draft.imageBytes != null ? base64Encode(draft.imageBytes!) : null,
+      'imagePath': draft.imagePath,
+      'imageName': draft.imageName,
+      'fileBytesB64': draft.fileBytes != null ? base64Encode(draft.fileBytes!) : null,
+      'filePath': draft.filePath,
+      'fileName': draft.fileName,
+      'fileSize': draft.fileSize,
+      'fileMime': draft.fileMime,
+    };
+  }
+
+  _PendingUploadDraft? _pendingDraftFromJson(Map<String, dynamic> json) {
+    try {
+      final replyRaw = json['replyToMessage'];
+      Message? reply;
+      if (replyRaw is Map) {
+        final data = <String, dynamic>{};
+        replyRaw.forEach((k, v) => data[k.toString()] = v);
+        reply = Message.fromJson(data);
+      }
+      final imageB64 = json['imageBytesB64']?.toString();
+      final fileB64 = json['fileBytesB64']?.toString();
+      return _PendingUploadDraft(
+        text: (json['text'] ?? '').toString(),
+        replyToMessageId: json['replyToMessageId']?.toString(),
+        replyToMessage: reply,
+        imageBytes: (imageB64 != null && imageB64.isNotEmpty) ? base64Decode(imageB64) : null,
+        imagePath: json['imagePath']?.toString(),
+        imageName: json['imageName']?.toString(),
+        fileBytes: (fileB64 != null && fileB64.isNotEmpty) ? base64Decode(fileB64) : null,
+        filePath: json['filePath']?.toString(),
+        fileName: json['fileName']?.toString(),
+        fileSize: json['fileSize'] is int
+            ? json['fileSize'] as int
+            : int.tryParse((json['fileSize'] ?? '').toString()),
+        fileMime: json['fileMime']?.toString(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _restorePendingUploadDrafts() async {
+    final raw = await LocalMessagesService.getPendingUploadDrafts(widget.chatId);
+    if (raw.isEmpty || !mounted) return;
+
+    final existingIds = _messages.map((m) => m.id).toSet();
+    final restored = <Message>[];
+    raw.forEach((tempId, draftJson) {
+      final draft = _pendingDraftFromJson(draftJson);
+      if (draft == null) return;
+      _pendingUploadDrafts[tempId] = draft;
+      _tempMessageStates.putIfAbsent(tempId, () => _OutgoingUiState.queued);
+      if (!existingIds.contains(tempId)) {
+        restored.add(
+          Message(
+            id: tempId,
+            chatId: widget.chatId,
+            userId: widget.userId,
+            content: _pendingPlaceholderText(draft),
+            fileName: draft.fileName,
+            fileSize: draft.fileSize,
+            fileMime: draft.fileMime,
+            messageType: draft.hasImage
+                ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
+                : (draft.hasFile
+                    ? (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
+                        ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
+                        : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
+                    : 'text'),
+            senderEmail: widget.userEmail,
+            senderAvatarUrl: widget.myAvatarUrl,
+            createdAt: DateTime.now().toIso8601String(),
+            replyToMessageId: draft.replyToMessageId,
+            replyToMessage: draft.replyToMessage,
+            keyVersion: 1,
+          ),
+        );
+      }
+    });
+
+    if (restored.isNotEmpty && mounted) {
+      setState(() {
+        _messages = List<Message>.from(_messages)..addAll(restored);
+      });
+    }
+  }
+
+  void _enqueuePendingUploadDraft(_PendingUploadDraft draft) {
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final placeholder = _pendingPlaceholderText(draft);
+    final tempMessage = Message(
+      id: tempId,
+      chatId: widget.chatId,
+      userId: widget.userId,
+      content: placeholder,
+      fileName: draft.fileName,
+      fileSize: draft.fileSize,
+      fileMime: draft.fileMime,
+      messageType: draft.hasImage
+          ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
+          : (draft.hasFile
+              ? (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
+                  ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
+                  : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
+              : 'text'),
+      senderEmail: widget.userEmail,
+      senderAvatarUrl: widget.myAvatarUrl,
+      createdAt: DateTime.now().toIso8601String(),
+      replyToMessageId: draft.replyToMessageId,
+      replyToMessage: draft.replyToMessage,
+      keyVersion: 1,
+    );
+
+    setState(() {
+      _messages = List<Message>.from(_messages)..add(tempMessage);
+      _tempMessageStates[tempId] = _OutgoingUiState.queued;
+      _pendingUploadDrafts[tempId] = draft;
+      _isUploadingImage = false;
+      _isUploadingFile = false;
+      _selectedImagePath = null;
+      _selectedImageBytes = null;
+      _selectedImageName = null;
+      _selectedFilePath = null;
+      _selectedFileBytes = null;
+      _selectedFileName = null;
+      _selectedFileSize = null;
+      _replyToMessage = null;
+    });
+    unawaited(LocalMessagesService.savePendingUploadDraft(widget.chatId, tempId, _pendingDraftToJson(draft)));
+    _controller.clear();
+    _scrollToBottom();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 3),
+        content: Text('Нет сети: вложение добавлено в очередь отправки'),
+      ),
+    );
+  }
+
+  Future<Message?> _sendPendingUploadDraft(_PendingUploadDraft draft) async {
+    String? imageUrl;
+    String? fileUrl;
+    String? fileName;
+    int? fileSize;
+    String? fileMime;
+
+    if (draft.hasImage) {
+      Uint8List originalBytes;
+      if (draft.imageBytes != null) {
+        originalBytes = draft.imageBytes!;
+      } else if (draft.imagePath != null && draft.imagePath!.isNotEmpty) {
+        originalBytes = await File(draft.imagePath!).readAsBytes();
+      } else {
+        throw Exception('Изображение для очереди не найдено');
+      }
+      final compressed = await _compressImage(originalBytes);
+      final imgName = draft.imageName ??
+          (draft.imagePath != null && draft.imagePath!.isNotEmpty ? draft.imagePath!.split('/').last : 'image.jpg');
+      imageUrl = await _messagesService.uploadImage(
+        compressed,
+        imgName,
+        originalBytes: originalBytes,
+        chatId: widget.chatId.toString(),
+      );
+    }
+
+    if (draft.hasFile) {
+      List<int> bytes;
+      if (draft.fileBytes != null) {
+        bytes = draft.fileBytes!;
+      } else if (draft.filePath != null && draft.filePath!.isNotEmpty) {
+        bytes = await File(draft.filePath!).readAsBytes();
+      } else {
+        throw Exception('Файл для очереди не найден');
+      }
+      final name = draft.fileName ??
+          (draft.filePath != null && draft.filePath!.isNotEmpty ? draft.filePath!.split('/').last : 'file');
+      final meta = await _messagesService.uploadFile(bytes, name);
+      fileUrl = meta['file_url']?.toString();
+      fileName = (meta['file_name'] ?? name).toString();
+      fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? draft.fileSize ?? bytes.length;
+      fileMime = (meta['file_mime'] ?? draft.fileMime ?? '').toString();
+    }
+
+    return _messagesService.sendMessage(
+      widget.chatId,
+      draft.text,
+      imageUrl: imageUrl,
+      fileUrl: fileUrl,
+      fileName: fileName,
+      fileSize: fileSize,
+      fileMime: fileMime,
+      replyToMessageId: draft.replyToMessageId,
+    );
+  }
+
+  Future<void> _retryQueuedMessages() async {
+    if (!mounted || _isRetryingQueuedMessages || _isSendingMessage) return;
+    _cleanupTempStateCache();
+    final queuedMessages = _messages
+        .where((m) => m.id.startsWith('temp_') && _tempMessageStates[m.id] == _OutgoingUiState.queued)
+        .toList();
+    if (queuedMessages.isEmpty) return;
+
+    _isRetryingQueuedMessages = true;
+    try {
+      for (final temp in queuedMessages) {
+        if (!mounted) break;
+        if (!_messages.any((m) => m.id == temp.id)) continue;
+        setState(() => _tempMessageStates[temp.id] = _OutgoingUiState.sending);
+
+        try {
+          final draft = _pendingUploadDrafts[temp.id];
+          final sent = draft != null
+              ? await _sendPendingUploadDraft(draft)
+              : await _messagesService.sendMessage(
+                  widget.chatId,
+                  temp.content,
+                  imageUrl: temp.imageUrl,
+                  originalImageUrl: temp.originalImageUrl,
+                  fileUrl: temp.fileUrl,
+                  fileName: temp.fileName,
+                  fileSize: temp.fileSize,
+                  fileMime: temp.fileMime,
+                  replyToMessageId: temp.replyToMessageId,
+                );
+
+          if (!mounted) break;
+          if (sent == null) {
+            setState(() => _tempMessageStates[temp.id] = _OutgoingUiState.queued);
+            continue;
+          }
+
+          setState(() {
+            final idx = _messages.indexWhere((m) => m.id == temp.id);
+            final newMessages = List<Message>.from(_messages);
+            if (idx != -1) {
+              newMessages[idx] = sent;
+            } else {
+              newMessages.add(sent);
+            }
+            _messages = newMessages;
+            _tempMessageStates.remove(temp.id);
+            _pendingUploadDrafts.remove(temp.id);
+            unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, temp.id));
+            _cleanupTempStateCache();
+          });
+          unawaited(LocalMessagesService.addMessage(widget.chatId, sent));
+        } catch (e) {
+          final isE2eeKeyError = e.toString().contains('E2EE ключ для чата пока недоступен');
+          if (isE2eeKeyError) {
+            unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
+          }
+          final shouldStayQueued = isE2eeKeyError || _isQueueableSendError(e);
+          if (!mounted) break;
+          setState(() {
+            _tempMessageStates[temp.id] =
+                shouldStayQueued ? _OutgoingUiState.queued : _OutgoingUiState.error;
+          });
+        }
+      }
+    } finally {
+      _isRetryingQueuedMessages = false;
+      if (mounted) {
+        setState(() {
+          _cleanupTempStateCache();
+        });
+      }
+    }
   }
 
   String _formatDate(String dateString) {
@@ -2057,53 +2436,211 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowMultiple: false,
-        allowedExtensions: ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'avif', 'ico', 'svg'],
-      );
+  String _sanitizeFileName(String input) {
+    final sanitized = input
+        .trim()
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_');
+    if (sanitized.isEmpty) return 'chat';
+    return sanitized.length > 60 ? sanitized.substring(0, 60) : sanitized;
+  }
 
-      if (result != null && result.files.single.size > 0) {
-        final file = result.files.single;
-        
-        final fileName = file.name.toLowerCase();
-        const allowedExtensions = ['.jpg', '.jpeg', '.jpe', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp', '.tiff', '.tif', '.avif', '.ico', '.svg'];
-        final hasValidExtension = allowedExtensions.any((ext) => fileName.endsWith(ext));
-        
-        if (!hasValidExtension) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                duration: Duration(seconds: 3),
-                content: Text('Неподдерживаемый формат. Используйте: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO, SVG'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          return;
+  String _formatExportTime(String createdAt) {
+    try {
+      return DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.parse(createdAt).toLocal());
+    } catch (_) {
+      return createdAt;
+    }
+  }
+
+  Future<List<Message>> _collectMessagesForExport() async {
+    final mergedById = <String, Message>{for (final m in _messages) m.id: m};
+    var offset = 0;
+    var hasMore = true;
+    var safety = 0;
+
+    while (hasMore && safety < 200) {
+      final page = await _messagesService.fetchMessagesPaginated(
+        widget.chatId,
+        limit: 100,
+        offset: offset,
+        useCache: true,
+      );
+      for (final m in page.messages) {
+        mergedById[m.id] = m;
+      }
+      if (page.messages.isEmpty) break;
+      hasMore = page.hasMore;
+      offset += page.messages.length;
+      safety++;
+    }
+
+    final result = mergedById.values.toList();
+    result.sort((a, b) {
+      final ta = DateTime.tryParse(a.createdAt);
+      final tb = DateTime.tryParse(b.createdAt);
+      if (ta == null && tb == null) return a.id.compareTo(b.id);
+      if (ta == null) return -1;
+      if (tb == null) return 1;
+      return ta.compareTo(tb);
+    });
+    return result;
+  }
+
+  String _buildChatExportText(List<Message> messages) {
+    final now = DateTime.now();
+    final buffer = StringBuffer()
+      ..writeln('Chat export')
+      ..writeln('Chat: ${widget.chatName}')
+      ..writeln('Chat ID: ${widget.chatId}')
+      ..writeln('Exported at: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}')
+      ..writeln('Total messages: ${messages.length}')
+      ..writeln('---');
+
+    for (final m in messages) {
+      final parts = <String>[];
+      final text = m.content.trim();
+      if (text.isNotEmpty) parts.add(text);
+      if (m.hasImage) parts.add('[image] ${m.imageUrl}');
+      if (m.hasFile) {
+        final fileLabel = (m.fileName != null && m.fileName!.trim().isNotEmpty) ? m.fileName!.trim() : 'file';
+        parts.add('[file] $fileLabel ${m.fileUrl}');
+      }
+      if (parts.isEmpty) parts.add('[empty message]');
+
+      final line = '[${_formatExportTime(m.createdAt)}] ${m.senderEmail}: ${parts.join(' | ')}';
+      buffer.writeln(line);
+    }
+
+    return buffer.toString();
+  }
+
+  Future<void> _exportChat() async {
+    if (_isExportingChat) return;
+    setState(() => _isExportingChat = true);
+    try {
+      final messages = await _collectMessagesForExport();
+      final text = _buildChatExportText(messages);
+      final timestamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      final fileName = '${_sanitizeFileName(widget.chatName)}_$timestamp.txt';
+
+      final okWeb = await downloadTextFile(
+        filename: fileName,
+        content: text,
+        mimeType: 'text/plain; charset=utf-8',
+      );
+      if (okWeb) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 3),
+            content: Text('Экспорт чата начат'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(text, flush: true);
+      if (!mounted) return;
+
+      final uri = Uri.file(file.path);
+      final canOpen = await canLaunchUrl(uri);
+      if (canOpen) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Экспорт сохранен: ${file.path}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось экспортировать чат: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingChat = false);
+      }
+    }
+  }
+
+  Future<void> _retryErroredMessages() async {
+    if (!mounted) return;
+    setState(() {
+      for (final entry in _tempMessageStates.entries.toList()) {
+        if (entry.value == _OutgoingUiState.error) {
+          _tempMessageStates[entry.key] = _OutgoingUiState.queued;
         }
-        
-        if (kIsWeb) {
-          // На веб используем bytes
-          if (file.bytes != null) {
-            setState(() {
-              _selectedImageBytes = file.bytes;
-              _selectedImageName = file.name;
-              _selectedImagePath = null; // На веб path недоступен
-            });
-          }
-        } else {
-          // На мобильных/десктоп используем path
-          if (file.path != null) {
-            setState(() {
-              _selectedImagePath = file.path;
-              _selectedImageBytes = null;
-              _selectedImageName = file.name;
-            });
-          }
-        }
+      }
+    });
+    await _retryQueuedMessages();
+  }
+
+  Future<void> _clearPendingQueue() async {
+    if (!mounted) return;
+    final tempIds = _messages
+        .where((m) => m.id.startsWith('temp_'))
+        .map((m) => m.id)
+        .toSet();
+    if (tempIds.isEmpty) return;
+
+    setState(() {
+      _messages = _messages.where((m) => !tempIds.contains(m.id)).toList();
+      for (final id in tempIds) {
+        _tempMessageStates.remove(id);
+        _pendingUploadDrafts.remove(id);
+      }
+    });
+    await LocalMessagesService.clearPendingUploadDrafts(widget.chatId);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 2),
+        content: Text('Очередь отправки очищена'),
+      ),
+    );
+  }
+
+  Future<void> _pickImageFromSource(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source);
+      if (picked == null) return;
+
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        if (bytes.isEmpty) return;
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImageName = picked.name;
+          _selectedImagePath = null;
+          _selectedFilePath = null;
+          _selectedFileBytes = null;
+          _selectedFileName = null;
+          _selectedFileSize = null;
+        });
+      } else {
+        setState(() {
+          _selectedImagePath = picked.path;
+          _selectedImageBytes = null;
+          _selectedImageName = picked.name;
+          _selectedFilePath = null;
+          _selectedFileBytes = null;
+          _selectedFileName = null;
+          _selectedFileSize = null;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -2116,6 +2653,24 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     }
+  }
+
+  Future<void> _pickImage() async {
+    await _pickImageFromSource(ImageSource.gallery);
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Съемка с камеры недоступна в веб-версии'),
+        ),
+      );
+      return;
+    }
+    await _pickImageFromSource(ImageSource.camera);
   }
 
   Future<void> _pickFile() async {
@@ -2725,6 +3280,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
     final hasFile = _selectedFilePath != null || _selectedFileBytes != null;
+    // Сохраняем до любых сбросов/ошибок для возможности поставить в очередь.
+    final replyToMessageId = _replyToMessage?.id;
+    final replyToMessage = _replyToMessage;
     
     if (kDebugMode) print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
     
@@ -2802,6 +3360,19 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         }
       } catch (e) {
+        if (_isQueueableSendError(e)) {
+          _enqueuePendingUploadDraft(
+            _PendingUploadDraft(
+              text: text,
+              replyToMessageId: replyToMessageId,
+              replyToMessage: replyToMessage,
+              imageBytes: _selectedImageBytes,
+              imagePath: _selectedImagePath,
+              imageName: _selectedImageName,
+            ),
+          );
+          return;
+        }
         if (mounted) {
           setState(() => _isUploadingImage = false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2865,6 +3436,23 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         }
       } catch (e) {
+        if (_isQueueableSendError(e)) {
+          _enqueuePendingUploadDraft(
+            _PendingUploadDraft(
+              text: text,
+              replyToMessageId: replyToMessageId,
+              replyToMessage: replyToMessage,
+              fileBytes: _selectedFileBytes,
+              filePath: _selectedFilePath,
+              fileName: _selectedFileName,
+              fileSize: _selectedFileSize,
+              fileMime: _selectedFileName?.toLowerCase().endsWith('.m4a') == true
+                  ? 'audio/mp4'
+                  : null,
+            ),
+          );
+          return;
+        }
         if (mounted) {
           setState(() => _isUploadingFile = false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2880,10 +3468,6 @@ SnackBar(
       setState(() => _isUploadingFile = false);
     }
 
-    // ✅ Сохраняем replyToMessageId перед очисткой
-    final replyToMessageId = _replyToMessage?.id;
-    final replyToMessage = _replyToMessage;
-    
     // ✅ Создаем временное сообщение для оптимистичного обновления UI
     final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     final tempMessage = Message(
@@ -2938,6 +3522,7 @@ SnackBar(
         final newMessages = List<Message>.from(_messages);
         newMessages.add(tempMessage); // Добавляем в конец, чтобы новые были снизу
         _messages = newMessages;
+        _tempMessageStates[tempMessageId] = _OutgoingUiState.sending;
         // Очищаем поле ответа
         _replyToMessage = null;
       });
@@ -3038,15 +3623,10 @@ SnackBar(
                   newMessages.removeAt(i);
                 }
               }
-              
-              // ✅ Удаляем все старые временные сообщения от этого пользователя (кроме только что замененного)
-              newMessages.removeWhere((m) => 
-                m.id.startsWith('temp_') && 
-                m.userId == widget.userId.toString() &&
-                m.id != tempMessageId // НЕ удаляем то, что только что заменили
-              );
-              
               _messages = newMessages;
+              _tempMessageStates.remove(tempMessageId);
+              _pendingUploadDrafts.remove(tempMessageId);
+              unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
             });
             if (kDebugMode) print('✅ Message updated in UI (new list created). Total messages: ${_messages.length}');
             if (kDebugMode) print('✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}');
@@ -3068,14 +3648,12 @@ SnackBar(
                     newMessages.removeAt(i);
                   }
                 }
-                
-                // Удаляем временные сообщения
-                newMessages.removeWhere((m) => 
-                  m.id.startsWith('temp_') && 
-                  m.userId == widget.userId.toString()
-                );
+                newMessages.removeWhere((m) => m.id == tempMessageId);
                 
                 _messages = newMessages;
+                _tempMessageStates.remove(tempMessageId);
+                _pendingUploadDrafts.remove(tempMessageId);
+                unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
               });
               if (kDebugMode) print('✅ Message updated in place at index $existingIndex');
             } else {
@@ -3092,14 +3670,12 @@ SnackBar(
                     newMessages.removeAt(i);
                   }
                 }
-                
-                // ✅ Удаляем все старые временные сообщения от этого пользователя
-                newMessages.removeWhere((m) => 
-                  m.id.startsWith('temp_') && 
-                  m.userId == widget.userId.toString()
-                );
+                newMessages.removeWhere((m) => m.id == tempMessageId);
                 
                 _messages = newMessages;
+                _tempMessageStates.remove(tempMessageId);
+                _pendingUploadDrafts.remove(tempMessageId);
+                unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
               });
               if (kDebugMode) print('✅ Message added to end. Total: ${_messages.length} (new list created)');
             }
@@ -3156,15 +3732,22 @@ SnackBar(
       if (kDebugMode) print('❌ Error sending message: $e');
       if (kDebugMode) print('❌ Stack trace: $stackTrace');
       final errorText = e.toString();
+      final errorTextLower = errorText.toLowerCase();
       final isE2eeKeyError = errorText.contains('E2EE ключ для чата пока недоступен');
+      final isQueueableNetworkError =
+          errorTextLower.contains('нет подключения к интернету') ||
+          errorTextLower.contains('socketexception') ||
+          errorTextLower.contains('timeout') ||
+          errorTextLower.contains('timed out') ||
+          errorTextLower.contains('connection');
       if (isE2eeKeyError) {
         unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
       }
       
-      // ✅ Удаляем временное сообщение при ошибке
       if (mounted) {
         setState(() {
-          _messages.removeWhere((m) => m.id == tempMessageId);
+          _tempMessageStates[tempMessageId] =
+              isQueueableNetworkError ? _OutgoingUiState.queued : _OutgoingUiState.error;
         });
         
         // Восстанавливаем поле ответа, если была ошибка
@@ -3178,7 +3761,9 @@ SnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
             content: Text(
-              isE2eeKeyError
+              isQueueableNetworkError
+                  ? 'Нет сети: сообщение оставлено в очереди и будет отправлено при подключении.'
+                  : isE2eeKeyError
                   ? 'Ожидаем ключ шифрования. Попробуйте отправить снова через пару секунд.'
                   : 'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
             ),
@@ -4125,6 +4710,7 @@ SnackBar(
             ),
             onSelected: (value) {
               if (value == 'gallery') _openGallery();
+              if (value == 'export') _exportChat();
               if (value == 'mentions') _openMentions();
               if (value == 'clear') _clearChat();
               if (value == 'leave') _leaveChat();
@@ -4139,6 +4725,17 @@ SnackBar(
                     Icon(Icons.photo_library_rounded, color: Colors.purple.shade300, size: 20),
                     const SizedBox(width: 10),
                     const Text('Медиа'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                enabled: !_isExportingChat,
+                child: Row(
+                  children: [
+                    Icon(Icons.download_rounded, color: Colors.teal.shade600, size: 20),
+                    const SizedBox(width: 10),
+                    Text(_isExportingChat ? 'Экспорт...' : 'Экспорт чата'),
                   ],
                 ),
               ),
@@ -4514,17 +5111,64 @@ SnackBar(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: Colors.orange.withValues(alpha:0.35)),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.cloud_off_rounded, size: 18, color: Colors.orange.shade700),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'В очереди: ${_messages.where((m) => m.id.startsWith('temp_')).length} сообщ. — отправятся при подключении',
-                                style: TextStyle(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
-                              ),
-                            ),
-                          ],
+                        child: Builder(
+                          builder: (context) {
+                            final tempMessages = _messages.where((m) => m.id.startsWith('temp_')).toList();
+                            final queued = tempMessages
+                                .where((m) => _tempMessageStates[m.id] == _OutgoingUiState.queued)
+                                .length;
+                            final errors = tempMessages
+                                .where((m) => _tempMessageStates[m.id] == _OutgoingUiState.error)
+                                .length;
+                            final sending = tempMessages.length - queued - errors;
+                            final parts = <String>[];
+                            if (queued > 0) parts.add('в очереди: $queued');
+                            if (sending > 0) parts.add('отправляется: $sending');
+                            if (errors > 0) parts.add('ошибка: $errors');
+                            final details = parts.isEmpty ? 'сообщений: ${tempMessages.length}' : parts.join(', ');
+
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.cloud_off_rounded, size: 18, color: Colors.orange.shade700),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Черновики отправки — $details',
+                                        style: TextStyle(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: errors > 0 ? _retryErroredMessages : null,
+                                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                                      label: const Text('Повторить ошибки'),
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    TextButton.icon(
+                                      onPressed: tempMessages.isNotEmpty ? _clearPendingQueue : null,
+                                      icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+                                      label: const Text('Очистить очередь'),
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                     // ✅ Превью ответа на сообщение
@@ -4749,6 +5393,7 @@ SnackBar(
                       onCancelVoiceRecording: _cancelVoiceRecording,
                       onPickFile: _pickFile,
                       onPickImage: _pickImage,
+                      onPickCamera: _pickImageFromCamera,
                       onToggleVoiceRecording: _toggleVoiceRecording,
                       onVoiceLongPressStart: _startVoiceRecordingIfNotRecording,
                       onVoiceLongPressEnd: _stopAndSendVoiceRecordingIfRecording,

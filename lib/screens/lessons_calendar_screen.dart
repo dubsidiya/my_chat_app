@@ -156,7 +156,7 @@ class _LessonsCalendarScreenState extends State<LessonsCalendarScreen> {
                                         if (n > 0)
                                           Text(
                                             '$n',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                               color: _accent,

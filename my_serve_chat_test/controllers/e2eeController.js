@@ -212,6 +212,19 @@ export const requestChatKey = async (req, res) => {
       return res.status(200).json({ success: true, alreadyHasKey: true, keyVersion: effectiveVersion });
     }
 
+    const existingRequest = await pool.query(
+      `SELECT status
+       FROM chat_key_requests
+       WHERE chat_id = $1
+         AND requester_user_id = $2
+         AND key_version = $3
+       LIMIT 1`,
+      [chatIdNum, userId, effectiveVersion]
+    );
+    const wasAlreadyPending =
+      existingRequest.rows.length > 0 &&
+      String(existingRequest.rows[0].status || '').toLowerCase() === 'pending';
+
     await pool.query(
       `INSERT INTO chat_key_requests (chat_id, requester_user_id, key_version, status, updated_at)
        VALUES ($1, $2, $3, 'pending', CURRENT_TIMESTAMP)
@@ -220,11 +233,14 @@ export const requestChatKey = async (req, res) => {
       [chatIdNum, userId, effectiveVersion]
     );
 
-    await broadcastToChatMembers(
-      chatIdNum,
-      { type: 'e2ee_request_key', chatId: String(chatIdNum), userId: String(userId), keyVersion: effectiveVersion },
-      { excludeUserId: userId }
-    );
+    // Дедуп: если активный pending уже был, повторно не рассылаем WS-запрос.
+    if (!wasAlreadyPending) {
+      await broadcastToChatMembers(
+        chatIdNum,
+        { type: 'e2ee_request_key', chatId: String(chatIdNum), userId: String(userId), keyVersion: effectiveVersion },
+        { excludeUserId: userId }
+      );
+    }
     return res.status(200).json({ success: true, keyVersion: effectiveVersion });
   } catch (error) {
     console.error('Ошибка requestChatKey:', error);
