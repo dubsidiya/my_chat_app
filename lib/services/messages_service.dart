@@ -57,6 +57,8 @@ class UploadImageUrls {
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
+  static Uri connectivityProbeUri(String baseUrl) => Uri.parse('$baseUrl/healthz');
+
   static Future<Message> _decryptOne(String chatId, Message m) async {
     String content = m.content;
     if (E2eeService.isEncrypted(content)) {
@@ -94,7 +96,7 @@ class MessagesService {
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
     try {
-      final uri = Uri.parse(baseUrl);
+      final uri = connectivityProbeUri(baseUrl);
       await timedGet(uri, timeout: const Duration(seconds: 3));
       return true;
     } catch (_) {

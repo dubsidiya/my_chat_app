@@ -9,6 +9,28 @@ import 'e2ee_service.dart';
 
 class ChatsService {
   final String baseUrl = ApiConfig.baseUrl;
+  String? _lastCreateChatWarning;
+
+  static Uri buildUsersSearchUri(
+    String baseUrl, {
+    required String query,
+    int limit = 20,
+  }) {
+    final q = query.trim();
+    final clampedLimit = limit < 1 ? 1 : (limit > 20 ? 20 : limit);
+    return Uri.parse('$baseUrl/auth/users').replace(
+      queryParameters: {
+        if (q.isNotEmpty) 'q': q,
+        'limit': clampedLimit.toString(),
+      },
+    );
+  }
+
+  String? consumeLastCreateChatWarning() {
+    final v = _lastCreateChatWarning;
+    _lastCreateChatWarning = null;
+    return v;
+  }
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
@@ -91,6 +113,7 @@ class ChatsService {
           }
           final chat = Chat.fromJson(responseData);
           final alreadyExists = responseData['already_exists'] == true;
+          _lastCreateChatWarning = null;
           if (!alreadyExists) {
             try {
               final pubKeys = await E2eeService.fetchPublicKeys(userIds);
@@ -98,7 +121,10 @@ class ChatsService {
                 return <String, dynamic>{'id': uid, 'publicKey': pubKeys[uid] ?? ''};
               }).toList();
               await E2eeService.createChatKey(chat.id, members);
-            } catch (_) {}
+            } catch (_) {
+              _lastCreateChatWarning =
+                  'Чат создан, но ключ шифрования пока не синхронизирован. Откройте чат и подождите 10-20 секунд.';
+            }
           }
           return chat;
         } catch (e) {
@@ -127,9 +153,14 @@ class ChatsService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAllUsers(String excludeUserId) async {
+  Future<List<Map<String, dynamic>>> getAllUsers(
+    String excludeUserId, {
+    String? query,
+    int limit = 20,
+  }) async {
     try {
-      final url = Uri.parse('$baseUrl/auth/users');
+      final q = (query ?? '').trim();
+      final url = buildUsersSearchUri(baseUrl, query: q, limit: limit);
       
       final headers = await _getAuthHeaders();
       final response = await timedGet(
@@ -141,7 +172,6 @@ class ChatsService {
       if (response.statusCode == 200) {
         try {
           final List<dynamic> data = jsonDecode(response.body);
-          // Фильтруем текущего пользователя
           final List<Map<String, dynamic>> users = [];
           for (var user in data) {
             if (user['id'].toString() != excludeUserId) {

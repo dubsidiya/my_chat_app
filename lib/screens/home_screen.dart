@@ -254,6 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (mounted) {
       final userData = await StorageService.getUserData();
+      if (!mounted) return;
       if (userData != null) {
         setState(() {
           _displayName = userData['displayName']?.toString();
@@ -1794,22 +1795,37 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
   late final TextEditingController _searchController;
   bool _isCreating = false;
   bool _isGroup = false;
-  bool _loadingUsers = true;
+  bool _loadingUsers = false;
   List<Map<String, dynamic>> _users = [];
   final Set<String> _selectedUserIds = {};
   String _searchQuery = '';
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
     _searchController = TextEditingController();
-    _loadUsers();
   }
 
-  Future<void> _loadUsers() async {
+  Future<void> _searchUsers(String query) async {
+    final q = query.trim();
+    if (q.length < 2) {
+      if (!mounted) return;
+      setState(() {
+        _users = [];
+        _loadingUsers = false;
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _loadingUsers = true);
     try {
-      final users = await widget.chatsService.getAllUsers(widget.userId);
+      final users = await widget.chatsService.getAllUsers(
+        widget.userId,
+        query: q,
+        limit: 20,
+      );
       if (!mounted) return;
       setState(() {
         _users = users;
@@ -1821,18 +1837,9 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
     }
   }
 
-  List<Map<String, dynamic>> get _filteredUsers {
-    final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return [];
-    return _users.where((u) {
-      final email = (u['email'] ?? '').toString().toLowerCase();
-      final id = (u['id'] ?? '').toString().toLowerCase();
-      return email.contains(q) || id.contains(q);
-    }).toList();
-  }
-
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _nameController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -1853,7 +1860,12 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
       final selected = _selectedUserIds.toList();
       final finalName = name.isNotEmpty ? name : 'Чат 1-на-1';
       await widget.chatsService.createChat(finalName, selected, isGroup: _isGroup);
-      
+      final warning = widget.chatsService.consumeLastCreateChatWarning();
+      if (mounted && warning != null && warning.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(warning), duration: const Duration(seconds: 4)),
+        );
+      }
       if (mounted) {
         Navigator.pop(context, true);
       }
@@ -1977,8 +1989,14 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: _searchController,
-              onChanged: (v) => setState(() => _searchQuery = v),
-              enabled: !_loadingUsers && !_isCreating,
+              onChanged: (v) {
+                setState(() => _searchQuery = v);
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                  _searchUsers(v);
+                });
+              },
+              enabled: !_isCreating,
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
@@ -1998,17 +2016,12 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               )
-            else if (_users.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Нет пользователей для добавления'),
-              )
             else if (_searchQuery.trim().isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Center(
                   child: Text(
-                    'Введите запрос в поле поиска,\nчтобы найти пользователя',
+                    'Введите минимум 2 символа,\nчтобы найти пользователя',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -2017,7 +2030,7 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                   ),
                 ),
               )
-            else if (_filteredUsers.isEmpty)
+            else if (_users.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
@@ -2033,9 +2046,9 @@ class _CreateChatDialogState extends State<_CreateChatDialog> {
                 constraints: const BoxConstraints(maxHeight: 260),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: _filteredUsers.length,
+                  itemCount: _users.length,
                   itemBuilder: (context, i) {
-                    final u = _filteredUsers[i];
+                    final u = _users[i];
                     final id = (u['id'] ?? '').toString();
                     final email = (u['email'] ?? '').toString();
                     final selected = _selectedUserIds.contains(id);
@@ -2248,10 +2261,10 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     final newPassword = _newPasswordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
     
-    if (newPassword.length < 4) {
+    if (newPassword.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Новый пароль должен содержать минимум 4 символа'),
+          content: Text('Новый пароль должен содержать минимум 6 символов'),
           backgroundColor: Colors.red,
         ),
       );
@@ -2327,7 +2340,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                     });
                   },
                 ),
-                helperText: 'Минимум 4 символа',
+                helperText: 'Минимум 6 символов',
               ),
               obscureText: _obscureNewPassword,
             ),

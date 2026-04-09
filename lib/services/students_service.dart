@@ -111,7 +111,7 @@ class StudentsService {
     if (response.statusCode == 201 || response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return CreateStudentResult(
-        student: Student.fromJson({...data, 'balance': 0.0}),
+        student: Student.fromJson({...data, 'balance': data['balance'] ?? 0.0}),
         wasExisting: response.statusCode == 200,
       );
     }

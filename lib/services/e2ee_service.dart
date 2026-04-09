@@ -15,6 +15,7 @@ class E2eeService {
   static const String _privateKeyKey = 'e2ee_private_key';
   static const String _publicKeyKey = 'e2ee_public_key';
   static const String _chatKeyPrefix = 'e2ee_chat_key_';
+  static const String _chatCurrentVersionPrefix = 'e2ee_chat_current_key_version_';
 
   static final _x25519 = X25519();
   static final _aesGcm = AesGcm.with256bits();
@@ -28,6 +29,27 @@ class E2eeService {
   static bool _publicKeySyncAttemptedThisRun = false;
   static String _chatCacheKey(String chatId, [int? keyVersion]) =>
       keyVersion == null ? '$_chatKeyPrefix$chatId' : '$_chatKeyPrefix${chatId}_v$keyVersion';
+  static String _chatCurrentVersionKey(String chatId) => '$_chatCurrentVersionPrefix$chatId';
+
+  static Future<int?> getCurrentKeyVersion(String chatId) async {
+    final raw = await _secure.read(key: _chatCurrentVersionKey(chatId));
+    if (raw == null || raw.isEmpty) return null;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed <= 0) return null;
+    return parsed;
+  }
+
+  static Future<void> markCurrentKeyVersion(String chatId, int keyVersion) async {
+    if (keyVersion <= 0) return;
+    final current = await getCurrentKeyVersion(chatId);
+    if (current == null || keyVersion >= current) {
+      await _secure.write(key: _chatCurrentVersionKey(chatId), value: keyVersion.toString());
+      final versioned = await _secure.read(key: _chatCacheKey(chatId, keyVersion));
+      if (versioned != null && versioned.isNotEmpty) {
+        await _secure.write(key: _chatCacheKey(chatId), value: versioned);
+      }
+    }
+  }
 
   /// Check if local key pair exists.
   static Future<bool> hasLocalKeyPair() async {
@@ -120,6 +142,10 @@ class E2eeService {
       key: _chatCacheKey(chatId),
       value: base64Encode(chatKeyBytes),
     );
+    await _secure.write(
+      key: _chatCurrentVersionKey(chatId),
+      value: (keyVersion ?? 1).toString(),
+    );
 
     final myKeyPair = await _getKeyPair();
     final myPubB64 = await getMyPublicKeyBase64();
@@ -161,6 +187,16 @@ class E2eeService {
 
   /// Retrieve and decrypt the chat key from the server.
   static Future<SecretKey?> getChatKey(String chatId, {int? keyVersion}) async {
+    if (keyVersion == null) {
+      final currentVersion = await getCurrentKeyVersion(chatId);
+      if (currentVersion != null) {
+        final currentVersioned = await _secure.read(key: _chatCacheKey(chatId, currentVersion));
+        if (currentVersioned != null && currentVersioned.isNotEmpty) {
+          await _secure.write(key: _chatCacheKey(chatId), value: currentVersioned);
+          return SecretKey(base64Decode(currentVersioned));
+        }
+      }
+    }
     final cached = await _secure.read(key: _chatCacheKey(chatId, keyVersion));
     if (cached != null && cached.isNotEmpty) {
       return SecretKey(base64Decode(cached));
@@ -222,6 +258,9 @@ class E2eeService {
           value: base64Encode(decrypted),
         );
       }
+      if (effectiveVersion != null && effectiveVersion > 0) {
+        await markCurrentKeyVersion(chatId, effectiveVersion);
+      }
       return SecretKey(decrypted);
     } catch (e) {
       return null;
@@ -232,7 +271,8 @@ class E2eeService {
 
   static Future<Map<String, String>?> encryptMessage(String chatId, String plaintext) async {
     if (plaintext.isEmpty) return null;
-    final key = await getChatKey(chatId);
+    final currentVersion = await getCurrentKeyVersion(chatId);
+    final key = await getChatKey(chatId, keyVersion: currentVersion);
     if (key == null) return null;
 
     final nonce = _aesGcm.newNonce();
@@ -607,7 +647,7 @@ class E2eeService {
     try {
       final all = await _secure.readAll();
       for (final key in all.keys) {
-        if (key.startsWith(_chatKeyPrefix)) {
+        if (key.startsWith(_chatKeyPrefix) || key.startsWith(_chatCurrentVersionPrefix)) {
           await _secure.delete(key: key);
         }
       }

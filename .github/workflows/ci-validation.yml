@@ -1,0 +1,70 @@
+name: CI Validation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-validation:
+    name: Flutter Format Analyze Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Enforce Dart formatting
+        run: dart format --set-exit-if-changed lib test
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
+
+  backend-sanity:
+    name: Backend Install And Smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: my_serve_chat_test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: my_serve_chat_test/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run backend test script when available
+        shell: bash
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "No npm test script found, skipping backend tests."
+          fi

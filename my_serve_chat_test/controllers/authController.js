@@ -499,9 +499,24 @@ export const getAllUsers = async (req, res) => {
       return res.status(401).json({ message: 'Требуется аутентификация' });
     }
 
+    const qRaw = (req.query?.q || '').toString().trim().toLowerCase();
+    const limitRaw = parseInt(req.query?.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 20;
+    if (qRaw.length < 2) {
+      return res.json([]);
+    }
+
     const result = await pool.query(
-      'SELECT id, email, display_name FROM users WHERE id != $1 ORDER BY COALESCE(display_name, email)',
-      [currentUserId]
+      `SELECT id, email, display_name
+       FROM users
+       WHERE id != $1
+         AND (
+           LOWER(email) LIKE $2
+           OR LOWER(COALESCE(display_name, '')) LIKE $2
+         )
+       ORDER BY COALESCE(display_name, email)
+       LIMIT $3`,
+      [currentUserId, `%${qRaw}%`, limit]
     );
     res.json(result.rows.map((r) => ({
       id: r.id,

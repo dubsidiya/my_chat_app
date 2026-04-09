@@ -1918,17 +1918,28 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         });
-        // E2EE: если у нас есть ключ — отдать участникам без ключа; если нет — запрос по WS + фоновый опрос сервера и перезагрузка (без блокировки UI)
+        // E2EE: считаем требуемую (самую новую в истории) версию ключа.
+        final newestMessageKeyVersion = result.messages.fold<int>(
+          1,
+          (best, m) => m.keyVersion > best ? m.keyVersion : best,
+        );
+        final knownCurrentVersion = await E2eeService.getCurrentKeyVersion(widget.chatId.toString());
+        final requiredKeyVersion = knownCurrentVersion != null && knownCurrentVersion > newestMessageKeyVersion
+            ? knownCurrentVersion
+            : newestMessageKeyVersion;
+        await E2eeService.markCurrentKeyVersion(widget.chatId.toString(), requiredKeyVersion);
+
+        // E2EE: если у нас есть ключ требуемой версии — отдать участникам без ключа; иначе запросить именно эту версию.
         final chatIdStr = widget.chatId.toString();
-        final hasKey = await E2eeService.getChatKey(chatIdStr) != null;
+        final hasKey = await E2eeService.getChatKey(chatIdStr, keyVersion: requiredKeyVersion) != null;
         if (hasKey) {
           if (mounted) setState(() => _e2eeKeyState = _e2eeReady);
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
           await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
           if (mounted) setState(() => _e2eeKeyState = _e2eeMissing);
-          await E2eeService.requestChatKey(chatIdStr);
-          unawaited(_retryChatKeyThenReloadMessages(chatIdStr));
+          await E2eeService.requestChatKey(chatIdStr, keyVersion: requiredKeyVersion);
+          unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: requiredKeyVersion));
         }
       }
     } catch (e) {
@@ -2385,7 +2396,6 @@ class _ChatScreenState extends State<ChatScreen> {
             unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, temp.id));
             _cleanupTempStateCache();
           });
-          unawaited(LocalMessagesService.addMessage(widget.chatId, sent));
         } catch (e) {
           final isE2eeKeyError = e.toString().contains('E2EE ключ для чата пока недоступен');
           if (isE2eeKeyError) {
@@ -3705,12 +3715,7 @@ SnackBar(
           
           // Принудительные обновления UI больше не нужны — список обновляется напрямую
           
-          // ✅ Сохраняем в кэш с задержкой, чтобы не триггерить перезагрузку
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              LocalMessagesService.addMessage(widget.chatId, sentMessage);
-            }
-          });
+          // Кэш обновляется в MessagesService на raw-ответе сервера, чтобы не сохранять plaintext E2EE.
         } else {
           if (kDebugMode) print('⚠️ No message received from server response');
         }

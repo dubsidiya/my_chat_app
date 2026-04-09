@@ -391,11 +391,17 @@ class AuthService {
         final data = jsonDecode(response.body);
         final userIdentifier = data['username'] ?? data['email'] ?? '';
         if (data['token'] != null) {
+          final existing = await StorageService.getUserData();
+          final userId = data['id'].toString();
           await StorageService.saveUserData(
-            data['id'].toString(),
+            userId,
             userIdentifier.toString(),
             data['token'].toString(),
+            isSuperuser: existing?['isSuperuser'] == 'true',
+            displayName: existing?['displayName'],
+            avatarUrl: existing?['avatarUrl'],
           );
+          await StorageService.setPrivateFeaturesUnlocked(userId, true);
         }
         return;
       }
