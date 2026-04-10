@@ -120,7 +120,7 @@ export const getLessonsCalendarSummary = async (req, res) => {
   }
 };
 
-// Создание занятия
+// Создание занятия 11
 export const createLesson = async (req, res) => {
   const userId = req.user.userId;
   const student_id = parsePositiveInt(req.params?.studentId);
