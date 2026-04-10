@@ -290,28 +290,9 @@ class MessagesService {
     String? forwardOriginalMessageId,
     String? forwardOriginalChatId,
   }) async {
-    // ✅ Проверяем подключение
-    final isOnline = await _isOnline();
-    
-    if (!isOnline) {
-      // ✅ В офлайн режиме создаем временное сообщение и сохраняем в кэш
-      final tempMessage = Message(
-        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
-        chatId: chatId,
-        userId: '', // Будет заполнено после синхронизации
-        content: content,
-        imageUrl: imageUrl,
-        originalImageUrl: originalImageUrl,
-        messageType: imageUrl != null ? 'image' : 'text',
-        senderEmail: '',
-        createdAt: DateTime.now().toIso8601String(),
-        isRead: false,
-        keyVersion: 1,
-      );
-      await LocalMessagesService.addMessage(chatId, tempMessage);
-      throw Exception('Нет подключения к интернету. Сообщение сохранено локально и будет отправлено при восстановлении связи.');
-    }
-    
+    // Не блокируем отправку предварительной проверкой сети:
+    // на iOS короткий probe может давать ложные офлайн-результаты.
+    // Реальную доступность сети определяем по фактическому ответу POST ниже.
     final headers = await _getAuthHeaders();
 
     String contentToSend = content;

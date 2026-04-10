@@ -2116,7 +2116,10 @@ class _ChatScreenState extends State<ChatScreen> {
         text.contains('socketexception') ||
         text.contains('timeout') ||
         text.contains('timed out') ||
-        text.contains('connection');
+        text.contains('failed host lookup') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection refused') ||
+        text.contains('connection reset');
   }
 
   void _cleanupTempStateCache() {
