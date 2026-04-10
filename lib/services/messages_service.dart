@@ -56,6 +56,10 @@ class UploadImageUrls {
 
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
+  // Backend multer limit in /messages/upload-image: 10MB per file.
+  // Keep a small safety margin to account for E2EE envelope overhead.
+  static const int _uploadImageServerFileLimitBytes = 10 * 1024 * 1024;
+  static const int _uploadImageSafetyMarginBytes = 64 * 1024;
 
   static Uri connectivityProbeUri(String baseUrl) => Uri.parse('$baseUrl/healthz');
 
@@ -414,6 +418,18 @@ class MessagesService {
 
     List<int> bytesToSend = imageBytes;
     List<int>? originalToSend = originalBytes;
+    final originalMaxBytes =
+        _uploadImageServerFileLimitBytes - _uploadImageSafetyMarginBytes;
+    if (originalToSend != null && originalToSend.length > originalMaxBytes) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print(
+          'Skipping original image upload: ${originalToSend.length} bytes exceeds '
+          'safe limit $originalMaxBytes bytes',
+        );
+      }
+      originalToSend = null;
+    }
     String sendFileName = fileName;
     if (chatId != null) {
       final encrypted = await E2eeService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
@@ -425,6 +441,16 @@ class MessagesService {
           if (encOrig != null) originalToSend = encOrig;
         }
       }
+    }
+    if (originalToSend != null && originalToSend.length > originalMaxBytes) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print(
+          'Skipping original image upload after transform: ${originalToSend.length} bytes exceeds '
+          'safe limit $originalMaxBytes bytes',
+        );
+      }
+      originalToSend = null;
     }
 
     try {
