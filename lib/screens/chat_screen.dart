@@ -619,6 +619,42 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Совпадение URL картинки для temp ↔ HTTP/WS (у presigned URL может отличаться только query).
+  bool _sameOutgoingImageUrl(String? a, String? b) {
+    final ta = (a ?? '').trim();
+    final tb = (b ?? '').trim();
+    if (ta.isEmpty || tb.isEmpty) return false;
+    if (ta == tb) return true;
+    try {
+      final ua = Uri.parse(ta);
+      final ub = Uri.parse(tb);
+      return ua.host == ub.host && ua.path == ub.path;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Один недавний исходящий temp с фото в статусе отправки — чтобы подхватить «пустой» WS-эвент от сервера.
+  int? _singleRecentSendingImageTempIndex() {
+    final self = widget.userId.toString();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    int? found;
+    for (var i = 0; i < _messages.length; i++) {
+      final m = _messages[i];
+      if (!m.id.startsWith('temp_')) continue;
+      if (m.userId != self) continue;
+      if (!m.hasImage) continue;
+      final st = _tempMessageStates[m.id];
+      if (st != null && st != _OutgoingUiState.sending) continue;
+      final suffix = m.id.length > 5 ? m.id.substring(5) : '';
+      final ts = int.tryParse(suffix) ?? 0;
+      if (now - ts > 180000) continue;
+      if (found != null) return null;
+      found = i;
+    }
+    return found;
+  }
+
   /// Прокрутить список к самому низу (к новым сообщениям).
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1260,7 +1296,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     m.userId == widget.userId.toString() &&
                     // Проверяем содержимое (текст или изображение)
                     ((m.content == message.content && m.content.isNotEmpty) ||
-                     (m.imageUrl == message.imageUrl && m.imageUrl != null) ||
+                     _sameOutgoingImageUrl(m.imageUrl, message.imageUrl) ||
                      (m.content.isEmpty && m.imageUrl == null && message.content.isEmpty && message.imageUrl == null))
                   );
                   
@@ -1293,7 +1329,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         m.id.startsWith('temp_') && 
                         m.userId == widget.userId.toString() &&
                         ((m.content == message.content && m.content.isNotEmpty) ||
-                         (m.imageUrl == message.imageUrl && m.imageUrl != null))
+                         _sameOutgoingImageUrl(m.imageUrl, message.imageUrl))
                       );
                       
                       if (hasMatchingTemp) {
@@ -1307,6 +1343,31 @@ class _ChatScreenState extends State<ChatScreen> {
                             (message.imageUrl == null || message.imageUrl!.isEmpty) &&
                             (message.fileUrl == null || message.fileUrl!.isEmpty);
                         if (isSelf && isEmptyTextOnly) {
+                          final pendingIdx = _singleRecentSendingImageTempIndex();
+                          if (pendingIdx != null) {
+                            if (kDebugMode) {
+                              print(
+                                '⚠️ WebSocket: empty self payload (id=${message.id}); merging into temp ${_messages[pendingIdx].id}',
+                              );
+                            }
+                            final tempId = _messages[pendingIdx].id;
+                            final existing = _messages[pendingIdx];
+                            final merged = _mergeMessageKeepContent(existing, message);
+                            final newMessages = List<Message>.from(_messages);
+                            newMessages[pendingIdx] = merged;
+                            final realId = merged.id;
+                            for (int j = newMessages.length - 1; j >= 0; j--) {
+                              if (j == pendingIdx) continue;
+                              if (newMessages[j].id == realId) {
+                                newMessages.removeAt(j);
+                              }
+                            }
+                            _messages = newMessages;
+                            _tempMessageStates.remove(tempId);
+                            _pendingUploadDrafts.remove(tempId);
+                            unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempId));
+                            return;
+                          }
                           if (kDebugMode) print('⚠️ WebSocket: Skip empty self message (id=${message.id})');
                           return;
                         }
@@ -3426,8 +3487,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Загружаем файл, если выбран
     if (hasFile) {
-      // Сервер сейчас не поддерживает "image+file" в одном сообщении
-      if (hasImage) {
+      // Сервер сейчас не поддерживает "image+file" в одном сообщении.
+      // Смотрим на уже загруженный imageUrl, а не на hasImage из начала метода (после upload путь к фото уже очищен).
+      if (imageUrl != null && imageUrl.isNotEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(duration: Duration(seconds: 3), content: Text('Нельзя отправить изображение и файл в одном сообщении')),
