@@ -150,15 +150,7 @@ const parseExcel = async (buffer) => {
   return out;
 };
 
-// Поиск студента по описанию платежа (только среди студентов текущего преподавателя)
-const findStudentByPaymentDescription = async (teacherId, canAccessAllStudents, description) => {
-  if (!description || typeof description !== 'string') {
-    return null;
-  }
-
-  const desc = description.toLowerCase().trim();
-  
-  // Для суперпользователя ищем среди всех учеников, иначе — среди доступных преподавателю.
+const getStudentsForPaymentMatching = async (teacherId, canAccessAllStudents) => {
   const studentsResult = canAccessAllStudents
     ? await pool.query(
         `SELECT s.id, s.name, s.parent_name, s.phone, s.email
@@ -171,15 +163,25 @@ const findStudentByPaymentDescription = async (teacherId, canAccessAllStudents, 
          WHERE ts.teacher_id = $1`,
         [teacherId]
       );
+  return studentsResult.rows;
+};
+
+// Поиск студента по описанию платежа (по заранее загруженному списку доступных студентов)
+const findStudentByPaymentDescription = (students, description) => {
+  if (!description || typeof description !== 'string') {
+    return null;
+  }
+
+  const desc = description.toLowerCase().trim();
+  const descClean = desc.replace(/\D/g, '');
 
   // Ищем совпадения по имени, имени родителя, телефону или email
-  for (const student of studentsResult.rows) {
+  for (const student of students) {
     const studentName = student.name?.toLowerCase() || '';
     const parentName = student.parent_name?.toLowerCase() || '';
     const phone = student.phone?.replace(/\D/g, '') || '';
     const email = student.email?.toLowerCase().trim() || '';
     const emailLocal = email.includes('@') ? email.split('@')[0] : '';
-    const descClean = desc.replace(/\D/g, '');
 
     // Проверяем совпадение по имени студента
     if (studentName && desc.includes(studentName)) {
@@ -262,6 +264,7 @@ export const processBankStatement = async (req, res) => {
     const canAccessAllStudents = isSuperuser(req.user);
     const file = req.file;
     let rows = [];
+    let matchStudents = [];
 
     // Дополнительная защита по размеру (помимо multer.limits)
     const size = file.size || file.buffer?.length || 0;
@@ -282,6 +285,8 @@ export const processBankStatement = async (req, res) => {
     if (!rows || rows.length === 0) {
       return res.status(400).json({ message: 'Файл пуст или не удалось распарсить' });
     }
+
+    matchStudents = await getStudentsForPaymentMatching(userId, canAccessAllStudents);
 
     // Определяем колонки (автоматически определяем по заголовкам)
     const firstRow = rows[0];
@@ -332,7 +337,7 @@ export const processBankStatement = async (req, res) => {
         }
 
         // Ищем студента по описанию платежа
-        const student = await findStudentByPaymentDescription(userId, canAccessAllStudents, description);
+        const student = findStudentByPaymentDescription(matchStudents, description);
 
         processedPayments.push({
           row: i + 1,
@@ -407,14 +412,16 @@ export const applyPayments = async (req, res) => {
 
     const results = [];
     const errors = [];
+    const seenPaymentFingerprints = new Set();
     for (const payment of payments) {
       try {
         const { studentId, amount, date, description } = payment;
+        const studentIdNum = parseInt(studentId, 10);
 
-        if (!studentId || !amount || amount <= 0) {
+        if (!Number.isFinite(studentIdNum) || !amount || amount <= 0) {
           errors.push({
             payment,
-            error: 'Не указан студент или сумма'
+            error: 'Не указан корректный студент или сумма'
           });
           continue;
         }
@@ -426,7 +433,7 @@ export const applyPayments = async (req, res) => {
                FROM students s
                WHERE s.id = $1
                LIMIT 1`,
-              [studentId]
+              [studentIdNum]
             )
           : await client.query(
               `SELECT s.id, s.name
@@ -434,7 +441,7 @@ export const applyPayments = async (req, res) => {
                JOIN students s ON s.id = ts.student_id
                WHERE ts.teacher_id = $1 AND s.id = $2
                LIMIT 1`,
-              [userId, studentId]
+              [userId, studentIdNum]
             );
 
         if (studentCheck.rows.length === 0) {
@@ -469,12 +476,46 @@ export const applyPayments = async (req, res) => {
           });
           continue;
         }
-        const finalDescription = description || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
+        const finalDescriptionRaw = (description ?? '').toString().trim();
+        const finalDescription = finalDescriptionRaw || `Пополнение из банковской выписки${date ? ' от ' + date : ''}`;
+        const paymentDateIso = createdAt.toISOString().slice(0, 10);
+        const dedupeFingerprint = `${studentIdNum}|${amountNum.toFixed(2)}|${paymentDateIso}|${finalDescription}`;
+        if (seenPaymentFingerprints.has(dedupeFingerprint)) {
+          errors.push({
+            payment,
+            error: 'Дубликат платежа в текущем запросе'
+          });
+          continue;
+        }
+        seenPaymentFingerprints.add(dedupeFingerprint);
+
+        // Защита от случайного/повторного импорта идентичной выписки без idempotency-key.
+        const dupInDb = await client.query(
+          `SELECT id, student_id, amount, type, description, created_by, created_at
+           FROM transactions
+           WHERE created_by = $1
+             AND student_id = $2
+             AND type = 'deposit'
+             AND amount = $3
+             AND COALESCE(description, '') = COALESCE($4, '')
+             AND created_at::date = $5::date
+           LIMIT 1`,
+          [userId, studentIdNum, amountNum, finalDescription, paymentDateIso]
+        );
+        if (dupInDb.rows.length > 0) {
+          results.push({
+            transaction: dupInDb.rows[0],
+            student: studentCheck.rows[0],
+            reused: true,
+          });
+          continue;
+        }
+
         const result = await client.query(
           `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
            VALUES ($1, $2, 'deposit', $3, $4, $5)
            RETURNING *`,
-          [studentId, amountNum, finalDescription, userId, createdAt]
+          [studentIdNum, amountNum, finalDescription, userId, createdAt]
         );
 
         results.push({

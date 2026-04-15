@@ -6,6 +6,7 @@ export {
   deleteChat,
   deleteChatFolder,
   getChatFolders,
+  getChatById,
   getChatMembers,
   getChatsList,
   getUserChats,

@@ -3,7 +3,57 @@ import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
 
-const clients = new Map(); // userId -> ws
+const clients = new Map(); // userId -> Set<ws>
+
+const WS_OPEN = 1;
+
+function getUserSockets(userId) {
+  const key = userId?.toString();
+  if (!key) return null;
+  return clients.get(key) ?? null;
+}
+
+function addClientSocket(userId, ws) {
+  const key = userId?.toString();
+  if (!key || !ws) return;
+  let sockets = clients.get(key);
+  if (!sockets) {
+    sockets = new Set();
+    clients.set(key, sockets);
+  }
+  sockets.add(ws);
+}
+
+function removeClientSocket(userId, ws) {
+  const key = userId?.toString();
+  if (!key) return;
+  const sockets = clients.get(key);
+  if (!sockets) return;
+  sockets.delete(ws);
+  if (sockets.size === 0) {
+    clients.delete(key);
+  }
+}
+
+function hasAnyOnlineSocket(userId) {
+  const sockets = getUserSockets(userId);
+  if (!sockets) return false;
+  for (const ws of sockets) {
+    if (ws?.readyState === WS_OPEN) return true;
+  }
+  return false;
+}
+
+function sendToUserSockets(userId, payload) {
+  const sockets = getUserSockets(userId);
+  if (!sockets || sockets.size === 0) return;
+  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  for (const ws of sockets) {
+    if (ws?.readyState === WS_OPEN) {
+      ws.send(data);
+    }
+  }
+}
 
 class WsRateLimiter {
   constructor(maxPerWindow, windowMs) {
@@ -51,16 +101,28 @@ async function broadcastToChat(chatIdNum, payload, { excludeUserId } = {}) {
     const memberId = row.user_id?.toString();
     if (!memberId) return;
     if (excludeUserId && memberId === excludeUserId.toString()) return;
-    const client = clients.get(memberId);
-    if (client && client.readyState === 1) {
-      client.send(data);
-    }
+    sendToUserSockets(memberId, data);
   });
 }
 
 // Экспортируем функцию для получения клиентов
 export function getWebSocketClients() {
-  return clients;
+  return {
+    get(userId) {
+      const key = userId?.toString();
+      if (!key) return undefined;
+      const sockets = getUserSockets(key);
+      if (!sockets || sockets.size === 0 || !hasAnyOnlineSocket(key)) return undefined;
+
+      // Backward-compatible facade: old code expects one ws with readyState/send.
+      return {
+        readyState: WS_OPEN,
+        send(data) {
+          sendToUserSockets(key, data);
+        },
+      };
+    },
+  };
 }
 
 // E2EE: рассылка участникам чата (кроме excludeUserId) — для запроса ключа новым участником
@@ -82,6 +144,20 @@ export function setupWebSocket(server) {
     const authHeader = (req.headers['authorization'] || '').toString();
     if (authHeader.toLowerCase().startsWith('bearer ')) {
       token = authHeader.slice(7).trim();
+    }
+
+    if (!token) {
+      const protocolHeader = (req.headers['sec-websocket-protocol'] || '').toString();
+      if (protocolHeader) {
+        const protocols = protocolHeader
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean);
+        const authProto = protocols.find((p) => p.startsWith('auth.'));
+        if (authProto && authProto.length > 5) {
+          token = authProto.slice(5);
+        }
+      }
     }
 
     if (!token) {
@@ -133,7 +209,7 @@ export function setupWebSocket(server) {
     if (process.env.NODE_ENV === 'development') {
       console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
     }
-    clients.set(userId, ws);
+    addClientSocket(userId, ws);
     ws.userId = userId;
     ws.userEmail = userEmail;
     ws.subscriptions = new Set();
@@ -170,7 +246,7 @@ export function setupWebSocket(server) {
           );
           const onlineUserIds = members.rows
             .map((r) => r.user_id?.toString())
-            .filter((id) => id && clients.get(id)?.readyState === 1);
+            .filter((id) => id && hasAnyOnlineSocket(id));
 
           ws.send(JSON.stringify({
             type: 'presence_state',
@@ -231,14 +307,29 @@ export function setupWebSocket(server) {
           if (!messageId || !chatId) {
             return;
           }
+
+          const chatIdNum = parseInt(chatId, 10);
+          const messageIdNum = parseInt(messageId, 10);
+          if (!Number.isFinite(chatIdNum) || !Number.isFinite(messageIdNum)) {
+            return;
+          }
           
           // Проверяем, является ли пользователь участником чата
           const memberCheck = await pool.query(
             'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-            [chatId, userId]
+            [chatIdNum, userId]
           );
           
           if (memberCheck.rows.length === 0) {
+            return;
+          }
+
+          // message_id должен принадлежать тому же chat_id (защита от cross-chat read spoofing)
+          const messageInChat = await pool.query(
+            'SELECT user_id FROM messages WHERE id = $1 AND chat_id = $2',
+            [messageIdNum, chatIdNum]
+          );
+          if (messageInChat.rows.length === 0) {
             return;
           }
           
@@ -248,25 +339,19 @@ export function setupWebSocket(server) {
             VALUES ($1, $2, CURRENT_TIMESTAMP)
             ON CONFLICT (message_id, user_id) 
             DO UPDATE SET read_at = CURRENT_TIMESTAMP
-          `, [messageId, userId]);
+          `, [messageIdNum, userId]);
           
           // Отправляем событие отправителю сообщения
-          const messageOwner = await pool.query(
-            'SELECT user_id FROM messages WHERE id = $1',
-            [messageId]
-          );
+          const messageOwner = messageInChat;
           
           if (messageOwner.rows.length > 0) {
             const ownerId = messageOwner.rows[0].user_id.toString();
-            const ownerClient = clients.get(ownerId);
-            if (ownerClient && ownerClient.readyState === 1) {
-              ownerClient.send(JSON.stringify({
-                type: 'message_read',
-                message_id: messageId,
-                read_by: userId,
-                read_at: new Date().toISOString()
-              }));
-            }
+            sendToUserSockets(ownerId, {
+              type: 'message_read',
+              message_id: messageId,
+              read_by: userId,
+              read_at: new Date().toISOString(),
+            });
           }
           
           return;
@@ -326,10 +411,7 @@ export function setupWebSocket(server) {
           );
 
           members.rows.forEach(row => {
-            const client = clients.get(row.user_id.toString());
-            if (client && client.readyState === 1) {
-              client.send(JSON.stringify(fullMessage));
-            }
+            sendToUserSockets(row.user_id?.toString(), fullMessage);
           });
         }
       } catch (e) {
@@ -339,6 +421,10 @@ export function setupWebSocket(server) {
 
     ws.on('close', () => {
       clearInterval(recheckInterval);
+      removeClientSocket(userId, ws);
+      if (hasAnyOnlineSocket(userId)) {
+        return;
+      }
       try {
         const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
         subs.forEach((chatIdStr) => {
@@ -355,7 +441,6 @@ export function setupWebSocket(server) {
           }, { excludeUserId: userId }).catch(() => {});
         });
       } catch (_) {}
-      clients.delete(userId);
     });
   });
 

@@ -148,6 +148,48 @@ export const getUserChats = async (req, res) => {
   }
 };
 
+// Получение одного чата по id (для совместимости с GET /chats/:id)
+export const getChatById = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatId = req.params.id;
+    if (!chatId) return res.status(400).json({ message: 'Укажите id чата' });
+
+    const result = await pool.query(
+      `
+      SELECT
+        c.id,
+        c.is_group,
+        CASE
+          WHEN c.is_group = true THEN c.name
+          ELSE COALESCE(ou.display_name, ou.email, c.name)
+        END AS name
+      FROM chats c
+      JOIN chat_users cu ON c.id = cu.chat_id AND cu.user_id = $1
+      LEFT JOIN LATERAL (
+        SELECT u.email, u.display_name
+        FROM chat_users cu2
+        JOIN users u ON u.id = cu2.user_id
+        WHERE cu2.chat_id = c.id AND cu2.user_id <> $1
+        ORDER BY u.id
+        LIMIT 1
+      ) ou ON true
+      WHERE c.id = $2
+      LIMIT 1
+      `,
+      [userId, chatId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: 'Чат не найден или нет доступа' });
+    }
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Ошибка getChatById:', error);
+    return res.status(500).json({ message: 'Ошибка получения чата' });
+  }
+};
+
 // Получение списка чатов пользователя с последним сообщением и непрочитанными
 export const getChatsList = async (req, res) => {
   try {
@@ -480,21 +522,35 @@ export const createChat = async (req, res) => {
     const groupName = (name != null && isGroup) ? sanitizeForDisplay(String(name), 100) : '';
     const finalName = isGroup ? (groupName || 'Групповой чат') : 'Личный чат';
 
-    // Создаём чат с is_group и created_by
-    const chatResult = await pool.query(
-      `INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id, name, is_group, created_by`,
-      [finalName, isGroup, creatorId]
-    );
+    const client = await pool.connect();
+    let chatResult;
+    let chatId;
+    try {
+      await client.query('BEGIN');
 
-    const chatId = chatResult.rows[0].id;
-
-    // Добавляем участников в chat_users (как в схеме БД)
-    for (const uid of uniqueUserIds) {
-      const role = uid.toString() === creatorId.toString() ? 'owner' : 'member';
-      await pool.query(
-        `INSERT INTO chat_users (chat_id, user_id, role) VALUES ($1, $2, $3)`,
-        [chatId, uid, role]
+      // Создаём чат с is_group и created_by
+      chatResult = await client.query(
+        `INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id, name, is_group, created_by`,
+        [finalName, isGroup, creatorId]
       );
+
+      chatId = chatResult.rows[0].id;
+
+      // Добавляем участников в chat_users (как в схеме БД)
+      for (const uid of uniqueUserIds) {
+        const role = uid.toString() === creatorId.toString() ? 'owner' : 'member';
+        await client.query(
+          `INSERT INTO chat_users (chat_id, user_id, role) VALUES ($1, $2, $3)`,
+          [chatId, uid, role]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (txError) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw txError;
+    } finally {
+      client.release();
     }
 
     // Возвращаем 201 (Created) как ожидает приложение
@@ -1034,10 +1090,25 @@ export const transferOwnership = async (req, res) => {
       return res.status(404).json({ message: 'Новый owner должен быть участником чата' });
     }
 
-    // текущего owner делаем admin, нового — owner
-    await pool.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['admin', chatId, requesterId]);
-    await pool.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['owner', chatId, newOwnerId]);
-    await pool.query('UPDATE chats SET created_by = $1 WHERE id = $2', [newOwnerId, chatId]);
+    const requesterIdStr = requesterId.toString();
+    if (requesterIdStr === newOwnerId) {
+      return res.status(400).json({ message: 'Новый owner уже является текущим owner' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // текущего owner делаем admin, нового — owner
+      await client.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['admin', chatId, requesterIdStr]);
+      await client.query('UPDATE chat_users SET role = $1 WHERE chat_id = $2 AND user_id = $3', ['owner', chatId, newOwnerId]);
+      await client.query('UPDATE chats SET created_by = $1 WHERE id = $2', [newOwnerId, chatId]);
+      await client.query('COMMIT');
+    } catch (txError) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw txError;
+    } finally {
+      client.release();
+    }
 
     return res.status(200).json({ success: true, message: 'Ownership передан' });
   } catch (error) {
@@ -1149,26 +1220,46 @@ export const joinByInvite = async (req, res) => {
     }
 
     const already = await ensureChatMember(chatId, requesterId);
+    let joined = false;
     if (!already) {
-      const claimed = await pool.query(
-        `UPDATE chat_invites
-         SET use_count = use_count + 1
-         WHERE id = $1 AND revoked = false
-           AND (max_uses IS NULL OR use_count < max_uses)
-           AND (expires_at IS NULL OR expires_at > NOW())
-         RETURNING id`,
-        [invite.id]
-      );
-      if (claimed.rows.length === 0) {
-        return res.status(400).json({ message: 'Инвайт больше недоступен' });
-      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      await pool.query(
-        `INSERT INTO chat_users (chat_id, user_id, role)
-         VALUES ($1, $2, 'member')
-         ON CONFLICT DO NOTHING`,
-        [chatId, requesterId]
-      );
+        const inserted = await client.query(
+          `INSERT INTO chat_users (chat_id, user_id, role)
+           VALUES ($1, $2, 'member')
+           ON CONFLICT DO NOTHING
+           RETURNING user_id`,
+          [chatId, requesterId]
+        );
+
+        if (inserted.rows.length > 0) {
+          const claimed = await client.query(
+            `UPDATE chat_invites
+             SET use_count = use_count + 1
+             WHERE id = $1 AND revoked = false
+               AND (max_uses IS NULL OR use_count < max_uses)
+               AND (expires_at IS NULL OR expires_at > NOW())
+             RETURNING id`,
+            [invite.id]
+          );
+          if (claimed.rows.length === 0) {
+            throw new Error('INVITE_UNAVAILABLE');
+          }
+          joined = true;
+        }
+
+        await client.query('COMMIT');
+      } catch (txError) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        if (txError?.message === 'INVITE_UNAVAILABLE') {
+          return res.status(400).json({ message: 'Инвайт больше недоступен' });
+        }
+        throw txError;
+      } finally {
+        client.release();
+      }
     }
 
     const chatRes = await pool.query('SELECT id, name, is_group FROM chats WHERE id = $1', [chatId]);
@@ -1178,7 +1269,7 @@ export const joinByInvite = async (req, res) => {
 
     return res.status(200).json({
       chat: chatRes.rows[0],
-      joined: !already,
+      joined: already ? false : joined,
     });
   } catch (error) {
     console.error('Ошибка joinByInvite:', error);

@@ -1304,6 +1304,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _authService.deleteAccount(widget.userId, password);
 
+      WebSocketService.instance.disconnect();
+      await PushNotificationService.clearTokenOnBackend();
       await E2eeService.clearAll();
       await LocalMessagesService.clearAll();
       // Закрываем индикатор загрузки

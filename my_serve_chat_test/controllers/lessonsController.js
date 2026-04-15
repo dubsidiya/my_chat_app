@@ -191,6 +191,12 @@ export const createLesson = async (req, res) => {
 
     // Защита от дубля: тот же студент, дата, время (или NULL) у того же владельца
     const lessonTimeValue = lesson_time || null;
+    // Сериализуем конкурентные createLesson для одного user/student/date/time,
+    // чтобы параллельные запросы не проходили dup-check одновременно.
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      [`lesson:create:${userId}:${student_id}:${lesson_date}:${lessonTimeValue ?? 'null'}`]
+    );
     const dupCheck = await client.query(
       `SELECT id FROM lessons
        WHERE student_id = $1
@@ -233,7 +239,7 @@ export const createLesson = async (req, res) => {
 
     if (status === 'makeup' && originLessonId) {
       const originResult = await client.query(
-        `SELECT id, student_id, status
+        `SELECT id, student_id, status, created_by
          FROM lessons
          WHERE id = $1
          LIMIT 1`,
@@ -247,6 +253,10 @@ export const createLesson = async (req, res) => {
       if (origin.student_id !== student_id) {
         await client.query('ROLLBACK');
         return res.status(400).json({ message: 'Отработка должна ссылаться на занятие этого же ребенка' });
+      }
+      if (String(origin.created_by) !== String(userId)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ message: 'Нельзя ссылаться на занятие другого преподавателя' });
       }
       if (!['missed', 'cancel_same_day'].includes(origin.status)) {
         await client.query('ROLLBACK');

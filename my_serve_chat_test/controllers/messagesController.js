@@ -8,6 +8,12 @@ import { parseLimit, parseOffset, parseOptionalInt } from '../services/messages/
 import { enrichMessageRow } from '../services/messages/enrichMessageRow.js';
 import { findChatMembership, findSenderDisplayName } from '../repositories/messages/messagesCommonRepository.js';
 import {
+  beginIdempotent,
+  completeIdempotent,
+  getIdempotencyKey,
+  hashIdempotencyPayload,
+} from '../utils/idempotency.js';
+import {
   getAroundNewerMessages,
   getAroundOlderMessages,
   isMessageInChat,
@@ -19,6 +25,7 @@ import { validateAroundQuery, validateSearchQuery } from '../validators/messages
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
 /** Только для текста push (E2EE): не пишется в messages, только notification body */
 const MAX_PUSH_PREVIEW_LENGTH = 200;
+const MESSAGE_SEND_IDEMPOTENCY_SCOPE = 'messages:send';
 
 // Как видят отправителя другие (ник или логин)
 const getSenderDisplayName = async (userId) => {
@@ -203,15 +210,27 @@ export const getMessages = async (req, res) => {
       
       // Получаем общее количество для информации
       totalCountResult = await pool.query(
-        'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
-        [chatIdNum]
+        `SELECT COUNT(*) as total
+         FROM messages
+         WHERE chat_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM user_blocks ub
+             WHERE ub.blocker_id = $2 AND ub.blocked_id = messages.user_id
+           )`,
+        [chatIdNum, currentUserId]
       );
     } else {
       // Offset-based pagination: загружаем последние N сообщений
       // Сначала получаем общее количество сообщений
       totalCountResult = await pool.query(
-        'SELECT COUNT(*) as total FROM messages WHERE chat_id = $1',
-        [chatIdNum]
+        `SELECT COUNT(*) as total
+         FROM messages
+         WHERE chat_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM user_blocks ub
+             WHERE ub.blocker_id = $2 AND ub.blocked_id = messages.user_id
+           )`,
+        [chatIdNum, currentUserId]
       );
       
       const totalCount = parseInt(totalCountResult.rows[0].total);
@@ -264,8 +283,16 @@ export const getMessages = async (req, res) => {
       if (hasMore && formattedMessages.length > 0) {
         const minId = Math.min(...formattedMessages.map(m => m.id));
         const checkResult = await pool.query(
-          'SELECT 1 FROM messages WHERE chat_id = $1 AND id < $2 LIMIT 1',
-          [chatIdNum, minId]
+          `SELECT 1
+           FROM messages
+           WHERE chat_id = $1
+             AND id < $2
+             AND NOT EXISTS (
+               SELECT 1 FROM user_blocks ub
+               WHERE ub.blocker_id = $3 AND ub.blocked_id = messages.user_id
+             )
+           LIMIT 1`,
+          [chatIdNum, minId, currentUserId]
         );
         hasMore = checkResult.rows.length > 0;
       }
@@ -398,6 +425,7 @@ export const sendMessage = async (req, res) => {
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
+  const idempotencyKey = getIdempotencyKey(req);
 
   // Логируем вызов даже в production (без контента), чтобы можно было понять,
   // что запрос вообще дошёл до сервера.
@@ -481,6 +509,49 @@ export const sendMessage = async (req, res) => {
     return await forwardMessages(req, res, forward_from_message_id, toChatIds, user_id);
   }
 
+  if (idempotencyKey) {
+    const idemClient = await pool.connect();
+    try {
+      await idemClient.query('BEGIN');
+      const idem = await beginIdempotent(idemClient, {
+        userId: user_id,
+        scope: MESSAGE_SEND_IDEMPOTENCY_SCOPE,
+        key: idempotencyKey,
+        requestHash: hashIdempotencyPayload({
+          chat_id: chat_id || null,
+          content: content || null,
+          push_preview: push_preview || null,
+          image_url: image_url || null,
+          original_image_url: original_image_url || null,
+          file_url: file_url || null,
+          file_name: file_name || null,
+          file_size: file_size || null,
+          file_mime: file_mime || null,
+          reply_to_message_id: reply_to_message_id || null,
+          forward_from_message_id: null,
+          forward_to_chat_ids: null,
+          forward_original_message_id: forward_original_message_id || null,
+          forward_original_chat_id: forward_original_chat_id || null,
+        }),
+      });
+      if (idem.replay) {
+        await idemClient.query('ROLLBACK');
+        return res.status(idem.responseStatus).json(idem.responseBody);
+      }
+      if (idem.conflict) {
+        await idemClient.query('ROLLBACK');
+        return res.status(409).json({ message: idem.conflict });
+      }
+      await idemClient.query('COMMIT');
+    } catch (idemError) {
+      try { await idemClient.query('ROLLBACK'); } catch (_) {}
+      console.error('Ошибка idempotency sendMessage:', idemError);
+      return res.status(500).json({ message: 'Ошибка сервера' });
+    } finally {
+      idemClient.release();
+    }
+  }
+
   try {
     // Преобразуем chat_id в число, если это строка
     const chatIdNum = parseInt(chat_id, 10);
@@ -549,6 +620,28 @@ export const sendMessage = async (req, res) => {
     // Используем user_id из токена (безопасно)
     // Преобразуем reply_to_message_id в число, если это строка
     const replyToMessageIdNum = reply_to_message_id ? parseInt(reply_to_message_id, 10) : null;
+    if (reply_to_message_id != null && !Number.isFinite(replyToMessageIdNum)) {
+      return res.status(400).json({ message: 'Некорректный reply_to_message_id' });
+    }
+
+    let parsedFileSize = null;
+    if (file_size != null && file_size !== '') {
+      parsedFileSize = Number.parseInt(String(file_size), 10);
+      if (!Number.isInteger(parsedFileSize) || parsedFileSize < 0) {
+        return res.status(400).json({ message: 'Некорректный file_size' });
+      }
+    }
+
+    // reply target должен быть из этого же чата (иначе утечка метаданных из другого чата)
+    if (replyToMessageIdNum != null) {
+      const replyScopeCheck = await pool.query(
+        'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
+        [replyToMessageIdNum, chatIdNum]
+      );
+      if (replyScopeCheck.rows.length === 0) {
+        return res.status(400).json({ message: 'Сообщение для ответа не найдено в этом чате' });
+      }
+    }
     
     if (process.env.NODE_ENV === 'development') {
       console.log('📝 Inserting message:', {
@@ -580,7 +673,7 @@ export const sendMessage = async (req, res) => {
       original_image_url || null,
       file_url || null,
       file_name || null,
-      file_size ? parseInt(file_size, 10) : null,
+      parsedFileSize,
       file_mime || null,
       message_type,
       replyToMessageIdNum,
@@ -616,7 +709,8 @@ export const sendMessage = async (req, res) => {
         FROM messages
         JOIN users ON messages.user_id = users.id
         WHERE messages.id = $1
-      `, [message.reply_to_message_id]);
+          AND messages.chat_id = $2
+      `, [message.reply_to_message_id, chatIdNum]);
       if (replyCheck.rows.length > 0) {
         replyToMessage = {
           id: replyCheck.rows[0].id,
@@ -798,8 +892,37 @@ export const sendMessage = async (req, res) => {
       console.error('Ошибка отправки push:', pushErr.message);
     }
 
+    if (idempotencyKey) {
+      const idemCompleteClient = await pool.connect();
+      try {
+        await idemCompleteClient.query('BEGIN');
+        await completeIdempotent(idemCompleteClient, {
+          userId: user_id,
+          scope: MESSAGE_SEND_IDEMPOTENCY_SCOPE,
+          key: idempotencyKey,
+          responseStatus: 201,
+          responseBody: response,
+        });
+        await idemCompleteClient.query('COMMIT');
+      } catch (idemError) {
+        try { await idemCompleteClient.query('ROLLBACK'); } catch (_) {}
+        console.error('Ошибка completeIdempotent sendMessage:', idemError);
+      } finally {
+        idemCompleteClient.release();
+      }
+    }
+
     res.status(201).json(response);
   } catch (error) {
+    if (idempotencyKey) {
+      try {
+        await pool.query(
+          `DELETE FROM idempotency_keys
+           WHERE user_id = $1 AND scope = $2 AND idempotency_key = $3 AND status = 'pending'`,
+          [user_id, MESSAGE_SEND_IDEMPOTENCY_SCOPE, idempotencyKey]
+        );
+      } catch (_) {}
+    }
     console.error('Ошибка отправки сообщения:', error);
     res.status(500).json({ 
       message: 'Ошибка сервера',
@@ -1258,18 +1381,29 @@ export const markMessagesAsRead = async (req, res) => {
     }
     
     const BATCH_SIZE = 500;
-    const unreadMessages = await pool.query(`
-      SELECT id, user_id 
-      FROM messages 
-      WHERE chat_id = $1 
-      AND user_id <> $2
-      AND NOT EXISTS (
-        SELECT 1 FROM message_reads mr WHERE mr.message_id = messages.id AND mr.user_id = $2
-      )
-      LIMIT $3
-    `, [chatId, userId, BATCH_SIZE]);
-    
-    if (unreadMessages.rows.length > 0) {
+    let totalRead = 0;
+    const readCountByOwner = new Map();
+
+    while (true) {
+      const unreadMessages = await pool.query(`
+        SELECT id, user_id 
+        FROM messages 
+        WHERE chat_id = $1 
+        AND user_id <> $2
+        AND NOT EXISTS (
+          SELECT 1 FROM message_reads mr WHERE mr.message_id = messages.id AND mr.user_id = $2
+        )
+        LIMIT $3
+      `, [chatId, userId, BATCH_SIZE]);
+
+      if (unreadMessages.rows.length === 0) break;
+
+      totalRead += unreadMessages.rows.length;
+      for (const row of unreadMessages.rows) {
+        const ownerId = row.user_id.toString();
+        readCountByOwner.set(ownerId, (readCountByOwner.get(ownerId) ?? 0) + 1);
+      }
+
       const msgIds = unreadMessages.rows.map((r) => r.id);
       await pool.query(`
         INSERT INTO message_reads (message_id, user_id, read_at)
@@ -1277,27 +1411,29 @@ export const markMessagesAsRead = async (req, res) => {
         ON CONFLICT (message_id, user_id)
         DO UPDATE SET read_at = CURRENT_TIMESTAMP
       `, [msgIds, userId]);
-      
-      // Отправляем события через WebSocket всем отправителям
+
+      if (unreadMessages.rows.length < BATCH_SIZE) break;
+    }
+
+    if (totalRead > 0) {
+      // Отправляем агрегированные события через WebSocket всем отправителям
       const clients = getWebSocketClients();
-      const ownerIds = [...new Set(unreadMessages.rows.map(r => r.user_id.toString()))];
-      
-      ownerIds.forEach(ownerId => {
+      for (const [ownerId, count] of readCountByOwner.entries()) {
         const client = clients.get(ownerId);
         if (client && client.readyState === 1) {
           client.send(JSON.stringify({
             type: 'messages_read',
             chat_id: chatId,
             read_by: userId,
-            read_count: unreadMessages.rows.filter(r => r.user_id.toString() === ownerId).length
+            read_count: count,
           }));
         }
-      });
+      }
     }
     
     res.status(200).json({ 
       success: true,
-      read_count: unreadMessages.rows.length,
+      read_count: totalRead,
       message: 'Сообщения отмечены как прочитанные'
     });
   } catch (error) {

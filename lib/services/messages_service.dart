@@ -56,6 +56,39 @@ class UploadImageUrls {
 
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
+  MessagesPaginationResult _buildPaginatedCacheResult(
+    List<Message> decrypted, {
+    required int limit,
+    String? beforeMessageId,
+  }) {
+    final sorted = List<Message>.from(decrypted)
+      ..sort((a, b) {
+        final ai = int.tryParse(a.id);
+        final bi = int.tryParse(b.id);
+        if (ai != null && bi != null) return bi.compareTo(ai); // newest -> oldest
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+    List<Message> source = sorted;
+    final beforeNum = beforeMessageId == null ? null : int.tryParse(beforeMessageId);
+    if (beforeNum != null) {
+      source = sorted.where((m) {
+        final n = int.tryParse(m.id);
+        return n != null && n < beforeNum;
+      }).toList();
+    }
+
+    final page = source.take(limit).toList();
+    final hasMore = source.length > page.length;
+    final chronological = page.reversed.toList();
+    return MessagesPaginationResult(
+      messages: chronological,
+      hasMore: hasMore,
+      totalCount: decrypted.length,
+      oldestMessageId: _oldestNumericMessageId(chronological),
+    );
+  }
+
 
   static Uri connectivityProbeUri(String baseUrl) => Uri.parse('$baseUrl/healthz');
 
@@ -142,11 +175,10 @@ class MessagesService {
       }
       final cachedMessages = await LocalMessagesService.getMessages(chatId);
       final decrypted = await _decryptMessages(chatId, cachedMessages);
-      return MessagesPaginationResult(
-        messages: decrypted,
-        hasMore: false,
-        totalCount: decrypted.length,
-        oldestMessageId: _oldestNumericMessageId(decrypted),
+      return _buildPaginatedCacheResult(
+        decrypted,
+        limit: limit,
+        beforeMessageId: beforeMessageId,
       );
     }
     
@@ -241,11 +273,10 @@ class MessagesService {
           final cachedMessages = await LocalMessagesService.getMessages(chatId);
           if (cachedMessages.isNotEmpty) {
             final decrypted = await _decryptMessages(chatId, cachedMessages);
-            return MessagesPaginationResult(
-              messages: decrypted,
-              hasMore: false,
-              totalCount: decrypted.length,
-              oldestMessageId: _oldestNumericMessageId(decrypted),
+            return _buildPaginatedCacheResult(
+              decrypted,
+              limit: limit,
+              beforeMessageId: beforeMessageId,
             );
           }
         }
@@ -265,11 +296,10 @@ class MessagesService {
         final cachedMessages = await LocalMessagesService.getMessages(chatId);
         if (cachedMessages.isNotEmpty) {
           final decrypted = await _decryptMessages(chatId, cachedMessages);
-          return MessagesPaginationResult(
-            messages: decrypted,
-            hasMore: false,
-            totalCount: decrypted.length,
-            oldestMessageId: _oldestNumericMessageId(decrypted),
+          return _buildPaginatedCacheResult(
+            decrypted,
+            limit: limit,
+            beforeMessageId: beforeMessageId,
           );
         }
       }

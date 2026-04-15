@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createChat,
   deleteChat,
+  getChatById,
   getChatsList,
   getUserChats,
   renameChat,
@@ -10,7 +11,8 @@ import {
 const router = express.Router();
 
 router.get('/', getChatsList);
-router.get('/:id', getUserChats);
+router.get('/all', getUserChats);
+router.get('/:id', getChatById);
 router.post('/', createChat);
 router.delete('/:id', deleteChat);
 router.put('/:id/name', renameChat);

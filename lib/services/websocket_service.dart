@@ -16,6 +16,8 @@ class WebSocketService {
   String? _currentToken;
   bool _connecting = false;
   bool _wasDisconnected = false;
+  Timer? _reconnectTimer;
+  int _connectSeq = 0;
   static const String _reconnectedEventType = '_ws_reconnected';
 
   Stream<dynamic> get stream => _streamController.stream;
@@ -31,21 +33,24 @@ class WebSocketService {
 
     _connecting = true;
     try {
+      _reconnectTimer?.cancel();
       _channel?.sink.close();
       _channel = null;
       _currentToken = token;
+      final connectSeq = ++_connectSeq;
 
       final baseUrl = ApiConfig.baseUrl;
       final wsUrl = baseUrl.startsWith('https://')
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
-      // Web: браузерный WebSocket API не поддерживает произвольные заголовки (Authorization),
-      // поэтому токен передаётся в query. Риск: попадание в логи прокси/сервера и в history/referrer.
-      // Предпочтительно на бэкенде: краткоживущий ticket по POST или первое сообщение с auth.
+      // Web: браузерный WebSocket API не поддерживает Authorization header,
+      // поэтому передаем токен через subprotocol auth.<token>, чтобы не светить его в URL query.
       if (kIsWeb) {
+        final authProtocol = 'auth.$token';
         _channel = WebSocketChannel.connect(
-          Uri.parse('$wsUrl?token=$token'),
+          Uri.parse(wsUrl),
+          protocols: <String>[authProtocol],
         );
       } else {
         _channel = IOWebSocketChannel.connect(
@@ -54,18 +59,23 @@ class WebSocketService {
         );
       }
 
-      void onDisconnect() {
-        final hadChannel = _channel != null;
+      void onDisconnect(WebSocketChannel disconnectedChannel, int disconnectedSeq) {
+        if (_channel != disconnectedChannel || disconnectedSeq != _connectSeq) {
+          return;
+        }
+        final hadChannel = _channel == disconnectedChannel;
         _channel = null;
         if (hadChannel) {
           _wasDisconnected = true;
-          Future.delayed(const Duration(seconds: 2), () {
+          _reconnectTimer?.cancel();
+          _reconnectTimer = Timer(const Duration(seconds: 2), () {
             connectIfNeeded();
           });
         }
       }
 
-      _channel!.stream.listen(
+      final activeChannel = _channel!;
+      activeChannel.stream.listen(
         (data) {
           try {
             final decoded = data is String ? jsonDecode(data) : data;
@@ -76,11 +86,11 @@ class WebSocketService {
         },
         onError: (error) {
           if (kDebugMode) print('WebSocketService error: $error');
-          onDisconnect();
+          onDisconnect(activeChannel, connectSeq);
         },
         onDone: () {
           if (kDebugMode) print('WebSocketService connection closed');
-          onDisconnect();
+          onDisconnect(activeChannel, connectSeq);
         },
         cancelOnError: false,
       );
@@ -92,7 +102,8 @@ class WebSocketService {
     } catch (e) {
       if (kDebugMode) print('WebSocketService connect error: $e');
       _channel = null;
-      Future.delayed(const Duration(seconds: 3), () {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = Timer(const Duration(seconds: 3), () {
         connectIfNeeded();
       });
     } finally {
@@ -100,16 +111,19 @@ class WebSocketService {
     }
   }
 
-  void send(Map<String, dynamic> payload) {
-    if (_channel == null) return;
+  bool send(Map<String, dynamic> payload) {
+    if (_channel == null) return false;
     try {
       _channel!.sink.add(jsonEncode(payload));
+      return true;
     } catch (e) {
       if (kDebugMode) print('WebSocketService send error: $e');
+      return false;
     }
   }
 
   void disconnect() {
+    _reconnectTimer?.cancel();
     _channel?.sink.close();
     _channel = null;
     _currentToken = null;

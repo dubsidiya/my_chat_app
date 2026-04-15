@@ -1371,21 +1371,24 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.addListener(_onScroll);
   }
 
-  void _sendWsJson(Map<String, dynamic> payload) {
+  bool _sendWsJson(Map<String, dynamic> payload) {
     try {
-      WebSocketService.instance.send(payload);
+      return WebSocketService.instance.send(payload);
     } catch (e) {
       if (kDebugMode) print('Ошибка отправки WS payload: $e');
+      return false;
     }
   }
 
   void _subscribeToChatRealtime() {
     if (_subscribedToChatRealtime) return;
-    _subscribedToChatRealtime = true;
-    _sendWsJson({
+    final sent = _sendWsJson({
       'type': 'subscribe',
       'chat_id': widget.chatId,
     });
+    if (sent) {
+      _subscribedToChatRealtime = true;
+    }
   }
 
   void _scheduleTypingCleanup() {
@@ -1987,6 +1990,7 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.chatId,
         limit: _messagesPerPage,
         beforeMessageId: _oldestMessageId,
+        useCache: false,
       );
       
       if (mounted && result.messages.isNotEmpty) {

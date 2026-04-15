@@ -39,6 +39,21 @@ const assert = (cond, msg) => {
   if (!cond) throw new Error(msg);
 };
 
+const stableStringify = (value) => {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (value instanceof Date) {
+    return JSON.stringify(value.toISOString());
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => stableStringify(v)).join(',')}]`;
+  }
+  const keys = Object.keys(value).sort();
+  const pairs = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`);
+  return `{${pairs.join(',')}}`;
+};
+
 const run = async () => {
   const seed = await pool.query(
     `SELECT ts.teacher_id, ts.student_id
@@ -195,7 +210,7 @@ const run = async () => {
   await applyPayments(payReq2, payRes2);
   assert(payRes2.statusCode === 200, `applyPayments #2 статус ${payRes2.statusCode}`);
   assert(
-    JSON.stringify(payRes2.body) === JSON.stringify(payRes1.body),
+    stableStringify(payRes2.body) === stableStringify(payRes1.body),
     'applyPayments replay вернул другой payload'
   );
 

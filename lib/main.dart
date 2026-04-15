@@ -11,6 +11,7 @@ import 'services/storage_service.dart';
 import 'services/local_messages_service.dart';
 import 'services/push_notification_service.dart';
 import 'services/websocket_service.dart';
+import 'services/auth_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -103,6 +104,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         future: () async {
           final userData = await StorageService.getUserData();
           if (userData == null || userData['token'] == null) return null;
+          final sessionState = await AuthService().hasValidSession();
+          if (sessionState == false) {
+            await StorageService.clearUserData();
+            return null;
+          }
           final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
           return {'userData': userData, 'eulaAccepted': eulaAccepted};
         }(),

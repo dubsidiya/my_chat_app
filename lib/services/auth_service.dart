@@ -333,6 +333,26 @@ class AuthService {
     }
   }
 
+  /// Трёхсостоячная проверка валидности сессии:
+  /// - true: токен валиден
+  /// - false: сервер явно отклонил токен (401/403)
+  /// - null: сеть/сервер недоступны, статус сессии неизвестен
+  Future<bool?> hasValidSession() async {
+    final token = await StorageService.getToken();
+    if (token == null) return false;
+    try {
+      final response = await timedGet(
+        Uri.parse('$baseUrl/auth/me'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) return true;
+      if (response.statusCode == 401 || response.statusCode == 403) return false;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Профиль другого пользователя (аватар/ник). Требует авторизацию.
   Future<Map<String, dynamic>> fetchUserById(String userId) async {
     final token = await StorageService.getToken();
