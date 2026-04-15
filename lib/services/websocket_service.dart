@@ -44,12 +44,12 @@ class WebSocketService {
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
-      // Web: браузерный WebSocket API не поддерживает Authorization header,
-      // поэтому передаем токен через subprotocol auth.<token>, чтобы не светить его в URL query.
+      // Web: часть окружений/прокси может терять Sec-WebSocket-Protocol при апгрейде.
+      // Для совместимости передаем токен и в subprotocol, и во fallback query.
       if (kIsWeb) {
         final authProtocol = 'auth.$token';
         _channel = WebSocketChannel.connect(
-          Uri.parse(wsUrl),
+          Uri.parse('$wsUrl?token=$token'),
           protocols: <String>[authProtocol],
         );
       } else {

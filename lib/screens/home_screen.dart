@@ -77,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   StreamSubscription<dynamic>? _wsSubscription;
+  DateTime? _lastWsReconnectHandledAt;
 
   Widget _avatarInitial(String initial) {
     return Container(
@@ -270,6 +271,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _wsSubscription = WebSocketService.instance.stream.listen((event) {
       if (!mounted) return;
       if (event is Map && event['type'] == '_ws_reconnected') {
+        final now = DateTime.now();
+        if (_lastWsReconnectHandledAt != null &&
+            now.difference(_lastWsReconnectHandledAt!).inSeconds < 10) {
+          return;
+        }
+        _lastWsReconnectHandledAt = now;
         // Единая точка мягкого восстановления после реконнекта:
         // обновляем список чатов и пробуем закрыть отложенные E2EE key-requests.
         _loadChats();

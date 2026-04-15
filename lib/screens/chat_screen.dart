@@ -161,6 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messagesService = MessagesService();
   final _chatsService = ChatsService();
   StreamSubscription? _webSocketSubscription;
+  DateTime? _lastWsReconnectHandledAt;
   final Map<String, GlobalKey> _messageKeys = {};
 
   List<Message> _messages = [];
@@ -908,6 +909,12 @@ class _ChatScreenState extends State<ChatScreen> {
           // ✅ Переподключение WebSocket — заново подписываемся на чат
           if (messageType == '_ws_reconnected') {
             if (mounted) {
+              final now = DateTime.now();
+              if (_lastWsReconnectHandledAt != null &&
+                  now.difference(_lastWsReconnectHandledAt!).inSeconds < 10) {
+                return;
+              }
+              _lastWsReconnectHandledAt = now;
               _subscribedToChatRealtime = false;
               _subscribeToChatRealtime();
               final currentChatId = widget.chatId.toString();
