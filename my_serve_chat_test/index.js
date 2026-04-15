@@ -272,7 +272,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Client-Timezone'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Client-Timezone', 'X-Refresh-Token'],
   optionsSuccessStatus: 204
 }));
 

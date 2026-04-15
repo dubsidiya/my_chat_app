@@ -66,15 +66,14 @@ class WebSocketService {
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
-      // Web: приоритет — эфемерный WS токен через subprotocol (без токенов в URL).
+      // Web hotfix: часть браузерных/proxy окружений нестабильно обрабатывает длинный
+      // custom subprotocol, из-за чего рвётся realtime и E2EE key exchange.
+      // Используем эфемерный ws-token в query (не access token), TTL короткий.
       if (kIsWeb) {
         final wsToken = await _fetchEphemeralWsToken(token);
-        final authProtocol = wsToken != null && wsToken.isNotEmpty
-            ? 'auth.$wsToken'
-            : 'auth.$token';
+        final safeToken = wsToken != null && wsToken.isNotEmpty ? wsToken : token;
         _channel = WebSocketChannel.connect(
-          Uri.parse(wsUrl),
-          protocols: <String>[authProtocol],
+          Uri.parse('$wsUrl?token=$safeToken'),
         );
       } else {
         _channel = IOWebSocketChannel.connect(

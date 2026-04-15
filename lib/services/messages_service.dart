@@ -103,6 +103,15 @@ class MessagesService {
     String content = m.content;
     if (E2eeService.isEncrypted(content)) {
       content = await E2eeService.decryptMessage(chatId, content, keyVersion: m.keyVersion);
+      if (content == '[зашифровано]') {
+        // Если ключ чата ещё не успел приехать (часто на web после reconnect),
+        // делаем одну активную попытку запросить/дождаться ключ и расшифровать повторно.
+        await E2eeService.requestChatKey(chatId, keyVersion: m.keyVersion);
+        final ok = await E2eeService.waitForChatKeyFromServer(chatId, keyVersion: m.keyVersion);
+        if (ok) {
+          content = await E2eeService.decryptMessage(chatId, m.content, keyVersion: m.keyVersion);
+        }
+      }
     }
     Message? replyTo = m.replyToMessage;
     if (replyTo != null) {
