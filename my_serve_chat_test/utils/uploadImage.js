@@ -26,14 +26,21 @@ const ALLOWED_MIME_TYPES = [
   'image/vnd.microsoft.icon',
 ];
 
+// Клиент с E2EE шлёт `photo.jpg.e2ee` — иначе path.extname даёт только `.e2ee` и multer отвечает 400.
+const stripE2eeSuffix = (name) => String(name || '').replace(/\.e2ee$/i, '');
+
 const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname || '').toLowerCase();
+  const logicalName = stripE2eeSuffix(file.originalname);
+  const ext = path.extname(logicalName).toLowerCase();
   const mimetype = (file.mimetype || '').toLowerCase();
 
-  const okByExt = ALLOWED_IMAGE_EXT.test(ext);
+  const okByExt = ext && ALLOWED_IMAGE_EXT.test(ext);
+  // Зашифрованные байты часто приходят как application/octet-stream — расширение уже проверили.
   const okByMime = ALLOWED_MIME_TYPES.includes(mimetype);
+  const okOctetImageExt =
+    (mimetype === 'application/octet-stream' || mimetype === 'binary/octet-stream') && okByExt;
 
-  if (okByExt || okByMime) {
+  if (okByExt || okByMime || okOctetImageExt) {
     return cb(null, true);
   }
   cb(new Error('Только изображения! Разрешены: JPEG, PNG, GIF, WEBP, HEIC, BMP, TIFF, AVIF, ICO'));
@@ -44,7 +51,8 @@ export const uploadImage = multer({
   storage: storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB максимум для оригинала
-    files: 2 // Разрешаем до 2 файлов (сжатое + оригинал)
+    // Не ограничивать число file-полей слишком жёстко (multipart: image + original + служебные части).
+    files: 20,
   },
   fileFilter: fileFilter
 });
@@ -60,9 +68,10 @@ export const uploadToCloud = async (file, folder = 'images') => {
     throw new Error('Файл не предоставлен или отсутствует буфер');
   }
 
-  // Генерируем уникальное имя файла
+  // Генерируем уникальное имя файла (без суффикса .e2ee в ключе Object Storage)
   const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-  const ext = path.extname(file.originalname || '');
+  const logicalName = stripE2eeSuffix(file.originalname || '');
+  const ext = path.extname(logicalName) || path.extname(file.originalname || '') || '.bin';
   const fileName = `image-${uniqueSuffix}${ext}`;
 
   // Загружаем в Яндекс Облако в указанную папку

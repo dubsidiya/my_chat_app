@@ -434,7 +434,10 @@ class MessagesService {
       final encrypted = await E2eeService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
       if (encrypted != null) {
         bytesToSend = encrypted;
-        sendFileName = '$fileName.e2ee';
+        // Имя в multipart оставляем как у исходного изображения (.jpg и т.д.): иначе multer
+        // на сервере видит только расширение .e2ee и отвечает 400 «не изображение».
+        // Шифрование — только в теле файла, не в суффиксе имени.
+        sendFileName = fileName;
         if (originalBytes != null) {
           final encOrig = await E2eeService.encryptBytes(chatId, Uint8List.fromList(originalBytes));
           if (encOrig != null) originalToSend = encOrig;
@@ -471,6 +474,10 @@ class MessagesService {
       if (kDebugMode) {
         // ignore: avoid_print
         print('Upload image status: ${response.statusCode}');
+        if (response.statusCode != 200) {
+          // ignore: avoid_print
+          print('Upload image body: ${response.body}');
+        }
       }
 
       if (response.statusCode == 200) {

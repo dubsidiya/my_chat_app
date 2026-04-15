@@ -11,8 +11,15 @@ router.post('/upload-image', (req, res, next) => {
     { name: 'original', maxCount: 1 },
   ])(req, res, (err) => {
     if (err) {
-      console.error('Multer error:', err);
-      return res.status(400).json({ message: 'Ошибка загрузки файла' });
+      console.error('Multer error:', err?.message || err, err?.code, err?.field);
+      const msg =
+        typeof err?.message === 'string' && err.message.trim()
+          ? err.message.trim().slice(0, 300)
+          : 'Ошибка загрузки файла';
+      return res.status(400).json({
+        message: msg,
+        code: err?.code ?? null,
+      });
     }
     next();
   });
