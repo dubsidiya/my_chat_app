@@ -5,6 +5,7 @@ enum StablePluginRegistrant {
   static func register(with registry: FlutterPluginRegistry) {
     register(registry, pluginKey: "AudioSessionPlugin", classCandidates: ["AudioSessionPlugin", "audio_session.AudioSessionPlugin"])
     register(registry, pluginKey: "FilePickerPlugin", classCandidates: ["FilePickerPlugin", "file_picker.FilePickerPlugin"])
+    register(registry, pluginKey: "FLTImagePickerPlugin", classCandidates: ["FLTImagePickerPlugin"])
     register(registry, pluginKey: "FLTFirebaseCorePlugin", classCandidates: ["FLTFirebaseCorePlugin", "firebase_core.FLTFirebaseCorePlugin"])
     register(registry, pluginKey: "FLTFirebaseMessagingPlugin", classCandidates: ["FLTFirebaseMessagingPlugin", "firebase_messaging.FLTFirebaseMessagingPlugin"])
     register(registry, pluginKey: "FlutterLocalNotificationsPlugin", classCandidates: ["FlutterLocalNotificationsPlugin", "flutter_local_notifications.FlutterLocalNotificationsPlugin"])

@@ -14,6 +14,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:http/http.dart' show ClientException;
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
@@ -2122,16 +2123,26 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Только реальные сбои транспорта / TLS / таймауты. Не использовать подстроку "connection"
+  /// целиком — в тексте ошибок сервера часто встречается «database connection», «too many connections» и т.п.
   bool _isQueueableSendError(Object e) {
+    if (e is SocketException) return true;
+    if (e is TimeoutException) return true;
+    if (e is HandshakeException) return true;
+    if (e is ClientException) return true;
     final text = e.toString().toLowerCase();
     return text.contains('нет подключения к интернету') ||
         text.contains('socketexception') ||
-        text.contains('timeout') ||
+        text.contains('timeoutexception') ||
         text.contains('timed out') ||
         text.contains('failed host lookup') ||
         text.contains('network is unreachable') ||
         text.contains('connection refused') ||
-        text.contains('connection reset');
+        text.contains('connection reset') ||
+        text.contains('connection closed') ||
+        text.contains('connection aborted') ||
+        text.contains('broken pipe') ||
+        text.contains('handshakeexception');
   }
 
   void _cleanupTempStateCache() {
@@ -3752,14 +3763,8 @@ SnackBar(
       if (kDebugMode) print('❌ Error sending message: $e');
       if (kDebugMode) print('❌ Stack trace: $stackTrace');
       final errorText = e.toString();
-      final errorTextLower = errorText.toLowerCase();
       final isE2eeKeyError = errorText.contains('E2EE ключ для чата пока недоступен');
-      final isQueueableNetworkError =
-          errorTextLower.contains('нет подключения к интернету') ||
-          errorTextLower.contains('socketexception') ||
-          errorTextLower.contains('timeout') ||
-          errorTextLower.contains('timed out') ||
-          errorTextLower.contains('connection');
+      final isQueueableNetworkError = _isQueueableSendError(e);
       if (isE2eeKeyError) {
         unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
       }
