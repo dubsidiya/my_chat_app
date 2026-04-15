@@ -391,6 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
       }
+      unawaited(_processPendingE2eeRequestsForChats(chats));
     } catch (e) {
       if (mounted) {
         setState(() => _loadError = e.toString().replaceFirst('Exception: ', ''));
@@ -408,6 +409,15 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _processPendingE2eeRequestsForChats(List<Chat> chats) async {
+    for (final chat in chats) {
+      if (chat.id.isEmpty) continue;
+      try {
+        await E2eeService.processPendingKeyRequests(chat.id);
+      } catch (_) {}
     }
   }
 

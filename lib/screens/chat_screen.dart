@@ -1733,6 +1733,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initWebSocket() async {
     try {
       await WebSocketService.instance.connectIfNeeded();
+      unawaited(E2eeService.processPendingKeyRequests(widget.chatId.toString()));
       if (mounted) {
         _setupWebSocketListener();
       }

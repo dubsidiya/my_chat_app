@@ -44,13 +44,11 @@ class WebSocketService {
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
-      // Web: часть окружений/прокси может терять Sec-WebSocket-Protocol при апгрейде.
-      // Для совместимости передаем токен и в subprotocol, и во fallback query.
+      // Web: используем query-токен как самый совместимый режим.
+      // В некоторых окружениях длинный custom subprotocol с JWT ломает handshake.
       if (kIsWeb) {
-        final authProtocol = 'auth.$token';
         _channel = WebSocketChannel.connect(
           Uri.parse('$wsUrl?token=$token'),
-          protocols: <String>[authProtocol],
         );
       } else {
         _channel = IOWebSocketChannel.connect(
