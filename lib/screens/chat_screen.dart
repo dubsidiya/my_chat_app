@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
@@ -51,6 +52,7 @@ class _MessageEntry extends _ListEntry { final int index; _MessageEntry(this.ind
 enum _OutgoingUiState { queued, sending, error }
 class _PendingUploadDraft {
   final String text;
+  final String idempotencyKey;
   final String? replyToMessageId;
   final Message? replyToMessage;
   final Uint8List? imageBytes;
@@ -64,6 +66,7 @@ class _PendingUploadDraft {
 
   const _PendingUploadDraft({
     required this.text,
+    required this.idempotencyKey,
     this.replyToMessageId,
     this.replyToMessage,
     this.imageBytes,
@@ -183,6 +186,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isRetryingQueuedMessages = false;
   final Map<String, _OutgoingUiState> _tempMessageStates = {};
   final Map<String, _PendingUploadDraft> _pendingUploadDrafts = {};
+  final Map<String, String> _tempMessageIdempotencyKeys = {};
   String? _selectedFilePath;
   Uint8List? _selectedFileBytes;
   String? _selectedFileName;
@@ -2206,12 +2210,19 @@ class _ChatScreenState extends State<ChatScreen> {
         text.contains('handshakeexception');
   }
 
+  String _generateIdempotencyKey() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    final rnd = Random.secure().nextInt(1 << 32);
+    return '${widget.chatId}-$now-${rnd.toRadixString(16)}';
+  }
+
   void _cleanupTempStateCache() {
     final liveTempIds = _messages.where((m) => m.id.startsWith('temp_')).map((m) => m.id).toSet();
     for (final id in liveTempIds) {
       _tempMessageStates.putIfAbsent(id, () => _OutgoingUiState.queued);
     }
     _tempMessageStates.removeWhere((id, _) => !liveTempIds.contains(id));
+    _tempMessageIdempotencyKeys.removeWhere((id, _) => !liveTempIds.contains(id));
     final toRemove = _pendingUploadDrafts.keys.where((id) => !liveTempIds.contains(id)).toList();
     for (final id in toRemove) {
       _pendingUploadDrafts.remove(id);
@@ -2232,6 +2243,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Map<String, dynamic> _pendingDraftToJson(_PendingUploadDraft draft) {
     return {
       'text': draft.text,
+      'idempotencyKey': draft.idempotencyKey,
       'replyToMessageId': draft.replyToMessageId,
       'replyToMessage': draft.replyToMessage?.toJson(),
       'imageBytesB64': draft.imageBytes != null ? base64Encode(draft.imageBytes!) : null,
@@ -2258,6 +2270,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final fileB64 = json['fileBytesB64']?.toString();
       return _PendingUploadDraft(
         text: (json['text'] ?? '').toString(),
+        idempotencyKey: (json['idempotencyKey'] ?? '').toString().trim().isNotEmpty
+            ? (json['idempotencyKey'] ?? '').toString().trim()
+            : _generateIdempotencyKey(),
         replyToMessageId: json['replyToMessageId']?.toString(),
         replyToMessage: reply,
         imageBytes: (imageB64 != null && imageB64.isNotEmpty) ? base64Decode(imageB64) : null,
@@ -2286,6 +2301,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final draft = _pendingDraftFromJson(draftJson);
       if (draft == null) return;
       _pendingUploadDrafts[tempId] = draft;
+      _tempMessageIdempotencyKeys[tempId] = draft.idempotencyKey;
       _tempMessageStates.putIfAbsent(tempId, () => _OutgoingUiState.queued);
       if (!existingIds.contains(tempId)) {
         restored.add(
@@ -2351,6 +2367,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages = List<Message>.from(_messages)..add(tempMessage);
       _tempMessageStates[tempId] = _OutgoingUiState.queued;
+      _tempMessageIdempotencyKeys[tempId] = draft.idempotencyKey;
       _pendingUploadDrafts[tempId] = draft;
       _isUploadingImage = false;
       _isUploadingFile = false;
@@ -2377,7 +2394,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<Message?> _sendPendingUploadDraft(_PendingUploadDraft draft) async {
     String? imageUrl;
+    String? imageStorageKey;
+    String? originalImageUrl;
+    String? originalImageStorageKey;
     String? fileUrl;
+    String? fileStorageKey;
     String? fileName;
     int? fileSize;
     String? fileMime;
@@ -2394,12 +2415,16 @@ class _ChatScreenState extends State<ChatScreen> {
       final compressed = await _compressImage(originalBytes);
       final imgName = draft.imageName ??
           (draft.imagePath != null && draft.imagePath!.isNotEmpty ? draft.imagePath!.split('/').last : 'image.jpg');
-      imageUrl = await _messagesService.uploadImage(
+      final uploaded = await _messagesService.uploadImageWithUrls(
         compressed,
         imgName,
         originalBytes: originalBytes,
         chatId: widget.chatId.toString(),
       );
+      imageUrl = uploaded.imageUrl;
+      imageStorageKey = uploaded.imageStorageKey;
+      originalImageUrl = uploaded.originalImageUrl;
+      originalImageStorageKey = uploaded.originalImageStorageKey;
     }
 
     if (draft.hasFile) {
@@ -2415,6 +2440,7 @@ class _ChatScreenState extends State<ChatScreen> {
           (draft.filePath != null && draft.filePath!.isNotEmpty ? draft.filePath!.split('/').last : 'file');
       final meta = await _messagesService.uploadFile(bytes, name);
       fileUrl = meta['file_url']?.toString();
+      fileStorageKey = meta['file_storage_key']?.toString();
       fileName = (meta['file_name'] ?? name).toString();
       fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? draft.fileSize ?? bytes.length;
       fileMime = (meta['file_mime'] ?? draft.fileMime ?? '').toString();
@@ -2423,8 +2449,13 @@ class _ChatScreenState extends State<ChatScreen> {
     return _messagesService.sendMessage(
       widget.chatId,
       draft.text,
+      idempotencyKey: draft.idempotencyKey,
       imageUrl: imageUrl,
+      imageStorageKey: imageStorageKey,
+      originalImageUrl: originalImageUrl,
+      originalImageStorageKey: originalImageStorageKey,
       fileUrl: fileUrl,
+      fileStorageKey: fileStorageKey,
       fileName: fileName,
       fileSize: fileSize,
       fileMime: fileMime,
@@ -2454,6 +2485,7 @@ class _ChatScreenState extends State<ChatScreen> {
               : await _messagesService.sendMessage(
                   widget.chatId,
                   temp.content,
+                  idempotencyKey: _tempMessageIdempotencyKeys[temp.id],
                   imageUrl: temp.imageUrl,
                   originalImageUrl: temp.originalImageUrl,
                   fileUrl: temp.fileUrl,
@@ -2479,6 +2511,7 @@ class _ChatScreenState extends State<ChatScreen> {
             }
             _messages = newMessages;
             _tempMessageStates.remove(temp.id);
+            _tempMessageIdempotencyKeys.remove(temp.id);
             _pendingUploadDrafts.remove(temp.id);
             unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, temp.id));
             _cleanupTempStateCache();
@@ -3402,7 +3435,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     String? imageUrl;
+    String? imageStorageKey;
+    String? originalImageUrl;
+    String? originalImageStorageKey;
     String? fileUrl;
+    String? fileStorageKey;
     String? fileName;
     int? fileSize;
     String? fileMime;
@@ -3441,12 +3478,16 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         
         // ✅ Загружаем и оригинал, и сжатое изображение
-        imageUrl = await _messagesService.uploadImage(
+        final uploaded = await _messagesService.uploadImageWithUrls(
           bytes,
           fileName,
           originalBytes: originalBytes,
           chatId: widget.chatId.toString(),
         );
+        imageUrl = uploaded.imageUrl;
+        imageStorageKey = uploaded.imageStorageKey;
+        originalImageUrl = uploaded.originalImageUrl;
+        originalImageStorageKey = uploaded.originalImageStorageKey;
         
         // ✅ Очищаем память после успешной загрузки
         if (mounted) {
@@ -3461,6 +3502,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _enqueuePendingUploadDraft(
             _PendingUploadDraft(
               text: text,
+              idempotencyKey: _generateIdempotencyKey(),
               replyToMessageId: replyToMessageId,
               replyToMessage: replyToMessage,
               imageBytes: _selectedImageBytes,
@@ -3517,6 +3559,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final meta = await _messagesService.uploadFile(bytes, name);
         fileUrl = meta['file_url']?.toString();
+        fileStorageKey = meta['file_storage_key']?.toString();
         fileName = (meta['file_name'] ?? name).toString();
         fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? _selectedFileSize ?? bytes.length;
         fileMime = (meta['file_mime'] ?? '').toString();
@@ -3538,6 +3581,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _enqueuePendingUploadDraft(
             _PendingUploadDraft(
               text: text,
+              idempotencyKey: _generateIdempotencyKey(),
               replyToMessageId: replyToMessageId,
               replyToMessage: replyToMessage,
               fileBytes: _selectedFileBytes,
@@ -3568,6 +3612,7 @@ SnackBar(
 
     // ✅ Создаем временное сообщение для оптимистичного обновления UI
     final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final idempotencyKey = _generateIdempotencyKey();
     final tempMessage = Message(
       id: tempMessageId,
       chatId: widget.chatId,
@@ -3621,6 +3666,7 @@ SnackBar(
         newMessages.add(tempMessage); // Добавляем в конец, чтобы новые были снизу
         _messages = newMessages;
         _tempMessageStates[tempMessageId] = _OutgoingUiState.sending;
+        _tempMessageIdempotencyKeys[tempMessageId] = idempotencyKey;
         // Очищаем поле ответа
         _replyToMessage = null;
       });
@@ -3662,9 +3708,14 @@ SnackBar(
       final sentMessage = await _messagesService.sendMessage(
         widget.chatId, 
         text, 
+        idempotencyKey: idempotencyKey,
         imageUrl: imageUrl,
+        imageStorageKey: imageStorageKey,
+        originalImageUrl: originalImageUrl,
+        originalImageStorageKey: originalImageStorageKey,
         replyToMessageId: replyToMessageId,
         fileUrl: fileUrl,
+        fileStorageKey: fileStorageKey,
         fileName: fileName,
         fileSize: fileSize,
         fileMime: fileMime,
@@ -3723,6 +3774,7 @@ SnackBar(
               }
               _messages = newMessages;
               _tempMessageStates.remove(tempMessageId);
+              _tempMessageIdempotencyKeys.remove(tempMessageId);
               _pendingUploadDrafts.remove(tempMessageId);
               unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
             });
@@ -3750,6 +3802,7 @@ SnackBar(
                 
                 _messages = newMessages;
                 _tempMessageStates.remove(tempMessageId);
+                _tempMessageIdempotencyKeys.remove(tempMessageId);
                 _pendingUploadDrafts.remove(tempMessageId);
                 unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
               });
@@ -3772,6 +3825,7 @@ SnackBar(
                 
                 _messages = newMessages;
                 _tempMessageStates.remove(tempMessageId);
+                _tempMessageIdempotencyKeys.remove(tempMessageId);
                 _pendingUploadDrafts.remove(tempMessageId);
                 unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
               });

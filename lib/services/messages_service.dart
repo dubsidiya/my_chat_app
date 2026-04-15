@@ -50,8 +50,15 @@ class MessagesPaginationResult {
 /// Результат загрузки сжатого и опционально оригинального изображения.
 class UploadImageUrls {
   final String imageUrl;
+  final String? imageStorageKey;
   final String? originalImageUrl;
-  const UploadImageUrls({required this.imageUrl, this.originalImageUrl});
+  final String? originalImageStorageKey;
+  const UploadImageUrls({
+    required this.imageUrl,
+    this.imageStorageKey,
+    this.originalImageUrl,
+    this.originalImageStorageKey,
+  });
 }
 
 class MessagesService {
@@ -311,14 +318,18 @@ class MessagesService {
     String chatId, 
     String content, {
     String? imageUrl, 
+    String? imageStorageKey,
     String? originalImageUrl,
+    String? originalImageStorageKey,
     String? fileUrl,
+    String? fileStorageKey,
     String? fileName,
     int? fileSize,
     String? fileMime,
     String? replyToMessageId, // ✅ ID сообщения, на которое отвечают
     String? forwardOriginalMessageId,
     String? forwardOriginalChatId,
+    String? idempotencyKey,
   }) async {
     // Не блокируем отправку предварительной проверкой сети:
     // на iOS короткий probe может давать ложные офлайн-результаты.
@@ -353,8 +364,11 @@ class MessagesService {
       'chat_id': chatId,
       'content': contentToSend,
       'image_url': imageUrl,
+      'image_storage_key': imageStorageKey,
       'original_image_url': originalImageUrl,
+      'original_image_storage_key': originalImageStorageKey,
       'file_url': fileUrl,
+      'file_storage_key': fileStorageKey,
       'file_name': fileName,
       'file_size': fileSize,
       'file_mime': fileMime,
@@ -375,7 +389,11 @@ class MessagesService {
 
     final response = await timedPost(
       Uri.parse('$baseUrl/messages'),
-      headers: headers,
+      headers: {
+        ...headers,
+        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+          'Idempotency-Key': idempotencyKey,
+      },
       body: body,
     );
 
@@ -494,7 +512,9 @@ class MessagesService {
             }
             return UploadImageUrls(
               imageUrl: data['image_url'] as String,
+              imageStorageKey: data['image_storage_key']?.toString(),
               originalImageUrl: data['original_image_url'] as String?,
+              originalImageStorageKey: data['original_image_storage_key']?.toString(),
             );
           }
           throw Exception('Сервер не вернул image_url');

@@ -3,6 +3,7 @@ import { getWebSocketClients } from '../websocket/websocket.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
+import { getSignedObjectUrl, isStorageKey, toStorageKey } from '../utils/yandexStorage.js';
 import { sendPushToTokens } from '../utils/pushNotifications.js';
 import { parseLimit, parseOffset, parseOptionalInt } from '../services/messages/pagination.js';
 import { enrichMessageRow } from '../services/messages/enrichMessageRow.js';
@@ -26,6 +27,13 @@ const MAX_MESSAGE_CONTENT_LENGTH = 65535;
 /** Только для текста push (E2EE): не пишется в messages, только notification body */
 const MAX_PUSH_PREVIEW_LENGTH = 200;
 const MESSAGE_SEND_IDEMPOTENCY_SCOPE = 'messages:send';
+
+const signMediaUrlIfNeeded = async (value) => {
+  const key = toStorageKey(value);
+  if (!key) return value ?? null;
+  const signed = await getSignedObjectUrl(key, 900);
+  return signed || null;
+};
 
 // Как видят отправителя другие (ник или логин)
 const getSenderDisplayName = async (userId) => {
@@ -118,20 +126,20 @@ export const getChatMedia = async (req, res) => {
       args
     );
 
-    const items = result.rows.map((r) => ({
+    const items = await Promise.all(result.rows.map(async (r) => ({
       id: r.id?.toString(),
       chat_id: r.chat_id?.toString(),
       user_id: r.user_id?.toString(),
       content: r.content ?? '',
-      image_url: r.image_url ?? null,
-      original_image_url: r.original_image_url ?? null,
-      file_url: r.file_url ?? null,
+      image_url: await signMediaUrlIfNeeded(r.image_url),
+      original_image_url: await signMediaUrlIfNeeded(r.original_image_url),
+      file_url: await signMediaUrlIfNeeded(r.file_url),
       file_name: r.file_name ?? null,
       file_size: r.file_size ?? null,
       file_mime: r.file_mime ?? null,
       message_type: r.message_type ?? 'text',
       created_at: r.created_at,
-    }));
+    })));
 
     const nextBefore = items.length > 0 ? items[items.length - 1].id : null;
     return res.status(200).json({ items, next_before: nextBefore });
@@ -347,18 +355,18 @@ export const searchMessages = async (req, res) => {
     // Отдаём последние сообщения с полным content; клиент расшифровывает и фильтрует по q (E2EE)
     const result = await searchMessagesForChat(pool, { chatIdNum, userId, limit, before });
 
-    const items = result.rows.map((row) => ({
+    const items = await Promise.all(result.rows.map(async (row) => ({
       message_id: row.message_id?.toString(),
       chat_id: row.chat_id?.toString(),
       user_id: row.user_id?.toString(),
       content: (row.content ?? '').toString(),
       key_version: row.key_version ?? 1,
       message_type: row.message_type,
-      image_url: row.image_url,
+      image_url: await signMediaUrlIfNeeded(row.image_url),
       created_at: row.created_at,
       sender_email: row.sender_email,
       is_read: row.is_read === true,
-    }));
+    })));
 
     return res.status(200).json({ results: items, query: q });
   } catch (error) {
@@ -421,7 +429,25 @@ export const getMessagesAround = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   // Приложение отправляет: { chat_id, content, push_preview?, image_url, ... }
-  const { chat_id, content, push_preview, image_url, original_image_url, file_url, file_name, file_size, file_mime, reply_to_message_id, forward_from_message_id, forward_to_chat_ids, forward_original_message_id, forward_original_chat_id } = req.body;
+  const {
+    chat_id,
+    content,
+    push_preview,
+    image_url,
+    image_storage_key,
+    original_image_url,
+    original_image_storage_key,
+    file_url,
+    file_storage_key,
+    file_name,
+    file_size,
+    file_mime,
+    reply_to_message_id,
+    forward_from_message_id,
+    forward_to_chat_ids,
+    forward_original_message_id,
+    forward_original_chat_id,
+  } = req.body;
   
   // userId берем из токена (безопасно)
   const user_id = req.user.userId;
@@ -449,7 +475,7 @@ export const sendMessage = async (req, res) => {
     });
   }
 
-  if (!chat_id || (!content && !image_url && !file_url)) {
+  if (!chat_id || (!content && !image_url && !image_storage_key && !file_url && !file_storage_key)) {
     return res.status(400).json({ message: 'Укажите chat_id и content или image_url или file_url' });
   }
 
@@ -463,19 +489,23 @@ export const sendMessage = async (req, res) => {
     : '';
 
   // Пока упрощаем: нельзя одновременно image и file в одном сообщении (чтобы не плодить message_type)
-  if (image_url && file_url) {
+  const inputImageRef = image_storage_key || image_url || null;
+  const inputOriginalImageRef = original_image_storage_key || original_image_url || null;
+  const inputFileRef = file_storage_key || file_url || null;
+
+  if (inputImageRef && inputFileRef) {
     return res.status(400).json({ message: 'Нельзя отправлять изображение и файл в одном сообщении' });
   }
 
   const MAX_URL_LENGTH = 2048;
   const MAX_FILE_NAME_LENGTH = 255;
-  if (image_url && String(image_url).length > MAX_URL_LENGTH) {
+  if (inputImageRef && String(inputImageRef).length > MAX_URL_LENGTH) {
     return res.status(400).json({ message: 'Ссылка на изображение слишком длинная' });
   }
-  if (original_image_url && String(original_image_url).length > MAX_URL_LENGTH) {
+  if (inputOriginalImageRef && String(inputOriginalImageRef).length > MAX_URL_LENGTH) {
     return res.status(400).json({ message: 'Ссылка на изображение слишком длинная' });
   }
-  if (file_url && String(file_url).length > MAX_URL_LENGTH) {
+  if (inputFileRef && String(inputFileRef).length > MAX_URL_LENGTH) {
     return res.status(400).json({ message: 'Ссылка на файл слишком длинная' });
   }
   if (file_name && String(file_name).length > MAX_FILE_NAME_LENGTH) {
@@ -489,17 +519,34 @@ export const sendMessage = async (req, res) => {
         `https://storage.yandexcloud.net/${YANDEX_BUCKET}/`,
       ]
     : [];
+  let imageRef = inputImageRef;
+  let originalImageRef = inputOriginalImageRef;
+  let fileRef = inputFileRef;
+
   if (allowedUrlPrefixes.length > 0) {
-    const checkUrl = (url, label) => {
+    let invalidLabel = null;
+    const normalizeStorageRef = (url, label) => {
       if (!url) return null;
+      if (isStorageKey(url)) return url;
+      const keyFromUrl = toStorageKey(url);
+      if (keyFromUrl) return keyFromUrl;
       const s = String(url);
       if (!allowedUrlPrefixes.some((p) => s.startsWith(p))) {
-        return res.status(400).json({ message: `${label}: допускаются только ссылки из хранилища приложения` });
+        invalidLabel = label;
+        return null;
       }
-      return null;
+      const extracted = toStorageKey(s);
+      return extracted || s;
     };
-    const bad = checkUrl(image_url, 'image_url') || checkUrl(original_image_url, 'original_image_url') || checkUrl(file_url, 'file_url');
-    if (bad) return;
+    const resolvedImage = normalizeStorageRef(imageRef, 'image_url');
+    const resolvedOriginalImage = normalizeStorageRef(originalImageRef, 'original_image_url');
+    const resolvedFile = normalizeStorageRef(fileRef, 'file_url');
+    if (invalidLabel) {
+      return res.status(400).json({ message: `${invalidLabel}: допускаются только ссылки из хранилища приложения` });
+    }
+    imageRef = resolvedImage;
+    originalImageRef = resolvedOriginalImage;
+    fileRef = resolvedFile;
   }
   
   // ✅ Если пересылка сообщений (лимит числа чатов — защита от DoS)
@@ -521,9 +568,9 @@ export const sendMessage = async (req, res) => {
           chat_id: chat_id || null,
           content: content || null,
           push_preview: push_preview || null,
-          image_url: image_url || null,
-          original_image_url: original_image_url || null,
-          file_url: file_url || null,
+          image_url: imageRef || null,
+          original_image_url: originalImageRef || null,
+          file_url: fileRef || null,
           file_name: file_name || null,
           file_size: file_size || null,
           file_mime: file_mime || null,
@@ -607,13 +654,13 @@ export const sendMessage = async (req, res) => {
 
     // Определяем тип сообщения
     let message_type = 'text';
-    if (file_url && content) {
+    if (fileRef && content) {
       message_type = 'text_file';
-    } else if (file_url) {
+    } else if (fileRef) {
       message_type = 'file';
-    } else if (image_url && content) {
+    } else if (imageRef && content) {
       message_type = 'text_image';
-    } else if (image_url) {
+    } else if (imageRef) {
       message_type = 'image';
     }
 
@@ -648,8 +695,8 @@ export const sendMessage = async (req, res) => {
         chat_id: chatIdNum,
         user_id,
         content: content || '',
-        image_url: image_url || null,
-        original_image_url: original_image_url || null,
+        image_url: imageRef || null,
+        original_image_url: originalImageRef || null,
         message_type,
         reply_to_message_id: replyToMessageIdNum
       });
@@ -669,9 +716,9 @@ export const sendMessage = async (req, res) => {
       chatIdNum,
       user_id,
       contentStr || '',
-      image_url || null,
-      original_image_url || null,
-      file_url || null,
+      imageRef || null,
+      originalImageRef || null,
+      fileRef || null,
       file_name || null,
       parsedFileSize,
       file_mime || null,
@@ -728,9 +775,9 @@ export const sendMessage = async (req, res) => {
       user_id: message.user_id,
       key_version: message.key_version ?? 1,
       content: message.content,
-      image_url: message.image_url,
-      original_image_url: message.original_image_url,
-      file_url: message.file_url,
+      image_url: await signMediaUrlIfNeeded(message.image_url),
+      original_image_url: await signMediaUrlIfNeeded(message.original_image_url),
+      file_url: await signMediaUrlIfNeeded(message.file_url),
       file_name: message.file_name,
       file_size: message.file_size,
       file_mime: message.file_mime,
@@ -775,9 +822,9 @@ export const sendMessage = async (req, res) => {
         user_id: message.user_id,
         key_version: message.key_version ?? 1,
         content: message.content != null ? String(message.content) : '',
-        image_url: message.image_url ?? null,
-        original_image_url: message.original_image_url ?? null,
-        file_url: message.file_url ?? null,
+        image_url: await signMediaUrlIfNeeded(message.image_url),
+        original_image_url: await signMediaUrlIfNeeded(message.original_image_url),
+        file_url: await signMediaUrlIfNeeded(message.file_url),
         file_name: message.file_name ?? null,
         file_size: message.file_size ?? null,
         file_mime: message.file_mime ?? null,
@@ -1882,19 +1929,19 @@ export const getPinnedMessages = async (req, res) => {
     `, [chatId]);
     
     res.status(200).json({
-      messages: result.rows.map(row => ({
+      messages: await Promise.all(result.rows.map(async (row) => ({
         id: row.id,
         chat_id: row.chat_id,
         user_id: row.user_id,
         key_version: row.key_version ?? 1,
         content: row.content,
-        image_url: row.image_url,
+        image_url: await signMediaUrlIfNeeded(row.image_url),
         message_type: row.message_type,
         created_at: row.created_at,
         sender_email: row.sender_email,
         is_pinned: true,
         pinned_at: row.pinned_at,
-      }))
+      })))
     });
   } catch (error) {
     console.error('Ошибка получения закрепленных сообщений:', error);
@@ -1932,17 +1979,19 @@ export const uploadImage = async (req, res) => {
     });
 
     // Загружаем сжатое изображение в Яндекс Облако
-    const { imageUrl, fileName } = await uploadToCloud(compressedFile, 'images');
+    const { imageUrl, objectKey, fileName } = await uploadToCloud(compressedFile, 'images');
     
     let originalImageUrl = null;
+    let originalImageKey = null;
     
     // Если есть оригинал, загружаем его отдельно
     if (originalFile) {
       try {
         // Используем то же имя файла, но в папке original
         const originalFileName = fileName.replace('image-', 'original-');
-        const { imageUrl: originalUrl } = await uploadToCloud(originalFile, 'original');
+        const { imageUrl: originalUrl, objectKey: originalKey } = await uploadToCloud(originalFile, 'original');
         originalImageUrl = originalUrl;
+        originalImageKey = originalKey;
         console.log('Original image uploaded successfully:', originalImageUrl);
       } catch (error) {
         console.error('Error uploading original image:', error);
@@ -1961,7 +2010,9 @@ export const uploadImage = async (req, res) => {
     
     res.status(200).json({
       image_url: imageUrl,
+      image_storage_key: objectKey,
       original_image_url: originalImageUrl, // ✅ Возвращаем URL оригинала, если есть
+      original_image_storage_key: originalImageKey,
       filename: fileName
     });
   } catch (error) {
@@ -1982,6 +2033,7 @@ export const uploadFile = async (req, res) => {
 
     return res.status(200).json({
       file_url: uploaded.fileUrl,
+      file_storage_key: uploaded.objectKey,
       file_name: uploaded.originalName,
       file_size: uploaded.size,
       file_mime: uploaded.mime,

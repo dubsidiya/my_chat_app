@@ -1,6 +1,6 @@
 import multer from 'multer';
 import path from 'path';
-import { uploadToYandex, deleteFromYandex, getImageUrl as getYandexImageUrl } from './yandexStorage.js';
+import { uploadToYandex, deleteFromYandex, getImageUrl as getYandexImageUrl, getSignedObjectUrl } from './yandexStorage.js';
 
 // Используем memory storage вместо disk storage
 // Файл будет храниться в памяти, затем загрузим в Яндекс Облако
@@ -61,7 +61,7 @@ export const uploadImage = multer({
  * Загрузка файла в Яндекс Облако
  * @param {Object} file - Объект файла от multer (с buffer, originalname, mimetype)
  * @param {string} folder - Папка для сохранения ('images' или 'original')
- * @returns {Promise<{imageUrl: string, fileName: string}>}
+ * @returns {Promise<{imageUrl: string, objectKey: string, fileName: string}>}
  */
 export const uploadToCloud = async (file, folder = 'images') => {
   if (!file || !file.buffer) {
@@ -75,9 +75,10 @@ export const uploadToCloud = async (file, folder = 'images') => {
   const fileName = `image-${uniqueSuffix}${ext}`;
 
   // Загружаем в Яндекс Облако в указанную папку
-  const imageUrl = await uploadToYandex(file.buffer, fileName, file.mimetype, folder);
+  const objectKey = await uploadToYandex(file.buffer, fileName, file.mimetype, folder);
+  const imageUrl = await getSignedObjectUrl(objectKey, 900);
   
-  return { imageUrl, fileName };
+  return { imageUrl, objectKey, fileName };
 };
 
 /**

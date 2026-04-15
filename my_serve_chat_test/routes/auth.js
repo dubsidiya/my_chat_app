@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getMe, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/auth/index.js';
+import { register, login, getMe, getWebSocketToken, refreshSession, logout, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/auth/index.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage } from '../utils/uploadImage.js';
 
@@ -47,19 +47,31 @@ const getUserByIdLimiter = rateLimit({
   keyGenerator: (req) => req.user?.userId?.toString() || req.ip || 'unknown',
 });
 
+const getUsersLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 80,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком много запросов поиска пользователей, попробуйте позже' },
+  keyGenerator: (req) => req.user?.userId?.toString() || req.ip || 'unknown',
+});
+
 // Публичные эндпоинты (не требуют аутентификации)
 router.post('/register', register);
 router.post('/login', login);
+router.post('/refresh', refreshSession);
 
 // Защищенные эндпоинты (требуют JWT токен)
 router.get('/me', authenticateToken, getMe);
+router.post('/ws-token', authenticateToken, getWebSocketToken); // POST /auth/ws-token — эфемерный токен для WebSocket
 router.patch('/me', authenticateToken, updateProfile); // PATCH /auth/me — обновить ник (display_name)
 router.post('/me/avatar', authenticateToken, uploadImage.single('avatar'), uploadAvatar); // POST /auth/me/avatar — загрузить аватар
-router.get('/users', authenticateToken, getAllUsers); // GET /auth/users - получение всех пользователей
+router.get('/users', authenticateToken, getUsersLimiter, getAllUsers); // GET /auth/users - поиск пользователей из общего social graph
 router.get('/users/:userId', authenticateToken, getUserByIdLimiter, getUserById); // GET /auth/users/:userId - профиль пользователя
 router.delete('/user/:userId', authenticateToken, sensitiveActionLimiter, deleteAccount); // DELETE /auth/user/:userId
 router.put('/user/:userId/password', authenticateToken, sensitiveActionLimiter, changePassword); // PUT /auth/user/:userId/password
 router.post('/unlock-private', authenticateToken, unlockLimiter, unlockPrivateAccess); // POST /auth/unlock-private - получить токен с privateAccess=true
 router.post('/fcm-token', authenticateToken, fcmTokenLimiter, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
+router.post('/logout', authenticateToken, logout); // POST /auth/logout - отзыв refresh-сессий
 
 export default router;

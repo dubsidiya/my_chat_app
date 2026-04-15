@@ -1004,6 +1004,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
+              await _authService.logout();
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
               await E2eeService.clearAll();

@@ -152,34 +152,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// Настройка CORS - ограничиваем только разрешенные домены
-const allowedOrigins = process.env.ALLOWED_ORIGINS
+const isProduction = process.env.NODE_ENV === 'production';
+const enablePreviewOrigins = process.env.ENABLE_PREVIEW_ORIGIN_PATTERNS === 'true' || process.env.ENABLE_PREVIEW_ORIGIN_PATTERNS === '1';
+
+// Настройка CORS:
+// - production: только явные origin из ALLOWED_ORIGINS
+// - development: ALLOWED_ORIGINS + localhost
+const envAllowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-  : ['http://localhost:3000', 'https://my-chat-app.vercel.app'];
-if (process.env.NODE_ENV === 'production') {
-  if (!process.env.ALLOWED_ORIGINS?.trim()) {
-    console.error('❌ В production необходимо задать ALLOWED_ORIGINS в .env (список разрешённых origin для CORS).');
-    process.exit(1);
-  }
+  : [];
+if (isProduction && envAllowedOrigins.length === 0) {
+  console.error('❌ В production необходимо задать ALLOWED_ORIGINS в .env (точные origin, без wildcard).');
+  process.exit(1);
 }
 
-// Опциональные pattern/wildcard origins (например: https://*.vercel.app, *.netlify.app)
-// По умолчанию разрешаем все *.vercel.app (preview и production деплои на Vercel).
-const allowedOriginPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
-  ? process.env.ALLOWED_ORIGIN_PATTERNS.split(',').map(p => p.trim()).filter(Boolean)
-  : ['https://*.vercel.app'];
-
-// Добавляем стандартные домены для разработки и известные фронтенды
-const defaultOrigins = [
+const devDefaultOrigins = [
   'http://localhost:3000',
   'http://localhost:8080',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:8080',
-  'https://my-chat-app.vercel.app',
-  'https://reol-estellias-projects.vercel.app'
+];
+const allAllowedOrigins = [
+  ...new Set(isProduction ? envAllowedOrigins : [...envAllowedOrigins, ...devDefaultOrigins]),
 ];
 
-const allAllowedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
+const allowedOriginPatterns = enablePreviewOrigins && process.env.ALLOWED_ORIGIN_PATTERNS
+  ? process.env.ALLOWED_ORIGIN_PATTERNS.split(',').map(p => p.trim()).filter(Boolean)
+  : [];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -210,7 +209,7 @@ app.use(cors({
     }
     
     // Проверяем localhost в любом виде (для разработки)
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    if (!isProduction && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
       if (process.env.NODE_ENV === 'development') {
         console.log(`CORS: Разрешен localhost origin: ${origin}`);
       }

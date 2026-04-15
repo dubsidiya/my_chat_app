@@ -2,6 +2,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 
 import dotenv from 'dotenv';
+import fs from 'fs';
 dotenv.config();
 
 // Проверка DATABASE_URL
@@ -22,15 +23,40 @@ if (connectionString) {
 }
 const isLocal = process.env.DATABASE_URL?.includes('localhost') ?? false;
 
-// SSL: по умолчанию rejectUnauthorized: false для облачных БД (Neon, Yandex, Supabase), у которых
-// сертификат может не пройти проверку без добавления CA. Риск: при перехвате трафика возможен MITM.
-// Чтобы включить проверку сертификата (когда настроен CA), задайте в .env: PGSSL_REJECT_UNAUTHORIZED=true
-const sslRejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' || process.env.PGSSL_REJECT_UNAUTHORIZED === '1';
+const isProd = process.env.NODE_ENV === 'production';
+const parseBool = (v) => ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
+
+// В production по умолчанию требуем проверку сертификата.
+const sslRejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED != null
+  ? parseBool(process.env.PGSSL_REJECT_UNAUTHORIZED)
+  : isProd;
+
+let sslCa = null;
+if (process.env.PGSSL_CA_CERT && process.env.PGSSL_CA_CERT.trim()) {
+  sslCa = process.env.PGSSL_CA_CERT.replace(/\\n/g, '\n');
+} else if (process.env.PGSSL_CA_CERT_PATH && process.env.PGSSL_CA_CERT_PATH.trim()) {
+  try {
+    sslCa = fs.readFileSync(process.env.PGSSL_CA_CERT_PATH, 'utf8');
+  } catch (err) {
+    console.error('❌ Не удалось прочитать PGSSL_CA_CERT_PATH:', err.message);
+    if (isProd) process.exit(1);
+  }
+}
+
+if (isProd && !isLocal && !sslRejectUnauthorized) {
+  console.error('❌ В production запрещено PGSSL_REJECT_UNAUTHORIZED=false');
+  process.exit(1);
+}
+if (isProd && !isLocal && sslRejectUnauthorized && !sslCa) {
+  console.error('❌ В production при строгом TLS нужен PGSSL_CA_CERT или PGSSL_CA_CERT_PATH');
+  process.exit(1);
+}
 
 const pool = new Pool({
   connectionString,
   ssl: isLocal ? false : {
     rejectUnauthorized: sslRejectUnauthorized,
+    ...(sslCa ? { ca: sslCa } : {}),
   },
 });
 

@@ -1,15 +1,114 @@
 import pool from '../db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { generateToken } from '../middleware/auth.js';
+import {
+  generateToken,
+  generateRefreshToken,
+  generateWebSocketToken,
+  getRefreshTokenTtlDays,
+  getWebSocketTokenTtlSeconds,
+  verifyRefreshToken,
+} from '../middleware/auth.js';
 import { validateRegisterData, validateLoginData, validatePassword } from '../utils/validation.js';
 import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 import { securityEvent } from '../utils/auditLog.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
 import { DEFAULT_USER_TIMEZONE, normalizeTimeZone } from '../utils/timezone.js';
+import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
+let _authSessionsTableEnsured = false;
+
+const toClientMediaUrl = async (value) => {
+  const key = toStorageKey(value);
+  if (!key) return value ?? null;
+  return getSignedObjectUrl(key, 900);
+};
+
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
+
+const getClientIp = (req) =>
+  req?.ip || req?.get?.('x-forwarded-for')?.split(',')[0]?.trim() || req?.connection?.remoteAddress || null;
+
+const ensureAuthSessionsTable = async () => {
+  if (_authSessionsTableEnsured) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      refresh_token_hash TEXT NOT NULL,
+      token_version INTEGER NOT NULL DEFAULT 0,
+      user_agent TEXT NULL,
+      ip TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP NOT NULL,
+      revoked_at TIMESTAMP NULL
+    );
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
+      ON auth_sessions(user_id, revoked_at, expires_at);
+  `);
+  _authSessionsTableEnsured = true;
+};
+
+const extractRefreshTokenFromRequest = (req) => {
+  const fromBody = req.body?.refreshToken;
+  const fromHeader = req.get?.('x-refresh-token');
+  const cookieHeader = req.get?.('cookie') || '';
+  let fromCookie = null;
+  if (cookieHeader) {
+    const parts = cookieHeader.split(';').map((x) => x.trim());
+    const matched = parts.find((x) => x.startsWith('refresh_token='));
+    if (matched) fromCookie = matched.slice('refresh_token='.length);
+  }
+  const token = (fromBody || fromHeader || fromCookie || '').toString().trim();
+  return token || null;
+};
+
+const setRefreshCookieIfWeb = (req, res, refreshToken) => {
+  const origin = (req.get?.('origin') || '').toString();
+  const isBrowserRequest = origin.startsWith('http://') || origin.startsWith('https://');
+  if (!isBrowserRequest) return;
+  const maxAgeSeconds = getRefreshTokenTtlDays() * 24 * 60 * 60;
+  const cookie = [
+    `refresh_token=${refreshToken}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    req.secure ? 'Secure' : null,
+    `Max-Age=${maxAgeSeconds}`,
+  ]
+    .filter(Boolean)
+    .join('; ');
+  res.setHeader('Set-Cookie', cookie);
+};
+
+const createUserSessionTokens = async (user, privateAccess, req) => {
+  await ensureAuthSessionsTable();
+  const sessionId = crypto.randomUUID();
+  const tokenVersion = user.token_version ?? 0;
+  const accessToken = generateToken(user.id, user.email, privateAccess, tokenVersion);
+  const refreshToken = generateRefreshToken(sessionId, user.id, user.email, tokenVersion);
+  const expiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
+  await pool.query(
+    `INSERT INTO auth_sessions (id, user_id, refresh_token_hash, token_version, user_agent, ip, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      sessionId,
+      user.id,
+      hashToken(refreshToken),
+      tokenVersion,
+      req.get?.('user-agent') || null,
+      getClientIp(req),
+      expiresAt.toISOString(),
+    ]
+  );
+  return { accessToken, refreshToken };
+};
 
 async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
   try {
@@ -131,12 +230,14 @@ export const register = async (req, res) => {
     const newUser = result.rows[0];
     const privateAccess = hasPrivateAccess({ userId: newUser.id, username: newUser.email });
 
-    const token = generateToken(newUser.id, newUser.email, privateAccess, newUser.token_version ?? 0);
+    const { accessToken, refreshToken } = await createUserSessionTokens(newUser, privateAccess, req);
+    setRefreshCookieIfWeb(req, res, refreshToken);
 
     res.status(201).json({
       userId: newUser.id,
       username: newUser.email,
-      token: token,
+      token: accessToken,
+      refreshToken,
       privateAccess,
       displayName: newUser.display_name ?? null,
       timezone: newUser.timezone || DEFAULT_USER_TIMEZONE,
@@ -212,23 +313,182 @@ export const login = async (req, res) => {
 
     const privateAccess = hasPrivateAccess({ userId: user.id, username: user.email });
 
-    const token = generateToken(user.id, user.email, privateAccess, user.token_version ?? 0);
+    const { accessToken, refreshToken } = await createUserSessionTokens(user, privateAccess, req);
+    setRefreshCookieIfWeb(req, res, refreshToken);
 
     delete user.password;
 
     res.status(200).json({
       id: user.id,
       username: user.email,
-      token: token,
+      token: accessToken,
+      refreshToken,
       isSuperuser: isSuperuser({ userId: user.id, username: user.email }),
       privateAccess,
       displayName: user.display_name ?? null,
-      avatarUrl: user.avatar_url ?? null,
+      avatarUrl: await toClientMediaUrl(user.avatar_url),
       timezone: normalizeTimeZone(user.timezone) || DEFAULT_USER_TIMEZONE,
     });
   } catch (error) {
     console.error('Ошибка входа:', error.message);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Короткоживущий токен только для WebSocket-подключения (особенно для web-клиента).
+export const getWebSocketToken = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+
+    const userRow = await pool.query(
+      'SELECT id, email, token_version FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userRow.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+    const user = userRow.rows[0];
+    const wsToken = generateWebSocketToken(
+      user.id,
+      user.email,
+      user.token_version ?? 0
+    );
+    return res.status(200).json({
+      wsToken,
+      expiresInSeconds: getWebSocketTokenTtlSeconds(),
+    });
+  } catch (error) {
+    console.error('Ошибка getWebSocketToken:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Обновление access-токена по refresh-токену.
+export const refreshSession = async (req, res) => {
+  try {
+    const refreshToken = extractRefreshTokenFromRequest(req);
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh токен отсутствует' });
+    }
+    const decoded = verifyRefreshToken(refreshToken);
+    if (!decoded?.sid || !decoded?.userId) {
+      return res.status(401).json({ message: 'Недействительный refresh токен' });
+    }
+
+    await ensureAuthSessionsTable();
+    const session = await pool.query(
+      `SELECT id, user_id, token_version, refresh_token_hash
+       FROM auth_sessions
+       WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+       LIMIT 1`,
+      [decoded.sid, decoded.userId]
+    );
+    if (session.rows.length === 0) {
+      return res.status(401).json({ message: 'Сессия недействительна' });
+    }
+    const row = session.rows[0];
+    if (row.refresh_token_hash !== hashToken(refreshToken)) {
+      await pool.query(
+        'UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [row.id]
+      );
+      return res.status(401).json({ message: 'Сессия недействительна' });
+    }
+
+    const userResult = await queryUserWithOptionalAvatarById(decoded.userId);
+    const user = userResult.rows[0];
+    if (!user) {
+      return res.status(401).json({ message: 'Пользователь не найден' });
+    }
+    const dbTokenVersion = user.token_version ?? 0;
+    if ((decoded.tv ?? 0) !== dbTokenVersion || row.token_version !== dbTokenVersion) {
+      await pool.query(
+        'UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [row.id]
+      );
+      return res.status(401).json({ message: 'Сессия истекла. Пожалуйста, войдите заново' });
+    }
+
+    const privateAccess = hasPrivateAccess({ userId: user.id, username: user.email });
+    const accessToken = generateToken(user.id, user.email, privateAccess, dbTokenVersion);
+    const rotatedRefreshToken = generateRefreshToken(row.id, user.id, user.email, dbTokenVersion);
+    const expiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
+    await pool.query(
+      `UPDATE auth_sessions
+       SET refresh_token_hash = $2,
+           token_version = $3,
+           last_seen_at = CURRENT_TIMESTAMP,
+           ip = $4,
+           user_agent = $5,
+           expires_at = $6
+       WHERE id = $1`,
+      [
+        row.id,
+        hashToken(rotatedRefreshToken),
+        dbTokenVersion,
+        getClientIp(req),
+        req.get?.('user-agent') || null,
+        expiresAt.toISOString(),
+      ]
+    );
+
+    setRefreshCookieIfWeb(req, res, rotatedRefreshToken);
+    return res.status(200).json({
+      token: accessToken,
+      refreshToken: rotatedRefreshToken,
+      privateAccess,
+      isSuperuser: isSuperuser({ userId: user.id, username: user.email }),
+    });
+  } catch (error) {
+    console.error('Ошибка refreshSession:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// Logout: отзываем текущую refresh-сессию, если токен передан, иначе все сессии пользователя.
+export const logout = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: 'Требуется аутентификация' });
+    }
+    await ensureAuthSessionsTable();
+
+    const refreshToken = extractRefreshTokenFromRequest(req);
+    if (refreshToken) {
+      const decoded = verifyRefreshToken(refreshToken);
+      if (decoded?.sid && decoded?.userId?.toString() === userId.toString()) {
+        await pool.query(
+          `UPDATE auth_sessions
+           SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+          [decoded.sid, userId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE auth_sessions
+           SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP
+           WHERE user_id = $1 AND revoked_at IS NULL`,
+          [userId]
+        );
+      }
+    } else {
+      await pool.query(
+        `UPDATE auth_sessions
+         SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND revoked_at IS NULL`,
+        [userId]
+      );
+    }
+
+    res.setHeader('Set-Cookie', 'refresh_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Ошибка logout:', error.message);
+    return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -280,7 +540,7 @@ export const getMe = async (req, res) => {
       id: u.id,
       username: u.email,
       displayName: u.display_name ?? null,
-      avatarUrl: u.avatar_url ?? null,
+      avatarUrl: await toClientMediaUrl(u.avatar_url),
       timezone: normalizeTimeZone(u.timezone) || DEFAULT_USER_TIMEZONE,
       isSuperuser: isSuperuser(req.user),
       privateAccess: req.user.privateAccess === true,
@@ -419,11 +679,11 @@ export const uploadAvatar = async (req, res) => {
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ message: 'Выберите изображение для аватара' });
     }
-    const { imageUrl } = await uploadToCloud(req.file, 'avatars');
+    const { imageUrl, objectKey } = await uploadToCloud(req.file, 'avatars');
     try {
       await pool.query(
         'UPDATE users SET avatar_url = $1 WHERE id = $2',
-        [imageUrl, req.user.userId]
+        [objectKey || imageUrl, req.user.userId]
       );
     } catch (error) {
       if (error?.code === '42703' && String(error?.message || '').includes('avatar_url')) {
@@ -458,7 +718,7 @@ export const getUserById = async (req, res) => {
         id: u.id,
         username: u.email,
         displayName: u.display_name ?? null,
-        avatarUrl: u.avatar_url ?? null,
+        avatarUrl: await toClientMediaUrl(u.avatar_url),
       });
     }
 
@@ -481,7 +741,7 @@ export const getUserById = async (req, res) => {
       id: u.id,
       username: u.email,
       displayName: u.display_name ?? null,
-      avatarUrl: u.avatar_url ?? null,
+      avatarUrl: await toClientMediaUrl(u.avatar_url),
     });
   } catch (error) {
     console.error('Ошибка getUserById:', error);
@@ -502,19 +762,22 @@ export const getAllUsers = async (req, res) => {
     const qRaw = (req.query?.q || '').toString().trim().toLowerCase();
     const limitRaw = parseInt(req.query?.limit, 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 20;
-    if (qRaw.length < 2) {
+    if (qRaw.length < 3) {
       return res.json([]);
     }
 
     const result = await pool.query(
-      `SELECT id, email, display_name
-       FROM users
-       WHERE id != $1
+      `SELECT DISTINCT u.id, u.email, u.display_name
+       FROM users u
+       JOIN chat_users target_cu ON target_cu.user_id = u.id
+       JOIN chat_users me_cu ON me_cu.chat_id = target_cu.chat_id
+       WHERE u.id != $1
+         AND me_cu.user_id = $1
          AND (
-           LOWER(email) LIKE $2
-           OR LOWER(COALESCE(display_name, '')) LIKE $2
+           LOWER(u.email) LIKE $2
+           OR LOWER(COALESCE(u.display_name, '')) LIKE $2
          )
-       ORDER BY COALESCE(display_name, email)
+       ORDER BY COALESCE(u.display_name, u.email)
        LIMIT $3`,
       [currentUserId, `%${qRaw}%`, limit]
     );
@@ -620,7 +883,9 @@ export const deleteAccount = async (req, res) => {
 
   } catch (error) {
     console.error('Ошибка удаления аккаунта:', error);
-    console.error('Stack:', error.stack);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Stack:', error.stack);
+    }
     res.status(500).json({ message: 'Ошибка удаления аккаунта' });
   }
 };
@@ -682,15 +947,32 @@ export const changePassword = async (req, res) => {
 
     const updatedUser = updateResult.rows[0];
     const privateAccess = hasPrivateAccess({ userId: parseInt(userId, 10), username: updatedUser.email });
-    const newToken = generateToken(parseInt(userId, 10), updatedUser.email, privateAccess, updatedUser.token_version);
+    await ensureAuthSessionsTable();
+    await pool.query(
+      'UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId]
+    );
+    const rotated = await createUserSessionTokens(
+      { id: parseInt(userId, 10), email: updatedUser.email, token_version: updatedUser.token_version },
+      privateAccess,
+      req
+    );
+    const newToken = rotated.accessToken;
+    setRefreshCookieIfWeb(req, res, rotated.refreshToken);
 
     console.log(`Пароль изменен для пользователя ${userId}`);
 
     securityEvent('password_changed', req);
-    res.status(200).json({ message: 'Пароль успешно изменен', token: newToken });
+    res.status(200).json({
+      message: 'Пароль успешно изменен',
+      token: newToken,
+      refreshToken: rotated.refreshToken,
+    });
   } catch (error) {
     console.error('Ошибка смены пароля:', error);
-    console.error('Stack:', error.stack);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Stack:', error.stack);
+    }
     res.status(500).json({ message: 'Ошибка смены пароля' });
   }
 };

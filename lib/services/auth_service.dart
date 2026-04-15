@@ -31,6 +31,7 @@ class AuthService {
             data['id'].toString(),
             userIdentifier,
             data['token'],
+            refreshToken: data['refreshToken']?.toString(),
             isSuperuser: isSuperuser,
             displayName: displayName,
             avatarUrl: avatarUrl != null && avatarUrl.isNotEmpty ? avatarUrl : null,
@@ -80,6 +81,7 @@ class AuthService {
             data['userId'].toString(),
             userIdentifier,
             data['token'],
+            refreshToken: data['refreshToken']?.toString(),
             displayName: displayName,
           );
           await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
@@ -210,6 +212,7 @@ class AuthService {
               userData['id'] ?? userId,
               userData['email'] ?? '',
               data['token'],
+              refreshToken: data['refreshToken']?.toString(),
               isSuperuser: userData['isSuperuser'] == 'true',
               displayName: userData['displayName'],
               avatarUrl: userData['avatarUrl'],
@@ -346,11 +349,66 @@ class AuthService {
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200) return true;
-      if (response.statusCode == 401 || response.statusCode == 403) return false;
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        final refreshed = await refreshSession();
+        return refreshed ? true : false;
+      }
       return null;
     } catch (_) {
       return null;
     }
+  }
+
+  Future<bool> refreshSession() async {
+    try {
+      final refreshToken = await StorageService.getRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) return false;
+      final response = await timedPost(
+        Uri.parse('$baseUrl/auth/refresh'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Refresh-Token': refreshToken,
+        },
+        body: jsonEncode({'refreshToken': refreshToken}),
+      );
+      if (response.statusCode != 200) return false;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final newAccessToken = data['token']?.toString();
+      if (newAccessToken == null || newAccessToken.isEmpty) return false;
+      final userData = await StorageService.getUserData();
+      if (userData == null) return false;
+      await StorageService.saveUserData(
+        userData['id'] ?? '',
+        userData['email'] ?? '',
+        newAccessToken,
+        refreshToken: data['refreshToken']?.toString() ?? refreshToken,
+        isSuperuser: userData['isSuperuser'] == 'true',
+        displayName: userData['displayName'],
+        avatarUrl: userData['avatarUrl'],
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> logout() async {
+    try {
+      final accessToken = await StorageService.getToken();
+      final refreshToken = await StorageService.getRefreshToken();
+      if (accessToken == null || accessToken.isEmpty) return;
+      await timedPost(
+        Uri.parse('$baseUrl/auth/logout'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+          if (refreshToken != null && refreshToken.isNotEmpty) 'X-Refresh-Token': refreshToken,
+        },
+        body: jsonEncode({
+          if (refreshToken != null && refreshToken.isNotEmpty) 'refreshToken': refreshToken,
+        }),
+      );
+    } catch (_) {}
   }
 
   /// Профиль другого пользователя (аватар/ник). Требует авторизацию.

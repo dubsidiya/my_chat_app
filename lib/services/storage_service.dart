@@ -8,6 +8,7 @@ class StorageService {
   static const String _userEmailKey = 'user_email';
   static const String _displayNameKey = 'display_name';
   static const String _tokenKey = 'auth_token';
+  static const String _refreshTokenKey = 'refresh_token';
   static const String _isSuperuserKey = 'is_superuser';
   static const String _avatarUrlKey = 'avatar_url';
   static const String _soundOnNewMessageKey = 'sound_on_new_message';
@@ -20,7 +21,15 @@ class StorageService {
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
   // Сохранение данных пользователя (userEmail = логин для входа)
-  static Future<void> saveUserData(String userId, String userEmail, String token, {bool isSuperuser = false, String? displayName, String? avatarUrl}) async {
+  static Future<void> saveUserData(
+    String userId,
+    String userEmail,
+    String token, {
+    String? refreshToken,
+    bool isSuperuser = false,
+    String? displayName,
+    String? avatarUrl,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userIdKey, userId);
@@ -41,10 +50,17 @@ class StorageService {
       // рассмотреть httpOnly cookie на бэкенде).
       if (kIsWeb) {
         await prefs.setString(_tokenKey, token);
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          await prefs.setString(_refreshTokenKey, refreshToken);
+        }
       } else {
         await _secure.write(key: _tokenKey, value: token);
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          await _secure.write(key: _refreshTokenKey, value: refreshToken);
+        }
         // Удаляем возможный старый токен из prefs (миграция)
         await prefs.remove(_tokenKey);
+        await prefs.remove(_refreshTokenKey);
       }
     } catch (e) {
       if (kDebugMode) {
@@ -73,6 +89,7 @@ class StorageService {
           'id': userId,
           'email': userEmail,
           'token': token,
+          if ((await getRefreshToken()) != null) 'refreshToken': (await getRefreshToken())!,
           'isSuperuser': isSuperuser.toString(),
           if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
           if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatarUrl': avatarUrl,
@@ -115,6 +132,42 @@ class StorageService {
     }
   }
 
+  static Future<String?> getRefreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (kIsWeb) {
+        return prefs.getString(_refreshTokenKey);
+      }
+      final token = await _secure.read(key: _refreshTokenKey);
+      if (token == null) {
+        final legacy = prefs.getString(_refreshTokenKey);
+        if (legacy != null && legacy.isNotEmpty) {
+          await _secure.write(key: _refreshTokenKey, value: legacy);
+          await prefs.remove(_refreshTokenKey);
+          return legacy;
+        }
+      }
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setRefreshToken(String? token) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (token == null || token.isEmpty) {
+      await prefs.remove(_refreshTokenKey);
+      if (!kIsWeb) await _secure.delete(key: _refreshTokenKey);
+      return;
+    }
+    if (kIsWeb) {
+      await prefs.setString(_refreshTokenKey, token);
+    } else {
+      await _secure.write(key: _refreshTokenKey, value: token);
+      await prefs.remove(_refreshTokenKey);
+    }
+  }
+
   /// URL аватара текущего пользователя (кэш)
   static Future<void> setAvatarUrl(String? url) async {
     final prefs = await SharedPreferences.getInstance();
@@ -139,9 +192,11 @@ class StorageService {
     await prefs.remove(_displayNameKey);
     await prefs.remove(_avatarUrlKey);
     await prefs.remove(_tokenKey);
+    await prefs.remove(_refreshTokenKey);
     await prefs.remove(_isSuperuserKey);
     if (!kIsWeb) {
       await _secure.delete(key: _tokenKey);
+      await _secure.delete(key: _refreshTokenKey);
     }
     if (userId != null) {
       await prefs.remove('$_privateUnlockedPrefix$userId');

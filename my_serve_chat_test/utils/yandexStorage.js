@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'path';
 
 // Проверка наличия обязательных переменных окружения
@@ -64,16 +65,11 @@ export const uploadToYandex = async (fileBuffer, fileName, contentType, folder =
       Key: key,
       Body: fileBuffer,
       ContentType: contentType,
-      ACL: 'public-read', // Публичный доступ для чтения
     });
 
     await s3Client.send(command);
-    
-    // Возвращаем публичный URL
-    const imageUrl = `${getBaseUrl()}/${key}`;
-    console.log('Image uploaded successfully:', imageUrl);
-    
-    return imageUrl;
+    console.log('Object uploaded successfully:', key);
+    return key;
   } catch (error) {
     console.error('Ошибка загрузки в Яндекс Облако:', error);
     
@@ -100,32 +96,7 @@ export const deleteFromYandex = async (imageUrl) => {
       return;
     }
 
-    // Извлекаем ключ из URL
-    // URL: https://bucket.storage.yandexcloud.net/images/image-xxx.jpg
-    // или: https://bucket.storage.yandexcloud.net/original/original-image-xxx.jpg
-    // или: https://storage.yandexcloud.net/bucket/images/image-xxx.jpg
-    let key;
-
-    // Поддерживаем несколько папок (images/original/files)
-    const folders = ['images', 'original', 'files'];
-    for (const folder of folders) {
-      const marker = `/${folder}/`;
-      if (imageUrl.includes(marker)) {
-        const parts = imageUrl.split(marker);
-        if (parts.length > 1 && parts[1]) {
-          key = `${folder}/${parts[1]}`;
-          break;
-        }
-
-        // Альтернативный формат URL
-        const urlParts = imageUrl.split('/');
-        const idx = urlParts.findIndex((part) => part === folder);
-        if (idx !== -1 && idx < urlParts.length - 1) {
-          key = `${folder}/${urlParts.slice(idx + 1).join('/')}`;
-          break;
-        }
-      }
-    }
+    const key = toStorageKey(imageUrl);
 
     if (!key) {
       console.log('URL does not contain supported folder path (images/original/files):', imageUrl);
@@ -166,19 +137,8 @@ export const deleteFromYandex = async (imageUrl) => {
 export const checkFileExists = async (imageUrl) => {
   try {
     if (!imageUrl) return false;
-
-    // Извлекаем ключ из URL (аналогично deleteFromYandex)
-    let key;
-    if (imageUrl.includes('/images/')) {
-      const parts = imageUrl.split('/images/');
-      if (parts.length > 1) {
-        key = `images/${parts[1]}`;
-      } else {
-        return false;
-      }
-    } else {
-      return false;
-    }
+    const key = toStorageKey(imageUrl);
+    if (!key) return false;
 
     const command = new HeadObjectCommand({
       Bucket: BUCKET_NAME,
@@ -204,5 +164,48 @@ export const checkFileExists = async (imageUrl) => {
 export const getImageUrl = (fileName) => {
   if (!fileName) return null;
   return `${getBaseUrl()}/images/${fileName}`;
+};
+
+const STORAGE_KEY_RE = /^(images|original|files|avatars)\/[a-zA-Z0-9._/-]+$/;
+
+export const isStorageKey = (value) => STORAGE_KEY_RE.test(String(value || ''));
+
+export const toStorageKey = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (isStorageKey(raw)) return raw;
+  try {
+    const u = new URL(raw);
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts.length >= 2) {
+      if (parts[0] === BUCKET_NAME) {
+        const maybe = parts.slice(1).join('/');
+        if (isStorageKey(maybe)) return maybe;
+      }
+      const maybe = parts.join('/');
+      if (isStorageKey(maybe)) return maybe;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
+};
+
+export const getSignedObjectUrl = async (key, expiresInSeconds = 900) => {
+  const storageKey = toStorageKey(key);
+  if (!storageKey) return null;
+  const clampedExpires = Number.isFinite(expiresInSeconds)
+    ? Math.min(Math.max(expiresInSeconds, 60), 3600)
+    : 900;
+  try {
+    const cmd = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: storageKey,
+    });
+    return await getSignedUrl(s3Client, cmd, { expiresIn: clampedExpires });
+  } catch (error) {
+    console.error('Error creating presigned URL:', error.message);
+    return null;
+  }
 };
 

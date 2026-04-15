@@ -1,6 +1,6 @@
 import multer from 'multer';
 import path from 'path';
-import { uploadToYandex, deleteFromYandex } from './yandexStorage.js';
+import { uploadToYandex, deleteFromYandex, getSignedObjectUrl } from './yandexStorage.js';
 
 // Санитизация имени файла: только basename, без path traversal, макс. длина.
 // Декодируем percent-encoded (RFC 5987), чтобы кириллица и спецсимволы отображались корректно.
@@ -102,9 +102,11 @@ export const uploadFileToCloud = async (file, folder = 'files') => {
   const safeExt = ext.toLowerCase();
   const fileName = `file-${uniqueSuffix}${safeExt}`;
 
-  const url = await uploadToYandex(file.buffer, fileName, file.mimetype || 'application/octet-stream', folder);
+  const objectKey = await uploadToYandex(file.buffer, fileName, file.mimetype || 'application/octet-stream', folder);
+  const url = await getSignedObjectUrl(objectKey, 900);
   return {
     fileUrl: url,
+    objectKey,
     storedFileName: fileName,
     originalName: sanitizeOriginalName(file.originalname) || fileName,
     size: file.size || file.buffer.length,

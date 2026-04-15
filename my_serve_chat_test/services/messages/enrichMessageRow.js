@@ -4,6 +4,13 @@ import {
   findMessageReadAt,
   findReplyMessage,
 } from '../../repositories/messages/messageMetadataRepository.js';
+import { getSignedObjectUrl, toStorageKey } from '../../utils/yandexStorage.js';
+
+const toClientMediaUrl = async (value) => {
+  const key = toStorageKey(value);
+  if (!key) return value ?? null;
+  return getSignedObjectUrl(key, 900);
+};
 
 export const enrichMessageRow = async (db, row, currentUserId) => {
   const readCheck = await findMessageReadAt(db, { messageId: row.id, userId: currentUserId });
@@ -17,7 +24,7 @@ export const enrichMessageRow = async (db, row, currentUserId) => {
       replyToMessage = {
         id: replyCheck.rows[0].id,
         content: replyCheck.rows[0].content,
-        image_url: replyCheck.rows[0].image_url,
+        image_url: await toClientMediaUrl(replyCheck.rows[0].image_url),
         user_id: replyCheck.rows[0].user_id,
         sender_email: replyCheck.rows[0].sender_email,
       };
@@ -44,9 +51,9 @@ export const enrichMessageRow = async (db, row, currentUserId) => {
     user_id: row.user_id,
     key_version: row.key_version ?? 1,
     content: row.content,
-    image_url: row.image_url,
-    original_image_url: row.original_image_url,
-    file_url: row.file_url,
+    image_url: await toClientMediaUrl(row.image_url),
+    original_image_url: await toClientMediaUrl(row.original_image_url),
+    file_url: await toClientMediaUrl(row.file_url),
     file_name: row.file_name,
     file_size: row.file_size,
     file_mime: row.file_mime,

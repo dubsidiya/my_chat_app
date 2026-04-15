@@ -2,6 +2,16 @@ import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL || '7d';
+const WS_TOKEN_TTL_SECONDS = Number.parseInt(process.env.WS_TOKEN_TTL_SECONDS || '90', 10);
+const SAFE_WS_TOKEN_TTL_SECONDS = Number.isFinite(WS_TOKEN_TTL_SECONDS)
+  ? Math.min(Math.max(WS_TOKEN_TTL_SECONDS, 30), 300)
+  : 90;
+const REFRESH_JWT_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET;
+const REFRESH_TOKEN_TTL_DAYS_RAW = Number.parseInt(process.env.JWT_REFRESH_TTL_DAYS || '30', 10);
+const REFRESH_TOKEN_TTL_DAYS = Number.isFinite(REFRESH_TOKEN_TTL_DAYS_RAW)
+  ? Math.min(Math.max(REFRESH_TOKEN_TTL_DAYS_RAW, 1), 90)
+  : 30;
 
 // Middleware для проверки JWT токена.
 // После проверки подписи сверяет token_version (tv) из JWT с БД —
@@ -82,7 +92,26 @@ export const generateToken = (userId, username, privateAccess = false, tokenVers
   return jwt.sign(
     { userId, email: username, username: username, privateAccess: privateAccess === true, tv: tokenVersion },
     JWT_SECRET,
-    { expiresIn: '7d', algorithm: 'HS256' }
+    { expiresIn: ACCESS_TOKEN_TTL, algorithm: 'HS256' }
+  );
+};
+
+// Эфемерный токен только для подключения к WebSocket.
+// Короткий TTL снижает риск утечек при перехвате в браузерном окружении.
+export const generateWebSocketToken = (userId, username, tokenVersion = 0) => {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET не настроен на сервере');
+  }
+  return jwt.sign(
+    {
+      userId,
+      email: username,
+      username: username,
+      tv: tokenVersion,
+      purpose: 'ws',
+    },
+    JWT_SECRET,
+    { expiresIn: `${SAFE_WS_TOKEN_TTL_SECONDS}s`, algorithm: 'HS256' }
   );
 };
 
@@ -152,12 +181,48 @@ export const requireSuperuser = (req, res, next) => {
 };
 
 // Проверка токена для WebSocket
-export const verifyWebSocketToken = (token) => {
+export const verifyWebSocketToken = (token, { allowAccessTokenFallback = true } = {}) => {
   try {
     if (!JWT_SECRET) return null;
-    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (payload?.purpose === 'ws') return payload;
+    if (allowAccessTokenFallback) return payload;
+    return null;
   } catch (err) {
     return null;
   }
 };
+
+export const getWebSocketTokenTtlSeconds = () => SAFE_WS_TOKEN_TTL_SECONDS;
+
+export const generateRefreshToken = (sessionId, userId, username, tokenVersion = 0) => {
+  if (!REFRESH_JWT_SECRET) {
+    throw new Error('JWT_REFRESH_SECRET не настроен на сервере');
+  }
+  return jwt.sign(
+    {
+      sid: sessionId,
+      userId,
+      email: username,
+      username,
+      tv: tokenVersion,
+      purpose: 'refresh',
+    },
+    REFRESH_JWT_SECRET,
+    { expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`, algorithm: 'HS256' }
+  );
+};
+
+export const verifyRefreshToken = (token) => {
+  try {
+    if (!REFRESH_JWT_SECRET) return null;
+    const payload = jwt.verify(token, REFRESH_JWT_SECRET, { algorithms: ['HS256'] });
+    if (payload?.purpose !== 'refresh') return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const getRefreshTokenTtlDays = () => REFRESH_TOKEN_TTL_DAYS;
 

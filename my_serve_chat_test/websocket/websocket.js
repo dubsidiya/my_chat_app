@@ -134,6 +134,8 @@ export function setupWebSocket(server) {
   // Лимит размера одного сообщения (64 KB) — защита от DoS
   const MAX_WS_PAYLOAD = 64 * 1024;
   const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
+  const allowQueryTokenFallback = process.env.ENABLE_WS_QUERY_TOKEN_FALLBACK !== 'false';
+  const allowAccessTokenFallback = process.env.ENABLE_WS_ACCESS_TOKEN_FALLBACK !== 'false';
 
   wss.on('connection', async (ws, req) => {
     // Получаем токен:
@@ -162,7 +164,13 @@ export function setupWebSocket(server) {
 
     if (!token) {
       const url = new URL(req.url, `http://${req.headers.host}`);
-      token = url.searchParams.get('token');
+      const queryToken = url.searchParams.get('token');
+      if (queryToken && allowQueryTokenFallback) {
+        token = queryToken;
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('WebSocket auth: query token fallback used (legacy mode)');
+        }
+      }
     }
     
     if (!token) {
@@ -173,7 +181,7 @@ export function setupWebSocket(server) {
       return;
     }
 
-    const decoded = verifyWebSocketToken(token);
+    const decoded = verifyWebSocketToken(token, { allowAccessTokenFallback });
     if (!decoded) {
       if (process.env.NODE_ENV === 'development') {
         console.log('WebSocket connection rejected: invalid token');

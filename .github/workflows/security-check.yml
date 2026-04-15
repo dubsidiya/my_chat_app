@@ -33,14 +33,7 @@ jobs:
           cd my_serve_chat_test
           npm ci
 
-      # В CI хотим видеть report, но не блокировать деплой на high (пока не починим зависимости).
-      - name: "npm audit (report: high+)"
-        continue-on-error: true
+      - name: "npm audit gate (fail: high+)"
         run: |
           cd my_serve_chat_test
-          npm audit --audit-level=high
-
-      - name: "npm audit (fail: critical)"
-        run: |
-          cd my_serve_chat_test
-          npm audit --audit-level=critical
+          npm audit --omit=dev --audit-level=high

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
 import '../config/api_config.dart';
+import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
 /// Глобальный WebSocket: один коннект на пользователя для списка чатов и экрана чата.
@@ -23,6 +24,27 @@ class WebSocketService {
   Stream<dynamic> get stream => _streamController.stream;
 
   bool get isConnected => _channel != null;
+
+  Future<String?> _fetchEphemeralWsToken(String accessToken) async {
+    try {
+      final response = await timedPost(
+        Uri.parse('${ApiConfig.baseUrl}/auth/ws-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: '{}',
+        timeout: const Duration(seconds: 8),
+      );
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      final token = data is Map<String, dynamic> ? data['wsToken']?.toString() : null;
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Подключиться, если ещё не подключены или токен изменился.
   Future<void> connectIfNeeded() async {
@@ -44,11 +66,15 @@ class WebSocketService {
           ? baseUrl.replaceFirst('https://', 'wss://')
           : baseUrl.replaceFirst('http://', 'ws://');
 
-      // Web: используем query-токен как самый совместимый режим.
-      // В некоторых окружениях длинный custom subprotocol с JWT ломает handshake.
+      // Web: приоритет — эфемерный WS токен через subprotocol (без токенов в URL).
       if (kIsWeb) {
+        final wsToken = await _fetchEphemeralWsToken(token);
+        final authProtocol = wsToken != null && wsToken.isNotEmpty
+            ? 'auth.$wsToken'
+            : 'auth.$token';
         _channel = WebSocketChannel.connect(
-          Uri.parse('$wsUrl?token=$token'),
+          Uri.parse(wsUrl),
+          protocols: <String>[authProtocol],
         );
       } else {
         _channel = IOWebSocketChannel.connect(
