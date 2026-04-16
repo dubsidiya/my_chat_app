@@ -5,10 +5,11 @@ import '../models/student.dart';
 import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../services/students_service.dart';
+import '../services/reports_service.dart';
 import '../services/storage_service.dart';
 import 'add_lesson_screen.dart';
 import 'edit_student_screen.dart';
-import 'report_builder_screen.dart';
+import 'report_text_view_screen.dart';
 
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
@@ -22,6 +23,7 @@ class StudentDetailScreen extends StatefulWidget {
 
 class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTickerProviderStateMixin {
   final StudentsService _studentsService = StudentsService();
+  final ReportsService _reportsService = ReportsService();
   late Student _student;
   List<Lesson> _lessons = [];
   List<Transaction> _transactions = [];
@@ -357,12 +359,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             TextButton(
               onPressed: () {
                 Navigator.pop(context, false);
-                Navigator.push<void>(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => ReportBuilderScreen(reportId: lesson.linkedReportId),
-                  ),
-                );
+                _openReportView(lesson.linkedReportId!);
               },
               child: const Text('Открыть отчёт'),
             ),
@@ -390,6 +387,28 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           ),
         );
       }
+    }
+  }
+
+  Future<void> _openReportView(int reportId) async {
+    try {
+      final report = await _reportsService.getReport(reportId);
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ReportTextViewScreen(report: report),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось открыть отчёт: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -695,12 +714,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               leading: const Icon(Icons.event),
                               onTap: lesson.linkedReportId != null
                                   ? () {
-                                      Navigator.push<bool>(
-                                        context,
-                                        MaterialPageRoute<bool>(
-                                          builder: (_) => ReportBuilderScreen(reportId: lesson.linkedReportId!),
-                                        ),
-                                      ).then((_) => _refreshData());
+                                      _openReportView(lesson.linkedReportId!);
                                     }
                                   : null,
                               title: Text(

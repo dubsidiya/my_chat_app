@@ -1,0 +1,20 @@
+---
+description: Contract for report permissions and regression checks
+globs: my_serve_chat_test/controllers/reportsController.js
+alwaysApply: false
+---
+
+# Report Permissions Contract
+
+Always preserve this behavior:
+
+- Author can edit own report.
+- Superuser can edit any report.
+- Non-owner and non-superuser cannot edit чужой report.
+
+When changing `updateReport`/access checks:
+
+- Validate owner lookup and reportOwnerId usage across rebuild flow.
+- Ensure date conflict checks are performed in owner scope.
+- Ensure old lessons/transactions cleanup uses report owner context.
+- Re-run `npm run smoke:reports:permissions`.

@@ -504,6 +504,7 @@ export const createReport = async (req, res) => {
 // Обновление отчета (удаляет старые занятия и создает новые)
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
+  const superuser = isSuperuser(req.user);
   const { id } = req.params;
   const { report_date, content, slots: rawSlots } = req.body;
 
@@ -538,20 +539,26 @@ export const updateReport = async (req, res) => {
       return res.status(400).json({ message: 'Нельзя установить будущую дату отчета' });
     }
 
-    // Проверяем, что отчет принадлежит пользователю
-    const checkResult = await client.query(
-      'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
-      [id, userId]
-    );
+    // Автор может редактировать свой отчёт, суперпользователь — любой.
+    const checkResult = superuser
+      ? await client.query(
+          'SELECT id, created_by FROM reports WHERE id = $1 LIMIT 1',
+          [id]
+        )
+      : await client.query(
+          'SELECT id, created_by FROM reports WHERE id = $1 AND created_by = $2',
+          [id, userId]
+        );
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчет не найден' });
     }
+    const reportOwnerId = checkResult.rows[0].created_by;
 
     // Защита от конфликта даты: нельзя сменить дату на уже существующий отчет
     const dateConflict = await client.query(
       'SELECT id FROM reports WHERE report_date = $1 AND created_by = $2 AND id <> $3 LIMIT 1',
-      [report_date, userId, id]
+      [report_date, reportOwnerId, id]
     );
     if (dateConflict.rows.length > 0) {
       await client.query('ROLLBACK');
@@ -569,11 +576,11 @@ export const updateReport = async (req, res) => {
     if (oldLessonIds.length > 0) {
       await client.query(
         'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
-        [userId, oldLessonIds]
+        [reportOwnerId, oldLessonIds]
       );
       await client.query(
         'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
-        [userId, oldLessonIds]
+        [reportOwnerId, oldLessonIds]
       );
     }
 
@@ -597,7 +604,7 @@ export const updateReport = async (req, res) => {
          FROM teacher_students ts
          JOIN students s ON s.id = ts.student_id
          WHERE ts.teacher_id = $1 AND s.id = ANY($2::int[])`,
-        [userId, studentIds]
+        [reportOwnerId, studentIds]
       );
       if (studentsResult.rows.length !== studentIds.length) {
         await client.query('ROLLBACK');
@@ -624,29 +631,28 @@ export const updateReport = async (req, res) => {
       });
     }
 
-    // Обновляем отчет. is_late меняем только суперпользователю (иначе обычный пользователь мог бы обойти пометку «поздний» сменой даты).
-    const superuser = isSuperuser(req.user);
+    // Обновляем отчет. is_late меняем только суперпользователю.
     const reportResult = superuser
       ? await client.query(
           `UPDATE reports 
            SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP,
-               is_late = ($1::date < $5::date)
-           WHERE id = $3 AND created_by = $4
+               is_late = ($1::date < $4::date)
+           WHERE id = $3
            RETURNING *`,
-          [report_date, finalContent, id, userId, todayIso]
+          [report_date, finalContent, id, todayIso]
         )
       : await client.query(
           `UPDATE reports 
            SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
            WHERE id = $3 AND created_by = $4
            RETURNING *`,
-          [report_date, finalContent, id, userId]
+          [report_date, finalContent, id, reportOwnerId]
         );
     const report = reportResult.rows[0];
 
     // Парсим новое содержание и создаем занятия заново
     if (!hasSlots) {
-      parsedLessons = parseReportContent(finalContent, report_date, userId);
+      parsedLessons = parseReportContent(finalContent, report_date, reportOwnerId);
     }
     const createdLessons = [];
 
@@ -667,7 +673,7 @@ export const updateReport = async (req, res) => {
            JOIN students s ON s.id = ts.student_id
            WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) = LOWER($2)
            LIMIT 1`,
-          [userId, name]
+          [reportOwnerId, name]
         );
         if (studentResult.rows.length === 0) {
           const fuzzyResult = await client.query(
@@ -677,7 +683,7 @@ export const updateReport = async (req, res) => {
              WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
              ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
              LIMIT 2`,
-            [userId, `%${name}%`]
+            [reportOwnerId, `%${name}%`]
           );
           if (fuzzyResult.rows.length === 1) {
             studentResult = fuzzyResult;
@@ -719,7 +725,7 @@ export const updateReport = async (req, res) => {
           }
           continue;
         }
-        if (String(origin.created_by) !== String(userId)) {
+        if (String(origin.created_by) !== String(reportOwnerId)) {
           if (hasSlots) {
             await client.query('ROLLBACK');
             return res.status(403).json({ message: 'Некорректный makeup: origin другого преподавателя' });
@@ -750,7 +756,7 @@ export const updateReport = async (req, res) => {
           isChargeable,
           originLessonId,
           notes || null,
-          userId,
+          reportOwnerId,
         ]
       );
       const lesson = lessonResult.rows[0];
@@ -759,7 +765,7 @@ export const updateReport = async (req, res) => {
         await client.query(
           `INSERT INTO transactions (student_id, amount, type, description, lesson_id, created_by)
            VALUES ($1, $2, 'lesson', $3, $4, $5)`,
-          [studentId, price, description, lesson.id, userId]
+          [studentId, price, description, lesson.id, reportOwnerId]
         );
       }
 

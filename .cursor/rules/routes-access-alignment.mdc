@@ -1,0 +1,19 @@
+---
+description: Keep route-level access aligned with controller authorization logic
+globs: my_serve_chat_test/routes/**/*.js
+alwaysApply: false
+---
+
+# Routes Access Alignment
+
+- Route middleware must match intended controller access model.
+- Do not tighten/relax route guards without checking controller ownership checks.
+- For report/accounting endpoints, keep `authenticateToken`, private access, and superuser guards consistent.
+- If access policy changes, update both route and controller layers in one task.
+
+## Required validation after route access edits
+
+- Verify impacted endpoints still map to correct permission behavior:
+  - allowed actor gets success;
+  - forbidden actor gets 403/404 per current contract.
+- Run relevant smoke script(s) for modified domain.

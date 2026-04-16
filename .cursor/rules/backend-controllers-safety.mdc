@@ -1,0 +1,17 @@
+---
+description: Node controller safety for accounting/report mutations
+globs: my_serve_chat_test/controllers/**/*.js
+alwaysApply: false
+---
+
+# Backend Controller Safety
+
+- Preserve transaction integrity: `BEGIN`/`COMMIT` with safe rollback handling.
+- Keep ownership checks before mutating data; avoid broad updates/deletes.
+- For report rebuild logic, keep created_by ownership consistent for lessons/transactions.
+- Do not weaken idempotency behavior for create/apply endpoints.
+
+## Required checks after controller changes
+
+- Run `node --check` on changed controller files.
+- If reports/accounting logic changed, run relevant smoke scripts before final response.

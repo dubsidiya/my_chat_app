@@ -42,6 +42,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   static const Color _accent1 = AppColors.primary;
   static const Color _accent2 = AppColors.primaryGlow;
 
+  bool _canEditReport(Report report) {
+    if (widget.isSuperuser) return true;
+    if (!_allReportsMode) return true;
+    return report.createdBy?.toString() == widget.userId;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -633,6 +639,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           itemCount: _reports.length,
                           itemBuilder: (context, index) {
                             final report = _reports[index];
+                            final canEdit = _canEditReport(report);
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 6),
                               elevation: 2,
@@ -814,16 +821,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                   itemBuilder: (context) => [
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.edit_rounded, size: 20),
-                                          SizedBox(width: 8),
-                                          Text('Редактировать (конструктор)'),
-                                        ],
+                                    if (canEdit)
+                                      const PopupMenuItem(
+                                        value: 'edit',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.edit_rounded, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('Редактировать (конструктор)'),
+                                          ],
+                                        ),
                                       ),
-                                    ),
                                     const PopupMenuItem(
                                       value: 'view_text',
                                       child: Row(
@@ -834,17 +842,18 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                         ],
                                       ),
                                     ),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete_outline_rounded,
-                                              size: 20, color: Colors.red),
-                                          SizedBox(width: 8),
-                                          Text('Удалить', style: TextStyle(color: Colors.red)),
-                                        ],
+                                    if (canEdit)
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.delete_outline_rounded,
+                                                size: 20, color: Colors.red),
+                                            SizedBox(width: 8),
+                                            Text('Удалить', style: TextStyle(color: Colors.red)),
+                                          ],
+                                        ),
                                       ),
-                                    ),
                                   ],
                                   onSelected: (value) {
                                     if (value == 'edit') {

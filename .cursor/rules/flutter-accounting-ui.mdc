@@ -1,0 +1,19 @@
+---
+description: Flutter rules for accounting and reports UI
+globs: lib/**/*.dart
+alwaysApply: false
+---
+
+# Flutter Accounting UI
+
+- Keep permission logic explicit in UI actions (show/hide menu items by role/owner).
+- Prefer read-only navigation where editing is not allowed; do not rely only on button labels.
+- Reuse existing services/models; avoid duplicating API parsing in screens.
+- Keep UI changes minimal: preserve current styles, copy, and navigation patterns.
+
+## Required checks after Dart changes
+
+- Run `flutter analyze` for changed files.
+- If reports/accounting screens changed, verify at least one key scenario manually:
+  - open student -> transactions -> report open flow;
+  - reports list action visibility for current role.

@@ -1,0 +1,37 @@
+---
+description: Project workflow for Flutter + Node accounting and reports
+alwaysApply: true
+---
+
+# My Chat App Workflow
+
+## Core Expectations
+
+- Implement changes end-to-end, do not stop at analysis.
+- Never commit or push unless explicitly requested by the user.
+- Do not amend commits unless explicitly requested.
+- Do not edit secrets or env files unless explicitly requested.
+- Keep changes minimal and avoid touching unrelated files.
+- Never revert unrelated user changes.
+
+## Access and Permissions Safety
+
+- Any change in reports or accounting access logic must preserve:
+  - author can edit own report;
+  - superuser can edit any report;
+  - non-owner non-superuser cannot edit чужой report.
+- If access behavior changes, add or update a smoke test scenario.
+
+## Mandatory Verification
+
+- Run the fastest relevant checks before final response:
+  - Dart/Flutter: `flutter analyze` on changed files.
+  - Node backend: `node --check` on changed files.
+  - Accounting/reports backend: relevant smoke scripts.
+- Prefer targeted checks first; run broad suites only when needed.
+- Do not claim verification unless command/manual validation was actually performed.
+
+## Response Style
+
+- Report what was changed, what was verified, and any remaining risk.
+- If a scenario cannot be fully validated due to environment data, state it explicitly.
