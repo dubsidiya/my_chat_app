@@ -109,7 +109,7 @@ const createUserSessionTokens = async (user, privateAccess, req) => {
   );
   return { accessToken, refreshToken };
 };
-
+//
 async function queryUserWithOptionalAvatarByEmail(normalizedUsername) {
   try {
     return await pool.query(
