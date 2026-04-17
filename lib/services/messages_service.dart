@@ -9,138 +9,20 @@ import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
 import 'e2ee_service.dart';
+import 'messages/messages_types.dart';
+import 'messages/messages_decrypt.dart';
+import 'messages/messages_forward_download.dart';
 
-/// Фрагмент текста только для текста уведомления FCM при E2EE (не хранится в БД как шифротекст).
-const int _maxPushPreviewChars = 200;
-
-String? _pushPreviewPlainForFcm(String originalPlain, String contentSent) {
-  final t = originalPlain.trim();
-  if (t.isEmpty) return null;
-  if (contentSent == originalPlain) return null;
-  if (t.length <= _maxPushPreviewChars) return t;
-  return '${t.substring(0, _maxPushPreviewChars)}…';
-}
-
-/// Минимальный числовой id в списке (временные `temp_*` и прочие нечисловые id пропускаются).
-String? _oldestNumericMessageId(List<Message> messages) {
-  if (messages.isEmpty) return null;
-  int? best;
-  for (final m in messages) {
-    final n = int.tryParse(m.id);
-    if (n != null && (best == null || n < best)) best = n;
-  }
-  return best?.toString();
-}
-
-// Результат пагинации сообщений
-class MessagesPaginationResult {
-  final List<Message> messages;
-  final bool hasMore;
-  final int totalCount;
-  final String? oldestMessageId;
-
-  MessagesPaginationResult({
-    required this.messages,
-    required this.hasMore,
-    required this.totalCount,
-    this.oldestMessageId,
-  });
-}
-
-/// Результат загрузки сжатого и опционально оригинального изображения.
-class UploadImageUrls {
-  final String imageUrl;
-  final String? imageStorageKey;
-  final String? originalImageUrl;
-  final String? originalImageStorageKey;
-  const UploadImageUrls({
-    required this.imageUrl,
-    this.imageStorageKey,
-    this.originalImageUrl,
-    this.originalImageStorageKey,
-  });
-}
+export 'messages/messages_types.dart';
 
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
-  MessagesPaginationResult _buildPaginatedCacheResult(
-    List<Message> decrypted, {
-    required int limit,
-    String? beforeMessageId,
-  }) {
-    final sorted = List<Message>.from(decrypted)
-      ..sort((a, b) {
-        final ai = int.tryParse(a.id);
-        final bi = int.tryParse(b.id);
-        if (ai != null && bi != null) return bi.compareTo(ai); // newest -> oldest
-        return b.createdAt.compareTo(a.createdAt);
-      });
-
-    List<Message> source = sorted;
-    final beforeNum = beforeMessageId == null ? null : int.tryParse(beforeMessageId);
-    if (beforeNum != null) {
-      source = sorted.where((m) {
-        final n = int.tryParse(m.id);
-        return n != null && n < beforeNum;
-      }).toList();
-    }
-
-    final page = source.take(limit).toList();
-    final hasMore = source.length > page.length;
-    final chronological = page.reversed.toList();
-    return MessagesPaginationResult(
-      messages: chronological,
-      hasMore: hasMore,
-      totalCount: decrypted.length,
-      oldestMessageId: _oldestNumericMessageId(chronological),
-    );
-  }
-
 
   static Uri connectivityProbeUri(String baseUrl) => Uri.parse('$baseUrl/healthz');
 
-  static Future<Message> _decryptOne(String chatId, Message m) async {
-    String content = m.content;
-    if (E2eeService.isEncrypted(content)) {
-      content = await E2eeService.decryptMessage(chatId, content, keyVersion: m.keyVersion);
-      if (content == '[зашифровано]') {
-        // Если ключ чата ещё не успел приехать (часто на web после reconnect),
-        // делаем одну активную попытку запросить/дождаться ключ и расшифровать повторно.
-        await E2eeService.requestChatKey(chatId, keyVersion: m.keyVersion);
-        final ok = await E2eeService.waitForChatKeyFromServer(chatId, keyVersion: m.keyVersion);
-        if (ok) {
-          content = await E2eeService.decryptMessage(chatId, m.content, keyVersion: m.keyVersion);
-        }
-      }
-    }
-    Message? replyTo = m.replyToMessage;
-    if (replyTo != null) {
-      replyTo = await _decryptOne(chatId, replyTo);
-    }
-    return Message(
-      id: m.id, chatId: m.chatId, userId: m.userId, content: content,
-      imageUrl: m.imageUrl, originalImageUrl: m.originalImageUrl,
-      fileUrl: m.fileUrl, fileName: m.fileName, fileSize: m.fileSize, fileMime: m.fileMime,
-      messageType: m.messageType, senderEmail: m.senderEmail, senderAvatarUrl: m.senderAvatarUrl,
-      createdAt: m.createdAt, deliveredAt: m.deliveredAt, editedAt: m.editedAt,
-      isRead: m.isRead, readAt: m.readAt, replyToMessageId: m.replyToMessageId,
-      replyToMessage: replyTo, isPinned: m.isPinned, reactions: m.reactions,
-      isForwarded: m.isForwarded, originalChatName: m.originalChatName,
-      keyVersion: m.keyVersion,
-    );
-  }
-
-  static Future<List<Message>> _decryptMessages(String chatId, List<Message> messages) async {
-    final result = <Message>[];
-    for (final m in messages) {
-      result.add(await _decryptOne(chatId, m));
-    }
-    return result;
-  }
-
   /// Расшифровывает одно сообщение (включая replyToMessage) для отображения в UI.
   static Future<Message> decryptMessageForChat(String chatId, Message raw) async =>
-      _decryptOne(chatId, raw);
+      MessagesDecrypt.decryptMessageForChat(chatId, raw);
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -190,8 +72,8 @@ class MessagesService {
         print('MessagesService: offline, using cache');
       }
       final cachedMessages = await LocalMessagesService.getMessages(chatId);
-      final decrypted = await _decryptMessages(chatId, cachedMessages);
-      return _buildPaginatedCacheResult(
+      final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+      return buildPaginatedCacheResult(
         decrypted,
         limit: limit,
         beforeMessageId: beforeMessageId,
@@ -236,7 +118,7 @@ class MessagesService {
                 LocalMessagesService.saveMessages(chatId, messages);
               });
             }
-            final decrypted = await _decryptMessages(chatId, messages);
+            final decrypted = await MessagesDecrypt.decryptMessages(chatId, messages);
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: paginationData['hasMore'] ?? false,
@@ -260,7 +142,7 @@ class MessagesService {
             if (useCache && isOnline) {
               await LocalMessagesService.saveMessages(chatId, messages);
             }
-            final decrypted = await _decryptMessages(chatId, messages);
+            final decrypted = await MessagesDecrypt.decryptMessages(chatId, messages);
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: false,
@@ -288,8 +170,8 @@ class MessagesService {
           }
           final cachedMessages = await LocalMessagesService.getMessages(chatId);
           if (cachedMessages.isNotEmpty) {
-            final decrypted = await _decryptMessages(chatId, cachedMessages);
-            return _buildPaginatedCacheResult(
+            final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+            return buildPaginatedCacheResult(
               decrypted,
               limit: limit,
               beforeMessageId: beforeMessageId,
@@ -311,8 +193,8 @@ class MessagesService {
         }
         final cachedMessages = await LocalMessagesService.getMessages(chatId);
         if (cachedMessages.isNotEmpty) {
-          final decrypted = await _decryptMessages(chatId, cachedMessages);
-          return _buildPaginatedCacheResult(
+          final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+          return buildPaginatedCacheResult(
             decrypted,
             limit: limit,
             beforeMessageId: beforeMessageId,
@@ -390,7 +272,7 @@ class MessagesService {
       bodyMap['forward_original_message_id'] = forwardOriginalMessageId;
       bodyMap['forward_original_chat_id'] = forwardOriginalChatId;
     }
-    final previewForPush = _pushPreviewPlainForFcm(content, contentToSend);
+    final previewForPush = pushPreviewPlainForFcm(content, contentToSend);
     if (previewForPush != null) {
       bodyMap['push_preview'] = previewForPush;
     }
@@ -427,7 +309,7 @@ class MessagesService {
       
       final rawMessage = Message.fromJson(responseData);
       await LocalMessagesService.addMessage(chatId, rawMessage);
-      final sentMessage = await _decryptOne(chatId, rawMessage);
+      final sentMessage = await MessagesDecrypt.decryptOne(chatId, rawMessage);
       return sentMessage;
     } catch (e, stackTrace) {
       if (kDebugMode) {
@@ -555,47 +437,6 @@ class MessagesService {
   Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes, String? chatId}) async {
     final u = await uploadImageWithUrls(imageBytes, fileName, originalBytes: originalBytes, chatId: chatId);
     return u.imageUrl;
-  }
-
-  static const int _forwardDownloadMaxBytes = 40 * 1024 * 1024;
-
-  static Future<Uint8List> _downloadUrlBytes(String url) async {
-    final r = await timedGet(Uri.parse(url), timeout: const Duration(seconds: 120));
-    if (r.statusCode != 200) {
-      throw Exception('Не удалось скачать файл для пересылки: HTTP ${r.statusCode}');
-    }
-    if (r.bodyBytes.length > _forwardDownloadMaxBytes) {
-      throw Exception('Вложение слишком большое для пересылки');
-    }
-    return Uint8List.fromList(r.bodyBytes);
-  }
-
-  static Future<Uint8List> _unwrapForwardImageBytes(
-    String sourceChatId,
-    Uint8List bytes,
-    int keyVersion,
-  ) async {
-    if (!E2eeService.looksLikeEncryptedBytes(bytes)) {
-      return bytes;
-    }
-    final d = await E2eeService.decryptBytes(sourceChatId, bytes, keyVersion: keyVersion);
-    if (d == null) {
-      throw Exception(
-        'Не удалось расшифровать изображение для пересылки. Откройте исходный чат и дождитесь ключа.',
-      );
-    }
-    return d;
-  }
-
-  static String _forwardImageStubName(String imageUrl) {
-    try {
-      final segs = Uri.parse(imageUrl).pathSegments.where((s) => s.isNotEmpty).toList();
-      if (segs.isNotEmpty) {
-        var seg = segs.last.replaceAll(RegExp(r'\.e2ee$', caseSensitive: false), '');
-        if (seg.contains('.') && seg.length <= 200) return seg;
-      }
-    } catch (_) {}
-    return 'forward.jpg';
   }
 
   // Загрузка файла (attachment)
@@ -789,9 +630,9 @@ class MessagesService {
     var imagePayloadE2ee = false;
 
     if (hasImage) {
-      final rawMain = await _downloadUrlBytes(sourceMessage.imageUrl!);
+      final rawMain = await downloadUrlBytesForForward(sourceMessage.imageUrl!);
       imagePayloadE2ee = E2eeService.looksLikeEncryptedBytes(rawMain);
-      mainPlainBytes = await _unwrapForwardImageBytes(
+      mainPlainBytes = await unwrapForwardImageBytes(
         sourceChatId,
         rawMain,
         sourceMessage.keyVersion,
@@ -801,8 +642,8 @@ class MessagesService {
       if (origUrl != null &&
           origUrl.isNotEmpty &&
           origUrl != sourceMessage.imageUrl!.trim()) {
-        final rawOrig = await _downloadUrlBytes(origUrl);
-        origPlainBytes = await _unwrapForwardImageBytes(
+        final rawOrig = await downloadUrlBytesForForward(origUrl);
+        origPlainBytes = await unwrapForwardImageBytes(
           sourceChatId,
           rawOrig,
           sourceMessage.keyVersion,
@@ -817,7 +658,7 @@ class MessagesService {
       String? outOriginal = sourceMessage.originalImageUrl;
 
       if (hasImage && imagePayloadE2ee) {
-        final stub = _forwardImageStubName(sourceMessage.imageUrl!);
+        final stub = forwardImageStubName(sourceMessage.imageUrl!);
         final existingTargetKey = await E2eeService.getChatKey(toId);
         if (existingTargetKey == null) {
           await E2eeService.requestChatKey(toId);
@@ -896,7 +737,7 @@ class MessagesService {
       final data = jsonDecode(response.body);
       final messagesData = data['messages'] as List<dynamic>;
       final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
-      return _decryptMessages(chatId, list);
+      return MessagesDecrypt.decryptMessages(chatId, list);
     } else {
       throw Exception('Ошибка при получении закрепленных сообщений');
     }
@@ -932,33 +773,10 @@ class MessagesService {
         plain = await E2eeService.decryptMessage(chatId, rawContent, keyVersion: keyVersion);
       }
       if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower)) continue;
-      out.add(_searchResultToSnippet(item, plain, queryLower));
+      out.add(searchResultToSnippet(item, plain, queryLower));
       if (out.length >= takeLimit) break;
     }
     return out;
-  }
-
-  static Map<String, dynamic> _searchResultToSnippet(Map<String, dynamic> item, String plainContent, String queryLower) {
-    String snippet = plainContent;
-    if (queryLower.isNotEmpty && plainContent.toLowerCase().contains(queryLower)) {
-      final idx = plainContent.toLowerCase().indexOf(queryLower);
-      final start = idx > 40 ? idx - 40 : 0;
-      final end = (idx + queryLower.length + 40).clamp(0, plainContent.length);
-      snippet =
-          '${start > 0 ? '…' : ''}${plainContent.substring(start, end)}${end < plainContent.length ? '…' : ''}';
-    } else if (plainContent.length > 120) {
-      snippet = '${plainContent.substring(0, 120)}…';
-    }
-    return {
-      'message_id': item['message_id'],
-      'key_version': item['key_version'] ?? 1,
-      'content_snippet': snippet,
-      'message_type': item['message_type'],
-      'image_url': item['image_url'],
-      'created_at': item['created_at'],
-      'sender_email': item['sender_email'],
-      'is_read': item['is_read'] == true,
-    };
   }
 
   // 🎯 Получить окно сообщений вокруг messageId
@@ -974,7 +792,7 @@ class MessagesService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final messagesData = (data['messages'] as List<dynamic>? ?? []);
       final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
-      return _decryptMessages(chatId, list);
+      return MessagesDecrypt.decryptMessages(chatId, list);
     }
     throw Exception('Ошибка загрузки контекста: ${response.statusCode}');
   }

@@ -30,9 +30,9 @@ import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
 import '../utils/download_text_file.dart';
+import '../utils/voice_message_utils.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
-import '../widgets/e2ee_image.dart';
 import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
@@ -42,46 +42,10 @@ import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 import 'chat_gallery_screen.dart';
 import 'user_profile_screen.dart';
+import '../widgets/chat_fullscreen_image_viewer.dart';
+import '../widgets/chat_voice_bubble.dart';
 
-/// Элементы списка сообщений: кнопка «ещё», индикатор загрузки, заголовок даты или сообщение
-class _ListEntry {}
-class _LoadMoreEntry extends _ListEntry {}
-class _LoadingEntry extends _ListEntry {}
-class _DateHeaderEntry extends _ListEntry { final String label; _DateHeaderEntry(this.label); }
-class _MessageEntry extends _ListEntry { final int index; _MessageEntry(this.index); }
-enum _OutgoingUiState { queued, sending, error }
-class _PendingUploadDraft {
-  final String text;
-  final String idempotencyKey;
-  final String? replyToMessageId;
-  final Message? replyToMessage;
-  final Uint8List? imageBytes;
-  final String? imagePath;
-  final String? imageName;
-  final Uint8List? fileBytes;
-  final String? filePath;
-  final String? fileName;
-  final int? fileSize;
-  final String? fileMime;
-
-  const _PendingUploadDraft({
-    required this.text,
-    required this.idempotencyKey,
-    this.replyToMessageId,
-    this.replyToMessage,
-    this.imageBytes,
-    this.imagePath,
-    this.imageName,
-    this.fileBytes,
-    this.filePath,
-    this.fileName,
-    this.fileSize,
-    this.fileMime,
-  });
-
-  bool get hasImage => imageBytes != null || (imagePath != null && imagePath!.isNotEmpty);
-  bool get hasFile => fileBytes != null || (filePath != null && filePath!.isNotEmpty);
-}
+part 'chat_screen_models.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -2233,7 +2197,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String _pendingPlaceholderText(_PendingUploadDraft draft) {
     if (draft.text.trim().isNotEmpty) return draft.text.trim();
     if (draft.hasImage) return '🖼️ Изображение (в очереди)';
-    if (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)) {
+    if (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)) {
       return '🎤 Голосовое сообщение (в очереди)';
     }
     if (draft.hasFile) return '📎 Файл (в очереди)';
@@ -2316,7 +2280,7 @@ class _ChatScreenState extends State<ChatScreen> {
             messageType: draft.hasImage
                 ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
                 : (draft.hasFile
-                    ? (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
+                    ? (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
                         ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
                         : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
                     : 'text'),
@@ -2352,7 +2316,7 @@ class _ChatScreenState extends State<ChatScreen> {
       messageType: draft.hasImage
           ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
           : (draft.hasFile
-              ? (_looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
+              ? (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
                   ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
                   : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
               : 'text'),
@@ -2995,31 +2959,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  bool _looksLikeAudio({String? mime, String? fileName}) {
-    final m = (mime ?? '').toLowerCase().trim();
-    final n = (fileName ?? '').toLowerCase().trim();
-    if (m.startsWith('audio/')) return true;
-    return n.endsWith('.m4a') ||
-        n.endsWith('.aac') ||
-        n.endsWith('.mp3') ||
-        n.endsWith('.ogg') ||
-        n.endsWith('.opus') ||
-        n.endsWith('.wav');
-  }
-
-  bool _isVoiceMessage(Message msg) {
-    if (msg.messageType == 'voice' || msg.messageType == 'text_voice') return true;
-    if (!msg.hasFile) return false;
-    return _looksLikeAudio(mime: msg.fileMime, fileName: msg.fileName);
-  }
-
-  String _formatDuration(Duration d) {
-    final totalSeconds = d.inSeconds;
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
   Future<void> _toggleVoiceRecording() async {
     if (_isUploadingImage || _isUploadingFile) return;
     if (kIsWeb) {
@@ -3224,169 +3163,32 @@ class _ChatScreenState extends State<ChatScreen> {
     final isCurrent = _voicePlayingMessageId == msg.id;
     final dur = isCurrent ? (_voiceDuration ?? Duration.zero) : Duration.zero;
     final pos = isCurrent ? _voicePosition : Duration.zero;
-
-    final maxMs = dur.inMilliseconds > 0 ? dur.inMilliseconds : 1;
-    final posMs = pos.inMilliseconds.clamp(0, maxMs);
-
     final isBusy = isCurrent &&
         (_voiceProcessingState == ProcessingState.loading ||
             _voiceProcessingState == ProcessingState.buffering);
     final showPlaying = isCurrent && _voiceIsPlaying;
 
-    final playColor = isMine ? Colors.white : _accent1;
-    final trackInactive = isMine ? Colors.white.withValues(alpha: 0.35) : Colors.grey.shade300;
-    final bubbleBg = isMine ? Colors.white.withValues(alpha: 0.22) : Colors.grey.shade50;
-    final borderColor = isMine ? Colors.white.withValues(alpha: 0.35) : Colors.grey.shade200;
-    final textColor = isMine ? Colors.white.withValues(alpha: 0.95) : AppColors.onSurfaceDark;
-    final textSecondary = isMine ? Colors.white.withValues(alpha: 0.75) : AppColors.onSurfaceVariantDark;
-
-    return Container(
-      constraints: const BoxConstraints(minWidth: 240, maxWidth: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: bubbleBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: borderColor, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isMine ? 0.08 : 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-          if (isMine)
-            BoxShadow(
-              color: (Theme.of(context).brightness == Brightness.dark ? _accent1 : AppColors.primary).withValues(alpha: 0.12),
-              blurRadius: 16,
-              offset: const Offset(0, 2),
-            ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (isBusy)
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(playColor),
-                ),
-              ),
-            )
-          else
-            Material(
-              color: isMine ? Colors.white.withValues(alpha: 0.28) : Colors.white,
-              elevation: 0,
-              shadowColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-                side: BorderSide(
-                  color: isMine ? Colors.white.withValues(alpha: 0.4) : Colors.grey.shade200,
-                  width: 1,
-                ),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => _toggleVoicePlayback(msg),
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  alignment: Alignment.center,
-                  child: Icon(
-                    showPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 28,
-                    color: playColor,
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.mic_rounded,
-                      size: 14,
-                      color: textSecondary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Голосовое сообщение',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textSecondary,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 5,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-                    activeTrackColor: playColor,
-                    inactiveTrackColor: trackInactive,
-                    thumbColor: playColor,
-                  ),
-                  child: Slider(
-                    value: posMs.toDouble(),
-                    min: 0,
-                    max: maxMs.toDouble(),
-                    onChanged: isCurrent
-                        ? (v) {
-                            setState(() {
-                              _voicePosition = Duration(milliseconds: v.toInt());
-                            });
-                          }
-                        : null,
-                    onChangeEnd: isCurrent
-                        ? (v) async {
-                            try {
-                              await _voicePlayer.seek(Duration(milliseconds: v.toInt()));
-                            } catch (_) {}
-                          }
-                        : null,
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _formatDuration(pos),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    Text(
-                      dur == Duration.zero ? '—:—' : _formatDuration(dur),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textSecondary,
-                        fontWeight: FontWeight.w500,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ChatVoiceBubble(
+      isMine: isMine,
+      isBusy: isBusy,
+      showPlaying: showPlaying,
+      position: pos,
+      totalDuration: dur,
+      onPlayPause: () => _toggleVoicePlayback(msg),
+      onPositionDrag: isCurrent
+          ? (v) {
+              setState(() {
+                _voicePosition = Duration(milliseconds: v.toInt());
+              });
+            }
+          : null,
+      onSeekEnd: isCurrent
+          ? (v) async {
+              try {
+                await _voicePlayer.seek(Duration(milliseconds: v.toInt()));
+              } catch (_) {}
+            }
+          : null,
     );
   }
 
@@ -3625,7 +3427,7 @@ SnackBar(
       fileSize: fileSize,
       fileMime: fileMime,
       messageType: fileUrl != null
-          ? (_looksLikeAudio(mime: fileMime, fileName: fileName)
+          ? (looksLikeAudio(mime: fileMime, fileName: fileName)
               ? (text.isNotEmpty ? 'text_voice' : 'voice')
               : (text.isNotEmpty ? 'text_file' : 'file'))
           : (imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text'),
@@ -4736,7 +4538,7 @@ SnackBar(
       PageRouteBuilder(
         opaque: true,
         barrierColor: Colors.black,
-        pageBuilder: (_, __, ___) => _FullScreenImageViewer(
+        pageBuilder: (_, __, ___) => ChatFullscreenImageViewer(
           imageUrl: url,
           chatId: widget.chatId.toString(),
           originalImageUrl: (msg.originalImageUrl ?? url),
@@ -5061,7 +4863,7 @@ SnackBar(
                   onShowMessageMenu: () => _showMessageMenu(msg, isMine: isMine),
                   onOpenImage: () => _openImageViewer(msg),
                   buildVoiceBubble: () => _buildVoiceBubble(msg, isMine: isMine),
-                  isVoiceMessage: () => _isVoiceMessage(msg),
+                  isVoiceMessage: () => isVoiceMessage(msg),
                   formatBytes: _formatBytes,
                   formatDate: _formatDate,
                   buildMessageStatus: _buildMessageStatus(msg),
@@ -5553,106 +5355,6 @@ SnackBar(
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Полноэкранный просмотр фото в стиле Telegram/WhatsApp: тёмный фон, зум, тап — закрыть.
-class _FullScreenImageViewer extends StatelessWidget {
-  final String imageUrl;
-  final String? chatId;
-  final String? originalImageUrl;
-  final String fileName;
-  final VoidCallback? onDownload;
-
-  const _FullScreenImageViewer({
-    required this.imageUrl,
-    this.chatId,
-    this.originalImageUrl,
-    required this.fileName,
-    this.onDownload,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            behavior: HitTestBehavior.opaque,
-            child: Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 5.0,
-                child: E2eeImage(
-                  imageUrl: imageUrl,
-                  chatId: chatId,
-                  fit: BoxFit.contain,
-                  memCacheWidth: 1920,
-                  placeholder: (_, __) => const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white70,
-                      strokeWidth: 2,
-                    ),
-                  ),
-                  errorWidget: (_, __, ___) => const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.error_outline_rounded, color: Colors.white54, size: 56),
-                        SizedBox(height: 16),
-                        Text(
-                          'Не удалось загрузить изображение',
-                          style: TextStyle(color: Colors.white70, fontSize: 16),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Верхняя панель: назад + скачать (полупрозрачная, как в мессенджерах)
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Material(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(24),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(24),
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Icon(Icons.close_rounded, color: Colors.white, size: 24),
-                      ),
-                    ),
-                  ),
-                  if (onDownload != null)
-                    Material(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(24),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: onDownload,
-                        child: const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Icon(Icons.download_rounded, color: Colors.white, size: 24),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
