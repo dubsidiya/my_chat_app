@@ -367,10 +367,10 @@ export function setupWebSocket(server) {
         
         if (data.type === 'send') {
           if (!sendLimiter.allow(userId)) return;
-          const chatIdFinal = data.chat_id || data.chatId;
+          const chatIdRaw = data.chat_id || data.chatId;
           const content = data.content;
 
-          if (!chatIdFinal || !content) {
+          if (!chatIdRaw || !content) {
             return;
           }
           const contentStr = sanitizeMessageContent(String(content));
@@ -378,25 +378,21 @@ export function setupWebSocket(server) {
             return;
           }
 
-          // Проверяем, является ли пользователь участником чата
-          const memberCheck = await pool.query(
-            'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
-            [chatIdFinal, userId]
-          );
-
-          if (memberCheck.rows.length === 0) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`User ${userId} tried to send message to chat ${chatIdFinal} without being a member`);
+          const membership = await ensureChatMember(chatIdRaw, userId);
+          if (!membership.ok) {
+            if (process.env.NODE_ENV === 'development' && membership.status === 403) {
+              console.log(`User ${userId} tried to send message to chat ${chatIdRaw} without being a member`);
             }
             return;
           }
+          const chatIdNum = membership.chatIdNum;
 
           // Используем user_id (как в схеме БД) вместо sender_id
           const result = await pool.query(`
             INSERT INTO messages (chat_id, user_id, content)
             VALUES ($1, $2, $3)
             RETURNING id, chat_id, user_id, content, created_at
-          `, [chatIdFinal, userId, contentStr]);
+          `, [chatIdNum, userId, contentStr]);
 
           // Используем email из токена
           const senderEmailFinal = userEmail;
@@ -415,7 +411,7 @@ export function setupWebSocket(server) {
           // Используем chat_users (как в схеме БД) вместо chat_members
           const members = await pool.query(
             'SELECT user_id FROM chat_users WHERE chat_id = $1',
-            [chatIdFinal]
+            [chatIdNum]
           );
 
           members.rows.forEach(row => {

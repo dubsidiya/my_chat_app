@@ -142,7 +142,8 @@ export const isSuperuser = (user) => {
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean);
 
-  const byId = typeof userId === 'number' && ids.includes(userId);
+  const uidNum = Number(userId);
+  const byId = Number.isFinite(uidNum) && ids.includes(uidNum);
   const byName = username && names.includes(username);
   return Boolean(byId || byName);
 };
@@ -166,7 +167,8 @@ export const hasPrivateAccess = (user) => {
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean);
 
-  const byId = typeof userId === 'number' && ids.includes(userId);
+  const uidNum = Number(userId);
+  const byId = Number.isFinite(uidNum) && ids.includes(uidNum);
   const byName = username && names.includes(username);
   return Boolean(byId || byName);
 };
