@@ -34,7 +34,7 @@ function removeClientSocket(userId, ws) {
     clients.delete(key);
   }
 }
-
+//
 function hasAnyOnlineSocket(userId) {
   const sockets = getUserSockets(userId);
   if (!sockets) return false;
