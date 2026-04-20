@@ -135,6 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Message> _messages = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  bool _didInitialOpenScrollToBottom = false;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   bool _isWaitingForE2eeKey = false;
@@ -634,6 +635,32 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     });
+  }
+
+  /// Более надежная прокрутка к низу: пробуем несколько раз,
+  /// потому что при открытии чата layout может достраиваться не в один кадр.
+  void _scrollToBottomWithRetry({int attempts = 3, Duration delay = const Duration(milliseconds: 80)}) {
+    void tryScroll(int left) {
+      if (!mounted || left <= 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_scrollController.hasClients && _messages.isNotEmpty) {
+          final maxScroll = _scrollController.position.maxScrollExtent;
+          _scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
+        }
+        if (left > 1) {
+          Future.delayed(delay, () => tryScroll(left - 1));
+        }
+      });
+    }
+
+    tryScroll(attempts);
+  }
+
+  bool _isNearBottom({double threshold = 140}) {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    return (position.maxScrollExtent - position.pixels) <= threshold;
   }
 
   Future<void> _scrollToMessage(String messageId) async {
@@ -1773,6 +1800,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onScroll() {
+    // Во время первичной загрузки список может быть вверху (pixels=0),
+    // поэтому блокируем автоподгрузку, чтобы не уводить пользователя вверх при открытии чата.
+    if (_isLoading) return;
+
     // В reverse списке: когда прокрутили почти до верха (к старшим сообщениям)
     // minScrollExtent = 0 (верх списка, где старые сообщения)
     // maxScrollExtent = низ списка (где новые сообщения)
@@ -1885,6 +1916,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMessages() async {
     if (!mounted) return;
+    final shouldAutoScrollToBottom =
+        !_didInitialOpenScrollToBottom || _isNearBottom();
+
     setState(() {
       _isLoading = true;
       _hasMoreMessages = true;
@@ -1916,6 +1950,9 @@ class _ChatScreenState extends State<ChatScreen> {
           // старые сверху, временные (новые) в конце
           _messages = [...cachedMessages, ...uniqueTempMessages];
         });
+        if (shouldAutoScrollToBottom) {
+          _scrollToBottomWithRetry();
+        }
         if (kDebugMode) print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
       }
     } catch (e) {
@@ -1950,15 +1987,11 @@ class _ChatScreenState extends State<ChatScreen> {
           _oldestMessageId = result.oldestMessageId;
         });
         
-        // Прокручиваем вниз (к новым сообщениям) после загрузки
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients && _messages.isNotEmpty) {
-            final maxScroll = _scrollController.position.maxScrollExtent;
-            if (maxScroll > 0) {
-              _scrollController.jumpTo(maxScroll);
-            }
-          }
-        });
+        // Прокручиваем вниз (к новым сообщениям) после загрузки.
+        if (shouldAutoScrollToBottom) {
+          _scrollToBottomWithRetry();
+          _didInitialOpenScrollToBottom = true;
+        }
         // E2EE: считаем требуемую (самую новую в истории) версию ключа.
         final newestMessageKeyVersion = result.messages.fold<int>(
           1,
