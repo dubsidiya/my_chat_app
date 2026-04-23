@@ -44,6 +44,8 @@ import 'chat_gallery_screen.dart';
 import 'user_profile_screen.dart';
 import '../widgets/chat_fullscreen_image_viewer.dart';
 import '../widgets/chat_voice_bubble.dart';
+import '../features/chat/chat_scroll_policy.dart';
+import '../features/chat/chat_sync_policy.dart';
 
 part 'chat_screen_models.dart';
 
@@ -71,7 +73,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const String _e2eeReady = 'ready';
   static const String _e2eeMissing = 'missing';
   static const String _e2eeRequesting = 'requesting';
@@ -444,6 +446,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     PushNotificationService.setCurrentChatId(widget.chatId);
     _chatTitle = widget.chatName;
 
@@ -489,6 +492,14 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    unawaited(WebSocketService.instance.connectIfNeeded());
+    unawaited(_retryQueuedMessages());
+    unawaited(_pollForNewMessages());
   }
 
   /// Опрос последних сообщений с сервера — подхватывает то, что не пришло по WebSocket.
@@ -660,7 +671,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isNearBottom({double threshold = 140}) {
     if (!_scrollController.hasClients) return true;
     final position = _scrollController.position;
-    return (position.maxScrollExtent - position.pixels) <= threshold;
+    return ChatScrollPolicy.isNearBottom(
+      pixels: position.pixels,
+      maxScrollExtent: position.maxScrollExtent,
+      threshold: threshold,
+    );
   }
 
   Future<void> _scrollToMessage(String messageId) async {
@@ -942,8 +957,10 @@ class _ChatScreenState extends State<ChatScreen> {
           if (messageType == '_ws_reconnected') {
             if (mounted) {
               final now = DateTime.now();
-              if (_lastWsReconnectHandledAt != null &&
-                  now.difference(_lastWsReconnectHandledAt!).inSeconds < 10) {
+              if (!ChatSyncPolicy.shouldRunReconnectSync(
+                now: now,
+                lastRunAt: _lastWsReconnectHandledAt,
+              )) {
                 return;
               }
               _lastWsReconnectHandledAt = now;
@@ -958,6 +975,8 @@ class _ChatScreenState extends State<ChatScreen> {
               }
               // Единая точка ретрая очереди исходящих temp-сообщений.
               unawaited(_retryQueuedMessages());
+              // После восстановления сети добираем возможные пропуски в истории.
+              unawaited(_pollForNewMessages());
             }
             return;
           }
@@ -1916,8 +1935,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMessages() async {
     if (!mounted) return;
-    final shouldAutoScrollToBottom =
-        !_didInitialOpenScrollToBottom || _isNearBottom();
+    final shouldAutoScrollToBottom = ChatScrollPolicy.shouldAutoScrollToBottom(
+      didInitialOpenScrollToBottom: _didInitialOpenScrollToBottom,
+      isNearBottom: _isNearBottom(),
+    );
 
     setState(() {
       _isLoading = true;
@@ -2098,11 +2119,13 @@ class _ChatScreenState extends State<ChatScreen> {
           if (_scrollController.hasClients && mounted) {
             // Вычисляем разницу в высоте контента
             final maxScrollExtentAfter = _scrollController.position.maxScrollExtent;
-            final heightDifference = maxScrollExtentAfter - maxScrollExtentBefore;
-            
             // Новая позиция = старая позиция + разница в высоте
             // Это сохраняет видимую позицию пользователя
-            final newScrollPosition = currentScrollPosition + heightDifference;
+            final newScrollPosition = ChatScrollPolicy.preserveViewportAfterPrepend(
+              currentScrollPosition: currentScrollPosition,
+              maxScrollExtentBefore: maxScrollExtentBefore,
+              maxScrollExtentAfter: maxScrollExtentAfter,
+            );
             
             // Прокручиваем к новой позиции
             _scrollController.jumpTo(
@@ -4367,6 +4390,7 @@ SnackBar(
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PushNotificationService.setCurrentChatId(null);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
