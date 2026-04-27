@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import '../utils/timed_http.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -35,6 +36,7 @@ class VersionCheckInfo {
 /// и сравнивает с текущей. Показывает диалог «Обновите приложение» при необходимости.
 class VersionCheckService {
   static const String _versionPath = '/version';
+  static const Duration _requestTimeout = Duration(seconds: 8);
 
   /// Сравнение версий в формате "1.0.0". Возвращает: < 0 если a < b, 0 если a == b, > 0 если a > b.
   /// Публичный для тестов.
@@ -63,10 +65,7 @@ class VersionCheckService {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
       final uri = Uri.parse('${ApiConfig.baseUrl}$_versionPath');
-      final response = await timedGet(
-        uri,
-        timeout: const Duration(seconds: 5),
-      );
+      final response = await _getWithRetry(uri);
       if (response.statusCode != 200) return null;
       final data = jsonDecode(response.body) as Map<String, dynamic>?;
       if (data == null) return null;
@@ -105,12 +104,27 @@ class VersionCheckService {
         );
       }
       return const VersionCheckInfo(result: VersionCheckResult.upToDate);
+    } on TimeoutException {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('VersionCheckService: timeout on $_versionPath');
+      }
+      return null;
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
         print('VersionCheckService: $e');
       }
       return null;
+    }
+  }
+
+  static Future<dynamic> _getWithRetry(Uri uri) async {
+    try {
+      return await timedGet(uri, timeout: _requestTimeout);
+    } on TimeoutException {
+      // Однократный retry при кратковременной просадке сети/прокси.
+      return timedGet(uri, timeout: _requestTimeout);
     }
   }
 
