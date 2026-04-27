@@ -13,7 +13,20 @@ class ApiConfig {
     ).trim();
 
     if (v.isEmpty) return _defaultBaseUrl;
-    return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+    return _normalizeBaseUrl(v) ?? _defaultBaseUrl;
+  }
+
+  static String? _normalizeBaseUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final parsed = Uri.tryParse(trimmed);
+    if (parsed == null || parsed.host.isEmpty) return null;
+    if (parsed.scheme != 'http' && parsed.scheme != 'https') return null;
+
+    final portPart = parsed.hasPort && parsed.port > 0 ? ':${parsed.port}' : '';
+    final path = parsed.path == '/' ? '' : parsed.path.replaceFirst(RegExp(r'/+$'), '');
+    return '${parsed.scheme}://${parsed.host}$portPart$path';
   }
 }
 
