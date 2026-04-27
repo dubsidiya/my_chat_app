@@ -1846,6 +1846,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _hideE2eeWaitingSnack();
       _showE2eeReadySnack();
       await _loadMessages();
+      unawaited(_retryQueuedMessages());
     } else if (mounted) {
       setState(() => _e2eeKeyState = _e2eeRetryBackoff);
       _hideE2eeWaitingSnack();
@@ -3254,16 +3255,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (kDebugMode) print('⚠️ Widget not mounted, returning');
       return;
     }
-    if (_e2eeKeyState != _e2eeReady) {
-      unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 3),
-          content: Text('Ключ шифрования ещё не готов. Подождите немного.'),
-        ),
-      );
-      return;
-    }
     
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
@@ -3279,9 +3270,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    if (_e2eeKeyState != _e2eeReady) {
+      unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
+    }
+
     if (_isSendingMessage) return;
     _isSendingMessage = true;
-    if (mounted) setState(() {});
 
     try {
     if (kDebugMode) print('✅ Proceeding with message send');
@@ -3496,28 +3490,11 @@ SnackBar(
       keyVersion: 1,
     );
     
-    // ✅ Добавляем сообщение оптимистично в список (без перезагрузки)
-    // Сохраняем позицию скролла ДО добавления сообщения
-    bool wasAtBottom = false;
-    double? savedScrollPosition;
-    if (mounted && _scrollController.hasClients) {
-      final currentMaxScroll = _scrollController.position.maxScrollExtent;
-      savedScrollPosition = _scrollController.position.pixels;
-      if (currentMaxScroll > 0) {
-        const threshold = 100.0; // Увеличиваем порог для более надежной проверки
-        wasAtBottom = savedScrollPosition >= (currentMaxScroll - threshold);
-      } else {
-        wasAtBottom = true; // Если список пустой или очень маленький, считаем что внизу
-      }
-    } else {
-      wasAtBottom = true; // Если контроллер не готов, считаем что внизу (не скроллим)
-    }
-    
+    // Собственное новое сообщение всегда показываем внизу. На web пересчёт layout
+    // может занимать несколько кадров, поэтому ниже используем retry-скролл.
     if (mounted) {
       if (kDebugMode) print('🔍 Adding temp message to UI: id=$tempMessageId, content=$text');
       if (kDebugMode) print('🔍 Current messages count before: ${_messages.length}');
-      if (kDebugMode) print('🔍 Was at bottom before adding: $wasAtBottom');
-      if (kDebugMode) print('🔍 Saved scroll position: $savedScrollPosition');
       setState(() {
         // ✅ Создаем новый список для гарантированного обновления UI
         final newMessages = List<Message>.from(_messages);
@@ -3530,27 +3507,7 @@ SnackBar(
       });
       if (kDebugMode) print('✅ Temp message added to UI. New count: ${_messages.length}');
       if (kDebugMode) print('✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}');
-      
-      // После добавления сообщения нужно скроллить вниз, чтобы остаться внизу
-      // (setState может сбросить позицию, поэтому нужно явно скроллить)
-      // Используем двойной addPostFrameCallback для гарантии, что ListView пересчитал размеры
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _scrollController.hasClients) {
-            final maxScroll = _scrollController.position.maxScrollExtent;
-            if (maxScroll > 0) {
-              // Если был внизу - просто jumpTo (мгновенно, без анимации) к новому maxScrollExtent
-              // Если не был внизу - не скроллим, пользователь сам прокрутит
-              if (wasAtBottom) {
-                _scrollController.jumpTo(maxScroll);
-                if (kDebugMode) print('✅ Jumped to bottom (was at bottom, staying there). New maxScroll: $maxScroll');
-              } else {
-                if (kDebugMode) print('✅ Was not at bottom, keeping current position');
-              }
-            }
-          }
-        });
-      });
+      _scrollToBottomWithRetry(attempts: 4, delay: const Duration(milliseconds: 60));
       
       // ✅ НЕ сохраняем временное сообщение в кэш сразу
       // Оно будет сохранено только после получения реального ответа от сервера
@@ -3691,27 +3648,9 @@ SnackBar(
             }
           }
           
-          // ✅ После обновления сообщения от сервера нужно сохранить позицию внизу
-          // (setState может сбросить позицию, поэтому нужно явно скроллить)
-          // Используем двойной addPostFrameCallback для гарантии, что ListView пересчитал размеры
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _scrollController.hasClients) {
-                final maxScroll = _scrollController.position.maxScrollExtent;
-                if (maxScroll > 0) {
-                  // Если был внизу до отправки - остаемся внизу (jumpTo без анимации)
-                  // Используем wasAtBottom из области видимости выше
-                  if (wasAtBottom) {
-                    _scrollController.jumpTo(maxScroll);
-                    if (kDebugMode) print('✅ Jumped to bottom after message update (was at bottom)');
-                  } else {
-                    // Если не был внизу - не скроллим, пользователь сам прокрутит
-                    if (kDebugMode) print('✅ Was not at bottom, keeping current position');
-                  }
-                }
-              }
-            });
-          });
+          if (_isNearBottom(threshold: 500)) {
+            _scrollToBottomWithRetry(attempts: 2, delay: const Duration(milliseconds: 60));
+          }
           
           // Принудительные обновления UI больше не нужны — список обновляется напрямую
           
@@ -3746,7 +3685,9 @@ SnackBar(
       if (mounted) {
         setState(() {
           _tempMessageStates[tempMessageId] =
-              isQueueableNetworkError ? _OutgoingUiState.queued : _OutgoingUiState.error;
+              (isE2eeKeyError || isQueueableNetworkError)
+                  ? _OutgoingUiState.queued
+                  : _OutgoingUiState.error;
         });
         
         // Восстанавливаем поле ответа, если была ошибка
