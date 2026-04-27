@@ -14,22 +14,34 @@ if (!process.env.DATABASE_URL) {
   // Не падаем сразу, чтобы можно было увидеть ошибку в логах
 }
 
-// Yandex Managed PostgreSQL использует сертификат, который pg может не доверять.
-// Убираем sslmode из URL, чтобы не переопределял наш ssl (в новых pg sslmode=require → verify-full).
-let connectionString = process.env.DATABASE_URL ?? '';
+// Yandex Managed PostgreSQL может отдавать цепочку, которой нет в системном trust store.
+// Считываем sslmode из исходного URL и только потом удаляем его, чтобы не было конфликта с объектом ssl.
+const rawDatabaseUrl = process.env.DATABASE_URL ?? '';
+let requestedSslMode = null;
+try {
+  if (rawDatabaseUrl) {
+    requestedSslMode = new URL(rawDatabaseUrl).searchParams.get('sslmode');
+  }
+} catch (_) {
+  requestedSslMode = null;
+}
+
+let connectionString = rawDatabaseUrl;
 if (connectionString) {
   connectionString = connectionString.replace(/[?&]sslmode=[^&]*/g, '').replace(/\?&/, '?').replace(/\?$/, '');
   if (connectionString.includes('&') && !connectionString.includes('?')) connectionString = connectionString.replace('&', '?');
 }
-const isLocal = process.env.DATABASE_URL?.includes('localhost') ?? false;
+const isLocal = rawDatabaseUrl.includes('localhost');
 
 const isProd = process.env.NODE_ENV === 'production';
 const parseBool = (v) => ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
 
 // В production по умолчанию требуем проверку сертификата.
+// Исключение: если в DATABASE_URL явно указан sslmode=require, разрешаем режим без проверки цепочки.
+const allowInsecureBySslMode = String(requestedSslMode || '').toLowerCase() === 'require';
 const sslRejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED != null
   ? parseBool(process.env.PGSSL_REJECT_UNAUTHORIZED)
-  : isProd;
+  : (isProd && !allowInsecureBySslMode);
 
 let sslCa = null;
 if (process.env.PGSSL_CA_CERT && process.env.PGSSL_CA_CERT.trim()) {
@@ -43,8 +55,8 @@ if (process.env.PGSSL_CA_CERT && process.env.PGSSL_CA_CERT.trim()) {
   }
 }
 
-if (isProd && !isLocal && !sslRejectUnauthorized) {
-  console.error('❌ В production запрещено PGSSL_REJECT_UNAUTHORIZED=false');
+if (isProd && !isLocal && !sslRejectUnauthorized && !allowInsecureBySslMode) {
+  console.error('❌ В production запрещено PGSSL_REJECT_UNAUTHORIZED=false (если только DATABASE_URL не содержит sslmode=require)');
   process.exit(1);
 }
 if (isProd && !isLocal && sslRejectUnauthorized && !sslCa) {
@@ -54,6 +66,9 @@ if (isProd && !isLocal && sslRejectUnauthorized && !sslCa) {
   console.warn(
     '⚠️ Если провайдер БД использует private CA, задайте PGSSL_CA_CERT или PGSSL_CA_CERT_PATH.',
   );
+}
+if (isProd && !isLocal && allowInsecureBySslMode) {
+  console.warn('⚠️ DATABASE_URL содержит sslmode=require: проверка цепочки сертификатов БД отключена.');
 }
 
 const pool = new Pool({
