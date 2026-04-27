@@ -6,6 +6,8 @@ import {
   getPublicKeys,
   storeChatKeys,
   getChatKey,
+  getSharedChatKey,
+  setSharedChatKey,
   getMembersWithoutChatKey,
   requestChatKey,
   getPendingKeyRequests,
@@ -22,6 +24,8 @@ router.get('/public-key/:userId', getPublicKey);
 router.post('/public-keys', getPublicKeys);
 router.post('/chat-keys', storeChatKeys);
 router.get('/chat-key/:chatId', getChatKey);
+router.get('/chat/:chatId/shared-key', getSharedChatKey);
+router.post('/chat/:chatId/shared-key', setSharedChatKey);
 router.get('/chat/:chatId/members-without-key', getMembersWithoutChatKey);
 router.get('/chat/:chatId/key-requests', getPendingKeyRequests);
 router.post('/chat/:chatId/request-key', requestChatKey);

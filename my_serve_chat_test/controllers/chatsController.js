@@ -528,10 +528,16 @@ export const createChat = async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // Создаём чат с is_group и created_by
+      // Упрощённый E2EE: сервер сразу генерирует общий AES-ключ чата (base64).
+      // Любой будущий участник заберёт его через GET /e2ee/chat/:id/shared-key,
+      // ждать второго пользователя и обменов через X25519 не нужно.
+      const sharedChatKey = crypto.randomBytes(32).toString('base64');
+
       chatResult = await client.query(
-        `INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id, name, is_group, created_by`,
-        [finalName, isGroup, creatorId]
+        `INSERT INTO chats (name, is_group, created_by, shared_chat_key)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, is_group, created_by`,
+        [finalName, isGroup, creatorId, sharedChatKey]
       );
 
       chatId = chatResult.rows[0].id;

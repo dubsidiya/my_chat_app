@@ -1,13 +1,18 @@
+import crypto from 'crypto';
 import pool from '../db.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
 import { broadcastToChatMembers } from '../websocket/websocket.js';
 
 const MAX_KEY_LENGTH = 256;
 const MAX_BACKUP_LENGTH = 2048;
+// AES-256 ключ в base64: 44 символа без паддинга/с паддингом. Берём с запасом.
+const MAX_SHARED_KEY_LENGTH = 128;
 const parseKeyVersion = (x) => {
   const n = parseInt(x, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
 };
+
+const generateSharedChatKeyB64 = () => crypto.randomBytes(32).toString('base64');
 
 export const uploadPublicKey = async (req, res) => {
   try {
@@ -329,6 +334,116 @@ export const getChatKey = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка getChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+/**
+ * Упрощённый E2EE: сервер хранит один общий AES-ключ на чат и выдаёт его любому участнику.
+ * Используется в новых чатах. Для совместимости со старыми чатами этот эндпоинт может
+ * вернуть 404, тогда клиент откатится на пер-юзерный путь.
+ */
+export const getSharedChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const row = await pool.query(
+      `SELECT shared_chat_key, COALESCE(current_key_version, 1) AS current_key_version
+       FROM chats
+       WHERE id = $1`,
+      [chatIdNum]
+    );
+    if (row.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+    const sharedKey = row.rows[0].shared_chat_key;
+    if (!sharedKey) {
+      return res.status(404).json({ message: 'Общий ключ чата отсутствует' });
+    }
+    return res.status(200).json({
+      chatKey: sharedKey,
+      keyVersion: parseInt(row.rows[0].current_key_version, 10) || 1,
+    });
+  } catch (error) {
+    console.error('Ошибка getSharedChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+/**
+ * Идемпотентно сохраняет общий ключ чата: либо клиент явно передаёт его, либо сервер
+ * генерирует новый. Перезаписать уже существующий нельзя — это защищает от гонки и от
+ * потери истории. Используется создателем нового чата и для бэкфилла из старого пути.
+ */
+export const setSharedChatKey = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const chatIdNum = parsePositiveInt(req.params?.chatId);
+    if (!chatIdNum) return res.status(400).json({ message: 'Некорректный chatId' });
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
+      [chatIdNum, userId]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const provided = (req.body?.chatKey ?? '').toString().trim();
+    let candidate = provided;
+    if (candidate) {
+      if (candidate.length > MAX_SHARED_KEY_LENGTH) {
+        return res.status(400).json({ message: 'Слишком длинный chatKey' });
+      }
+      if (!/^[A-Za-z0-9+/=_-]+$/.test(candidate)) {
+        return res.status(400).json({ message: 'Некорректный chatKey' });
+      }
+    } else {
+      candidate = generateSharedChatKeyB64();
+    }
+
+    const update = await pool.query(
+      `UPDATE chats
+       SET shared_chat_key = $1
+       WHERE id = $2 AND (shared_chat_key IS NULL OR shared_chat_key = '')
+       RETURNING shared_chat_key, COALESCE(current_key_version, 1) AS current_key_version`,
+      [candidate, chatIdNum]
+    );
+
+    if (update.rows.length > 0) {
+      return res.status(200).json({
+        chatKey: update.rows[0].shared_chat_key,
+        keyVersion: parseInt(update.rows[0].current_key_version, 10) || 1,
+        created: true,
+      });
+    }
+
+    const existing = await pool.query(
+      `SELECT shared_chat_key, COALESCE(current_key_version, 1) AS current_key_version
+       FROM chats
+       WHERE id = $1`,
+      [chatIdNum]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+    return res.status(200).json({
+      chatKey: existing.rows[0].shared_chat_key,
+      keyVersion: parseInt(existing.rows[0].current_key_version, 10) || 1,
+      created: false,
+    });
+  } catch (error) {
+    console.error('Ошибка setSharedChatKey:', error);
     return res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

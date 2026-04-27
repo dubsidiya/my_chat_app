@@ -202,6 +202,11 @@ class E2eeService {
       return SecretKey(base64Decode(cached));
     }
 
+    // Упрощённая модель: сервер хранит общий ключ чата и выдаёт его участникам.
+    // Если эндпоинт вернул ключ — используем его и кэшируем как актуальный.
+    final shared = await _fetchSharedChatKey(chatId, keyVersion: keyVersion);
+    if (shared != null) return shared;
+
     final token = await StorageService.getToken();
     if (token == null) return null;
     try {
@@ -265,6 +270,65 @@ class E2eeService {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Упрощённый E2EE: достаём общий ключ чата с сервера. Возвращаем `null`, если у чата
+  /// общего ключа ещё нет (старые чаты) — тогда вызывающий код использует прежний путь.
+  static Future<SecretKey?> _fetchSharedChatKey(String chatId, {int? keyVersion}) async {
+    final token = await StorageService.getToken();
+    if (token == null) return null;
+    try {
+      final resp = await timedGet(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/shared-key'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body);
+      final keyB64 = data['chatKey'] as String?;
+      if (keyB64 == null || keyB64.isEmpty) return null;
+
+      final respVersion = data['keyVersion'] is int
+          ? (data['keyVersion'] as int)
+          : int.tryParse((data['keyVersion'] ?? '').toString());
+      final effectiveVersion = keyVersion ?? respVersion ?? 1;
+
+      final decoded = base64Decode(keyB64);
+      await _secure.write(
+        key: _chatCacheKey(chatId, effectiveVersion),
+        value: base64Encode(decoded),
+      );
+      if (keyVersion == null) {
+        await _secure.write(
+          key: _chatCacheKey(chatId),
+          value: base64Encode(decoded),
+        );
+      }
+      if (effectiveVersion > 0) {
+        await markCurrentKeyVersion(chatId, effectiveVersion);
+      }
+      return SecretKey(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Бэкфилл для старых чатов: если ключ удалось получить старым путём, отправляем
+  /// его на сервер как общий, чтобы остальные участники могли получить его сразу.
+  /// Сервер не перезапишет уже существующий общий ключ.
+  static Future<void> uploadSharedChatKey(String chatId, SecretKey chatKey) async {
+    final token = await StorageService.getToken();
+    if (token == null) return;
+    try {
+      final bytes = await chatKey.extractBytes();
+      await timedPost(
+        Uri.parse('${ApiConfig.baseUrl}/e2ee/chat/$chatId/shared-key'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'chatKey': base64Encode(bytes)}),
+      );
+    } catch (_) {}
   }
 
   // ─── Message encryption ───
