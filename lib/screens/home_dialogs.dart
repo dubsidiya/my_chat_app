@@ -38,6 +38,14 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
     super.initState();
     _nameController = TextEditingController();
     _searchController = TextEditingController();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final q = _searchController.text.trim();
+    setState(() => _searchQuery = q);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 260), () => _searchUsers(q));
   }
 
   Future<void> _searchUsers(String query) async {
@@ -59,6 +67,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
         limit: 20,
       );
       if (!mounted) return;
+      if (_searchController.text.trim() != q) return;
       setState(() {
         _users = users;
         _loadingUsers = false;
@@ -72,6 +81,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _nameController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -220,18 +230,25 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: _searchController,
-              onChanged: (v) {
-                setState(() => _searchQuery = v);
-                _searchDebounce?.cancel();
-                _searchDebounce = Timer(const Duration(milliseconds: 250), () {
-                  _searchUsers(v);
-                });
-              },
               enabled: !_isCreating,
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
                 prefixIcon: const Icon(Icons.search_rounded, size: 22, color: AppColors.primary),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: _isCreating
+                            ? null
+                            : () {
+                                _searchController.clear();
+                                setState(() {
+                                  _users = [];
+                                  _loadingUsers = false;
+                                });
+                              },
+                      ),
                 filled: true,
                 fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
@@ -242,6 +259,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
               ),
             ),
             const SizedBox(height: 10),
+            if (_loadingUsers) const LinearProgressIndicator(minHeight: 2),
             if (_loadingUsers)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -275,26 +293,68 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
             else
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 260),
-                child: ListView.builder(
+                child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: _users.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
                     final u = _users[i];
                     final id = (u['id'] ?? '').toString();
                     final email = (u['email'] ?? '').toString();
+                    final displayName = (u['display_name'] ?? '').toString().trim();
                     final selected = _selectedUserIds.contains(id);
-                    return CheckboxListTile(
+                    return ListTile(
                       dense: true,
-                      value: selected,
-                      onChanged: _isCreating
+                      leading: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: selected
+                            ? AppColors.primary.withValues(alpha: 0.16)
+                            : Theme.of(context).colorScheme.surfaceContainerHighest,
+                        child: Icon(
+                          selected ? Icons.check_rounded : Icons.person_rounded,
+                          size: 18,
+                          color: selected
+                              ? AppColors.primary
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      title: Text(
+                        displayName.isNotEmpty ? displayName : (email.isNotEmpty ? email : 'Пользователь $id'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: (displayName.isNotEmpty && email.isNotEmpty)
+                          ? Text(
+                              email,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : null,
+                      trailing: _isGroup
+                          ? Checkbox(
+                              value: selected,
+                              onChanged: _isCreating
+                                  ? null
+                                  : (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _selectedUserIds.add(id);
+                                        } else {
+                                          _selectedUserIds.remove(id);
+                                        }
+                                      });
+                                    },
+                            )
+                          : (selected ? const Icon(Icons.check_circle, color: AppColors.primary) : null),
+                      onTap: _isCreating
                           ? null
-                          : (v) {
+                          : () {
                               setState(() {
                                 if (_isGroup) {
-                                  if (v == true) {
-                                    _selectedUserIds.add(id);
-                                  } else {
+                                  if (selected) {
                                     _selectedUserIds.remove(id);
+                                  } else {
+                                    _selectedUserIds.add(id);
                                   }
                                 } else {
                                   _selectedUserIds
@@ -303,11 +363,35 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                                 }
                               });
                             },
-                      title: Text(email.isNotEmpty ? email : 'Пользователь $id'),
                     );
                   },
                 ),
               ),
+            if (_selectedUserIds.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _selectedUserIds.map((id) {
+                    final matched = _users.where((u) => (u['id'] ?? '').toString() == id).toList();
+                    final u = matched.isNotEmpty ? matched.first : null;
+                    final email = (u?['email'] ?? 'id: $id').toString();
+                    final displayName = (u?['display_name'] ?? '').toString().trim();
+                    final label = displayName.isNotEmpty ? displayName : email;
+                    return InputChip(
+                      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onDeleted: _isCreating
+                          ? null
+                          : () {
+                              setState(() => _selectedUserIds.remove(id));
+                            },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
           ],
         ),
       ),

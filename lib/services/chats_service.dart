@@ -185,6 +185,7 @@ class ChatsService {
               users.add({
                 'id': user['id'].toString(),
                 'email': user['email'] ?? '',
+                'display_name': user['display_name'] ?? user['displayName'] ?? '',
               });
             }
           }

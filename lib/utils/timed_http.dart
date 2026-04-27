@@ -3,6 +3,12 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'timed_http_client.dart';
+
+/// Единый HTTP-клиент: на mobile/desktop — [IOClient] с connectionTimeout (иначе TCP может висеть десятки секунд).
+http.Client? _sharedClient;
+http.Client get _httpClient => _sharedClient ??= createTimedHttpClient();
+
 /// Единый таймаут для JSON API (кроме явно длинных операций).
 const Duration kHttpTimeout = Duration(seconds: 45);
 
@@ -14,7 +20,7 @@ Future<http.Response> timedGet(
   Map<String, String>? headers,
   Duration? timeout,
 }) =>
-    http.get(url, headers: headers).timeout(timeout ?? kHttpTimeout);
+    _httpClient.get(url, headers: headers).timeout(timeout ?? kHttpTimeout);
 
 Future<http.Response> timedPost(
   Uri url, {
@@ -23,7 +29,7 @@ Future<http.Response> timedPost(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http.post(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
+    _httpClient.post(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
 
 Future<http.Response> timedPut(
   Uri url, {
@@ -32,7 +38,7 @@ Future<http.Response> timedPut(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http.put(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
+    _httpClient.put(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
 
 Future<http.Response> timedPatch(
   Uri url, {
@@ -41,7 +47,7 @@ Future<http.Response> timedPatch(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http.patch(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
+    _httpClient.patch(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
 
 Future<http.Response> timedDelete(
   Uri url, {
@@ -50,7 +56,7 @@ Future<http.Response> timedDelete(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http.delete(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
+    _httpClient.delete(url, headers: headers, body: body, encoding: encoding).timeout(timeout ?? kHttpTimeout);
 
 Future<http.Response> timedMultipart(
   http.MultipartRequest request, {

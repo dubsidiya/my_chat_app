@@ -762,22 +762,19 @@ export const getAllUsers = async (req, res) => {
     const qRaw = (req.query?.q || '').toString().trim().toLowerCase();
     const limitRaw = parseInt(req.query?.limit, 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 20;
-    if (qRaw.length < 3) {
+    if (qRaw.length < 2) {
       return res.json([]);
     }
 
     const result = await pool.query(
-      `SELECT DISTINCT u.id, u.email, u.display_name
+      `SELECT u.id, u.email, u.display_name
        FROM users u
-       JOIN chat_users target_cu ON target_cu.user_id = u.id
-       JOIN chat_users me_cu ON me_cu.chat_id = target_cu.chat_id
        WHERE u.id != $1
-         AND me_cu.user_id = $1
          AND (
            LOWER(u.email) LIKE $2
            OR LOWER(COALESCE(u.display_name, '')) LIKE $2
          )
-       ORDER BY COALESCE(u.display_name, u.email)
+       ORDER BY COALESCE(NULLIF(TRIM(u.display_name), ''), u.email)
        LIMIT $3`,
       [currentUserId, `%${qRaw}%`, limit]
     );
