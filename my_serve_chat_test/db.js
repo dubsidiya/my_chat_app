@@ -48,8 +48,12 @@ if (isProd && !isLocal && !sslRejectUnauthorized) {
   process.exit(1);
 }
 if (isProd && !isLocal && sslRejectUnauthorized && !sslCa) {
-  console.error('❌ В production при строгом TLS нужен PGSSL_CA_CERT или PGSSL_CA_CERT_PATH');
-  process.exit(1);
+  console.warn(
+    '⚠️ PGSSL_CA_CERT/PGSSL_CA_CERT_PATH не задан. Продолжаем со строгим TLS и системным trust store.',
+  );
+  console.warn(
+    '⚠️ Если провайдер БД использует private CA, задайте PGSSL_CA_CERT или PGSSL_CA_CERT_PATH.',
+  );
 }
 
 const pool = new Pool({
