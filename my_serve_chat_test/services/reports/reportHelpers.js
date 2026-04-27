@@ -1,7 +1,7 @@
 import { getDateInTimeZoneISO, getUserTimeZone } from '../../utils/timezone.js';
 
 const MAX_SLOTS_PER_DAY = 10;
-const MAX_STUDENTS_PER_SLOT = 2;
+const MAX_STUDENTS_PER_SLOT = 4;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
 

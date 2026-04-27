@@ -524,11 +524,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
       if (toAdd.isEmpty) return;
       final fromOthers = toAdd.any((m) => m.userId != widget.userId);
+      final shouldKeepAtBottom = _isNearBottom();
       setState(() {
         _messages = List<Message>.from(_messages)..addAll(toAdd);
       });
       if (fromOthers) NotificationFeedbackService.onNewMessage();
-      _scrollToBottom();
+      if (shouldKeepAtBottom) _scrollToBottom();
     } catch (_) {}
   }
 
@@ -1302,6 +1303,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               }
               if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
               if (mounted) {
+                final shouldKeepAtBottom = _isNearBottom();
+                var didAppendMessage = false;
                 setState(() {
                   // ✅ Проверяем, есть ли временное сообщение от текущего пользователя
                   // (чтобы заменить его на реальное сообщение от сервера)
@@ -1390,6 +1393,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         final newMessages = List<Message>.from(_messages);
                         newMessages.add(message); // В конец: список "старые сверху, новые снизу"
                         _messages = newMessages;
+                        didAppendMessage = true;
                         if (kDebugMode) {
                           if (kDebugMode) print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
                         }
@@ -1397,7 +1401,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         if (message.userId != widget.userId.toString()) {
                           NotificationFeedbackService.onNewMessage();
                         }
-                        _scrollToBottom();
                       }
                     } else {
                       // ✅ Если сообщение уже есть, обновляем (не затираем непустой контент пустым из WS)
@@ -1407,12 +1410,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         final merged = _mergeMessageKeepContent(existing, message);
                         final newMessages = List<Message>.from(_messages);
                         newMessages[existingIndex] = merged;
-                        
-                        if (existingIndex != 0) {
-                          newMessages.removeAt(existingIndex);
-                          newMessages.insert(0, merged);
-                        }
-                        
                         _messages = newMessages;
                         if (kDebugMode) print('✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}');
                       } else {
@@ -1421,6 +1418,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     }
                   }
                 });
+                if (didAppendMessage && shouldKeepAtBottom) {
+                  _scrollToBottom();
+                }
               }
             } catch (parseError) {
               if (kDebugMode) print('Error parsing Message from WebSocket data: $parseError');
