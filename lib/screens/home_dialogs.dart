@@ -43,9 +43,88 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
 
   void _onSearchChanged() {
     final q = _searchController.text.trim();
-    setState(() => _searchQuery = q);
+    if (!mounted) return;
+    setState(() {
+      _searchQuery = q;
+      if (q.length < 2) {
+        _users = [];
+        _loadingUsers = false;
+      }
+    });
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 260), () => _searchUsers(q));
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 260),
+      () => _searchUsers(q),
+    );
+  }
+
+  Widget _buildUserTile(Map<String, dynamic> u) {
+    final id = (u['id'] ?? '').toString();
+    final email = (u['email'] ?? '').toString();
+    final displayName = (u['display_name'] ?? '').toString().trim();
+    final selected = _selectedUserIds.contains(id);
+    return ListTile(
+      key: ValueKey('search-user-$id'),
+      dense: true,
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: selected
+            ? AppColors.primary.withValues(alpha: 0.16)
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Icon(
+          selected ? Icons.check_rounded : Icons.person_rounded,
+          size: 18,
+          color: selected
+              ? AppColors.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+      title: Text(
+        displayName.isNotEmpty
+            ? displayName
+            : (email.isNotEmpty ? email : 'Пользователь $id'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: (displayName.isNotEmpty && email.isNotEmpty)
+          ? Text(email, maxLines: 1, overflow: TextOverflow.ellipsis)
+          : null,
+      trailing: _isGroup
+          ? Checkbox(
+              value: selected,
+              onChanged: _isCreating
+                  ? null
+                  : (v) {
+                      setState(() {
+                        if (v == true) {
+                          _selectedUserIds.add(id);
+                        } else {
+                          _selectedUserIds.remove(id);
+                        }
+                      });
+                    },
+            )
+          : (selected
+                ? const Icon(Icons.check_circle, color: AppColors.primary)
+                : null),
+      onTap: _isCreating
+          ? null
+          : () {
+              setState(() {
+                if (_isGroup) {
+                  if (selected) {
+                    _selectedUserIds.remove(id);
+                  } else {
+                    _selectedUserIds.add(id);
+                  }
+                } else {
+                  _selectedUserIds
+                    ..clear()
+                    ..add(id);
+                }
+              });
+            },
+    );
   }
 
   Future<void> _searchUsers(String query) async {
@@ -101,11 +180,18 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
     try {
       final selected = _selectedUserIds.toList();
       final finalName = name.isNotEmpty ? name : 'Чат 1-на-1';
-      await widget.chatsService.createChat(finalName, selected, isGroup: _isGroup);
+      await widget.chatsService.createChat(
+        finalName,
+        selected,
+        isGroup: _isGroup,
+      );
       final warning = widget.chatsService.consumeLastCreateChatWarning();
       if (mounted && warning != null && warning.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(warning), duration: const Duration(seconds: 4)),
+          SnackBar(
+            content: Text(warning),
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
       if (mounted) {
@@ -131,24 +217,23 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       title: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [
-                  AppColors.primary,
-                  AppColors.primaryGlow,
-                ],
+                colors: [AppColors.primary, AppColors.primaryGlow],
               ),
               borderRadius: BorderRadius.circular(12),
               boxShadow: AppColors.neonGlowSoft,
             ),
-            child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 24),
+            child: const Icon(
+              Icons.chat_bubble_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 12),
           const Text(
@@ -170,6 +255,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
               children: [
                 Expanded(
                   child: ChoiceChip(
+                    key: const ValueKey('chat-mode-direct'),
                     label: const Text('1-на-1'),
                     selected: !_isGroup,
                     onSelected: _isCreating
@@ -190,6 +276,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ChoiceChip(
+                    key: const ValueKey('chat-mode-group'),
                     label: const Text('Групповой'),
                     selected: _isGroup,
                     onSelected: _isCreating
@@ -234,20 +321,18 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
-                prefixIcon: const Icon(Icons.search_rounded, size: 22, color: AppColors.primary),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 22,
+                  color: AppColors.primary,
+                ),
                 suffixIcon: _searchQuery.isEmpty
                     ? null
                     : IconButton(
                         icon: const Icon(Icons.close_rounded),
                         onPressed: _isCreating
                             ? null
-                            : () {
-                                _searchController.clear();
-                                setState(() {
-                                  _users = [];
-                                  _loadingUsers = false;
-                                });
-                              },
+                            : () => _searchController.clear(),
                       ),
                 filled: true,
                 fillColor: Theme.of(context).inputDecorationTheme.fillColor,
@@ -255,7 +340,10 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -291,80 +379,17 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                 ),
               )
             else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 260),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _users.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final u = _users[i];
-                    final id = (u['id'] ?? '').toString();
-                    final email = (u['email'] ?? '').toString();
-                    final displayName = (u['display_name'] ?? '').toString().trim();
-                    final selected = _selectedUserIds.contains(id);
-                    return ListTile(
-                      dense: true,
-                      leading: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: selected
-                            ? AppColors.primary.withValues(alpha: 0.16)
-                            : Theme.of(context).colorScheme.surfaceContainerHighest,
-                        child: Icon(
-                          selected ? Icons.check_rounded : Icons.person_rounded,
-                          size: 18,
-                          color: selected
-                              ? AppColors.primary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      title: Text(
-                        displayName.isNotEmpty ? displayName : (email.isNotEmpty ? email : 'Пользователь $id'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: (displayName.isNotEmpty && email.isNotEmpty)
-                          ? Text(
-                              email,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          : null,
-                      trailing: _isGroup
-                          ? Checkbox(
-                              value: selected,
-                              onChanged: _isCreating
-                                  ? null
-                                  : (v) {
-                                      setState(() {
-                                        if (v == true) {
-                                          _selectedUserIds.add(id);
-                                        } else {
-                                          _selectedUserIds.remove(id);
-                                        }
-                                      });
-                                    },
-                            )
-                          : (selected ? const Icon(Icons.check_circle, color: AppColors.primary) : null),
-                      onTap: _isCreating
-                          ? null
-                          : () {
-                              setState(() {
-                                if (_isGroup) {
-                                  if (selected) {
-                                    _selectedUserIds.remove(id);
-                                  } else {
-                                    _selectedUserIds.add(id);
-                                  }
-                                } else {
-                                  _selectedUserIds
-                                    ..clear()
-                                    ..add(id);
-                                }
-                              });
-                            },
-                    );
-                  },
+              SizedBox(
+                height: 260,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < _users.length; i++) ...[
+                        _buildUserTile(_users[i]),
+                        if (i < _users.length - 1) const Divider(height: 1),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             if (_selectedUserIds.isNotEmpty) ...[
@@ -375,13 +400,22 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                   spacing: 6,
                   runSpacing: 6,
                   children: _selectedUserIds.map((id) {
-                    final matched = _users.where((u) => (u['id'] ?? '').toString() == id).toList();
+                    final matched = _users
+                        .where((u) => (u['id'] ?? '').toString() == id)
+                        .toList();
                     final u = matched.isNotEmpty ? matched.first : null;
                     final email = (u?['email'] ?? 'id: $id').toString();
-                    final displayName = (u?['display_name'] ?? '').toString().trim();
+                    final displayName = (u?['display_name'] ?? '')
+                        .toString()
+                        .trim();
                     final label = displayName.isNotEmpty ? displayName : email;
                     return InputChip(
-                      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      key: ValueKey('selected-user-$id'),
+                      label: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onDeleted: _isCreating
                           ? null
                           : () {
@@ -418,10 +452,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: const LinearGradient(
-              colors: [
-                AppColors.primary,
-                AppColors.primaryGlow,
-              ],
+              colors: [AppColors.primary, AppColors.primaryGlow],
             ),
             boxShadow: AppColors.neonGlowStrong,
           ),
@@ -534,9 +565,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
               Navigator.pop(context, password);
             }
           },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-          ),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
           child: const Text('Удалить аккаунт'),
         ),
       ],
@@ -631,7 +660,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
-                    _obscureOldPassword ? Icons.visibility : Icons.visibility_off,
+                    _obscureOldPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
                   ),
                   onPressed: () {
                     setState(() {
@@ -651,7 +682,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
-                    _obscureNewPassword ? Icons.visibility : Icons.visibility_off,
+                    _obscureNewPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
                   ),
                   onPressed: () {
                     setState(() {
@@ -671,7 +704,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 prefixIcon: const Icon(Icons.lock_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(
-                    _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                    _obscureConfirmPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
                   ),
                   onPressed: () {
                     setState(() {
@@ -710,13 +745,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
               return;
             }
 
-            Navigator.pop(
-              context,
-              {
-                'oldPassword': _oldPasswordController.text.trim(),
-                'newPassword': _newPasswordController.text.trim(),
-              },
-            );
+            Navigator.pop(context, {
+              'oldPassword': _oldPasswordController.text.trim(),
+              'newPassword': _newPasswordController.text.trim(),
+            });
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: scheme.primary,
