@@ -6,6 +6,7 @@ class Transaction {
   final String? description;
   final int? lessonId;
   final int createdBy;
+  final String? teacherUsername;
   final DateTime createdAt;
   final DateTime? lessonDate;
   final String? lessonTime;
@@ -18,6 +19,7 @@ class Transaction {
     this.description,
     this.lessonId,
     required this.createdBy,
+    this.teacherUsername,
     required this.createdAt,
     this.lessonDate,
     this.lessonTime,
@@ -77,6 +79,7 @@ class Transaction {
       description: json['description'] as String?,
       lessonId: _parseOptionalInt(json['lesson_id']),
       createdBy: _parseRequiredInt(json['created_by'], 'created_by'),
+      teacherUsername: json['teacher_username']?.toString(),
       createdAt: DateTime.parse(json['created_at']),
       lessonDate: json['lesson_date'] != null 
           ? DateTime.parse(json['lesson_date'])

@@ -327,6 +327,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       if (!_showHidden && _hiddenStudentIds.contains(s.id)) return false;
       return _matchesStudent(s, q);
     }).toList();
+    final addedChildrenCount = _students.length;
     final hiddenVisibleCount = _students.where((s) => _hiddenStudentIds.contains(s.id)).length;
     return Scaffold(
       appBar: AppBar(
@@ -808,11 +809,31 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: "add",
-        onPressed: _addStudent,
-        backgroundColor: scheme.primary,
-        child: const Icon(Icons.add_rounded),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              'Детей: $addedChildrenCount',
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton(
+            heroTag: "add",
+            onPressed: _addStudent,
+            backgroundColor: scheme.primary,
+            child: const Icon(Icons.add_rounded),
+          ),
+        ],
       ),
     );
   }

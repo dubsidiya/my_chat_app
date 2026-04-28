@@ -7,7 +7,6 @@ import '../models/transaction.dart';
 import '../services/students_service.dart';
 import '../services/reports_service.dart';
 import '../services/storage_service.dart';
-import 'add_lesson_screen.dart';
 import 'edit_student_screen.dart';
 import 'report_text_view_screen.dart';
 
@@ -124,49 +123,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         _student = updated;
       });
       _updateBalance();
-    }
-  }
-
-  void _addLesson() async {
-    final lesson = await Navigator.push<Lesson?>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddLessonScreen(studentId: _student.id),
-      ),
-    );
-
-    if (lesson != null) {
-      // Быстрое обновление данных после добавления занятия
-      await _refreshData();
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Занятие добавлено'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 15),
-          action: SnackBarAction(
-            label: 'Отменить',
-            onPressed: () async {
-              try {
-                await _studentsService.deleteLesson(lesson.id);
-                await _refreshData();
-                if (!mounted) return;
-                messenger.hideCurrentSnackBar();
-                messenger.showSnackBar(
-                  const SnackBar(duration: Duration(seconds: 3), content: Text('Занятие отменено'), backgroundColor: Colors.orange),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
-                );
-              }
-            },
-          ),
-        ),
-      );
     }
   }
 
@@ -600,24 +556,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
           const SizedBox(height: 16),
 
-          // Кнопки действий
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _addLesson,
-                    icon: const Icon(Icons.event),
-                    label: const Text('Добавить занятие'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
           // Табы для занятий и транзакций
           Expanded(
             child: Column(
@@ -690,12 +628,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               Icon(Icons.event_busy, size: 56, color: scheme.onSurface.withValues(alpha: 0.35)),
                               const SizedBox(height: 12),
                               Text('Нет занятий', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.70))),
-                              const SizedBox(height: 10),
-                              ElevatedButton.icon(
-                                onPressed: _addLesson,
-                                icon: const Icon(Icons.add),
-                                label: const Text('Добавить'),
-                              ),
                             ],
                           ),
                         ),
@@ -885,6 +817,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
+                                            Text(
+                                              '${isLesson ? 'Преподаватель' : 'Автор'}: ${((transaction.teacherUsername ?? '').trim().isNotEmpty) ? transaction.teacherUsername!.trim() : 'ID ${transaction.createdBy}'}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: scheme.onSurface.withValues(alpha: 0.72),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
                                             Text(
                                               DateFormat('dd.MM.yyyy HH:mm')
                                                   .format(transaction.createdAt),
