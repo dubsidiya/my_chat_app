@@ -658,6 +658,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
+                                    'Преподаватель: ${((lesson.teacherUsername ?? '').trim().isNotEmpty) ? lesson.teacherUsername!.trim() : 'ID ${lesson.createdBy ?? '—'}'}',
+                                  ),
+                                  Text(
                                     [
                                       if (lesson.lessonTime != null) 'Время: ${lesson.lessonTime}',
                                       _statusLabel(lesson.status),

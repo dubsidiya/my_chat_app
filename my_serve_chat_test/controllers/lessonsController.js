@@ -1,6 +1,7 @@
 import pool from '../db.js';
 import { isSuperuser } from '../middleware/auth.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
+import { sqlUserAccountingNameOrEmpty } from '../utils/userAccountingDisplaySql.js';
 import {
   beginIdempotent,
   completeIdempotent,
@@ -50,15 +51,17 @@ export const getStudentLessons = async (req, res) => {
     try {
       result = onlyMine
           ? await pool.query(
-              `SELECT l.*, ${linkSelect}
+              `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, ${linkSelect}
                FROM lessons l
+               LEFT JOIN users u ON l.created_by = u.id
                WHERE l.student_id = $1 AND l.created_by = $2
                ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
               [studentId, userId]
             )
           : await pool.query(
-              `SELECT l.*, ${linkSelect}
+              `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, ${linkSelect}
                FROM lessons l
+               LEFT JOIN users u ON l.created_by = u.id
                WHERE l.student_id = $1
                ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
               [studentId]
@@ -69,15 +72,17 @@ export const getStudentLessons = async (req, res) => {
       if (error?.code === '42P01') {
         result = onlyMine
             ? await pool.query(
-                `SELECT l.*, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date
                  FROM lessons l
+                 LEFT JOIN users u ON l.created_by = u.id
                  WHERE l.student_id = $1 AND l.created_by = $2
                  ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
                 [studentId, userId]
               )
             : await pool.query(
-                `SELECT l.*, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date
                  FROM lessons l
+                 LEFT JOIN users u ON l.created_by = u.id
                  WHERE l.student_id = $1
                  ORDER BY l.lesson_date DESC, l.lesson_time DESC NULLS LAST`,
                 [studentId]

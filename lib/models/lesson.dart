@@ -9,6 +9,8 @@ class Lesson {
   final String status;
   final bool isChargeable;
   final int? originLessonId;
+  final int? createdBy;
+  final String? teacherUsername;
   final DateTime createdAt;
   /// Связь с дневным отчётом (если занятие создано из отчёта).
   final int? linkedReportId;
@@ -25,6 +27,8 @@ class Lesson {
     this.status = 'attended',
     this.isChargeable = true,
     this.originLessonId,
+    this.createdBy,
+    this.teacherUsername,
     required this.createdAt,
     this.linkedReportId,
     this.linkedReportDate,
@@ -76,6 +80,8 @@ class Lesson {
       status: (json['status'] ?? 'attended').toString(),
       isChargeable: _parseBool(json['is_chargeable']),
       originLessonId: _parseInt(json['origin_lesson_id']),
+      createdBy: _parseInt(json['created_by']),
+      teacherUsername: json['teacher_username']?.toString(),
       createdAt: DateTime.parse(json['created_at'] as String),
       linkedReportId: _parseInt(json['linked_report_id']),
       linkedReportDate: linkedReportDate,
