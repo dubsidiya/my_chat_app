@@ -344,6 +344,7 @@ export const createLesson = async (req, res) => {
 // Удаление занятия
 export const deleteLesson = async (req, res) => {
   const userId = req.user.userId;
+  const superuser = isSuperuser(req.user);
   const { id } = req.params;
 
   const client = await pool.connect();
@@ -351,25 +352,33 @@ export const deleteLesson = async (req, res) => {
     try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
-    // Проверяем, что занятие существует и принадлежит пользователю
-    const checkResult = await client.query(
-      `SELECT id FROM lessons WHERE id = $1 AND created_by = $2`,
-      [id, userId]
-    );
+    // Обычный пользователь может удалять только свои занятия,
+    // суперпользователь — любые.
+    const checkResult = superuser
+      ? await client.query(
+          `SELECT id FROM lessons WHERE id = $1`,
+          [id]
+        )
+      : await client.query(
+          `SELECT id FROM lessons WHERE id = $1 AND created_by = $2`,
+          [id, userId]
+        );
 
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Занятие не найдено' });
     }
 
-    // Удаляем транзакции, связанные с занятием (только свои)
-    await client.query(
-      'DELETE FROM transactions WHERE lesson_id = $1 AND created_by = $2',
-      [id, userId]
-    );
+    // Удаляем все транзакции, связанные с занятием.
+    // Это важно для суперпользователя, чтобы не оставлять "висячие" lesson-списания.
+    await client.query('DELETE FROM transactions WHERE lesson_id = $1', [id]);
 
-    // Удаляем занятие
-    await client.query('DELETE FROM lessons WHERE id = $1 AND created_by = $2', [id, userId]);
+    // Удаляем занятие (с тем же ограничением прав, что и на этапе проверки).
+    if (superuser) {
+      await client.query('DELETE FROM lessons WHERE id = $1', [id]);
+    } else {
+      await client.query('DELETE FROM lessons WHERE id = $1 AND created_by = $2', [id, userId]);
+    }
     await logAccountingEvent({
       userId,
       eventType: 'lesson_deleted',
