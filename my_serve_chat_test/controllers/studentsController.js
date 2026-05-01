@@ -549,6 +549,14 @@ export const deleteStudent = async (req, res) => {
       'DELETE FROM teacher_students WHERE teacher_id = $1 AND student_id = $2',
       [userId, id]
     );
+    if (unlinkRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: isSuper
+          ? 'Связь текущего суперпользователя с учеником не найдена'
+          : 'Связь с учеником не найдена',
+      });
+    }
     await logAccountingEvent({
       userId,
       eventType: 'student_unlinked',

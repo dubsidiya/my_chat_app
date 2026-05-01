@@ -827,6 +827,7 @@ export const updateReport = async (req, res) => {
 // Удаление отчета
 export const deleteReport = async (req, res) => {
   const userId = req.user.userId;
+  const superuser = isSuperuser(req.user);
   const { id } = req.params;
 
   const client = await pool.connect();
@@ -834,15 +835,21 @@ export const deleteReport = async (req, res) => {
     try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
 
-    // Проверяем, что отчет принадлежит пользователю
-    const checkResult = await client.query(
-      'SELECT id FROM reports WHERE id = $1 AND created_by = $2',
-      [id, userId]
-    );
+    // Автор может удалить свой отчёт, суперпользователь — любой.
+    const checkResult = superuser
+      ? await client.query(
+          'SELECT id, created_by FROM reports WHERE id = $1 LIMIT 1',
+          [id]
+        )
+      : await client.query(
+          'SELECT id, created_by FROM reports WHERE id = $1 AND created_by = $2 LIMIT 1',
+          [id, userId]
+        );
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчет не найден' });
     }
+    const reportOwnerId = checkResult.rows[0].created_by;
 
     // Получаем занятия из отчета
     const lessonsResult = await client.query(
@@ -854,16 +861,20 @@ export const deleteReport = async (req, res) => {
     if (lessonIds.length > 0) {
       await client.query(
         'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
-        [userId, lessonIds]
+        [reportOwnerId, lessonIds]
       );
       await client.query(
         'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
-        [userId, lessonIds]
+        [reportOwnerId, lessonIds]
       );
     }
 
     // Удаляем отчет (каскадно удалит связи)
-    await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
+    if (superuser) {
+      await client.query('DELETE FROM reports WHERE id = $1', [id]);
+    } else {
+      await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
+    }
     // Аудит на отдельном соединении
     await logAccountingEvent({
       userId,

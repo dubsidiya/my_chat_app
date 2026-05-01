@@ -4,6 +4,7 @@ import { sanitizeMessageContent } from '../utils/sanitize.js';
 import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from '../utils/uploadImage.js';
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 import { getSignedObjectUrl, isStorageKey, toStorageKey } from '../utils/yandexStorage.js';
+import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 import { sendPushToTokens } from '../utils/pushNotifications.js';
 import { parseLimit, parseOffset, parseOptionalInt } from '../services/messages/pagination.js';
 import { enrichMessageRow } from '../services/messages/enrichMessageRow.js';
@@ -1327,11 +1328,25 @@ export const clearChat = async (req, res) => {
       });
     }
 
+    const mediaRows = await pool.query(
+      `SELECT image_url, original_image_url, file_url
+       FROM messages
+       WHERE chat_id = $1`,
+      [chatId]
+    );
+    const mediaUrlsToCleanup = collectMessageMediaUrls(mediaRows.rows);
+
     // Удаляем все сообщения из чата
     const deleteResult = await pool.query(
       'DELETE FROM messages WHERE chat_id = $1',
       [chatId]
     );
+    const cleanupResult = await cleanupMessageMediaUrls(mediaUrlsToCleanup, {
+      label: 'clearChat',
+    });
+    if (cleanupResult.attempted > 0) {
+      console.log(`clearChat: cleanup attempted for ${cleanupResult.attempted} media objects (chat ${chatId})`);
+    }
 
     res.status(200).json({ 
       message: 'Чат успешно очищен',

@@ -86,6 +86,22 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
   }
 
   Future<void> _removeMember(String userId, String userEmail) async {
+    final me = _members.firstWhere(
+      (m) => (m['id']?.toString() ?? '') == widget.currentUserId,
+      orElse: () => const <String, dynamic>{},
+    );
+    final myRole = (me['role'] ?? '').toString().toLowerCase();
+    final canRemoveMembers = myRole == 'owner' || myRole == 'admin';
+    if (!canRemoveMembers) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Удалять участников может только owner/admin'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     // Проверяем, является ли пользователь создателем
     final member = _members.firstWhere(
       (m) => m['id'] == userId,
@@ -234,6 +250,12 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final me = _members.firstWhere(
+      (m) => (m['id']?.toString() ?? '') == widget.currentUserId,
+      orElse: () => const <String, dynamic>{},
+    );
+    final myRole = (me['role'] ?? '').toString().toLowerCase();
+    final canRemoveMembers = myRole == 'owner' || myRole == 'admin';
 
     return AlertDialog(
       shape: RoundedRectangleBorder(
@@ -418,7 +440,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                   ),
                                   const SizedBox(width: 6),
                                 ],
-                                if (!isCreator)
+                                if (canRemoveMembers && !isCreator)
                                   Container(
                                     decoration: BoxDecoration(
                                       color: Colors.red.withValues(alpha:0.10),

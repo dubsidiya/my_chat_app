@@ -488,6 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
       confirmDismiss: (direction) async {
+        final messenger = ScaffoldMessenger.of(context);
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -504,30 +505,34 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         );
-        return confirmed ?? false;
-      },
-      onDismissed: (direction) async {
-        final messenger = ScaffoldMessenger.of(context);
+        if (confirmed != true) return false;
         try {
           await _chatsService.deleteChat(chat.id, widget.userId);
-          if (mounted) {
-            messenger.showSnackBar(
-              SnackBar(content: Text('Чат "${chat.name}" удален'), duration: const Duration(seconds: 2)),
-            );
-            _loadChats();
-          }
+          return true;
         } catch (e) {
           if (kDebugMode) print('Ошибка удаления чата: $e');
-          if (mounted) {
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-            _loadChats();
-          }
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return false;
         }
+      },
+      onDismissed: (direction) {
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        setState(() {
+          _chats = _chats.where((c) => c.id != chat.id).toList();
+          _chatOrder = _chatOrder.where((id) => id != chat.id).toList();
+        });
+        StorageService.saveChatOrder(widget.userId, _chatOrder);
+        messenger.showSnackBar(
+          SnackBar(content: Text('Чат "${chat.name}" удален'), duration: const Duration(seconds: 2)),
+        );
+        // Фоново синхронизируем список с сервером.
+        Future.microtask(_loadChats);
       },
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),

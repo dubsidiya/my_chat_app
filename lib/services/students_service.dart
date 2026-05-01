@@ -42,6 +42,19 @@ class StudentsService {
     return headers;
   }
 
+  String _extractErrorMessage(String body, String fallback) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['message'] != null) {
+        final msg = decoded['message'].toString().trim();
+        if (msg.isNotEmpty) return msg;
+      }
+    } catch (_) {}
+    final plain = body.trim();
+    if (plain.isNotEmpty) return '$fallback: $plain';
+    return fallback;
+  }
+
   // Получение всех студентов
   Future<List<Student>> getAllStudents() async {
     final headers = await _getAuthHeaders();
@@ -219,8 +232,9 @@ class StudentsService {
     );
 
     if (response.statusCode != 200) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось удалить студента');
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось удалить студента')} (${response.statusCode})',
+      );
     }
   }
 
@@ -233,8 +247,9 @@ class StudentsService {
     );
 
     if (response.statusCode != 200) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось удалить ученика полностью');
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось удалить ученика полностью')} (${response.statusCode})',
+      );
     }
   }
 
@@ -357,8 +372,9 @@ class StudentsService {
     );
 
     if (response.statusCode != 200) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось удалить занятие');
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось удалить занятие')} (${response.statusCode})',
+      );
     }
   }
 
@@ -405,12 +421,9 @@ class StudentsService {
     );
 
     if (response.statusCode != 200) {
-      try {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Не удалось отменить транзакцию');
-      } catch (_) {
-        throw Exception('Не удалось отменить транзакцию');
-      }
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось отменить транзакцию')} (${response.statusCode})',
+      );
     }
   }
 

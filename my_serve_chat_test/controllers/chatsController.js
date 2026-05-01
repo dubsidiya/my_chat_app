@@ -15,6 +15,7 @@ import {
   isOwner as isOwnerAccess,
   isOwnerOrAdmin as isOwnerOrAdminAccess,
 } from '../services/chats/accessControl.js';
+import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 
 let _chatUsersFolderColumnExists = null;
 const chatUsersFolderColumnExists = async () => {
@@ -612,8 +613,16 @@ export const deleteChat = async (req, res) => {
     }
 
     const client = await pool.connect();
+    let mediaUrlsToCleanup = [];
     try {
       await client.query('BEGIN');
+      const mediaRows = await client.query(
+        `SELECT image_url, original_image_url, file_url
+         FROM messages
+         WHERE chat_id = $1`,
+        [chatId]
+      );
+      mediaUrlsToCleanup = collectMessageMediaUrls(mediaRows.rows);
       await client.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
       await client.query('DELETE FROM chat_users WHERE chat_id = $1', [chatId]);
       await client.query('DELETE FROM chats WHERE id = $1', [chatId]);
@@ -623,6 +632,12 @@ export const deleteChat = async (req, res) => {
       throw txError;
     } finally {
       client.release();
+    }
+    const cleanupResult = await cleanupMessageMediaUrls(mediaUrlsToCleanup, {
+      label: 'deleteChat',
+    });
+    if (cleanupResult.attempted > 0) {
+      console.log(`deleteChat: cleanup attempted for ${cleanupResult.attempted} media objects (chat ${chatId})`);
     }
 
     res.status(200).json({ message: "Чат успешно удален" });
@@ -951,8 +966,21 @@ export const leaveChat = async (req, res) => {
     const isOwnerMember = role === 'owner' || isCreator;
 
     if (isCreator && count === 1) {
+      const mediaRows = await pool.query(
+        `SELECT image_url, original_image_url, file_url
+         FROM messages
+         WHERE chat_id = $1`,
+        [chatId]
+      );
+      const mediaUrlsToCleanup = collectMessageMediaUrls(mediaRows.rows);
       // Удаляем чат полностью, так как создатель - последний участник
       await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+      const cleanupResult = await cleanupMessageMediaUrls(mediaUrlsToCleanup, {
+        label: 'leaveChat-delete-last-chat',
+      });
+      if (cleanupResult.attempted > 0) {
+        console.log(`leaveChat: cleanup attempted for ${cleanupResult.attempted} media objects (chat ${chatId})`);
+      }
       res.status(200).json({ message: "Чат удален, так как вы были последним участником" });
       return;
     }

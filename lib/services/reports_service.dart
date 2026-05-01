@@ -31,6 +31,19 @@ class ReportsService {
     return headers;
   }
 
+  String _extractErrorMessage(String body, String fallback) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['message'] != null) {
+        final msg = decoded['message'].toString().trim();
+        if (msg.isNotEmpty) return msg;
+      }
+    } catch (_) {}
+    final plain = body.trim();
+    if (plain.isNotEmpty) return '$fallback: $plain';
+    return fallback;
+  }
+
   // Получение всех отчетов
   Future<List<Report>> getAllReports() async {
     final headers = await _getAuthHeaders();
@@ -280,8 +293,9 @@ class ReportsService {
     );
 
     if (response.statusCode != 200) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось удалить отчет');
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось удалить отчет')} (${response.statusCode})',
+      );
     }
   }
 

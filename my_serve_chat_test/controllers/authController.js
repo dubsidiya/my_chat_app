@@ -16,6 +16,7 @@ import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
 import { DEFAULT_USER_TIMEZONE, normalizeTimeZone } from '../utils/timezone.js';
 import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
+import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 
 const PRIVATE_ACCESS_CODE = process.env.PRIVATE_ACCESS_CODE;
 let _authSessionsTableEnsured = false;
@@ -826,9 +827,19 @@ export const deleteAccount = async (req, res) => {
     }
 
     const client = await pool.connect();
+    let mediaUrlsToCleanup = [];
     try {
       try { await client.query('ROLLBACK'); } catch (_) {}
       await client.query('BEGIN');
+
+      // Собираем ссылки на медиа заранее, чтобы после коммита очистить Object Storage.
+      const ownMediaRows = await client.query(
+        `SELECT image_url, original_image_url, file_url
+         FROM messages
+         WHERE user_id = $1`,
+        [userId]
+      );
+      mediaUrlsToCleanup = collectMessageMediaUrls(ownMediaRows.rows);
 
       // 1. Удаляем все сообщения пользователя
       await client.query('DELETE FROM messages WHERE user_id = $1', [userId]);
@@ -843,6 +854,16 @@ export const deleteAccount = async (req, res) => {
       // 3. Для каждого чата, где пользователь создатель - удаляем чат полностью
       for (const chat of createdChats.rows) {
         const chatId = chat.id;
+        const chatMediaRows = await client.query(
+          `SELECT image_url, original_image_url, file_url
+           FROM messages
+           WHERE chat_id = $1`,
+          [chatId]
+        );
+        mediaUrlsToCleanup = [
+          ...mediaUrlsToCleanup,
+          ...collectMessageMediaUrls(chatMediaRows.rows),
+        ];
         // Удаляем сообщения чата
         await client.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
         // Удаляем участников чата
@@ -864,6 +885,12 @@ export const deleteAccount = async (req, res) => {
       console.log(`Удален пользователь ${userId}`);
 
       await client.query('COMMIT'); // Подтверждаем транзакцию
+      const cleanupResult = await cleanupMessageMediaUrls(mediaUrlsToCleanup, {
+        label: 'deleteAccount',
+      });
+      if (cleanupResult.attempted > 0) {
+        console.log(`deleteAccount: cleanup attempted for ${cleanupResult.attempted} media objects (user ${userId})`);
+      }
       securityEvent('account_deleted', req);
       res.status(200).json({
         message: 'Аккаунт успешно удален',

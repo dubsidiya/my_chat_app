@@ -31,6 +31,16 @@ alwaysApply: true
 - Prefer targeted checks first; run broad suites only when needed.
 - Do not claim verification unless command/manual validation was actually performed.
 
+## Context Efficiency
+
+Use less context **without skipping required work**:
+
+- Prefer **narrow tools first** (grep, one file read, semantic search with a bounded path) instead of exploratory reads across the whole repo when the user named a module or area.
+- For **large files**, read chunks (start/middle/end or search hits) until the edit site is clear; avoid returning huge raw dumps in replies—cite `start:end:path` instead.
+- **Do not omit** mandated verification (analyze, `--check`, smokes where required), accounting/report access rules, or end-to-end implementation to “save tokens.”
+- **Avoid redundant duplication**: don’t paste the same long snippet twice or re-quote unchanged code blocks; summarize deltas.
+- Prefer **skills** (`my-chat-app-architecture`) and **scoped rules** (globs) over re-deriving layout from scratch when the answer is documented there.
+
 ## Response Style
 
 - Report what was changed, what was verified, and any remaining risk.
