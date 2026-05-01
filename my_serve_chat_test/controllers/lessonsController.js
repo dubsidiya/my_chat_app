@@ -20,6 +20,73 @@ const hasStudentAccess = async (client, teacherId, studentId) => {
   return r.rows.length > 0;
 };
 
+const resolveMakeupOrigin = async (client, { studentId, teacherId, originLessonId }) => {
+  if (originLessonId) {
+    const originResult = await client.query(
+      `SELECT id, student_id, status, created_by, lesson_date
+       FROM lessons
+       WHERE id = $1
+       LIMIT 1`,
+      [originLessonId]
+    );
+    if (originResult.rows.length === 0) {
+      return { errorStatus: 400, errorMessage: 'Исходный пропуск для отработки не найден' };
+    }
+    const origin = originResult.rows[0];
+    if (origin.student_id !== studentId) {
+      return { errorStatus: 400, errorMessage: 'Отработка должна ссылаться на занятие этого же ребенка' };
+    }
+    if (String(origin.created_by) !== String(teacherId)) {
+      return { errorStatus: 403, errorMessage: 'Нельзя ссылаться на занятие другого преподавателя' };
+    }
+    if (!['missed', 'cancel_same_day'].includes(origin.status)) {
+      return { errorStatus: 400, errorMessage: 'Отрабатывать можно только пропуск или отмену в день' };
+    }
+    const alreadyMakeup = await client.query(
+      `SELECT id
+       FROM lessons
+       WHERE created_by = $1
+         AND student_id = $2
+         AND status = 'makeup'
+         AND origin_lesson_id = $3
+       LIMIT 1`,
+      [teacherId, studentId, origin.id]
+    );
+    if (alreadyMakeup.rows.length > 0) {
+      return { errorStatus: 400, errorMessage: 'Этот пропуск уже отработан' };
+    }
+    const originDate = String(origin.lesson_date || '').slice(0, 10);
+    return { originLessonId: origin.id, originLessonDate: originDate || null };
+  }
+
+  const pendingResult = await client.query(
+    `SELECT l.id, l.lesson_date
+     FROM lessons l
+     WHERE l.student_id = $1
+       AND l.created_by = $2
+       AND l.status IN ('missed', 'cancel_same_day')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM lessons m
+         WHERE m.created_by = l.created_by
+           AND m.student_id = l.student_id
+           AND m.status = 'makeup'
+           AND m.origin_lesson_id = l.id
+       )
+     ORDER BY l.lesson_date ASC, l.lesson_time ASC NULLS LAST, l.id ASC
+     LIMIT 1`,
+    [studentId, teacherId]
+  );
+  if (pendingResult.rows.length === 0) {
+    return { errorStatus: 400, errorMessage: 'Для отработки не найден неотработанный пропуск/отмена в день' };
+  }
+  const row = pendingResult.rows[0];
+  return {
+    originLessonId: row.id,
+    originLessonDate: String(row.lesson_date || '').slice(0, 10) || null,
+  };
+};
+
 // Получение всех занятий студента
 export const getStudentLessons = async (req, res) => {
   try {
@@ -46,7 +113,8 @@ export const getStudentLessons = async (req, res) => {
       (SELECT rl.report_id FROM report_lessons rl WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_id,
       (SELECT rep.report_date::text FROM report_lessons rl
         JOIN reports rep ON rep.id = rl.report_id AND rep.created_by = l.created_by
-        WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_date`;
+        WHERE rl.lesson_id = l.id ORDER BY rl.id DESC LIMIT 1) AS linked_report_date,
+      (SELECT o.lesson_date::text FROM lessons o WHERE o.id = l.origin_lesson_id LIMIT 1) AS origin_lesson_date`;
     let result;
     try {
       result = onlyMine
@@ -72,7 +140,8 @@ export const getStudentLessons = async (req, res) => {
       if (error?.code === '42P01') {
         result = onlyMine
             ? await pool.query(
-                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date,
+                        (SELECT o.lesson_date::text FROM lessons o WHERE o.id = l.origin_lesson_id LIMIT 1) AS origin_lesson_date
                  FROM lessons l
                  LEFT JOIN users u ON l.created_by = u.id
                  WHERE l.student_id = $1 AND l.created_by = $2
@@ -80,7 +149,8 @@ export const getStudentLessons = async (req, res) => {
                 [studentId, userId]
               )
             : await pool.query(
-                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date
+                `SELECT l.*, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username, NULL::int AS linked_report_id, NULL::text AS linked_report_date,
+                        (SELECT o.lesson_date::text FROM lessons o WHERE o.id = l.origin_lesson_id LIMIT 1) AS origin_lesson_date
                  FROM lessons l
                  LEFT JOIN users u ON l.created_by = u.id
                  WHERE l.student_id = $1
@@ -217,9 +287,9 @@ export const createLesson = async (req, res) => {
     }
 
     let isChargeable = true;
+    let finalOriginLessonId = originLessonId;
+    let makeupOriginDate = null;
     if (status === 'missed') {
-      isChargeable = false;
-    } else if (status === 'makeup') {
       isChargeable = false;
     } else if (status === 'cancel_same_day') {
       // 1 отмена в день проведения за всё время бесплатна, остальные платные.
@@ -242,32 +312,20 @@ export const createLesson = async (req, res) => {
       isChargeable = freeUsed.rows.length > 0;
     }
 
-    if (status === 'makeup' && originLessonId) {
-      const originResult = await client.query(
-        `SELECT id, student_id, status, created_by
-         FROM lessons
-         WHERE id = $1
-         LIMIT 1`,
-        [originLessonId]
-      );
-      if (originResult.rows.length === 0) {
+    if (status === 'makeup') {
+      const originResolved = await resolveMakeupOrigin(client, {
+        studentId: student_id,
+        teacherId: userId,
+        originLessonId,
+      });
+      if (originResolved.errorMessage) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ message: 'Исходный пропуск для отработки не найден' });
+        return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
       }
-      const origin = originResult.rows[0];
-      if (origin.student_id !== student_id) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ message: 'Отработка должна ссылаться на занятие этого же ребенка' });
-      }
-      if (String(origin.created_by) !== String(userId)) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ message: 'Нельзя ссылаться на занятие другого преподавателя' });
-      }
-      if (!['missed', 'cancel_same_day'].includes(origin.status)) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ message: 'Отрабатывать можно только пропуск или отмену в день' });
-      }
-      isChargeable = false;
+      finalOriginLessonId = originResolved.originLessonId;
+      makeupOriginDate = originResolved.originLessonDate;
+      // Отработка платная: создаем стандартное lesson-списание.
+      isChargeable = true;
     }
 
     // Создаем занятие
@@ -283,7 +341,7 @@ export const createLesson = async (req, res) => {
         priceNum,
         status,
         isChargeable,
-        originLessonId,
+        finalOriginLessonId,
         notes || null,
         userId,
       ]
@@ -298,7 +356,9 @@ export const createLesson = async (req, res) => {
         [
           student_id,
           priceNum,
-          `Занятие ${lesson_date}${lesson_time ? ' в ' + lesson_time : ''}`,
+          status === 'makeup' && makeupOriginDate
+            ? `Занятие ${lesson_date}${lesson_time ? ' в ' + lesson_time : ''} (отработка за пропуск ${makeupOriginDate})`
+            : `Занятие ${lesson_date}${lesson_time ? ' в ' + lesson_time : ''}`,
           lesson.id,
           userId,
         ]

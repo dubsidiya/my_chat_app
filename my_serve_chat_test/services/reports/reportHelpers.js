@@ -137,7 +137,8 @@ export const validateSlots = (slots) => {
 };
 
 export const resolveChargeableByStatus = async (client, { studentId, status }) => {
-  if (status === 'missed' || status === 'makeup') return false;
+  if (status === 'missed') return false;
+  if (status === 'makeup') return true;
   if (status !== 'cancel_same_day') return true;
 
   await client.query(

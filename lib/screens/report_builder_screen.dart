@@ -9,6 +9,7 @@ import '../services/students_service.dart';
 import '../services/reports_service.dart';
 import '../services/storage_service.dart';
 import '../services/report_builder_draft_storage.dart';
+import '../utils/network_error_helper.dart';
 
 class ReportBuilderScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -54,6 +55,17 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   final Map<int, double> _lastPriceByStudent = {};
   Timer? _draftTimer;
   String? _userId;
+
+  String _reportSaveErrorText(Object error) {
+    final msg = networkErrorMessage(error);
+    if (msg.contains('Для отработки не найден') || msg.contains('не найден неотработанный пропуск')) {
+      return 'Нельзя провести отработку: нет пропусков к отработке.';
+    }
+    if (msg.contains('Этот пропуск уже отработан')) {
+      return 'Нельзя провести отработку: этот пропуск уже закрыт.';
+    }
+    return msg;
+  }
 
   @override
   void initState() {
@@ -523,7 +535,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text(_reportSaveErrorText(e)), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);

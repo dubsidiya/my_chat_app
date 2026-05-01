@@ -664,6 +664,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     [
                                       if (lesson.lessonTime != null) 'Время: ${lesson.lessonTime}',
                                       _statusLabel(lesson.status),
+                                      if (lesson.status == 'makeup' && lesson.originLessonDate != null)
+                                        'за пропуск ${DateFormat('dd.MM.yyyy').format(lesson.originLessonDate!)}',
                                     ].join(' · '),
                                   ),
                                   if (lesson.isFromDailyReport && lesson.linkedReportId != null)

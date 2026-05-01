@@ -174,6 +174,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
     final bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
     final status = (l['status'] ?? 'attended').toString();
+    final originLessonDate = (l['originLessonDate'] ?? '').toString();
     String statusLabel;
     switch (status) {
       case 'missed':
@@ -222,7 +223,9 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'статус: $statusLabel',
+                  status == 'makeup' && originLessonDate.isNotEmpty
+                      ? 'статус: $statusLabel · за пропуск $originLessonDate'
+                      : 'статус: $statusLabel',
                   style: TextStyle(
                     color: scheme.onSurface.withValues(alpha: 0.8),
                     fontSize: 12,

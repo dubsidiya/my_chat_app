@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/students_service.dart';
 import '../models/lesson.dart';
+import '../utils/network_error_helper.dart';
 
 class AddLessonScreen extends StatefulWidget {
   final int studentId;
@@ -30,6 +31,17 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
 
   static const double _largeAmountWarn = 10000;
   static const double _maxAmount = 1000000;
+
+  String _lessonErrorText(Object error) {
+    final msg = networkErrorMessage(error);
+    if (msg.contains('Для отработки не найден') || msg.contains('не найден неотработанный пропуск')) {
+      return 'Нельзя провести отработку: нет пропусков к отработке.';
+    }
+    if (msg.contains('Этот пропуск уже отработан')) {
+      return 'Нельзя провести отработку: этот пропуск уже закрыт.';
+    }
+    return msg;
+  }
 
   static String _weeksWord(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'неделя';
@@ -99,7 +111,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка: $e'),
+            content: Text(_lessonErrorText(e)),
             backgroundColor: Colors.red,
           ),
         );

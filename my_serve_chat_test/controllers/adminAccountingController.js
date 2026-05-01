@@ -125,10 +125,12 @@ export const exportAccounting = async (req, res) => {
               l.status,
               COALESCE(l.is_chargeable, true) as is_chargeable,
               l.origin_lesson_id,
+              o.lesson_date AS origin_lesson_date,
               l.notes,
               l.created_by as teacher_id,
               ${sqlUserAccountingName('u')} AS teacher_username
        FROM lessons l
+       LEFT JOIN lessons o ON o.id = l.origin_lesson_id
        LEFT JOIN users u ON u.id = l.created_by
        WHERE l.lesson_date <= $1::date
        ORDER BY l.student_id, l.lesson_date, l.lesson_time NULLS LAST, l.created_at, l.id`,
@@ -203,6 +205,7 @@ export const exportAccounting = async (req, res) => {
         status: (l.status || 'attended').toString(),
         isChargeable: l.is_chargeable === true,
         originLessonId: l.origin_lesson_id || null,
+        originLessonDate: l.origin_lesson_date ? toIsoDate(l.origin_lesson_date) : null,
       };
       lessonsInPeriod.push(row);
 
@@ -279,6 +282,7 @@ export const exportAccounting = async (req, res) => {
         status: l.status,
         isChargeable: l.isChargeable,
         originLessonId: l.originLessonId,
+        originLessonDate: l.originLessonDate || null,
       });
     }
 

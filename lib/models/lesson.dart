@@ -9,6 +9,7 @@ class Lesson {
   final String status;
   final bool isChargeable;
   final int? originLessonId;
+  final DateTime? originLessonDate;
   final int? createdBy;
   final String? teacherUsername;
   final DateTime createdAt;
@@ -27,6 +28,7 @@ class Lesson {
     this.status = 'attended',
     this.isChargeable = true,
     this.originLessonId,
+    this.originLessonDate,
     this.createdBy,
     this.teacherUsername,
     required this.createdAt,
@@ -80,6 +82,9 @@ class Lesson {
       status: (json['status'] ?? 'attended').toString(),
       isChargeable: _parseBool(json['is_chargeable']),
       originLessonId: _parseInt(json['origin_lesson_id']),
+      originLessonDate: json['origin_lesson_date'] != null && json['origin_lesson_date'].toString().isNotEmpty
+          ? DateTime.tryParse(json['origin_lesson_date'].toString().split('T').first)
+          : null,
       createdBy: _parseInt(json['created_by']),
       teacherUsername: json['teacher_username']?.toString(),
       createdAt: DateTime.parse(json['created_at'] as String),

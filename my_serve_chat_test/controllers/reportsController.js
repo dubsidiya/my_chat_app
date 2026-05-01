@@ -34,6 +34,88 @@ import {
   validateReportInput,
 } from '../validators/reports/reportValidator.js';
 
+const isoDate = (value) => String(value || '').slice(0, 10);
+
+const resolveMakeupOriginForReport = async (
+  client,
+  {
+    studentId,
+    teacherId,
+    originLessonId,
+    strict,
+    notFoundMessage,
+    wrongStudentMessage,
+    wrongOwnerMessage,
+    wrongStatusMessage,
+  }
+) => {
+  if (originLessonId) {
+    const originResult = await client.query(
+      `SELECT id, student_id, status, created_by, lesson_date
+       FROM lessons
+       WHERE id = $1
+       LIMIT 1`,
+      [originLessonId]
+    );
+    if (originResult.rows.length === 0) {
+      return { errorStatus: 400, errorMessage: notFoundMessage };
+    }
+    const origin = originResult.rows[0];
+    if (origin.student_id !== studentId) {
+      return { errorStatus: 400, errorMessage: wrongStudentMessage };
+    }
+    if (String(origin.created_by) !== String(teacherId)) {
+      return { errorStatus: 403, errorMessage: wrongOwnerMessage };
+    }
+    if (!['missed', 'cancel_same_day'].includes(origin.status)) {
+      return { errorStatus: 400, errorMessage: wrongStatusMessage };
+    }
+    const alreadyMakeup = await client.query(
+      `SELECT id
+       FROM lessons
+       WHERE created_by = $1
+         AND student_id = $2
+         AND status = 'makeup'
+         AND origin_lesson_id = $3
+       LIMIT 1`,
+      [teacherId, studentId, origin.id]
+    );
+    if (alreadyMakeup.rows.length > 0) {
+      return { errorStatus: 400, errorMessage: 'Этот пропуск уже отработан' };
+    }
+    return { originLessonId: origin.id, originLessonDate: isoDate(origin.lesson_date) || null };
+  }
+
+  const pendingResult = await client.query(
+    `SELECT l.id, l.lesson_date
+     FROM lessons l
+     WHERE l.student_id = $1
+       AND l.created_by = $2
+       AND l.status IN ('missed', 'cancel_same_day')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM lessons m
+         WHERE m.created_by = l.created_by
+           AND m.student_id = l.student_id
+           AND m.status = 'makeup'
+           AND m.origin_lesson_id = l.id
+       )
+     ORDER BY l.lesson_date ASC, l.lesson_time ASC NULLS LAST, l.id ASC
+     LIMIT 1`,
+    [studentId, teacherId]
+  );
+  if (pendingResult.rows.length === 0) {
+    return {
+      errorStatus: 400,
+      errorMessage: strict
+        ? 'Некорректный makeup: не найден неотработанный пропуск/отмена в день'
+        : 'Для отработки не найден неотработанный пропуск/отмена в день',
+    };
+  }
+  const row = pendingResult.rows[0];
+  return { originLessonId: row.id, originLessonDate: isoDate(row.lesson_date) || null };
+};
+
 // Получение всех отчетов пользователя
 export const getAllReports = async (req, res) => {
   try {
@@ -313,7 +395,8 @@ export const createReport = async (req, res) => {
     for (const item of parsedLessons) {
       const { price, notes } = item;
       const status = typeof item.status === 'string' ? item.status : 'attended';
-      const originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
+      let originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
+      let makeupOriginDate = null;
 
       // studentId может прийти из slots напрямую
       let studentId = item.studentId;
@@ -360,43 +443,27 @@ export const createReport = async (req, res) => {
       if (status === 'missed') description += ' (пропуск)';
       if (status === 'makeup') description += ' (отработка)';
 
-      if (status === 'makeup' && originLessonId) {
-        const originResult = await client.query(
-          `SELECT id, student_id, status, created_by
-           FROM lessons
-           WHERE id = $1
-           LIMIT 1`,
-          [originLessonId]
-        );
-        if (originResult.rows.length === 0) {
+      if (status === 'makeup') {
+        const originResolved = await resolveMakeupOriginForReport(client, {
+          studentId,
+          teacherId: userId,
+          originLessonId,
+          strict: hasSlots,
+          notFoundMessage: 'Некорректный makeup: исходное занятие не найдено',
+          wrongStudentMessage: 'Некорректный makeup: origin относится к другому ученику',
+          wrongOwnerMessage: 'Некорректный makeup: origin другого преподавателя',
+          wrongStatusMessage: 'Некорректный makeup: origin должен быть missed/cancel_same_day',
+        });
+        if (originResolved.errorMessage) {
           if (hasSlots) {
             await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: исходное занятие не найдено' });
+            return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
           }
           continue;
         }
-        const origin = originResult.rows[0];
-        if (origin.student_id !== studentId) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: origin относится к другому ученику' });
-          }
-          continue;
-        }
-        if (String(origin.created_by) !== String(userId)) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(403).json({ message: 'Некорректный makeup: origin другого преподавателя' });
-          }
-          continue;
-        }
-        if (!['missed', 'cancel_same_day'].includes(origin.status)) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: origin должен быть missed/cancel_same_day' });
-          }
-          continue;
-        }
+        originLessonId = originResolved.originLessonId;
+        makeupOriginDate = originResolved.originLessonDate;
+        if (makeupOriginDate) description += ` за пропуск ${makeupOriginDate}`;
       }
       const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
 
@@ -659,7 +726,8 @@ export const updateReport = async (req, res) => {
     for (const item of parsedLessons) {
       const { price, notes } = item;
       const status = typeof item.status === 'string' ? item.status : 'attended';
-      const originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
+      let originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
+      let makeupOriginDate = null;
 
       let studentId = item.studentId;
       let studentName = item.studentName;
@@ -702,43 +770,27 @@ export const updateReport = async (req, res) => {
       if (status === 'missed') description += ' (пропуск)';
       if (status === 'makeup') description += ' (отработка)';
 
-      if (status === 'makeup' && originLessonId) {
-        const originResult = await client.query(
-          `SELECT id, student_id, status, created_by
-           FROM lessons
-           WHERE id = $1
-           LIMIT 1`,
-          [originLessonId]
-        );
-        if (originResult.rows.length === 0) {
+      if (status === 'makeup') {
+        const originResolved = await resolveMakeupOriginForReport(client, {
+          studentId,
+          teacherId: reportOwnerId,
+          originLessonId,
+          strict: hasSlots,
+          notFoundMessage: 'Некорректный makeup: исходное занятие не найдено',
+          wrongStudentMessage: 'Некорректный makeup: origin относится к другому ученику',
+          wrongOwnerMessage: 'Некорректный makeup: origin другого преподавателя',
+          wrongStatusMessage: 'Некорректный makeup: origin должен быть missed/cancel_same_day',
+        });
+        if (originResolved.errorMessage) {
           if (hasSlots) {
             await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: исходное занятие не найдено' });
+            return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
           }
           continue;
         }
-        const origin = originResult.rows[0];
-        if (origin.student_id !== studentId) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: origin относится к другому ученику' });
-          }
-          continue;
-        }
-        if (String(origin.created_by) !== String(reportOwnerId)) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(403).json({ message: 'Некорректный makeup: origin другого преподавателя' });
-          }
-          continue;
-        }
-        if (!['missed', 'cancel_same_day'].includes(origin.status)) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'Некорректный makeup: origin должен быть missed/cancel_same_day' });
-          }
-          continue;
-        }
+        originLessonId = originResolved.originLessonId;
+        makeupOriginDate = originResolved.originLessonDate;
+        if (makeupOriginDate) description += ` за пропуск ${makeupOriginDate}`;
       }
       const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
 
