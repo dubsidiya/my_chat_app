@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/students_service.dart';
 import '../models/transaction.dart';
 
@@ -22,6 +23,8 @@ class _DepositScreenState extends State<DepositScreen> {
   bool _manualCorrection = false;
 
   static const double _maxAmount = 1000000;
+  static const int _recentDepositWindowDays = 5;
+  static const int _recentDepositsPreviewLimit = 3;
 
   @override
   void dispose() {
@@ -38,6 +41,14 @@ class _DepositScreenState extends State<DepositScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final recentDeposits = await _findRecentDeposits();
+      if (!mounted) return;
+      final confirmed = await _confirmDepositIfRecentFound(
+        amount: amount,
+        recentDeposits: recentDeposits,
+      );
+      if (!mounted || !confirmed) return;
+
       final tx = await _studentsService.depositBalance(
         studentId: widget.studentId,
         amount: amount,
@@ -64,6 +75,68 @@ class _DepositScreenState extends State<DepositScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<List<Transaction>> _findRecentDeposits() async {
+    final cutoff = DateTime.now().toUtc().subtract(
+      const Duration(days: _recentDepositWindowDays),
+    );
+    final transactions = await _studentsService.getStudentTransactions(widget.studentId);
+    return transactions.where((t) {
+      return t.type == 'deposit' && t.createdAt.toUtc().isAfter(cutoff);
+    }).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<bool> _confirmDepositIfRecentFound({
+    required double amount,
+    required List<Transaction> recentDeposits,
+  }) async {
+    if (recentDeposits.isEmpty) return true;
+    if (!mounted) return false;
+
+    final preview = recentDeposits.take(_recentDepositsPreviewLimit).map((t) {
+      final dt = DateFormat('dd.MM.yyyy HH:mm').format(t.createdAt.toLocal());
+      final sum = t.amount.toStringAsFixed(0);
+      return '• $dt — +$sum ₽';
+    }).join('\n');
+    final restCount = recentDeposits.length - _recentDepositsPreviewLimit;
+
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Недавнее пополнение уже было'),
+          content: Text(
+            'За последние $_recentDepositWindowDays дней по этому ученику уже есть '
+            '${recentDeposits.length} пополнени${_depositWordEnding(recentDeposits.length)}.\n\n'
+            '$preview'
+            '${restCount > 0 ? '\n…и ещё $restCount' : ''}\n\n'
+            'Точно провести новое пополнение на ${amount.toStringAsFixed(0)} ₽?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Нет'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Да, провести'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldProceed == true;
+  }
+
+  String _depositWordEnding(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) return 'е';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'я';
+    return 'й';
   }
 
   @override
