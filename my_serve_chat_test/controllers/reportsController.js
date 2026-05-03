@@ -180,7 +180,8 @@ export const getMonthlySalaryReport = async (req, res) => {
       String(lastDay.getMonth() + 1).padStart(2, '0') + '-' +
       String(lastDay.getDate()).padStart(2, '0');
 
-    // Доход за месяц по всем занятиям преподавателя (lesson_date в месяце)
+    // Доход за месяц по платным занятиям преподавателя (lesson_date в месяце).
+    // Неплатные (missed, первая cancel_same_day) в расчет не входят.
     const totalsResult = await findMonthlyTotals(pool, { userId, firstDay, lastDayStr });
     const row = totalsResult.rows[0];
     const totalAll = Number(row?.total_all ?? 0);

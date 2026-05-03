@@ -54,6 +54,7 @@ export const findMonthlyTotals = async (db, { userId, firstDay, lastDayStr }) =>
        LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
        WHERE l.created_by = $1
          AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+         AND COALESCE(l.is_chargeable, true) = true
      )
      SELECT
        COALESCE(SUM(price), 0) AS total_all,
@@ -67,7 +68,7 @@ export const findMonthlyTotals = async (db, { userId, firstDay, lastDayStr }) =>
 export const findMonthlyBreakdown = async (db, { userId, firstDay, lastDayStr }) => {
   return db.query(
     `SELECT r.id AS report_id, r.report_date, r.is_late,
-            COALESCE(SUM(l.price), 0) AS amount
+            COALESCE(SUM(CASE WHEN COALESCE(l.is_chargeable, true) = true THEN l.price ELSE 0 END), 0) AS amount
      FROM reports r
      LEFT JOIN report_lessons rl ON rl.report_id = r.id
      LEFT JOIN lessons l ON l.id = rl.lesson_id
@@ -85,6 +86,7 @@ export const findMonthlyNoReportAmount = async (db, { userId, firstDay, lastDayS
      FROM lessons l
      WHERE l.created_by = $1
        AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+       AND COALESCE(l.is_chargeable, true) = true
        AND NOT EXISTS (SELECT 1 FROM report_lessons rl WHERE rl.lesson_id = l.id)`,
     [userId, firstDay, lastDayStr]
   );
@@ -97,6 +99,7 @@ export const findMonthlyLessonCountsByPrice = async (db, { userId, firstDay, las
      FROM lessons l
      WHERE l.created_by = $1
        AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
+       AND COALESCE(l.is_chargeable, true) = true
      GROUP BY l.price
      ORDER BY l.price ASC`,
     [userId, firstDay, lastDayStr]
