@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requirePrivateAccess, requireSuperuser, isSuperuser } from '../middleware/auth.js';
+import { authenticateToken, requireSuperuser, isSuperuser } from '../middleware/auth.js';
 import studentRoutes from './students/studentRoutes.js';
 import searchRoutes from './students/searchRoutes.js';
 import lessonRoutes from './students/lessonRoutes.js';
@@ -16,8 +16,8 @@ const requirePrivateOrSuperuser = (req, res, next) => {
 };
 
 router.use(requirePrivateOrSuperuser, searchRoutes);
-router.use(requirePrivateAccess, studentRoutes);
-router.use(requirePrivateAccess, lessonRoutes);
+router.use(requirePrivateOrSuperuser, studentRoutes);
+router.use(requirePrivateOrSuperuser, lessonRoutes);
 router.use(requireSuperuser, transactionRoutes);
 
 export default router;

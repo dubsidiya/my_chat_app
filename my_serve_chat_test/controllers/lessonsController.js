@@ -405,7 +405,10 @@ export const createLesson = async (req, res) => {
 export const deleteLesson = async (req, res) => {
   const userId = req.user.userId;
   const superuser = isSuperuser(req.user);
-  const { id } = req.params;
+  const id = parsePositiveInt(req.params.id);
+  if (!id) {
+    return res.status(400).json({ message: 'Некорректный id занятия' });
+  }
 
   const client = await pool.connect();
   try {
@@ -427,6 +430,22 @@ export const deleteLesson = async (req, res) => {
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Занятие не найдено' });
+    }
+
+    // Занятия, привязанные к отчетам, удалять нельзя:
+    // иначе отчет останется с "пустым" содержимым и нарушенной связностью.
+    const linkedReportResult = await client.query(
+      `SELECT rl.report_id
+       FROM report_lessons rl
+       WHERE rl.lesson_id = $1
+       LIMIT 1`,
+      [id]
+    );
+    if (linkedReportResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Нельзя удалить занятие, привязанное к отчету. Сначала измените или удалите отчет.',
+      });
     }
 
     // Удаляем все транзакции, связанные с занятием.

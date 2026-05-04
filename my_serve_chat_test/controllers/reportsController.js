@@ -7,6 +7,7 @@ import {
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
 import { isSuperuser } from '../middleware/auth.js';
+import { parsePositiveInt } from '../utils/sanitize.js';
 import {
   buildReportContentFromSlots,
   getTodayByUserTimezone,
@@ -35,6 +36,65 @@ import {
 } from '../validators/reports/reportValidator.js';
 
 const isoDate = (value) => String(value || '').slice(0, 10);
+
+const resolveStudentForReportLesson = async (client, { teacherId, studentIdRaw, studentNameRaw }) => {
+  const parsedStudentId = parsePositiveInt(studentIdRaw);
+  const normalizedName = (studentNameRaw || '').toString().trim();
+  if (parsedStudentId) {
+    return { studentId: parsedStudentId, studentName: normalizedName };
+  }
+  if (!normalizedName) {
+    return {
+      errorStatus: 400,
+      errorMessage: 'В отчёте есть строка без имени ученика. Исправьте текст отчёта.',
+    };
+  }
+
+  const exactMatches = await client.query(
+    `SELECT s.id
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     WHERE ts.teacher_id = $1
+       AND LOWER(TRIM(s.name)) = LOWER($2)
+     ORDER BY s.id ASC
+     LIMIT 2`,
+    [teacherId, normalizedName]
+  );
+  if (exactMatches.rows.length === 1) {
+    return { studentId: exactMatches.rows[0].id, studentName: normalizedName };
+  }
+  if (exactMatches.rows.length > 1) {
+    return {
+      errorStatus: 409,
+      errorMessage: `Имя "${normalizedName}" неоднозначно: найдено несколько учеников. Уточните имя в отчёте.`,
+    };
+  }
+
+  const fuzzyMatches = await client.query(
+    `SELECT s.id
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     WHERE ts.teacher_id = $1
+       AND LOWER(TRIM(s.name)) LIKE LOWER($2)
+     ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
+     LIMIT 2`,
+    [teacherId, `%${normalizedName}%`]
+  );
+  if (fuzzyMatches.rows.length === 1) {
+    return { studentId: fuzzyMatches.rows[0].id, studentName: normalizedName };
+  }
+  if (fuzzyMatches.rows.length > 1) {
+    return {
+      errorStatus: 409,
+      errorMessage: `Имя "${normalizedName}" неоднозначно по частичному совпадению. Уточните имя в отчёте.`,
+    };
+  }
+
+  return {
+    errorStatus: 400,
+    errorMessage: `Ученик "${normalizedName}" не найден среди ваших учеников.`,
+  };
+};
 
 const resolveMakeupOriginForReport = async (
   client,
@@ -136,9 +196,6 @@ export const getAllReports = async (req, res) => {
  * Только суперпользователь.
  */
 export const getReportsList = async (req, res) => {
-  if (!isSuperuser(req.user)) {
-    return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
-  }
   try {
     const dateFrom = req.query.date_from;
     const dateTo = req.query.date_to;
@@ -232,9 +289,12 @@ export const getReport = async (req, res) => {
   try {
     const userId = req.user.userId;
     const isSuper = isSuperuser(req.user);
-    const { id } = req.params;
+    const reportId = parsePositiveInt(req.params.id);
+    if (!reportId) {
+      return res.status(400).json({ message: 'Некорректный id отчёта' });
+    }
 
-    const reportResult = await findReportByIdForViewer(pool, { reportId: id, userId, isSuper });
+    const reportResult = await findReportByIdForViewer(pool, { reportId, userId, isSuper });
 
     if (reportResult.rows.length === 0) {
       return res.status(404).json({ message: 'Отчет не найден' });
@@ -243,7 +303,7 @@ export const getReport = async (req, res) => {
     const report = reportResult.rows[0];
     const reportOwnerId = report.created_by;
 
-    const lessonsResult = await findReportLessons(pool, id);
+    const lessonsResult = await findReportLessons(pool, reportId);
 
     report.lessons = lessonsResult.rows;
     report.lessons_count = lessonsResult.rows.length;
@@ -388,7 +448,7 @@ export const createReport = async (req, res) => {
 
     // Парсим содержание отчета (старый способ) если slots не передавали
     if (!hasSlots) {
-      parsedLessons = parseReportContent(finalContent, report_date, userId);
+      parsedLessons = parseReportContent(finalContent);
     }
 
     // Создаем занятия для каждого найденного ученика
@@ -404,34 +464,17 @@ export const createReport = async (req, res) => {
       let studentName = item.studentName;
 
       if (!studentId) {
-        const name = (item.studentName || '').trim();
-        if (!name) continue;
-        // Ищем студента ТОЛЬКО среди студентов пользователя
-        let studentResult = await client.query(
-          `SELECT s.id
-           FROM teacher_students ts
-           JOIN students s ON s.id = ts.student_id
-           WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) = LOWER($2)
-           LIMIT 1`,
-          [userId, name]
-        );
-        if (studentResult.rows.length === 0) {
-          const fuzzyResult = await client.query(
-            `SELECT s.id
-             FROM teacher_students ts
-             JOIN students s ON s.id = ts.student_id
-             WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
-             ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
-             LIMIT 2`,
-            [userId, `%${name}%`]
-          );
-          if (fuzzyResult.rows.length === 1) {
-            studentResult = fuzzyResult;
-          }
+        const resolved = await resolveStudentForReportLesson(client, {
+          teacherId: userId,
+          studentIdRaw: item.studentId,
+          studentNameRaw: item.studentName,
+        });
+        if (resolved.errorMessage) {
+          await client.query('ROLLBACK');
+          return res.status(resolved.errorStatus || 400).json({ message: resolved.errorMessage });
         }
-        if (studentResult.rows.length === 0) continue;
-        studentId = studentResult.rows[0].id;
-        studentName = name;
+        studentId = resolved.studentId;
+        studentName = resolved.studentName;
       }
 
       // Формируем время старта
@@ -456,11 +499,8 @@ export const createReport = async (req, res) => {
           wrongStatusMessage: 'Некорректный makeup: origin должен быть missed/cancel_same_day',
         });
         if (originResolved.errorMessage) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
-          }
-          continue;
+          await client.query('ROLLBACK');
+          return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
         }
         originLessonId = originResolved.originLessonId;
         makeupOriginDate = originResolved.originLessonDate;
@@ -573,7 +613,10 @@ export const createReport = async (req, res) => {
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
   const superuser = isSuperuser(req.user);
-  const { id } = req.params;
+  const reportId = parsePositiveInt(req.params.id);
+  if (!reportId) {
+    return res.status(400).json({ message: 'Некорректный id отчёта' });
+  }
   const { report_date, content, slots: rawSlots } = req.body;
 
   const hasSlots = Array.isArray(rawSlots);
@@ -611,11 +654,11 @@ export const updateReport = async (req, res) => {
     const checkResult = superuser
       ? await client.query(
           'SELECT id, created_by FROM reports WHERE id = $1 LIMIT 1',
-          [id]
+          [reportId]
         )
       : await client.query(
           'SELECT id, created_by FROM reports WHERE id = $1 AND created_by = $2',
-          [id, userId]
+          [reportId, userId]
         );
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -626,7 +669,7 @@ export const updateReport = async (req, res) => {
     // Защита от конфликта даты: нельзя сменить дату на уже существующий отчет
     const dateConflict = await client.query(
       'SELECT id FROM reports WHERE report_date = $1 AND created_by = $2 AND id <> $3 LIMIT 1',
-      [report_date, reportOwnerId, id]
+      [report_date, reportOwnerId, reportId]
     );
     if (dateConflict.rows.length > 0) {
       await client.query('ROLLBACK');
@@ -636,7 +679,7 @@ export const updateReport = async (req, res) => {
     // Получаем старые занятия из отчета
     const oldLessonsResult = await client.query(
       `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
-      [id]
+      [reportId]
     );
     const oldLessonIds = oldLessonsResult.rows.map((row) => row.lesson_id);
 
@@ -653,7 +696,7 @@ export const updateReport = async (req, res) => {
     }
 
     // Удаляем связи
-    await client.query('DELETE FROM report_lessons WHERE report_id = $1', [id]);
+    await client.query('DELETE FROM report_lessons WHERE report_id = $1', [reportId]);
 
     let finalContent = content;
     let parsedLessons = [];
@@ -699,7 +742,7 @@ export const updateReport = async (req, res) => {
       });
     }
 
-    // Обновляем отчет. is_late меняем только суперпользователю.
+    // Обновляем отчет и всегда пересчитываем is_late от новой даты отчёта.
     const reportResult = superuser
       ? await client.query(
           `UPDATE reports 
@@ -707,20 +750,21 @@ export const updateReport = async (req, res) => {
                is_late = ($1::date < $4::date)
            WHERE id = $3
            RETURNING *`,
-          [report_date, finalContent, id, todayIso]
+          [report_date, finalContent, reportId, todayIso]
         )
       : await client.query(
           `UPDATE reports 
-           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP,
+               is_late = ($1::date < $5::date)
            WHERE id = $3 AND created_by = $4
            RETURNING *`,
-          [report_date, finalContent, id, reportOwnerId]
+          [report_date, finalContent, reportId, reportOwnerId, todayIso]
         );
     const report = reportResult.rows[0];
 
     // Парсим новое содержание и создаем занятия заново
     if (!hasSlots) {
-      parsedLessons = parseReportContent(finalContent, report_date, reportOwnerId);
+      parsedLessons = parseReportContent(finalContent);
     }
     const createdLessons = [];
 
@@ -734,33 +778,17 @@ export const updateReport = async (req, res) => {
       let studentName = item.studentName;
 
       if (!studentId) {
-        const name = (item.studentName || '').trim();
-        if (!name) continue;
-        let studentResult = await client.query(
-          `SELECT s.id
-           FROM teacher_students ts
-           JOIN students s ON s.id = ts.student_id
-           WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) = LOWER($2)
-           LIMIT 1`,
-          [reportOwnerId, name]
-        );
-        if (studentResult.rows.length === 0) {
-          const fuzzyResult = await client.query(
-            `SELECT s.id
-             FROM teacher_students ts
-             JOIN students s ON s.id = ts.student_id
-             WHERE ts.teacher_id = $1 AND LOWER(TRIM(s.name)) LIKE LOWER($2)
-             ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
-             LIMIT 2`,
-            [reportOwnerId, `%${name}%`]
-          );
-          if (fuzzyResult.rows.length === 1) {
-            studentResult = fuzzyResult;
-          }
+        const resolved = await resolveStudentForReportLesson(client, {
+          teacherId: reportOwnerId,
+          studentIdRaw: item.studentId,
+          studentNameRaw: item.studentName,
+        });
+        if (resolved.errorMessage) {
+          await client.query('ROLLBACK');
+          return res.status(resolved.errorStatus || 400).json({ message: resolved.errorMessage });
         }
-        if (studentResult.rows.length === 0) continue;
-        studentId = studentResult.rows[0].id;
-        studentName = name;
+        studentId = resolved.studentId;
+        studentName = resolved.studentName;
       }
 
       const lessonTime = item.lessonTimeHHMM ? String(item.lessonTimeHHMM).substring(0, 5) : null;
@@ -783,11 +811,8 @@ export const updateReport = async (req, res) => {
           wrongStatusMessage: 'Некорректный makeup: origin должен быть missed/cancel_same_day',
         });
         if (originResolved.errorMessage) {
-          if (hasSlots) {
-            await client.query('ROLLBACK');
-            return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
-          }
-          continue;
+          await client.query('ROLLBACK');
+          return res.status(originResolved.errorStatus || 400).json({ message: originResolved.errorMessage });
         }
         originLessonId = originResolved.originLessonId;
         makeupOriginDate = originResolved.originLessonDate;
@@ -840,7 +865,7 @@ export const updateReport = async (req, res) => {
       userId,
       eventType: 'report_updated',
       entityType: 'report',
-      entityId: id,
+      entityId: reportId,
       payload: {
         reportDate: report_date,
         lessonsCreated: createdLessons.length,
@@ -859,7 +884,7 @@ export const updateReport = async (req, res) => {
       userId,
       eventType: 'report_update_error',
       entityType: 'report',
-      entityId: id,
+      entityId: reportId,
       payload: {
         code: error?.code || null,
         constraint: error?.constraint || null,
@@ -881,7 +906,10 @@ export const updateReport = async (req, res) => {
 export const deleteReport = async (req, res) => {
   const userId = req.user.userId;
   const superuser = isSuperuser(req.user);
-  const { id } = req.params;
+  const reportId = parsePositiveInt(req.params.id);
+  if (!reportId) {
+    return res.status(400).json({ message: 'Некорректный id отчёта' });
+  }
 
   const client = await pool.connect();
   try {
@@ -892,11 +920,11 @@ export const deleteReport = async (req, res) => {
     const checkResult = superuser
       ? await client.query(
           'SELECT id, created_by FROM reports WHERE id = $1 LIMIT 1',
-          [id]
+          [reportId]
         )
       : await client.query(
           'SELECT id, created_by FROM reports WHERE id = $1 AND created_by = $2 LIMIT 1',
-          [id, userId]
+          [reportId, userId]
         );
     if (checkResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -907,7 +935,7 @@ export const deleteReport = async (req, res) => {
     // Получаем занятия из отчета
     const lessonsResult = await client.query(
       `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
-      [id]
+      [reportId]
     );
     const lessonIds = lessonsResult.rows.map((r) => r.lesson_id);
 
@@ -924,16 +952,16 @@ export const deleteReport = async (req, res) => {
 
     // Удаляем отчет (каскадно удалит связи)
     if (superuser) {
-      await client.query('DELETE FROM reports WHERE id = $1', [id]);
+      await client.query('DELETE FROM reports WHERE id = $1', [reportId]);
     } else {
-      await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [id, userId]);
+      await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [reportId, userId]);
     }
     // Аудит на отдельном соединении
     await logAccountingEvent({
       userId,
       eventType: 'report_deleted',
       entityType: 'report',
-      entityId: id,
+      entityId: reportId,
       payload: {
         lessonsDeleted: lessonIds.length,
       },
