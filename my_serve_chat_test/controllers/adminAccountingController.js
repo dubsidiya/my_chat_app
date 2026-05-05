@@ -36,6 +36,8 @@ const toIsoDate = (v) => {
   }
 };
 
+const walletKey = (studentId, teacherId) => `${studentId}:${teacherId}`;
+
 // GET /admin/accounting/export?from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv
 export const exportAccounting = async (req, res) => {
   try {
@@ -87,32 +89,52 @@ export const exportAccounting = async (req, res) => {
       studentsRes.rows.filter((s) => s.pay_by_bank_transfer === true).map((s) => s.id)
     );
 
-    // 4) Кредит (депозиты/рефанды) по ученикам на конец периода
+    // 4) Кредит (депозиты/рефанды) на конец периода:
+    // - адресные: по кошелькам ученик+преподаватель
+    // - legacy неадресные (target_teacher_id IS NULL): общий пул ученика
     // created_at <= (to + 1 day) 00:00
     const creditsRes = await pool.query(
       `SELECT student_id,
+              target_teacher_id AS teacher_id,
               COALESCE(SUM(CASE WHEN type IN ('deposit','refund') THEN amount ELSE 0 END), 0) as credit
        FROM transactions
        WHERE created_at < ($1::date + interval '1 day')
-       GROUP BY student_id`,
+       GROUP BY student_id, target_teacher_id`,
       [to]
     );
-    const creditByStudent = new Map(creditsRes.rows.map((r) => [r.student_id, toNumber(r.credit)]));
+    const creditByWallet = new Map();
+    const unallocatedCreditByStudent = new Map();
+    for (const r of creditsRes.rows) {
+      const amount = toNumber(r.credit);
+      if (r.teacher_id == null) {
+        unallocatedCreditByStudent.set(r.student_id, amount);
+      } else {
+        creditByWallet.set(walletKey(r.student_id, r.teacher_id), amount);
+      }
+    }
 
     // 5) Депозиты за период (для справки бухгалтерии)
     const depositsPeriodRes = await pool.query(
       `SELECT student_id,
+              target_teacher_id AS teacher_id,
               COALESCE(SUM(amount), 0) as deposits
        FROM transactions
        WHERE type = 'deposit'
          AND created_at >= $1::date
          AND created_at < ($2::date + interval '1 day')
-       GROUP BY student_id`,
+       GROUP BY student_id, target_teacher_id`,
       [from, to]
     );
-    const depositsInPeriodByStudent = new Map(
-      depositsPeriodRes.rows.map((r) => [r.student_id, toNumber(r.deposits)])
-    );
+    const depositsInPeriodByWallet = new Map();
+    const unallocatedDepositsInPeriodByStudent = new Map();
+    for (const r of depositsPeriodRes.rows) {
+      const amount = toNumber(r.deposits);
+      if (r.teacher_id == null) {
+        unallocatedDepositsInPeriodByStudent.set(r.student_id, amount);
+      } else {
+        depositsInPeriodByWallet.set(walletKey(r.student_id, r.teacher_id), amount);
+      }
+    }
 
     // 6) Все занятия до конца периода (нужно для FIFO-распределения оплат)
     const lessonsRes = await pool.query(
@@ -137,11 +159,11 @@ export const exportAccounting = async (req, res) => {
       [to]
     );
 
-    const lessonsByStudent = new Map(); // studentId -> lessons[]
+    const lessonsByWallet = new Map(); // studentId:teacherId -> lessons[]
     for (const l of lessonsRes.rows) {
-      const sid = l.student_id;
-      if (!lessonsByStudent.has(sid)) lessonsByStudent.set(sid, []);
-      lessonsByStudent.get(sid).push(l);
+      const key = walletKey(l.student_id, l.teacher_id);
+      if (!lessonsByWallet.has(key)) lessonsByWallet.set(key, []);
+      lessonsByWallet.get(key).push(l);
     }
 
     // debug: диапазон дат в уроках до конца периода
@@ -156,13 +178,21 @@ export const exportAccounting = async (req, res) => {
 
     // FIFO распределение кредитов по занятиям до конца периода
     const coverageByLessonId = new Map(); // lessonId -> {paid, unpaid}
+    const remainingCreditByWallet = new Map();
+    const remainingUnallocatedCreditByStudent = new Map(unallocatedCreditByStudent);
     const remainingCreditByStudent = new Map();
     const debtByStudent = new Map();
+    const teachersByStudent = new Map(); // studentId -> Set(teacherId)
+    for (const row of linksRes.rows) {
+      if (!teachersByStudent.has(row.student_id)) teachersByStudent.set(row.student_id, new Set());
+      teachersByStudent.get(row.student_id).add(row.teacher_id);
+    }
 
-    for (const student of studentsRes.rows) {
-      const sid = student.id;
-      let credit = creditByStudent.get(sid) || 0;
-      const lessons = lessonsByStudent.get(sid) || [];
+    for (const [key, lessons] of lessonsByWallet.entries()) {
+      const [sidRaw, tidRaw] = key.split(':');
+      const sid = Number(sidRaw);
+      const tid = Number(tidRaw);
+      let credit = creditByWallet.get(key) || 0;
       let debt = 0;
 
       for (const lesson of lessons) {
@@ -174,7 +204,68 @@ export const exportAccounting = async (req, res) => {
         coverageByLessonId.set(lesson.id, { paid, unpaid });
       }
 
-      remainingCreditByStudent.set(sid, credit);
+      remainingCreditByWallet.set(key, credit);
+      remainingCreditByStudent.set(sid, (remainingCreditByStudent.get(sid) || 0) + credit);
+      debtByStudent.set(sid, (debtByStudent.get(sid) || 0) + debt);
+      if (!teachersByStudent.has(sid)) teachersByStudent.set(sid, new Set());
+      teachersByStudent.get(sid).add(tid);
+    }
+
+    for (const student of studentsRes.rows) {
+      const sid = student.id;
+      const teacherIds = teachersByStudent.get(sid) || new Set();
+      for (const tid of teacherIds) {
+        const key = walletKey(sid, tid);
+        if (!remainingCreditByWallet.has(key)) {
+          remainingCreditByWallet.set(key, creditByWallet.get(key) || 0);
+        }
+      }
+      if (!remainingCreditByStudent.has(sid)) remainingCreditByStudent.set(sid, 0);
+      if (!debtByStudent.has(sid)) debtByStudent.set(sid, 0);
+    }
+
+    // 2-й проход: legacy-неадресный пул ученика закрывает только оставшиеся долги
+    // после адресных кошельков (переходный режим, чтобы старые платежи не "пропали").
+    const lessonsByStudent = new Map();
+    for (const l of lessonsRes.rows) {
+      if (!lessonsByStudent.has(l.student_id)) lessonsByStudent.set(l.student_id, []);
+      lessonsByStudent.get(l.student_id).push(l);
+    }
+    for (const [sid, lessons] of lessonsByStudent.entries()) {
+      let unallocated = remainingUnallocatedCreditByStudent.get(sid) || 0;
+      if (unallocated <= 0) continue;
+      for (const lesson of lessons) {
+        const cov = coverageByLessonId.get(lesson.id) || { paid: 0, unpaid: toNumber(lesson.price) };
+        if (cov.unpaid <= 0) continue;
+        const paidExtra = Math.max(0, Math.min(unallocated, cov.unpaid));
+        if (paidExtra <= 0) continue;
+        cov.paid += paidExtra;
+        cov.unpaid = Math.max(0, cov.unpaid - paidExtra);
+        coverageByLessonId.set(lesson.id, cov);
+        unallocated -= paidExtra;
+        if (unallocated <= 0) break;
+      }
+      remainingUnallocatedCreditByStudent.set(sid, unallocated);
+    }
+
+    // Пересчет student-агрегатов после обоих проходов FIFO.
+    remainingCreditByStudent.clear();
+    debtByStudent.clear();
+    for (const student of studentsRes.rows) {
+      const sid = student.id;
+      const teacherIds = teachersByStudent.get(sid) || new Set();
+      let rem = remainingUnallocatedCreditByStudent.get(sid) || 0;
+      for (const tid of teacherIds) {
+        rem += remainingCreditByWallet.get(walletKey(sid, tid)) || 0;
+      }
+      remainingCreditByStudent.set(sid, rem);
+
+      let debt = 0;
+      const lessons = lessonsByStudent.get(sid) || [];
+      for (const lesson of lessons) {
+        const cov = coverageByLessonId.get(lesson.id) || { paid: 0, unpaid: toNumber(lesson.price) };
+        debt += cov.unpaid;
+      }
       debtByStudent.set(sid, debt);
     }
 
@@ -240,7 +331,10 @@ export const exportAccounting = async (req, res) => {
       email: s.email || null,
       payByBankTransfer: s.pay_by_bank_transfer === true,
       teachers: studentTeachers.get(s.id) || [],
-      depositsInPeriod: depositsInPeriodByStudent.get(s.id) || 0,
+      depositsInPeriod: (studentTeachers.get(s.id) || []).reduce(
+        (acc, t) => acc + (depositsInPeriodByWallet.get(walletKey(s.id, t.teacherId)) || 0),
+        unallocatedDepositsInPeriodByStudent.get(s.id) || 0
+      ),
       debtAsOfTo: debtByStudent.get(s.id) || 0,
       prepaidAsOfTo: remainingCreditByStudent.get(s.id) || 0,
     }));
