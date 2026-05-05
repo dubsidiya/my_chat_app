@@ -18,6 +18,36 @@ class CreateStudentResult {
   });
 }
 
+class DepositTeacherOption {
+  final int id;
+  final String name;
+  final String? email;
+
+  const DepositTeacherOption({
+    required this.id,
+    required this.name,
+    this.email,
+  });
+
+  factory DepositTeacherOption.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'];
+    final parsedId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (parsedId == null || parsedId <= 0) {
+      throw const FormatException('Некорректный id преподавателя');
+    }
+    final name = (json['name'] ?? '').toString().trim();
+    if (name.isEmpty) {
+      throw const FormatException('Некорректное имя преподавателя');
+    }
+    final emailRaw = (json['email'] ?? '').toString().trim();
+    return DepositTeacherOption(
+      id: parsedId,
+      name: name,
+      email: emailRaw.isEmpty ? null : emailRaw,
+    );
+  }
+}
+
 class StudentsService {
   final String baseUrl = ApiConfig.baseUrl;
   final Random _rnd = Random();
@@ -383,6 +413,7 @@ class StudentsService {
     required int studentId,
     required double amount,
     String? description,
+    int? targetTeacherId,
   }) async {
     final headers = await _getAuthHeaders();
     if (_enableIdempotencyHeaders) {
@@ -394,6 +425,7 @@ class StudentsService {
       body: jsonEncode({
         'amount': amount,
         'description': description,
+        if (targetTeacherId != null) 'target_teacher_id': targetTeacherId,
       }),
     );
 
@@ -411,6 +443,25 @@ class StudentsService {
 
     final error = jsonDecode(response.body);
     throw Exception(error['message'] ?? 'Не удалось пополнить баланс');
+  }
+
+  Future<List<DepositTeacherOption>> getStudentDepositTeachers(int studentId) async {
+    final headers = await _getAuthHeaders();
+    final response = await timedGet(
+      Uri.parse('$baseUrl/students/$studentId/deposit-teachers'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final raw = (data is Map<String, dynamic> ? data['teachers'] : null);
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(DepositTeacherOption.fromJson)
+          .toList();
+    }
+    final error = jsonDecode(response.body);
+    throw Exception(error['message'] ?? 'Не удалось загрузить список преподавателей');
   }
 
   Future<void> deleteTransaction(int transactionId) async {

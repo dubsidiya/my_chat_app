@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     description TEXT,
     lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
     created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    target_teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -119,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_lessons_student_status_chargeable ON lessons(stud
 CREATE INDEX IF NOT EXISTS idx_transactions_student_id ON transactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_target_teacher_id ON transactions(target_teacher_id);
 
 -- Комментарии к новым таблицам
 COMMENT ON TABLE students IS 'Ученики репетиторского центра';

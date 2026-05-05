@@ -60,11 +60,18 @@ export const getAllStudents = async (req, res) => {
     const userId = req.user.userId;
     const result = await pool.query(
       `SELECT s.*, 
-              COALESCE(SUM(CASE WHEN t.type IN ('deposit', 'refund') THEN t.amount ELSE -t.amount END), 0) as balance
+              COALESCE(SUM(
+                CASE
+                  WHEN t.type IN ('deposit', 'refund')
+                    AND (t.target_teacher_id = $1 OR t.target_teacher_id IS NULL)
+                    THEN t.amount
+                  WHEN t.type = 'lesson' AND t.created_by = $1
+                    THEN -t.amount
+                  ELSE 0
+                END
+              ), 0) as balance
        FROM teacher_students ts
        JOIN students s ON s.id = ts.student_id
-       -- Для преподавателя показываем полный баланс ученика:
-       -- учитываем все операции по ученику, включая занятия других преподавателей.
        LEFT JOIN transactions t ON s.id = t.student_id
        WHERE ts.teacher_id = $1
        GROUP BY s.id
@@ -638,7 +645,7 @@ export const getStudentBalance = async (req, res) => {
     }
 
     const isSuper = isSuperuser(req.user);
-    // Для преподавателя показываем полный баланс ученика (все операции по ученику).
+    // Для преподавателя показываем баланс только по его операциям.
     // Для суперпользователя:
     // - mine=1 означает "только мои операции"
     // - без mine: полный баланс по ученику
@@ -657,10 +664,19 @@ export const getStudentBalance = async (req, res) => {
             [id]
           ))
       : await pool.query(
-          `SELECT COALESCE(SUM(CASE WHEN type IN ('deposit', 'refund') THEN amount ELSE -amount END), 0) as balance
+          `SELECT COALESCE(SUM(
+             CASE
+               WHEN type IN ('deposit', 'refund')
+                 AND (target_teacher_id = $2 OR target_teacher_id IS NULL)
+                 THEN amount
+               WHEN type = 'lesson' AND created_by = $2
+                 THEN -amount
+               ELSE 0
+             END
+           ), 0) as balance
            FROM transactions
            WHERE student_id = $1`,
-          [id]
+          [id, userId]
         );
 
     res.json({ balance: parseFloat(result.rows[0].balance) });
@@ -716,7 +732,11 @@ export const getStudentTransactions = async (req, res) => {
            LEFT JOIN lessons l ON t.lesson_id = l.id
            LEFT JOIN users u ON t.created_by = u.id
            WHERE t.student_id = $1
-             AND (t.type IN ('deposit', 'refund') OR t.created_by = $2)
+             AND (
+               (t.type IN ('deposit', 'refund')
+                 AND (t.target_teacher_id = $2 OR t.target_teacher_id IS NULL))
+               OR (t.type = 'lesson' AND t.created_by = $2)
+             )
            ORDER BY t.created_at DESC`,
           [id, userId]
         );

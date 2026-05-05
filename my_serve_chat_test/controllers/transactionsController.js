@@ -15,6 +15,7 @@ export const depositBalance = async (req, res) => {
   const userId = req.user.userId;
   const student_id = parsePositiveInt(req.params?.studentId);
   const { amount, description } = req.body;
+  const targetTeacherId = parsePositiveInt(req.body?.target_teacher_id);
   const idempotencyKey = getIdempotencyKey(req);
 
   // Преобразуем amount в число, если это строка
@@ -37,6 +38,7 @@ export const depositBalance = async (req, res) => {
         student_id,
         amount: amountFinal,
         description: description || null,
+        target_teacher_id: targetTeacherId || null,
       }),
     });
     if (idem.replay) {
@@ -57,16 +59,29 @@ export const depositBalance = async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Студент не найден' });
     }
+    if (targetTeacherId) {
+      const teacherLink = await client.query(
+        `SELECT 1
+         FROM teacher_students
+         WHERE teacher_id = $1 AND student_id = $2
+         LIMIT 1`,
+        [targetTeacherId, student_id]
+      );
+      if (teacherLink.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Выбранный преподаватель не привязан к ученику' });
+      }
+    }
 
     // Создаем транзакцию пополнения (ручное пополнение - наличка)
     const rawDesc = (description ?? '').toString().trim();
     const desc = rawDesc ? sanitizeMessageContent(rawDesc).trim() : '';
     const finalDescription = desc || 'Пополнение баланса (наличные)';
     const result = await client.query(
-      `INSERT INTO transactions (student_id, amount, type, description, created_by)
-       VALUES ($1, $2, 'deposit', $3, $4)
+      `INSERT INTO transactions (student_id, amount, type, description, created_by, target_teacher_id)
+       VALUES ($1, $2, 'deposit', $3, $4, $5)
        RETURNING *`,
-      [student_id, amountFinal, finalDescription, userId]
+      [student_id, amountFinal, finalDescription, userId, targetTeacherId || null]
     );
     const createdTx = result.rows[0];
     await completeIdempotent(client, {
@@ -84,6 +99,7 @@ export const depositBalance = async (req, res) => {
       payload: {
         studentId: student_id,
         amount: amountFinal,
+        targetTeacherId: targetTeacherId || null,
       },
     });
     await client.query('COMMIT');
@@ -95,6 +111,40 @@ export const depositBalance = async (req, res) => {
   } finally {
     try { await client.query('ROLLBACK'); } catch (_) {}
     client.release();
+  }
+};
+
+// Список преподавателей, привязанных к ученику (для адресного пополнения)
+export const getStudentDepositTeachers = async (req, res) => {
+  try {
+    const studentId = parsePositiveInt(req.params?.studentId);
+    if (!studentId) {
+      return res.status(400).json({ message: 'Некорректный ID ученика' });
+    }
+
+    const studentExists = await pool.query(
+      'SELECT 1 FROM students WHERE id = $1 LIMIT 1',
+      [studentId]
+    );
+    if (studentExists.rows.length === 0) {
+      return res.status(404).json({ message: 'Студент не найден' });
+    }
+
+    const result = await pool.query(
+      `SELECT ts.teacher_id AS id,
+              COALESCE(NULLIF(TRIM(u.display_name), ''), NULLIF(TRIM(u.email), ''), 'Преподаватель #' || ts.teacher_id::text) AS name,
+              u.email
+       FROM teacher_students ts
+       JOIN users u ON u.id = ts.teacher_id
+       WHERE ts.student_id = $1
+       ORDER BY name ASC, ts.teacher_id ASC`,
+      [studentId]
+    );
+
+    return res.json({ teachers: result.rows });
+  } catch (error) {
+    console.error('Ошибка получения преподавателей для пополнения:', error);
+    return res.status(500).json({ message: 'Ошибка получения списка преподавателей' });
   }
 };
 

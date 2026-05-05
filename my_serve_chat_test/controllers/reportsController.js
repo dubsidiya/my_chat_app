@@ -506,7 +506,7 @@ export const createReport = async (req, res) => {
         makeupOriginDate = originResolved.originLessonDate;
         if (makeupOriginDate) description += ` за пропуск ${makeupOriginDate}`;
       }
-      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
+      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, teacherId: userId });
 
       // Создаем занятие
       const lessonResult = await client.query(
@@ -818,7 +818,7 @@ export const updateReport = async (req, res) => {
         makeupOriginDate = originResolved.originLessonDate;
         if (makeupOriginDate) description += ` за пропуск ${makeupOriginDate}`;
       }
-      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, originLessonId });
+      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, teacherId: reportOwnerId });
 
       const lessonResult = await client.query(
         `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)

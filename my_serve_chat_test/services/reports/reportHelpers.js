@@ -136,7 +136,7 @@ export const validateSlots = (slots) => {
   return null;
 };
 
-export const resolveChargeableByStatus = async (client, { studentId, status }) => {
+export const resolveChargeableByStatus = async (client, { studentId, status, teacherId }) => {
   if (status === 'missed') return false;
   if (status === 'makeup') return true;
   if (status !== 'cancel_same_day') return true;
@@ -153,10 +153,11 @@ export const resolveChargeableByStatus = async (client, { studentId, status }) =
     `SELECT id
      FROM lessons
      WHERE student_id = $1
+       AND created_by = $2
        AND status = 'cancel_same_day'
        AND is_chargeable = false
      LIMIT 1`,
-    [studentId]
+    [studentId, teacherId]
   );
   return freeUsed.rows.length > 0;
 };

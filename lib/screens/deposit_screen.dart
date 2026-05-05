@@ -21,16 +21,50 @@ class _DepositScreenState extends State<DepositScreen> {
   final _studentsService = StudentsService();
   bool _isLoading = false;
   bool _manualCorrection = false;
+  bool _teachersLoading = false;
+  List<DepositTeacherOption> _teachers = const [];
+  int? _selectedTeacherId;
 
   static const double _maxAmount = 1000000;
   static const int _recentDepositWindowDays = 5;
   static const int _recentDepositsPreviewLimit = 3;
 
   @override
+  void initState() {
+    super.initState();
+    _loadTeachers();
+  }
+
+  @override
   void dispose() {
     _amountController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTeachers() async {
+    setState(() => _teachersLoading = true);
+    try {
+      final teachers = await _studentsService.getStudentDepositTeachers(widget.studentId);
+      if (!mounted) return;
+      setState(() {
+        _teachers = teachers;
+        _selectedTeacherId = teachers.length == 1 ? teachers.first.id : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось загрузить преподавателей: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _teachersLoading = false);
+      }
+    }
   }
 
   Future<void> _deposit() async {
@@ -41,6 +75,9 @@ class _DepositScreenState extends State<DepositScreen> {
     setState(() => _isLoading = true);
 
     try {
+      if (_selectedTeacherId == null) {
+        throw Exception('Выберите преподавателя для пополнения');
+      }
       final recentDeposits = await _findRecentDeposits();
       if (!mounted) return;
       final confirmed = await _confirmDepositIfRecentFound(
@@ -55,6 +92,7 @@ class _DepositScreenState extends State<DepositScreen> {
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
+        targetTeacherId: _selectedTeacherId,
       );
 
       if (mounted) {
@@ -173,6 +211,38 @@ class _DepositScreenState extends State<DepositScreen> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+            if (_teachersLoading)
+              const LinearProgressIndicator(minHeight: 2),
+            DropdownButtonFormField<int>(
+              key: ValueKey(_selectedTeacherId),
+              initialValue: _selectedTeacherId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Преподаватель *',
+                border: OutlineInputBorder(),
+              ),
+              items: _teachers
+                  .map(
+                    (t) => DropdownMenuItem<int>(
+                      value: t.id,
+                      child: Text(
+                        t.email == null ? t.name : '${t.name} (${t.email})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isLoading || _teachersLoading
+                  ? null
+                  : (v) => setState(() => _selectedTeacherId = v),
+              validator: (value) {
+                if (value == null) {
+                  return 'Выберите преподавателя';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             SwitchListTile(
