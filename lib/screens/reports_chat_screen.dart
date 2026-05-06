@@ -39,8 +39,8 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   bool _yesterdayReminder = false;
   bool _yesterdayReminderDismissed = false;
 
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
 
   bool _canEditReport(Report report) {
     if (widget.isSuperuser) return true;
@@ -273,7 +273,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.pie_chart_rounded, color: _accent1),
+              icon: Icon(Icons.pie_chart_rounded, color: _accent1),
               onPressed: () async {
                 await Navigator.push(
                   context,
@@ -292,7 +292,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.add_rounded, color: _accent1),
+              icon: Icon(Icons.add_rounded, color: _accent1),
               onPressed: _openBuilder,
               tooltip: 'Новый отчет',
             ),
@@ -304,7 +304,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: _accent1),
+              icon: Icon(Icons.refresh_rounded, color: _accent1),
               onPressed: _allReportsMode ? _loadReportsList : _loadReports,
               tooltip: 'Обновить',
             ),
@@ -460,7 +460,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(colors: [_accent1, _accent2]),
+                          gradient: LinearGradient(colors: [_accent1, _accent2]),
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
@@ -536,7 +536,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
-                              gradient: const LinearGradient(colors: [_accent1, _accent2]),
+                              gradient: LinearGradient(colors: [_accent1, _accent2]),
                               boxShadow: [
                                 BoxShadow(
                                   color: _accent1.withValues(alpha:0.3),
@@ -579,7 +579,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           // Список отчетов
           Expanded(
             child: _isLoading && _reports.isEmpty
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                       strokeWidth: 3,
@@ -785,7 +785,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                               ),
                                               child: Text(
                                                 'Занятий: ${report.lessonsCount ?? 0}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: _accent1,
@@ -806,7 +806,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                           ),
                                           child: Text(
                                             'Занятий: ${report.lessonsCount ?? 0}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
                                               color: _accent1,

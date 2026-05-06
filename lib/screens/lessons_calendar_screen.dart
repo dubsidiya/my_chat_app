@@ -19,7 +19,7 @@ class _LessonsCalendarScreenState extends State<LessonsCalendarScreen> {
   bool _loading = false;
   String? _error;
 
-  static const Color _accent = AppColors.primaryGlow;
+  static Color get _accent => AppColors.primaryGlow;
 
   @override
   void initState() {
@@ -156,7 +156,7 @@ class _LessonsCalendarScreenState extends State<LessonsCalendarScreen> {
                                         if (n > 0)
                                           Text(
                                             '$n',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                               color: _accent,

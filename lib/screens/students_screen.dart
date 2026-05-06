@@ -32,8 +32,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
   int _makeupPendingTotal = 0;
   List<Map<String, dynamic>> _makeupPendingItems = [];
   
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
 
   @override
   void initState() {
@@ -432,7 +432,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: _accent1),
+              icon: Icon(Icons.refresh_rounded, color: _accent1),
               onPressed: _loadStudents,
               tooltip: 'Обновить',
             ),
@@ -440,7 +440,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                 strokeWidth: 3,
@@ -545,7 +545,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   colors: [_accent1, _accent2],
                                 ),
                                 boxShadow: [

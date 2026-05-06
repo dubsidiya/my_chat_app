@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:intl/date_symbol_data_local.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 import 'screens/eula_consent_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_tabs_screen.dart';
@@ -51,6 +52,9 @@ void main() {
     await initializeDateFormatting('ru');
     await initializeDateFormatting('en_US');
     await LocalMessagesService.init();
+    // Восстановим сохранённую тему до первого build, чтобы не было «вспышки»
+    // тёмной темы при выборе светлой.
+    await ThemeController.instance.loadFromStorage();
     await PushNotificationService.init(navigatorKey);
     runApp(const MyApp());
   }, (error, stack) {
@@ -70,8 +74,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  ThemeData? _appTheme;
-
   @override
   void initState() {
     super.initState();
@@ -93,96 +95,108 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    _appTheme ??= buildAppTheme();
-
-    return _AutoHideScaffoldMessenger(
-      child: MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'Chat App',
-      theme: _appTheme!,
-      home: FutureBuilder<Map<String, dynamic>?>(
-        future: () async {
-          final userData = await StorageService.getUserData();
-          if (userData == null || userData['token'] == null) return null;
-          final sessionState = await AuthService().hasValidSession();
-          if (sessionState == false) {
-            await StorageService.clearUserData();
-            return null;
-          }
-          final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
-          return {'userData': userData, 'eulaAccepted': eulaAccepted};
-        }(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Scaffold(
-              body: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.backgroundDark,
-                      AppColors.surfaceDark,
-                      AppColors.primaryDeep,
-                    ],
-                    stops: [0.0, 0.5, 1.0],
-                  ),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Загрузка...',
-                        style: TextStyle(
-                          color: AppColors.onSurfaceDark.withValues(alpha: 0.85),
-                          fontSize: 16,
-                          letterSpacing: 0.5,
-                          fontWeight: FontWeight.w500,
+    return AnimatedBuilder(
+      animation: ThemeController.instance,
+      builder: (context, _) {
+        final theme = buildAppTheme(ThemeController.instance.variant);
+        return _AutoHideScaffoldMessenger(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            title: 'Chat App',
+            theme: theme,
+            home: FutureBuilder<Map<String, dynamic>?>(
+              future: () async {
+                final userData = await StorageService.getUserData();
+                if (userData == null || userData['token'] == null) return null;
+                final sessionState = await AuthService().hasValidSession();
+                if (sessionState == false) {
+                  await StorageService.clearUserData();
+                  return null;
+                }
+                final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
+                return {'userData': userData, 'eulaAccepted': eulaAccepted};
+              }(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  final isLight = AppColors.isLight;
+                  return Scaffold(
+                    body: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isLight
+                              ? [
+                                  AppColors.backgroundDark,
+                                  AppColors.cardDark,
+                                  AppColors.accent.withValues(alpha: 0.45),
+                                ]
+                              : [
+                                  AppColors.backgroundDark,
+                                  AppColors.surfaceDark,
+                                  AppColors.primaryDeep,
+                                ],
+                          stops: const [0.0, 0.5, 1.0],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Загрузка...',
+                              style: TextStyle(
+                                color: AppColors.onSurfaceDark.withValues(alpha: 0.85),
+                                fontSize: 16,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
 
-          final data = snapshot.data;
-          if (data != null) {
-            final userData = data['userData'] as Map<String, dynamic>;
-            final eulaAccepted = data['eulaAccepted'] as bool;
-            final userIdentifier = (userData['email'] ?? userData['username'] ?? '') as String;
-            final isSuperuser = userData['isSuperuser'] == 'true';
-            final displayName = userData['displayName']?.toString();
-            final avatarUrl = userData['avatarUrl']?.toString();
-            final userId = userData['id'] as String;
-            if (eulaAccepted) {
-              return MainTabsScreen(
-                userId: userId,
-                userEmail: userIdentifier,
-                displayName: displayName,
-                avatarUrl: avatarUrl,
-                isSuperuser: isSuperuser,
-              );
-            }
-            return EulaConsentScreen(
-              userId: userId,
-              userEmail: userIdentifier,
-              displayName: displayName,
-              avatarUrl: avatarUrl,
-              isSuperuser: isSuperuser,
-            );
-          }
+                final data = snapshot.data;
+                if (data != null) {
+                  final userData = data['userData'] as Map<String, dynamic>;
+                  final eulaAccepted = data['eulaAccepted'] as bool;
+                  final userIdentifier = (userData['email'] ?? userData['username'] ?? '') as String;
+                  final isSuperuser = userData['isSuperuser'] == 'true';
+                  final displayName = userData['displayName']?.toString();
+                  final avatarUrl = userData['avatarUrl']?.toString();
+                  final userId = userData['id'] as String;
+                  if (eulaAccepted) {
+                    return MainTabsScreen(
+                      userId: userId,
+                      userEmail: userIdentifier,
+                      displayName: displayName,
+                      avatarUrl: avatarUrl,
+                      isSuperuser: isSuperuser,
+                    );
+                  }
+                  return EulaConsentScreen(
+                    userId: userId,
+                    userEmail: userIdentifier,
+                    displayName: displayName,
+                    avatarUrl: avatarUrl,
+                    isSuperuser: isSuperuser,
+                  );
+                }
 
-          return const LoginScreen();
-        },
-      ),
-    ),
+                return const LoginScreen();
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }

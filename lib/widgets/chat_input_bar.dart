@@ -142,7 +142,7 @@ class ChatInputBar extends StatelessWidget {
                   final label = (s['label'] ?? s['email'] ?? '').toString();
                   return ListTile(
                     dense: true,
-                    leading: const Icon(Icons.alternate_email_rounded, color: AppColors.primaryGlow),
+                    leading: Icon(Icons.alternate_email_rounded, color: AppColors.primaryGlow),
                     title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text('@$handle', maxLines: 1, overflow: TextOverflow.ellipsis),
                     onTap: () => onSelectMention(handle),

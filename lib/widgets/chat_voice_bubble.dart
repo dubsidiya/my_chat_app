@@ -28,7 +28,7 @@ class ChatVoiceBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const incomingAccent = AppColors.primary;
+    final incomingAccent = AppColors.primary;
     final maxMs = totalDuration.inMilliseconds > 0 ? totalDuration.inMilliseconds : 1;
     final posMs = position.inMilliseconds.clamp(0, maxMs);
 

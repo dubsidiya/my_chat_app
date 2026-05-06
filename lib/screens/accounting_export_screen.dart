@@ -96,8 +96,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     required int unpaidCount,
     required double unpaidSum,
   }) {
-    const accent1 = AppColors.primary;
-    const accent2 = AppColors.primaryGlow;
+    final accent1 = AppColors.primary;
+    final accent2 = AppColors.primaryGlow;
     final debtColor = Colors.red.shade700;
     final okColor = Colors.green.shade700;
 
@@ -115,7 +115,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.primary, AppColors.primaryGlow]),
+              gradient: LinearGradient(colors: [AppColors.primary, AppColors.primaryGlow]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(

@@ -16,8 +16,8 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
   MonthlySalaryReport? _report;
   bool _isLoading = false;
   DateTime _selected = DateTime.now();
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
 
   String get _monthYearLabel =>
       '${_getMonthName(_selected.month)} ${_selected.year}';
@@ -130,7 +130,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
+                          gradient: LinearGradient(
                             colors: [_accent1, _accent2],
                           ),
                           borderRadius: BorderRadius.circular(14),
@@ -178,7 +178,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
 
           Expanded(
             child: _isLoading && _report == null
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                       strokeWidth: 3,
@@ -237,7 +237,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _formatMoney(r.salary),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       color: _accent1,
@@ -334,7 +334,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                             ),
                             Text(
                               _lessonsLabel(r.lessonsByPrice[i].lessonsCount),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: _accent1,
                               ),

@@ -2,28 +2,63 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
+import 'theme_variant.dart';
 
-/// Единая тёмная тема приложения (Material 3 + фиолетовая палитра).
-ThemeData buildAppTheme() {
-  const scheme = ColorScheme.dark(
-    primary: AppColors.primary,
-    onPrimary: AppColors.onSurfaceDark,
-    primaryContainer: AppColors.cardElevatedDark,
-    onPrimaryContainer: AppColors.accent,
-    secondary: AppColors.primaryGlow,
-    onSecondary: AppColors.backgroundDark,
-    surface: AppColors.surfaceDark,
-    onSurface: AppColors.onSurfaceDark,
-    onSurfaceVariant: AppColors.onSurfaceVariantDark,
-    outline: AppColors.borderDark,
-    surfaceContainerHighest: AppColors.cardDark,
-  );
+/// Строит [ThemeData] для указанного варианта темы.
+///
+/// На вход поступает [variant], а внутри метод собирает соответствующую
+/// палитру (через [AppColors]) и формирует Material 3 тему. Все компоненты
+/// (AppBar, Card, Dialog, Inputs, Buttons и т.д.) настраиваются единообразно,
+/// чтобы переключение темы корректно работало во всех экранах.
+ThemeData buildAppTheme(AppThemeVariant variant) {
+  // Активируем палитру до того, как начнём читать AppColors.
+  AppColors.setActiveVariant(variant);
 
-  const surface = AppColors.surfaceDark;
-  const card = AppColors.cardDark;
-  const outline = AppColors.borderDark;
+  final isLight = variant == AppThemeVariant.auroraLight;
+  final brightness = isLight ? Brightness.light : Brightness.dark;
 
-  const baseText = Typography.whiteMountainView;
+  final scheme = isLight
+      ? ColorScheme.light(
+          primary: AppColors.primary,
+          onPrimary: Colors.white,
+          primaryContainer: AppColors.cardElevatedDark,
+          onPrimaryContainer: AppColors.primaryDeep,
+          secondary: AppColors.primaryGlow,
+          onSecondary: Colors.white,
+          surface: AppColors.surfaceDark,
+          onSurface: AppColors.onSurfaceDark,
+          onSurfaceVariant: AppColors.onSurfaceVariantDark,
+          outline: AppColors.borderDark,
+          surfaceContainerHighest: AppColors.cardDark,
+          error: AppColors.errorDark,
+          onError: Colors.white,
+        )
+      : ColorScheme.dark(
+          primary: AppColors.primary,
+          onPrimary: AppColors.onSurfaceDark,
+          primaryContainer: AppColors.cardElevatedDark,
+          onPrimaryContainer: AppColors.accent,
+          secondary: AppColors.primaryGlow,
+          onSecondary: AppColors.backgroundDark,
+          surface: AppColors.surfaceDark,
+          onSurface: AppColors.onSurfaceDark,
+          onSurfaceVariant: AppColors.onSurfaceVariantDark,
+          outline: AppColors.borderDark,
+          surfaceContainerHighest: AppColors.cardDark,
+          error: AppColors.errorDark,
+          onError: Colors.white,
+        );
+
+  final surface = AppColors.surfaceDark;
+  final card = AppColors.cardDark;
+  final outline = AppColors.borderDark;
+
+  // Базовая типография: на светлой теме берём blackMountainView, на тёмной —
+  // whiteMountainView. Эти базы дают правильные цвета по умолчанию.
+  final baseText = isLight
+      ? Typography.blackMountainView
+      : Typography.whiteMountainView;
+
   final textTheme = baseText
       .apply(
         bodyColor: scheme.onSurface,
@@ -77,8 +112,32 @@ ThemeData buildAppTheme() {
         ),
       );
 
+  // Цвет иконок системы: на светлой теме — тёмные, на тёмной — светлые.
+  final overlay = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: isLight ? Brightness.dark : Brightness.light,
+    statusBarBrightness: isLight ? Brightness.light : Brightness.dark,
+    systemNavigationBarColor: AppColors.surfaceDark,
+    systemNavigationBarIconBrightness:
+        isLight ? Brightness.dark : Brightness.light,
+  );
+
+  // Цвет AppBar в обеих темах визуально совпадает с основным фоном экранов.
+  final appBarBackground = AppColors.backgroundDark;
+
+  // Параметры карточек: в светлой теме нужна еле заметная тень, тёмная —
+  // обходится мягкой пурпурной подсветкой.
+  final cardShadow = isLight
+      ? Colors.black.withValues(alpha: 0.06)
+      : AppColors.primary.withValues(alpha: 0.08);
+
+  // Подсветка для disabled-состояний и Splash.
+  final hoverColor = AppColors.primary.withValues(alpha: isLight ? 0.06 : 0.10);
+  final splashColor =
+      AppColors.primaryGlow.withValues(alpha: isLight ? 0.10 : 0.18);
+
   return ThemeData(
-    brightness: Brightness.dark,
+    brightness: brightness,
     colorScheme: scheme,
     primaryColor: scheme.primary,
     scaffoldBackgroundColor: surface,
@@ -87,6 +146,8 @@ ThemeData buildAppTheme() {
     visualDensity: VisualDensity.standard,
     useMaterial3: true,
     textTheme: textTheme,
+    hoverColor: hoverColor,
+    splashColor: splashColor,
     listTileTheme: ListTileThemeData(
       iconColor: scheme.onSurface.withValues(alpha: 0.85),
       textColor: scheme.onSurface,
@@ -95,10 +156,11 @@ ThemeData buildAppTheme() {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: AppColors.primary.withValues(alpha: 0.14),
-      selectedColor: AppColors.primary.withValues(alpha: 0.32),
+      backgroundColor: AppColors.primary.withValues(alpha: isLight ? 0.10 : 0.14),
+      selectedColor: AppColors.primary.withValues(alpha: isLight ? 0.22 : 0.32),
       disabledColor: scheme.onSurface.withValues(alpha: 0.08),
-      labelStyle: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
+      labelStyle:
+          TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
       secondaryLabelStyle: TextStyle(color: scheme.onSurface),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       shape: RoundedRectangleBorder(
@@ -107,51 +169,53 @@ ThemeData buildAppTheme() {
       ),
     ),
     tabBarTheme: TabBarThemeData(
-      labelColor: AppColors.accent,
+      labelColor: isLight ? AppColors.primaryDeep : AppColors.accent,
       unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.58),
       indicatorColor: AppColors.primaryGlow,
       labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+      unselectedLabelStyle:
+          const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
     ),
     appBarTheme: AppBarTheme(
       elevation: 0,
       scrolledUnderElevation: 1,
       shadowColor: AppColors.primary.withValues(alpha: 0.12),
-      backgroundColor: AppColors.backgroundDark,
+      backgroundColor: appBarBackground,
       foregroundColor: scheme.onSurface,
       surfaceTintColor: Colors.transparent,
       centerTitle: false,
-      systemOverlayStyle: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: AppColors.surfaceDark,
-        systemNavigationBarIconBrightness: Brightness.light,
-      ),
+      systemOverlayStyle: overlay,
       titleTextStyle: TextStyle(
         fontSize: 19,
         fontWeight: FontWeight.w700,
         color: scheme.onSurface,
         letterSpacing: -0.1,
       ),
-      iconTheme: IconThemeData(color: scheme.onSurface.withValues(alpha: 0.92), size: 24),
+      iconTheme:
+          IconThemeData(color: scheme.onSurface.withValues(alpha: 0.92), size: 24),
     ),
     cardTheme: CardThemeData(
-      elevation: 0,
+      elevation: isLight ? 0 : 0,
       color: card,
-      shadowColor: AppColors.primary.withValues(alpha: 0.08),
+      shadowColor: cardShadow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: outline.withValues(alpha: 0.28), width: 1),
+        side: BorderSide(
+          color: outline.withValues(alpha: isLight ? 0.55 : 0.28),
+          width: 1,
+        ),
       ),
       margin: EdgeInsets.zero,
     ),
     dialogTheme: DialogThemeData(
-      elevation: 16,
+      elevation: isLight ? 8 : 16,
       backgroundColor: card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: AppColors.primaryGlow.withValues(alpha: 0.45)),
+        side: BorderSide(
+          color: AppColors.primaryGlow.withValues(alpha: isLight ? 0.30 : 0.45),
+        ),
       ),
       titleTextStyle: TextStyle(
         fontSize: 19,
@@ -174,7 +238,8 @@ ThemeData buildAppTheme() {
         side: BorderSide(color: outline.withValues(alpha: 0.6)),
       ),
       showDragHandle: true,
-      dragHandleColor: AppColors.primaryGlow.withValues(alpha: 0.55),
+      dragHandleColor:
+          AppColors.primaryGlow.withValues(alpha: isLight ? 0.40 : 0.55),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: card,
@@ -189,7 +254,7 @@ ThemeData buildAppTheme() {
       behavior: SnackBarBehavior.floating,
       elevation: 4,
       backgroundColor: AppColors.cardElevatedDark,
-      contentTextStyle: const TextStyle(
+      contentTextStyle: TextStyle(
         color: AppColors.onSurfaceDark,
         fontSize: 14,
         fontWeight: FontWeight.w500,
@@ -207,9 +272,11 @@ ThemeData buildAppTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      fillColor: scheme.surfaceContainerHighest
+          .withValues(alpha: isLight ? 0.9 : 0.55),
       hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.45)),
-      labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+      labelStyle:
+          TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: outline.withValues(alpha: 0.32)),
@@ -220,17 +287,19 @@ ThemeData buildAppTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.primaryGlow, width: 1.5),
+        borderSide: BorderSide(color: AppColors.primaryGlow, width: 1.5),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         elevation: 0,
         shadowColor: Colors.transparent,
         backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onSurfaceDark,
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+        padding:
+            const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
@@ -243,15 +312,18 @@ ThemeData buildAppTheme() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         side: BorderSide(color: outline.withValues(alpha: 0.65)),
         foregroundColor: scheme.onSurface,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -264,9 +336,44 @@ ThemeData buildAppTheme() {
       ),
     ),
     dividerTheme: DividerThemeData(
-      color: outline.withValues(alpha: 0.25),
+      color: outline.withValues(alpha: isLight ? 0.6 : 0.25),
       thickness: 1,
       space: 1,
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: AppColors.primary,
+      foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+      elevation: 0,
+      focusElevation: 0,
+      hoverElevation: 0,
+      highlightElevation: 0,
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return AppColors.primaryGlow;
+        return isLight ? Colors.white : AppColors.onSurfaceVariantDark;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return AppColors.primary.withValues(alpha: isLight ? 0.55 : 0.65);
+        }
+        return outline.withValues(alpha: isLight ? 0.5 : 0.35);
+      }),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return AppColors.primary;
+        return scheme.onSurfaceVariant;
+      }),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return AppColors.primary;
+        return Colors.transparent;
+      }),
+      checkColor: WidgetStateProperty.all(Colors.white),
+      side: BorderSide(color: outline.withValues(alpha: 0.6), width: 1.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     ),
   );
 }

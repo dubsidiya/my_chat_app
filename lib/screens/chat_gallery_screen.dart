@@ -147,7 +147,7 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
         backgroundColor: scheme.surface,
       ),
       body: _loading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
               ),
@@ -269,8 +269,8 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
                         ),
                       SliverToBoxAdapter(
                         child: _loadingMore
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 16),
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                                 child: Center(
                                   child: CircularProgressIndicator(
                                     valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),

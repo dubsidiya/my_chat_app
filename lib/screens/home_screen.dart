@@ -81,12 +81,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _avatarInitial(String initial) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [AppColors.primary, AppColors.primaryDeep],
         ),
+        shape: BoxShape.circle,
       ),
       child: Center(
         child: Text(
@@ -102,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: 52,
       height: 52,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -564,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 52,
                     decoration: BoxDecoration(
                       gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
-                          ? const LinearGradient(
+                          ? LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [AppColors.primary, AppColors.primaryDeep],
@@ -1522,7 +1523,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Container(
         width: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: AppColors.homeBodyGradient,
         ),
         child: SafeArea(
@@ -1531,7 +1532,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircularProgressIndicator(
+                  CircularProgressIndicator(
                     valueColor: AlwaysStoppedAnimation<Color>(
                       AppColors.primaryGlow,
                     ),

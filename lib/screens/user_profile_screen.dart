@@ -90,7 +90,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         ],
       ),
       body: _loading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
               ),
@@ -208,7 +208,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Widget _avatarPlaceholder() {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

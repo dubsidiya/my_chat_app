@@ -43,7 +43,7 @@ class EulaConsentScreen extends StatelessWidget {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -52,7 +52,7 @@ class EulaConsentScreen extends StatelessWidget {
               AppColors.surfaceDark,
               AppColors.primaryDeep,
             ],
-            stops: [0.0, 0.5, 1.0],
+            stops: const [0.0, 0.5, 1.0],
           ),
         ),
         child: SafeArea(
@@ -98,7 +98,7 @@ class EulaConsentScreen extends StatelessWidget {
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [AppColors.primary, AppColors.primaryDeep],
                     ),
                     boxShadow: AppColors.neonGlow,

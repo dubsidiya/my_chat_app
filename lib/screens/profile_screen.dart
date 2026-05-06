@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
+import '../theme/theme_controller.dart';
+import '../theme/theme_variant.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../utils/read_file_bytes.dart';
@@ -304,6 +306,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 32),
             // Блоки настроек
+            _sectionTitle(context, 'Внешний вид'),
+            _themeTile(context),
             _sectionTitle(context, 'Настройки'),
             _listTile(
               context,
@@ -379,7 +383,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       width: 120,
       height: 120,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -451,6 +455,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// Карточка переключения темы. Показывает текущую тему и при тапе открывает
+  /// bottom-sheet с выбором всех доступных вариантов.
+  Widget _themeTile(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final variant = ThemeController.instance.variant;
+    final iconColor = scheme.primary;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            variant.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+            color: iconColor,
+            size: 22,
+          ),
+        ),
+        title: Text(
+          'Тема оформления',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            color: scheme.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          variant.displayName,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: 12.5,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => _openThemePicker(context),
+      ),
+    );
+  }
+
+  Future<void> _openThemePicker(BuildContext context) async {
+    final selected = ThemeController.instance.variant;
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = await showModalBottomSheet<AppThemeVariant>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+                  child: Text(
+                    'Выберите тему',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 14),
+                  child: Text(
+                    'Цветовая палитра применяется ко всему приложению — кнопкам, фонам, '
+                    'диалогам и пузырям сообщений.',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                for (final v in AppThemeVariant.values)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: _ThemeOptionCard(
+                      variant: v,
+                      selected: v == selected,
+                      onTap: () => Navigator.of(ctx).pop(v),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || picked == null || picked == selected) return;
+    await ThemeController.instance.setVariant(picked);
+    if (!mounted) return;
+    setState(() {});
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('Тема обновлена: ${picked.displayName}'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _openChangePassword(BuildContext context) {
     Navigator.pop(context);
     widget.onChangePassword?.call();
@@ -469,5 +584,165 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _logout(BuildContext context) {
     Navigator.pop(context);
     widget.onLogout?.call();
+  }
+}
+
+/// Превью одного варианта темы в bottom-sheet.
+///
+/// Отрисовывает ту же градиентную «pill»-карточку независимо от текущей темы:
+/// цвета берутся из жёстко заданных пар, а не из глобального [AppColors],
+/// чтобы пользователь мог сравнивать темы рядом, до фактического переключения.
+class _ThemeOptionCard extends StatelessWidget {
+  final AppThemeVariant variant;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeOptionCard({
+    required this.variant,
+    required this.selected,
+    required this.onTap,
+  });
+
+  /// Превью: тёмная тема — фиолетовое неоновое свечение,
+  /// светлая — мягкие пастельные сиреневые тона.
+  List<Color> get _previewColors {
+    switch (variant) {
+      case AppThemeVariant.ultravioletDark:
+        return const [
+          Color(0xFF1a0a2e),
+          Color(0xFF7B2CBF),
+          Color(0xFFC77DFF),
+        ];
+      case AppThemeVariant.auroraLight:
+        return const [
+          Color(0xFFFBFAFD),
+          Color(0xFFE2D6F8),
+          Color(0xFF7B4FCB),
+        ];
+    }
+  }
+
+  Color get _accentColor {
+    switch (variant) {
+      case AppThemeVariant.ultravioletDark:
+        return const Color(0xFFC77DFF);
+      case AppThemeVariant.auroraLight:
+        return const Color(0xFF7B4FCB);
+    }
+  }
+
+  Color get _onAccentColor {
+    switch (variant) {
+      case AppThemeVariant.ultravioletDark:
+        return Colors.white;
+      case AppThemeVariant.auroraLight:
+        return Colors.white;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final borderColor = selected
+        ? _accentColor
+        : scheme.outline.withValues(alpha: 0.3);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor, width: selected ? 2 : 1),
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          ),
+          child: Row(
+            children: [
+              // Превью-«плитка» с градиентом темы
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: _previewColors,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accentColor.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    variant.isDark
+                        ? Icons.dark_mode_rounded
+                        : Icons.light_mode_rounded,
+                    color: _onAccentColor,
+                    size: 28,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      variant.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      variant.description,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12.5,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: selected
+                    ? Container(
+                        key: const ValueKey('selected'),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: _accentColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      )
+                    : const SizedBox(
+                        key: ValueKey('unselected'),
+                        width: 30,
+                        height: 30,
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

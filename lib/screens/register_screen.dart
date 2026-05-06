@@ -95,19 +95,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = AppColors.isLight;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.backgroundDark,
-              AppColors.surfaceDark,
-              AppColors.primaryDeep,
-              AppColors.primary,
-            ],
-            stops: [0.0, 0.35, 0.7, 1.0],
+            colors: isLight
+                ? [
+                    AppColors.backgroundDark,
+                    AppColors.cardDark,
+                    AppColors.accent.withValues(alpha: 0.35),
+                    AppColors.primary.withValues(alpha: 0.45),
+                  ]
+                : [
+                    AppColors.backgroundDark,
+                    AppColors.surfaceDark,
+                    AppColors.primaryDeep,
+                    AppColors.primary,
+                  ],
+            stops: const [0.0, 0.35, 0.7, 1.0],
           ),
         ),
         child: SafeArea(
@@ -117,7 +125,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Логотип/Иконка с анимацией
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 800),
@@ -129,7 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           width: 120,
                           height: 120,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
@@ -138,7 +145,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ],
                             ),
                             shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.primaryGlow.withValues(alpha: 0.5), width: 2),
+                            border: Border.all(
+                              color: AppColors.primaryGlow.withValues(alpha: 0.5),
+                              width: 2,
+                            ),
                             boxShadow: [
                               ...AppColors.neonGlow,
                               BoxShadow(
@@ -149,7 +159,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.person_add_rounded,
                             size: 60,
                             color: AppColors.primaryGlow,
@@ -159,8 +169,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     },
                   ),
                   const SizedBox(height: 40),
-                  
-                  // Заголовок с анимацией
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 600),
@@ -198,7 +206,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Зарегистрируйтесь для начала общения',
                           style: TextStyle(
                             fontSize: 18,
@@ -211,8 +219,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                   const SizedBox(height: 50),
-                  
-                  // Форма регистрации с анимацией
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 700),
@@ -230,164 +236,193 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         color: AppColors.cardDark,
-                        border: Border.all(color: AppColors.primaryGlow.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: AppColors.primaryGlow.withValues(alpha: 0.35),
+                        ),
                         boxShadow: AppColors.neonGlowSoft,
                       ),
                       child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Поле логина
-                              TextField(
-                                controller: _usernameController,
-                                keyboardType: TextInputType.text,
-                                style: const TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
-                                decoration: InputDecoration(
-                                  labelText: 'Логин',
-                                  prefixIcon: const Icon(
-                                    Icons.person_outlined,
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: _usernameController,
+                              keyboardType: TextInputType.text,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: AppColors.onSurfaceDark,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Логин',
+                                prefixIcon: Icon(
+                                  Icons.person_outlined,
+                                  color: AppColors.primaryGlow,
+                                ),
+                                labelStyle: TextStyle(
+                                  color: AppColors.onSurfaceVariantDark,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                helperText: 'Минимум 4 символа',
+                                helperStyle: TextStyle(
+                                  color: AppColors.onSurfaceVariantDark
+                                      .withValues(alpha: 0.8),
+                                  fontSize: 12,
+                                ),
+                                filled: true,
+                                fillColor:
+                                    AppColors.primary.withValues(alpha: 0.08),
+                                border: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide:
+                                      BorderSide(color: AppColors.borderDark),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide:
+                                      BorderSide(color: AppColors.borderDark),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide: BorderSide(
                                     color: AppColors.primaryGlow,
-                                  ),
-                                  labelStyle: const TextStyle(
-                                    color: AppColors.onSurfaceVariantDark,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  helperText: 'Минимум 4 символа',
-                                  helperStyle: TextStyle(
-                                    color: AppColors.onSurfaceVariantDark.withValues(alpha: 0.8),
-                                    fontSize: 12,
-                                  ),
-                                  filled: true,
-                                  fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                  border: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.borderDark),
-                                  ),
-                                  enabledBorder: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.borderDark),
-                                  ),
-                                  focusedBorder: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
+                                    width: 2,
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 20),
-                              // Поле пароля
-                              TextField(
-                                controller: _passwordController,
-                                style: const TextStyle(fontSize: 16, color: AppColors.onSurfaceDark),
-                                decoration: InputDecoration(
-                                  labelText: 'Пароль',
-                                  prefixIcon: const Icon(
-                                    Icons.lock_outlined,
+                            ),
+                            const SizedBox(height: 20),
+                            TextField(
+                              controller: _passwordController,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: AppColors.onSurfaceDark,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Пароль',
+                                prefixIcon: Icon(
+                                  Icons.lock_outlined,
+                                  color: AppColors.primaryGlow,
+                                ),
+                                labelStyle: TextStyle(
+                                  color: AppColors.onSurfaceVariantDark,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                filled: true,
+                                fillColor:
+                                    AppColors.primary.withValues(alpha: 0.08),
+                                border: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide:
+                                      BorderSide(color: AppColors.borderDark),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide:
+                                      BorderSide(color: AppColors.borderDark),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(12)),
+                                  borderSide: BorderSide(
                                     color: AppColors.primaryGlow,
-                                  ),
-                                  labelStyle: const TextStyle(
-                                    color: AppColors.onSurfaceVariantDark,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  filled: true,
-                                  fillColor: AppColors.primary.withValues(alpha: 0.08),
-                                  border: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.borderDark),
-                                  ),
-                                  enabledBorder: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.borderDark),
-                                  ),
-                                  focusedBorder: const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                                    borderSide: BorderSide(color: AppColors.primaryGlow, width: 2),
+                                    width: 2,
                                   ),
                                 ),
-                                obscureText: true,
                               ),
-                              const SizedBox(height: 28),
-                              if (_errorMessage != null)
-                                Container(
-                                  padding: const EdgeInsets.all(14),
-                                  margin: const EdgeInsets.only(bottom: 20),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.red.withValues(alpha: 0.5),
+                              obscureText: true,
+                            ),
+                            const SizedBox(height: 28),
+                            if (_errorMessage != null)
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                margin: const EdgeInsets.only(bottom: 20),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.red.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline_rounded,
+                                      color: Colors.red.shade300,
+                                      size: 22,
                                     ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline_rounded,
-                                        color: Colors.red.shade300,
-                                        size: 22,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _errorMessage!,
-                                          style: const TextStyle(
-                                            color: AppColors.onSurfaceDark,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          color: AppColors.onSurfaceDark,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              SizedBox(
-                                height: 56,
-                                child: _isLoading
-                                    ? const Center(
-                                        child: CircularProgressIndicator(
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            AppColors.primaryGlow,
+                              ),
+                            SizedBox(
+                              height: 56,
+                              child: _isLoading
+                                  ? Center(
+                                      child: CircularProgressIndicator(
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                          AppColors.primaryGlow,
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            AppColors.primary,
+                                            AppColors.primaryDeep,
+                                          ],
+                                        ),
+                                        boxShadow: AppColors.neonGlow,
+                                      ),
+                                      child: ElevatedButton(
+                                        onPressed: _register,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                         ),
-                                      )
-                                    : Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
-                                          gradient: const LinearGradient(
-                                            colors: [
-                                              AppColors.primary,
-                                              AppColors.primaryDeep,
-                                            ],
-                                          ),
-                                          boxShadow: AppColors.neonGlow,
-                                        ),
-                                        child: ElevatedButton(
-                                          onPressed: _register,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.transparent,
-                                            shadowColor: Colors.transparent,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            'Зарегистрироваться',
-                                            style: TextStyle(
-                                              color: AppColors.onSurfaceDark,
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 1,
-                                            ),
+                                        child: Text(
+                                          'Зарегистрироваться',
+                                          style: TextStyle(
+                                            color: isLight
+                                                ? Colors.white
+                                                : AppColors.onSurfaceDark,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 1,
                                           ),
                                         ),
                                       ),
-                              ),
-                            ],
-                          ),
+                                    ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
+                  ),
                   const SizedBox(height: 32),
-                  // Кнопка входа
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 800),
@@ -403,9 +438,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Navigator.pushReplacement(
                           context,
                           PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) =>
-                                const LoginScreen(),
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    const LoginScreen(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
                               return FadeTransition(
                                 opacity: animation,
                                 child: child,
@@ -416,12 +453,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.onSurfaceVariantDark,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 16),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text(
+                          Text(
                             'Уже есть аккаунт? ',
                             style: TextStyle(
                               fontSize: 16,
@@ -430,18 +468,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: AppColors.primaryGlow.withValues(alpha: 0.7),
+                                color: AppColors.primaryGlow
+                                    .withValues(alpha: 0.7),
                                 width: 1.5,
                               ),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Войти',
                               style: TextStyle(
-                                color: AppColors.accent,
+                                color: isLight
+                                    ? AppColors.primaryDeep
+                                    : AppColors.accent,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,

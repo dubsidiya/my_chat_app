@@ -7,7 +7,7 @@ class ChatEmptyMessages extends StatelessWidget {
 
   const ChatEmptyMessages({super.key, this.accentColor});
 
-  static const Color _defaultAccent = AppColors.primaryGlow;
+  static Color get _defaultAccent => AppColors.primaryGlow;
 
   @override
   Widget build(BuildContext context) {

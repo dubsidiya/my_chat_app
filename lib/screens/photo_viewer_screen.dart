@@ -32,7 +32,7 @@ class PhotoViewerScreen extends StatelessWidget {
             imageUrl: imageUrl,
             chatId: chatId,
             fit: BoxFit.contain,
-            placeholder: (_, __) => const CircularProgressIndicator(
+            placeholder: (_, __) => CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
             ),
             errorWidget: (_, __, ___) => Padding(

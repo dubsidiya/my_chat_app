@@ -80,21 +80,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const String _e2eeRetryBackoff = 'retryBackoff';
   static const String _e2eeFailed = 'failed';
 
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
-  static const Color _accent3 = AppColors.accent;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
+  static Color get _accent3 => AppColors.accent;
 
   Widget _myAvatarPlaceholder() {
     final initial = widget.userEmail.isNotEmpty ? widget.userEmail[0].toUpperCase() : '?';
     return Container(
       width: 32,
       height: 32,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_accent1, _accent2],
         ),
+        shape: BoxShape.circle,
       ),
       child: Center(
         child: Text(
@@ -110,12 +111,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Container(
       width: 32,
       height: 32,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_accent3, _accent2],
         ),
+        shape: BoxShape.circle,
       ),
       child: Center(
         child: Text(
@@ -1726,9 +1728,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 8),
                     if (isLoading)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow)),
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: CircularProgressIndicator(
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
+                        ),
                       )
                     else if (results.isEmpty)
                       Padding(
@@ -3781,7 +3786,7 @@ SnackBar(
             margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [AppColors.cardDark, AppColors.surfaceDark],
@@ -4606,7 +4611,7 @@ SnackBar(
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.search_rounded, color: _accent1),
+              icon: Icon(Icons.search_rounded, color: _accent1),
               onPressed: _openSearch,
               tooltip: 'Поиск по сообщениям',
             ),
@@ -4618,7 +4623,7 @@ SnackBar(
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: const Icon(Icons.people_rounded, color: _accent1),
+              icon: Icon(Icons.people_rounded, color: _accent1),
               onPressed: _showMembersDialog,
               tooltip: 'Участники чата',
             ),
@@ -4626,7 +4631,7 @@ SnackBar(
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_accent1, _accent2]),
+              gradient: LinearGradient(colors: [_accent1, _accent2]),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -4753,7 +4758,7 @@ SnackBar(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(
+                        CircularProgressIndicator(
                           valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                           strokeWidth: 3,
                         ),
@@ -4770,7 +4775,7 @@ SnackBar(
                     ),
                   )
                 : _listEntries.isEmpty
-                    ? const ChatEmptyMessages(accentColor: _accent1)
+                    ? ChatEmptyMessages(accentColor: _accent1)
                     : RepaintBoundary(
                   child: Stack(
                     children: [
@@ -4801,7 +4806,7 @@ SnackBar(
                             );
                           }
                           if (entry is _LoadingEntry) {
-                            return const ChatLoadingRow(accentColor: _accent1);
+                            return ChatLoadingRow(accentColor: _accent1);
                           }
                           if (entry is _DateHeaderEntry) {
                             return ChatDateHeader(label: entry.label, accentColor: _accent1);
@@ -4929,7 +4934,7 @@ SnackBar(
                                         ),
                                         child: Text(
                                           '${_pinnedMessages.length}',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 10,
                                             color: _accent1,
@@ -4990,7 +4995,7 @@ SnackBar(
                                                               ? '${pinned.content.substring(0, 40)}...'
                                                               : pinned.content)
                                                           : 'Фото',
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                         fontSize: 12,
                                                         fontWeight: FontWeight.w400,
                                                         color: AppColors.onSurfaceVariantDark,
@@ -5120,7 +5125,7 @@ SnackBar(
                         decoration: BoxDecoration(
                           color: _accent1.withValues(alpha:0.10),
                           borderRadius: BorderRadius.circular(8),
-                          border: const Border(
+                          border: Border(
                             left: BorderSide(
                               color: _accent1,
                               width: 3,
@@ -5133,7 +5138,7 @@ SnackBar(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Ответ на сообщение',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -5264,7 +5269,7 @@ SnackBar(
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.insert_drive_file_rounded, color: _accent2),
+                            Icon(Icons.insert_drive_file_rounded, color: _accent2),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(

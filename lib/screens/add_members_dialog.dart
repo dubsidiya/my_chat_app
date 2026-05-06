@@ -12,9 +12,9 @@ class AddMembersDialog extends StatefulWidget {
 }
 
 class _AddMembersDialogState extends State<AddMembersDialog> {
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
-  static const Color _accent3 = AppColors.accent;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
+  static Color get _accent3 => AppColors.accent;
 
   final Set<String> _selectedUserIds = {};
   final TextEditingController _searchController = TextEditingController();
@@ -52,7 +52,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_accent1, _accent2]),
+              gradient: LinearGradient(colors: [_accent1, _accent2]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
@@ -113,7 +113,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
                 decoration: InputDecoration(
                   hintText: 'Поиск по логину',
                   hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha:0.55)),
-                  prefixIcon: const Icon(Icons.search_rounded, color: _accent1),
+                  prefixIcon: Icon(Icons.search_rounded, color: _accent1),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
@@ -312,7 +312,7 @@ class _AddMembersDialogState extends State<AddMembersDialog> {
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(colors: [_accent1, _accent2]),
+            gradient: LinearGradient(colors: [_accent1, _accent2]),
             boxShadow: [
               BoxShadow(
                 color: _accent1.withValues(alpha:0.28),

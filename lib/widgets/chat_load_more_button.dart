@@ -12,7 +12,7 @@ class ChatLoadMoreButton extends StatelessWidget {
     this.accentColor,
   });
 
-  static const Color _defaultAccent = AppColors.primaryGlow;
+  static Color get _defaultAccent => AppColors.primaryGlow;
 
   @override
   Widget build(BuildContext context) {

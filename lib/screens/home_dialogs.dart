@@ -105,7 +105,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
                     },
             )
           : (selected
-                ? const Icon(Icons.check_circle, color: AppColors.primary)
+                ? Icon(Icons.check_circle, color: AppColors.primary)
                 : null),
       onTap: _isCreating
           ? null
@@ -223,7 +223,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [AppColors.primary, AppColors.primaryGlow],
               ),
               borderRadius: BorderRadius.circular(12),
@@ -321,7 +321,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Поиск по email или имени...',
-                prefixIcon: const Icon(
+                prefixIcon: Icon(
                   Icons.search_rounded,
                   size: 22,
                   color: AppColors.primary,
@@ -451,7 +451,7 @@ class _CreateChatDialogState extends State<CreateChatDialog> {
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               colors: [AppColors.primary, AppColors.primaryGlow],
             ),
             boxShadow: AppColors.neonGlowStrong,

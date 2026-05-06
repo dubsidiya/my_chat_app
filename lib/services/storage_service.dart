@@ -17,6 +17,7 @@ class StorageService {
   static const String _chatOrderPrefix = 'chat_order_';
   static const String _eulaAcceptedPrefix = 'eula_accepted_';
   static const String _hiddenStudentsPrefix = 'hidden_students_';
+  static const String _themeVariantKey = 'theme_variant';
 
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
@@ -351,6 +352,32 @@ class StorageService {
       if (kDebugMode) {
         // ignore: avoid_print
         print('StorageService.setHiddenStudentIds error: $e');
+      }
+    }
+  }
+
+  /// Сохранённое имя темы (storageKey AppThemeVariant). null = тема по умолчанию.
+  static Future<String?> getThemeVariantRaw() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_themeVariantKey);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getThemeVariantRaw error: $e');
+      }
+      return null;
+    }
+  }
+
+  static Future<void> setThemeVariantRaw(String storageKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_themeVariantKey, storageKey);
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.setThemeVariantRaw error: $e');
       }
     }
   }

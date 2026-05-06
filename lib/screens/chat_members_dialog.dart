@@ -25,9 +25,9 @@ class ChatMembersDialog extends StatefulWidget {
 }
 
 class _ChatMembersDialogState extends State<ChatMembersDialog> {
-  static const Color _accent1 = AppColors.primary;
-  static const Color _accent2 = AppColors.primaryGlow;
-  static const Color _accent3 = AppColors.accent;
+  static Color get _accent1 => AppColors.primary;
+  static Color get _accent2 => AppColors.primaryGlow;
+  static Color get _accent3 => AppColors.accent;
 
   List<Map<String, dynamic>> _members = [];
   bool _isLoading = false;
@@ -269,7 +269,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_accent1, _accent2]),
+              gradient: LinearGradient(colors: [_accent1, _accent2]),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
@@ -300,7 +300,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
             ),
             child: Text(
               '${_members.length}',
-              style: const TextStyle(
+              style: TextStyle(
                 color: _accent1,
                 fontWeight: FontWeight.bold,
               ),
@@ -309,7 +309,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         ],
       ),
       content: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(_accent1),
                 strokeWidth: 3,
@@ -413,7 +413,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                               color: _accent1.withValues(alpha:0.12),
                                               borderRadius: BorderRadius.circular(10),
                                             ),
-                                            child: const Text(
+                                            child: Text(
                                               'Создатель чата',
                                               style: TextStyle(
                                                 fontSize: 12,
