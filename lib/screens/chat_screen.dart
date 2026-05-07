@@ -48,6 +48,11 @@ import '../features/chat/chat_scroll_policy.dart';
 import '../features/chat/chat_sync_policy.dart';
 
 part 'chat_screen_models.dart';
+part 'chat_screen_export.dart';
+part 'chat_screen_media_voice.dart';
+part 'chat_screen_members.dart';
+part 'chat_screen_queue.dart';
+part 'chat_screen_message_actions.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -58,7 +63,8 @@ class ChatScreen extends StatefulWidget {
   final String chatName;
   final bool isGroup;
 
-  const ChatScreen({super.key, 
+  const ChatScreen({
+    super.key,
     required this.userId,
     required this.userEmail,
     this.displayName,
@@ -85,7 +91,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static Color get _accent3 => AppColors.accent;
 
   Widget _myAvatarPlaceholder() {
-    final initial = widget.userEmail.isNotEmpty ? widget.userEmail[0].toUpperCase() : '?';
+    final initial = widget.userEmail.isNotEmpty
+        ? widget.userEmail[0].toUpperCase()
+        : '?';
     return Container(
       width: 32,
       height: 32,
@@ -100,14 +108,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Center(
         child: Text(
           initial,
-          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
   }
 
   Widget _otherAvatarPlaceholder(String senderEmail) {
-    final initial = senderEmail.trim().isNotEmpty ? senderEmail.trim()[0].toUpperCase() : '?';
+    final initial = senderEmail.trim().isNotEmpty
+        ? senderEmail.trim()[0].toUpperCase()
+        : '?';
     return Container(
       width: 32,
       height: 32,
@@ -122,7 +136,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Center(
         child: Text(
           initial,
-          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -149,6 +167,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isUploadingImage = false;
+
   /// Защита от двойного нажатия «Отправить» пока идёт отправка.
   bool _isSendingMessage = false;
   bool _isExportingChat = false;
@@ -185,14 +204,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ✅ Realtime presence/typing
   final Map<String, String> _memberEmailById = {};
   List<Map<String, dynamic>> _chatMembers = [];
-  final Map<String, Map<String, String>> _memberByHandle = {}; // handle -> {id,email,label}
+  final Map<String, Map<String, String>> _memberByHandle =
+      {}; // handle -> {id,email,label}
   final Set<String> _onlineUserIds = <String>{};
   final Map<String, DateTime> _typingUntilByUserId = <String, DateTime>{};
   Timer? _typingStopTimer;
   Timer? _typingCleanupTimer;
   bool _sentTyping = false;
   bool _subscribedToChatRealtime = false;
-  Timer? _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
+  Timer?
+  _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
   late String _chatTitle;
 
   // ✅ Mentions (@handle)
@@ -205,7 +226,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   List<_ListEntry> get _listEntries {
     final len = _messages.length;
-    final key = len ^ (_hasMoreMessages ? 0x10000 : 0) ^ (_isLoadingMore ? 0x20000 : 0) ^
+    final key =
+        len ^
+        (_hasMoreMessages ? 0x10000 : 0) ^
+        (_isLoadingMore ? 0x20000 : 0) ^
         (len > 0 ? _messages.first.id.hashCode : 0) ^
         (len > 0 ? _messages.last.id.hashCode : 0);
     if (_cachedListEntries != null && _listEntriesCacheKey == key) {
@@ -213,7 +237,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     _listEntriesCacheKey = key;
     final list = <_ListEntry>[];
-    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) list.add(_LoadMoreEntry());
+    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty)
+      list.add(_LoadMoreEntry());
     if (_isLoadingMore) list.add(_LoadingEntry());
     String? lastDateKey;
     for (int i = 0; i < _messages.length; i++) {
@@ -308,7 +333,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             await Clipboard.setData(ClipboardData(text: code));
                             if (!mounted) return;
                             ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(duration: Duration(seconds: 3), content: Text('Код скопирован')),
+                              const SnackBar(
+                                duration: Duration(seconds: 3),
+                                content: Text('Код скопирован'),
+                              ),
                             );
                           },
                         ),
@@ -317,7 +345,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 10),
                     Text(
                       'Передайте этот код человеку — он введёт его в “Вступить по коду”.',
-                      style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 12,
+                      ),
                     ),
                   ] else ...[
                     Text(
@@ -351,14 +382,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
               actions: [
                 TextButton(
-                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isLoading
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('Закрыть'),
                 ),
                 if (code == null || code.isEmpty)
                   ElevatedButton(
                     onPressed: isLoading ? null : create,
                     child: isLoading
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Text('Создать код'),
                   ),
               ],
@@ -394,13 +431,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 error = null;
               });
               try {
-                final updated = await _chatsService.renameChat(widget.chatId, name);
+                final updated = await _chatsService.renameChat(
+                  widget.chatId,
+                  name,
+                );
                 final newName = (updated['name'] ?? name).toString();
                 if (!mounted) return;
                 setState(() => _chatTitle = newName);
                 navigator.pop();
                 messenger.showSnackBar(
-                  const SnackBar(duration: Duration(seconds: 3), content: Text('Название обновлено')),
+                  const SnackBar(
+                    duration: Duration(seconds: 3),
+                    content: Text('Название обновлено'),
+                  ),
                 );
               } catch (e) {
                 setLocal(() {
@@ -428,13 +471,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
               actions: [
                 TextButton(
-                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isLoading
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('Отмена'),
                 ),
                 ElevatedButton(
                   onPressed: isLoading ? null : save,
                   child: isLoading
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Text('Сохранить'),
                 ),
               ],
@@ -480,16 +529,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     // Инициализируем WebSocket асинхронно
     _initWebSocket();
-    
+
     _loadMessages();
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
-    
+
     // Резервный опрос новых сообщений (если WebSocket не доставил)
     _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       if (mounted) _pollForNewMessages();
     });
-    
+
     // ✅ Отмечаем все сообщения как прочитанные при открытии чата
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markChatAsRead();
@@ -543,25 +592,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _chatMembers = members;
         _memberEmailById
           ..clear()
-          ..addEntries(members.map((m) {
-            final id = (m['id'] ?? '').toString();
-            final email = (m['email'] ?? '').toString();
-            return MapEntry(id, email);
-          }).where((e) => e.key.isNotEmpty));
+          ..addEntries(
+            members
+                .map((m) {
+                  final id = (m['id'] ?? '').toString();
+                  final email = (m['email'] ?? '').toString();
+                  return MapEntry(id, email);
+                })
+                .where((e) => e.key.isNotEmpty),
+          );
 
         _memberByHandle
           ..clear()
-          ..addEntries(members.map((m) {
-            final id = (m['id'] ?? '').toString();
-            final email = (m['email'] ?? '').toString();
-            final label = (m['displayName'] ?? m['display_name'] ?? email).toString();
-            final handle = _handleFromEmail(email);
-            return MapEntry(handle, {'id': id, 'email': email, 'label': label});
-          }).where((e) => e.key.isNotEmpty && (e.value['id'] ?? '').isNotEmpty));
+          ..addEntries(
+            members
+                .map((m) {
+                  final id = (m['id'] ?? '').toString();
+                  final email = (m['email'] ?? '').toString();
+                  final label = (m['displayName'] ?? m['display_name'] ?? email)
+                      .toString();
+                  final handle = _handleFromEmail(email);
+                  return MapEntry(handle, {
+                    'id': id,
+                    'email': email,
+                    'label': label,
+                  });
+                })
+                .where(
+                  (e) => e.key.isNotEmpty && (e.value['id'] ?? '').isNotEmpty,
+                ),
+          );
       });
     } catch (e) {
       // Не критично — presence/typing просто будет без имён
-      if (kDebugMode) print('Ошибка загрузки участников (для presence/typing): $e');
+      if (kDebugMode)
+        print('Ошибка загрузки участников (для presence/typing): $e');
     }
   }
 
@@ -572,22 +637,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Сливает пришедшее по WebSocket сообщение с уже имеющимся: не затираем непустой контент пустым
   /// (на части устройств/сетей WS может прийти с пустым content).
   Message _mergeMessageKeepContent(Message existing, Message incoming) {
-    if (incoming.content.isNotEmpty || (incoming.imageUrl ?? '').isNotEmpty || (incoming.fileUrl ?? '').isNotEmpty) return incoming;
+    if (incoming.content.isNotEmpty ||
+        (incoming.imageUrl ?? '').isNotEmpty ||
+        (incoming.fileUrl ?? '').isNotEmpty)
+      return incoming;
     return Message(
       id: incoming.id,
       chatId: incoming.chatId,
       userId: incoming.userId,
-      content: incoming.content.isNotEmpty ? incoming.content : existing.content,
-      imageUrl: (incoming.imageUrl ?? '').isNotEmpty ? incoming.imageUrl : existing.imageUrl,
-      originalImageUrl: (incoming.originalImageUrl ?? '').isNotEmpty ? incoming.originalImageUrl : existing.originalImageUrl,
-      fileUrl: (incoming.fileUrl ?? '').isNotEmpty ? incoming.fileUrl : existing.fileUrl,
+      content: incoming.content.isNotEmpty
+          ? incoming.content
+          : existing.content,
+      imageUrl: (incoming.imageUrl ?? '').isNotEmpty
+          ? incoming.imageUrl
+          : existing.imageUrl,
+      originalImageUrl: (incoming.originalImageUrl ?? '').isNotEmpty
+          ? incoming.originalImageUrl
+          : existing.originalImageUrl,
+      fileUrl: (incoming.fileUrl ?? '').isNotEmpty
+          ? incoming.fileUrl
+          : existing.fileUrl,
       fileName: incoming.fileName ?? existing.fileName,
       fileSize: incoming.fileSize ?? existing.fileSize,
       fileMime: incoming.fileMime ?? existing.fileMime,
       messageType: incoming.messageType,
-      senderEmail: incoming.senderEmail.isNotEmpty ? incoming.senderEmail : existing.senderEmail,
-      senderAvatarUrl: (incoming.senderAvatarUrl ?? '').trim().isNotEmpty ? incoming.senderAvatarUrl : existing.senderAvatarUrl,
-      createdAt: incoming.createdAt.isNotEmpty ? incoming.createdAt : existing.createdAt,
+      senderEmail: incoming.senderEmail.isNotEmpty
+          ? incoming.senderEmail
+          : existing.senderEmail,
+      senderAvatarUrl: (incoming.senderAvatarUrl ?? '').trim().isNotEmpty
+          ? incoming.senderAvatarUrl
+          : existing.senderAvatarUrl,
+      createdAt: incoming.createdAt.isNotEmpty
+          ? incoming.createdAt
+          : existing.createdAt,
       deliveredAt: incoming.deliveredAt ?? existing.deliveredAt,
       editedAt: incoming.editedAt ?? existing.editedAt,
       isRead: incoming.isRead,
@@ -598,7 +680,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       reactions: incoming.reactions ?? existing.reactions,
       isForwarded: incoming.isForwarded,
       originalChatName: incoming.originalChatName ?? existing.originalChatName,
-      keyVersion: incoming.keyVersion > 0 ? incoming.keyVersion : existing.keyVersion,
+      keyVersion: incoming.keyVersion > 0
+          ? incoming.keyVersion
+          : existing.keyVersion,
     );
   }
 
@@ -653,7 +737,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Более надежная прокрутка к низу: пробуем несколько раз,
   /// потому что при открытии чата layout может достраиваться не в один кадр.
-  void _scrollToBottomWithRetry({int attempts = 3, Duration delay = const Duration(milliseconds: 80)}) {
+  void _scrollToBottomWithRetry({
+    int attempts = 3,
+    Duration delay = const Duration(milliseconds: 80),
+  }) {
     void tryScroll(int left) {
       if (!mounted || left <= 0) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -695,7 +782,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _jumpToMessage(String messageId) async {
     try {
-      final around = await _messagesService.fetchMessagesAround(widget.chatId, messageId, limit: 50);
+      final around = await _messagesService.fetchMessagesAround(
+        widget.chatId,
+        messageId,
+        limit: 50,
+      );
       if (!mounted) return;
 
       // Сохраняем временные сообщения (если есть), чтобы не потерять офлайн/отправленные
@@ -711,7 +802,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages = [...around, ...uniqueTemp];
         _messages.sort((a, b) {
           try {
-            return DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt));
+            return DateTime.parse(
+              a.createdAt,
+            ).compareTo(DateTime.parse(b.createdAt));
           } catch (_) {
             return 0;
           }
@@ -735,7 +828,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (kDebugMode) print('Ошибка перехода к сообщению: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось перейти к сообщению')),
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Не удалось перейти к сообщению'),
+        ),
       );
     }
   }
@@ -768,23 +864,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             error = null;
           });
           try {
-            final found = await _messagesService.searchMessages(widget.chatId, q.trim(), limit: 30);
+            final found = await _messagesService.searchMessages(
+              widget.chatId,
+              q.trim(),
+              limit: 30,
+            );
             setModalState(() {
               results = found;
               isLoading = false;
             });
           } catch (e) {
             // Локальный поиск по уже загруженным сообщениям (офлайн / при ошибке API)
-            final local = _messages.where((m) {
-              final content = (m.content).toLowerCase();
-              final fileName = (m.fileName ?? '').toLowerCase();
-              return content.contains(query) || fileName.contains(query);
-            }).take(30).map((m) => {
-              'message_id': m.id,
-              'sender_email': m.senderEmail,
-              'content_snippet': m.content.length > 80 ? '${m.content.substring(0, 80)}…' : m.content,
-              'created_at': m.createdAt,
-            }).toList();
+            final local = _messages
+                .where((m) {
+                  final content = (m.content).toLowerCase();
+                  final fileName = (m.fileName ?? '').toLowerCase();
+                  return content.contains(query) || fileName.contains(query);
+                })
+                .take(30)
+                .map(
+                  (m) => {
+                    'message_id': m.id,
+                    'sender_email': m.senderEmail,
+                    'content_snippet': m.content.length > 80
+                        ? '${m.content.substring(0, 80)}…'
+                        : m.content,
+                    'created_at': m.createdAt,
+                  },
+                )
+                .toList();
             setModalState(() {
               results = local;
               isLoading = false;
@@ -831,9 +939,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ),
                           onChanged: (v) {
                             debounce?.cancel();
-                            debounce = Timer(const Duration(milliseconds: 250), () {
-                              runSearch(setModalState, v);
-                            });
+                            debounce = Timer(
+                              const Duration(milliseconds: 250),
+                              () {
+                                runSearch(setModalState, v);
+                              },
+                            );
                           },
                         ),
                       ),
@@ -845,12 +956,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       if (error != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(error!, style: const TextStyle(color: Colors.red)),
+                          child: Text(
+                            error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
                         ),
                       Flexible(
                         child: results.isEmpty
                             ? Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  10,
+                                  16,
+                                  20,
+                                ),
                                 child: Text(
                                   controller.text.trim().isEmpty
                                       ? 'Введите запрос для поиска'
@@ -861,13 +980,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             : ListView.separated(
                                 shrinkWrap: true,
                                 itemCount: results.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
                                 itemBuilder: (context, index) {
                                   final r = results[index];
-                                  final messageId = (r['message_id'] ?? '').toString();
-                                  final sender = (r['sender_email'] ?? '').toString();
-                                  final snippet = (r['content_snippet'] ?? '').toString();
-                                  final createdAt = (r['created_at'] ?? '').toString();
+                                  final messageId = (r['message_id'] ?? '')
+                                      .toString();
+                                  final sender = (r['sender_email'] ?? '')
+                                      .toString();
+                                  final snippet = (r['content_snippet'] ?? '')
+                                      .toString();
+                                  final createdAt = (r['created_at'] ?? '')
+                                      .toString();
                                   return ListTile(
                                     title: Text(
                                       sender.isNotEmpty ? sender : 'Сообщение',
@@ -880,8 +1004,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     trailing: Text(
-                                      createdAt.isNotEmpty ? _formatDate(createdAt) : '',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      createdAt.isNotEmpty
+                                          ? _formatDate(createdAt)
+                                          : '',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
                                     onTap: () {
                                       Navigator.pop(sheetContext);
@@ -908,14 +1037,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _openGallery() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChatGalleryScreen(
-          chatId: widget.chatId,
-          chatName: widget.chatName,
-        ),
+        builder: (_) =>
+            ChatGalleryScreen(chatId: widget.chatId, chatName: widget.chatName),
       ),
     );
   }
-  
+
   // ✅ Загрузить закрепленные сообщения
   Future<void> _loadPinnedMessages() async {
     try {
@@ -929,7 +1056,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (kDebugMode) print('Ошибка загрузки закрепленных сообщений: $e');
     }
   }
-  
+
   // ✅ Отметить все сообщения в чате как прочитанные
   Future<void> _markChatAsRead() async {
     try {
@@ -939,7 +1066,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Не показываем ошибку пользователю, это не критично
     }
   }
-  
+
   // ✅ Отметить конкретное сообщение как прочитанное
   // (функция была неиспользуемой; при необходимости можно вернуть и вызывать при отображении сообщения)
 
@@ -949,10 +1076,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       (event) async {
         if (!mounted) return;
         try {
-          final data = event is Map ? event as Map<String, dynamic> : (event is String ? jsonDecode(event) as Map<String, dynamic>? : null);
+          final data = event is Map
+              ? event as Map<String, dynamic>
+              : (event is String
+                    ? jsonDecode(event) as Map<String, dynamic>?
+                    : null);
           if (data == null) return;
           if (kDebugMode) print('WebSocket received: $data');
-          
+
           // Проверяем тип сообщения
           final messageType = data['type'];
 
@@ -993,7 +1124,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 : int.tryParse((data['keyVersion'] ?? '').toString());
             if (chatId != null) {
               if (requesterUserId != null && requesterUserId.isNotEmpty) {
-                unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId], keyVersion: keyVersion));
+                unawaited(
+                  E2eeService.shareChatKeyWithUsers(chatId, [
+                    requesterUserId,
+                  ], keyVersion: keyVersion),
+                );
               } else {
                 unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
               }
@@ -1008,8 +1143,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ? data['keyVersion'] as int
                 : int.tryParse((data['keyVersion'] ?? '').toString());
             final leaderUserId = data['leaderUserId']?.toString();
-            if (chatId == widget.chatId.toString() && keyVersion != null && keyVersion > 0) {
-              unawaited(_handleE2eeKeyRotation(chatId!, keyVersion, leaderUserId));
+            if (chatId == widget.chatId.toString() &&
+                keyVersion != null &&
+                keyVersion > 0) {
+              unawaited(
+                _handleE2eeKeyRotation(chatId!, keyVersion, leaderUserId),
+              );
             }
             return;
           }
@@ -1055,10 +1194,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             final chatId = data['chat_id']?.toString();
             final uid = data['user_id']?.toString();
             final isTyping = data['is_typing'] == true;
-            if (chatId == widget.chatId.toString() && uid != null && uid.isNotEmpty && uid != widget.userId.toString() && mounted) {
+            if (chatId == widget.chatId.toString() &&
+                uid != null &&
+                uid.isNotEmpty &&
+                uid != widget.userId.toString() &&
+                mounted) {
               setState(() {
                 if (isTyping) {
-                  _typingUntilByUserId[uid] = DateTime.now().add(const Duration(seconds: 5));
+                  _typingUntilByUserId[uid] = DateTime.now().add(
+                    const Duration(seconds: 5),
+                  );
                 } else {
                   _typingUntilByUserId.remove(uid);
                 }
@@ -1067,35 +1212,48 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             }
             return;
           }
-          
+
           if (messageType == 'message_deleted') {
             // Обработка уведомления об удалении сообщения
             final deletedMessageId = data['message_id']?.toString();
             final chatId = data['chat_id']?.toString();
             final currentChatId = widget.chatId.toString();
-            
+
             if (chatId == currentChatId && deletedMessageId != null) {
-              if (kDebugMode) print('Message deleted notification: $deletedMessageId');
+              if (kDebugMode)
+                print('Message deleted notification: $deletedMessageId');
               if (mounted) {
                 setState(() {
-                  _messages.removeWhere((m) => m.id.toString() == deletedMessageId);
-                  _pinnedMessages.removeWhere((m) => m.id.toString() == deletedMessageId);
-                  if (kDebugMode) print('Message removed from list. Remaining messages: ${_messages.length}');
+                  _messages.removeWhere(
+                    (m) => m.id.toString() == deletedMessageId,
+                  );
+                  _pinnedMessages.removeWhere(
+                    (m) => m.id.toString() == deletedMessageId,
+                  );
+                  if (kDebugMode)
+                    print(
+                      'Message removed from list. Remaining messages: ${_messages.length}',
+                    );
                 });
-                
+
                 // ✅ Удаляем сообщение из кэша
-                LocalMessagesService.removeMessage(widget.chatId, deletedMessageId);
+                LocalMessagesService.removeMessage(
+                  widget.chatId,
+                  deletedMessageId,
+                );
               }
             }
             return;
           }
-          
+
           // ✅ Обработка события прочтения сообщения
           if (messageType == 'message_read') {
             final messageId = data['message_id']?.toString();
             if (messageId != null && mounted) {
               setState(() {
-                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+                final index = _messages.indexWhere(
+                  (m) => m.id.toString() == messageId,
+                );
                 if (index != -1) {
                   // Обновляем статус сообщения
                   final msg = _messages[index];
@@ -1117,19 +1275,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     deliveredAt: msg.deliveredAt,
                     editedAt: msg.editedAt,
                     isRead: true,
-                    readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                    readAt:
+                        data['read_at']?.toString() ??
+                        DateTime.now().toIso8601String(),
                     keyVersion: msg.keyVersion,
                   );
                   _messages[index] = updatedMessage;
-                  
+
                   // ✅ Обновляем в кэше
-                  LocalMessagesService.updateMessage(widget.chatId, updatedMessage);
+                  LocalMessagesService.updateMessage(
+                    widget.chatId,
+                    updatedMessage,
+                  );
                 }
               });
             }
             return;
           }
-          
+
           // ✅ Обработка события прочтения нескольких сообщений
           if (messageType == 'messages_read') {
             final chatId = data['chat_id']?.toString();
@@ -1158,7 +1321,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       deliveredAt: msg.deliveredAt,
                       editedAt: msg.editedAt,
                       isRead: true,
-                      readAt: data['read_at']?.toString() ?? DateTime.now().toIso8601String(),
+                      readAt:
+                          data['read_at']?.toString() ??
+                          DateTime.now().toIso8601String(),
                       keyVersion: msg.keyVersion,
                     );
                   }
@@ -1167,14 +1332,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             }
             return;
           }
-          
+
           // ✅ Обработка события редактирования сообщения (E2EE: контент с сервера может быть зашифрован)
           if (messageType == 'message_edited') {
             final messageId = data['id']?.toString();
             final chatIdWs = data['chat_id']?.toString();
             final currentChatId = widget.chatId.toString();
             if (chatIdWs == currentChatId && messageId != null && mounted) {
-              final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+              final index = _messages.indexWhere(
+                (m) => m.id.toString() == messageId,
+              );
               if (index != -1) {
                 final msg = _messages[index];
                 final rawContent = (data['content'] ?? msg.content).toString();
@@ -1190,7 +1357,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   fileSize: data['file_size'] ?? msg.fileSize,
                   fileMime: data['file_mime'] as String? ?? msg.fileMime,
                   messageType: data['message_type'] ?? msg.messageType,
-                  senderAvatarUrl: data['sender_avatar_url'] ?? msg.senderAvatarUrl,
+                  senderAvatarUrl:
+                      data['sender_avatar_url'] ?? msg.senderAvatarUrl,
                   senderEmail: msg.senderEmail,
                   createdAt: msg.createdAt,
                   deliveredAt: msg.deliveredAt,
@@ -1206,9 +1374,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   keyVersion: msg.keyVersion,
                 );
                 LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
-                final displayMessage = await MessagesService.decryptMessageForChat(currentChatId, updatedRaw);
-                if (E2eeService.isEncrypted(updatedRaw.content) && displayMessage.content == '[зашифровано]') {
-                  unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId, keyVersion: updatedRaw.keyVersion));
+                final displayMessage =
+                    await MessagesService.decryptMessageForChat(
+                      currentChatId,
+                      updatedRaw,
+                    );
+                if (E2eeService.isEncrypted(updatedRaw.content) &&
+                    displayMessage.content == '[зашифровано]') {
+                  unawaited(
+                    _ensureE2eeKeyAndReloadIfMissing(
+                      currentChatId,
+                      keyVersion: updatedRaw.keyVersion,
+                    ),
+                  );
                 }
                 if (mounted) {
                   setState(() {
@@ -1219,37 +1397,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             }
             return;
           }
-          
+
           // ✅ Обработка событий реакций
-          if (messageType == 'reaction_added' || messageType == 'reaction_removed') {
+          if (messageType == 'reaction_added' ||
+              messageType == 'reaction_removed') {
             final messageId = data['message_id']?.toString();
             final reaction = data['reaction'] as String?;
             final userId = data['user_id']?.toString();
-            
+
             if (messageId != null && mounted) {
               setState(() {
-                final index = _messages.indexWhere((m) => m.id.toString() == messageId);
+                final index = _messages.indexWhere(
+                  (m) => m.id.toString() == messageId,
+                );
                 if (index != -1) {
                   final msg = _messages[index];
-                  final currentReactions = List<MessageReaction>.from(msg.reactions ?? []);
-                  
+                  final currentReactions = List<MessageReaction>.from(
+                    msg.reactions ?? [],
+                  );
+
                   if (messageType == 'reaction_added' && reaction != null) {
                     // Добавляем реакцию, если её еще нет
-                    if (!currentReactions.any((r) => r.reaction == reaction && r.userId == userId)) {
-                      currentReactions.add(MessageReaction(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        messageId: messageId,
-                        userId: userId ?? '',
-                        reaction: reaction,
-                        createdAt: DateTime.now().toIso8601String(),
-                        userEmail: data['user_email'] as String?,
-                      ));
+                    if (!currentReactions.any(
+                      (r) => r.reaction == reaction && r.userId == userId,
+                    )) {
+                      currentReactions.add(
+                        MessageReaction(
+                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          messageId: messageId,
+                          userId: userId ?? '',
+                          reaction: reaction,
+                          createdAt: DateTime.now().toIso8601String(),
+                          userEmail: data['user_email'] as String?,
+                        ),
+                      );
                     }
-                  } else if (messageType == 'reaction_removed' && reaction != null) {
+                  } else if (messageType == 'reaction_removed' &&
+                      reaction != null) {
                     // Удаляем реакцию
-                    currentReactions.removeWhere((r) => r.reaction == reaction && r.userId == userId);
+                    currentReactions.removeWhere(
+                      (r) => r.reaction == reaction && r.userId == userId,
+                    );
                   }
-                  
+
                   // Обновляем сообщение с новыми реакциями
                   _messages[index] = Message(
                     id: msg.id,
@@ -1278,63 +1468,103 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     originalChatName: msg.originalChatName,
                     keyVersion: msg.keyVersion,
                   );
-                  
+
                   // Обновляем в кэше
-                  LocalMessagesService.updateMessage(widget.chatId, _messages[index]);
+                  LocalMessagesService.updateMessage(
+                    widget.chatId,
+                    _messages[index],
+                  );
                 }
               });
             }
             return;
           }
-          
+
           // Проверяем, что это сообщение для текущего чата
           // Преобразуем chat_id в строку для сравнения
-          final chatId = data['chat_id']?.toString() ?? data['chatId']?.toString();
+          final chatId =
+              data['chat_id']?.toString() ?? data['chatId']?.toString();
           final currentChatId = widget.chatId.toString();
-          
-          if (kDebugMode) print('WebSocket chat_id: $chatId, current chat_id: $currentChatId');
-          
+
+          if (kDebugMode)
+            print(
+              'WebSocket chat_id: $chatId, current chat_id: $currentChatId',
+            );
+
           if (chatId == currentChatId) {
             if (kDebugMode) print('Message is for current chat');
             try {
               final rawMessage = Message.fromJson(data);
               LocalMessagesService.updateMessage(widget.chatId, rawMessage);
-              final message = await MessagesService.decryptMessageForChat(widget.chatId.toString(), rawMessage);
-              if (E2eeService.isEncrypted(rawMessage.content) && message.content == '[зашифровано]') {
-                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId, keyVersion: rawMessage.keyVersion));
+              final message = await MessagesService.decryptMessageForChat(
+                widget.chatId.toString(),
+                rawMessage,
+              );
+              if (E2eeService.isEncrypted(rawMessage.content) &&
+                  message.content == '[зашифровано]') {
+                unawaited(
+                  _ensureE2eeKeyAndReloadIfMissing(
+                    currentChatId,
+                    keyVersion: rawMessage.keyVersion,
+                  ),
+                );
               }
-              if (kDebugMode) print('Parsed message: ${message.id} - ${message.content}');
+              if (kDebugMode)
+                print('Parsed message: ${message.id} - ${message.content}');
               if (mounted) {
                 final shouldKeepAtBottom = _isNearBottom();
                 var didAppendMessage = false;
                 setState(() {
                   // ✅ Проверяем, есть ли временное сообщение от текущего пользователя
                   // (чтобы заменить его на реальное сообщение от сервера)
-                  final tempIndex = _messages.indexWhere((m) => 
-                    m.id.startsWith('temp_') && 
-                    m.userId == widget.userId.toString() &&
-                    // Проверяем содержимое (текст или изображение)
-                    ((m.content == message.content && m.content.isNotEmpty) ||
-                     _sameOutgoingImageUrl(m.imageUrl, message.imageUrl) ||
-                     (m.content.isEmpty && m.imageUrl == null && message.content.isEmpty && message.imageUrl == null))
+                  final tempIndex = _messages.indexWhere(
+                    (m) =>
+                        m.id.startsWith('temp_') &&
+                        m.userId == widget.userId.toString() &&
+                        // Проверяем содержимое (текст или изображение)
+                        ((m.content == message.content &&
+                                m.content.isNotEmpty) ||
+                            _sameOutgoingImageUrl(
+                              m.imageUrl,
+                              message.imageUrl,
+                            ) ||
+                            (m.content.isEmpty &&
+                                m.imageUrl == null &&
+                                message.content.isEmpty &&
+                                message.imageUrl == null)),
                   );
-                  
+
                   if (tempIndex != -1) {
                     // ✅ Заменяем временное сообщение на реальное (но не перезаписываем контент пустым — на части устройств WS приходит с пустым content)
-                    if (kDebugMode) print('✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}');
-                    if (kDebugMode) print('   Temp: ${_messages[tempIndex].id}, Real: ${message.id}');
+                    if (kDebugMode)
+                      print(
+                        '✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}',
+                      );
+                    if (kDebugMode)
+                      print(
+                        '   Temp: ${_messages[tempIndex].id}, Real: ${message.id}',
+                      );
                     final existing = _messages[tempIndex];
                     final merged = _mergeMessageKeepContent(existing, message);
-                    
+
                     // ✅ Создаем новый список для принудительного обновления UI
                     final newMessages = List<Message>.from(_messages);
-                    final tempId = newMessages[tempIndex].id; // Сохраняем ID временного сообщения
+                    final tempId = newMessages[tempIndex]
+                        .id; // Сохраняем ID временного сообщения
                     newMessages[tempIndex] = merged;
                     _messages = newMessages;
                     _tempMessageStates.remove(tempId);
                     _pendingUploadDrafts.remove(tempId);
-                    unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempId));
-                    if (kDebugMode) print('✅ WebSocket: Message updated in UI. Total: ${_messages.length}');
+                    unawaited(
+                      LocalMessagesService.removePendingUploadDraft(
+                        widget.chatId,
+                        tempId,
+                      ),
+                    );
+                    if (kDebugMode)
+                      print(
+                        '✅ WebSocket: Message updated in UI. Total: ${_messages.length}',
+                      );
                   } else {
                     // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
                     final exists = _messages.any((m) => m.id == message.id);
@@ -1344,25 +1574,38 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       // В этом случае просто добавляем реальное сообщение
                       // НО: если это сообщение от текущего пользователя, возможно оно уже обновлено из ответа сервера
                       // Проверяем, нет ли временного сообщения с таким же содержимым
-                      final hasMatchingTemp = _messages.any((m) => 
-                        m.id.startsWith('temp_') && 
-                        m.userId == widget.userId.toString() &&
-                        ((m.content == message.content && m.content.isNotEmpty) ||
-                         _sameOutgoingImageUrl(m.imageUrl, message.imageUrl))
+                      final hasMatchingTemp = _messages.any(
+                        (m) =>
+                            m.id.startsWith('temp_') &&
+                            m.userId == widget.userId.toString() &&
+                            ((m.content == message.content &&
+                                    m.content.isNotEmpty) ||
+                                _sameOutgoingImageUrl(
+                                  m.imageUrl,
+                                  message.imageUrl,
+                                )),
                       );
-                      
+
                       if (hasMatchingTemp) {
                         // ✅ Есть временное сообщение - не добавляем дубликат, оно будет заменено выше
-                        if (kDebugMode) print('⚠️ WebSocket: Found matching temp message, skipping duplicate add');
+                        if (kDebugMode)
+                          print(
+                            '⚠️ WebSocket: Found matching temp message, skipping duplicate add',
+                          );
                       } else {
                         // ⚠️ Защита: на части устройств/сетей может прийти WS-эвент с пустым content для СВОЕГО сообщения.
                         // В этом случае не добавляем "пустышку" — своё сообщение корректно придёт из HTTP-ответа и/или будет заменено.
-                        final isSelf = message.userId == widget.userId.toString();
-                        final isEmptyTextOnly = message.content.trim().isEmpty &&
-                            (message.imageUrl == null || message.imageUrl!.isEmpty) &&
-                            (message.fileUrl == null || message.fileUrl!.isEmpty);
+                        final isSelf =
+                            message.userId == widget.userId.toString();
+                        final isEmptyTextOnly =
+                            message.content.trim().isEmpty &&
+                            (message.imageUrl == null ||
+                                message.imageUrl!.isEmpty) &&
+                            (message.fileUrl == null ||
+                                message.fileUrl!.isEmpty);
                         if (isSelf && isEmptyTextOnly) {
-                          final pendingIdx = _singleRecentSendingImageTempIndex();
+                          final pendingIdx =
+                              _singleRecentSendingImageTempIndex();
                           if (pendingIdx != null) {
                             if (kDebugMode) {
                               print(
@@ -1371,7 +1614,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             }
                             final tempId = _messages[pendingIdx].id;
                             final existing = _messages[pendingIdx];
-                            final merged = _mergeMessageKeepContent(existing, message);
+                            final merged = _mergeMessageKeepContent(
+                              existing,
+                              message,
+                            );
                             final newMessages = List<Message>.from(_messages);
                             newMessages[pendingIdx] = merged;
                             final realId = merged.id;
@@ -1384,20 +1630,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             _messages = newMessages;
                             _tempMessageStates.remove(tempId);
                             _pendingUploadDrafts.remove(tempId);
-                            unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempId));
+                            unawaited(
+                              LocalMessagesService.removePendingUploadDraft(
+                                widget.chatId,
+                                tempId,
+                              ),
+                            );
                             return;
                           }
-                          if (kDebugMode) print('⚠️ WebSocket: Skip empty self message (id=${message.id})');
+                          if (kDebugMode)
+                            print(
+                              '⚠️ WebSocket: Skip empty self message (id=${message.id})',
+                            );
                           return;
                         }
 
                         // ✅ Добавляем сообщение только если нет временного
                         final newMessages = List<Message>.from(_messages);
-                        newMessages.add(message); // В конец: список "старые сверху, новые снизу"
+                        newMessages.add(
+                          message,
+                        ); // В конец: список "старые сверху, новые снизу"
                         _messages = newMessages;
                         didAppendMessage = true;
                         if (kDebugMode) {
-                          if (kDebugMode) print('✅ WebSocket: Message added to list. Total: ${_messages.length}');
+                          if (kDebugMode)
+                            print(
+                              '✅ WebSocket: Message added to list. Total: ${_messages.length}',
+                            );
                         }
                         // Звук/вибрация при новом сообщении от другого пользователя
                         if (message.userId != widget.userId.toString()) {
@@ -1406,16 +1665,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       }
                     } else {
                       // ✅ Если сообщение уже есть, обновляем (не затираем непустой контент пустым из WS)
-                      final existingIndex = _messages.indexWhere((m) => m.id == message.id);
+                      final existingIndex = _messages.indexWhere(
+                        (m) => m.id == message.id,
+                      );
                       if (existingIndex != -1) {
                         final existing = _messages[existingIndex];
-                        final merged = _mergeMessageKeepContent(existing, message);
+                        final merged = _mergeMessageKeepContent(
+                          existing,
+                          message,
+                        );
                         final newMessages = List<Message>.from(_messages);
                         newMessages[existingIndex] = merged;
                         _messages = newMessages;
-                        if (kDebugMode) print('✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}');
+                        if (kDebugMode)
+                          print(
+                            '✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}',
+                          );
                       } else {
-                        if (kDebugMode) print('⚠️ WebSocket: Message exists check failed, but index not found');
+                        if (kDebugMode)
+                          print(
+                            '⚠️ WebSocket: Message exists check failed, but index not found',
+                          );
                       }
                     }
                   }
@@ -1425,11 +1695,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 }
               }
             } catch (parseError) {
-              if (kDebugMode) print('Error parsing Message from WebSocket data: $parseError');
+              if (kDebugMode)
+                print('Error parsing Message from WebSocket data: $parseError');
               if (kDebugMode) print('Data: $data');
             }
           } else {
-            if (kDebugMode) print('Message is for different chat: $chatId (current: $currentChatId)');
+            if (kDebugMode)
+              print(
+                'Message is for different chat: $chatId (current: $currentChatId)',
+              );
           }
         } catch (e) {
           if (kDebugMode) print('Error processing WebSocket message: $e');
@@ -1440,7 +1714,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (kDebugMode) print('WebSocket error: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка WebSocket: $error')),
+            SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text('Ошибка WebSocket: $error'),
+            ),
           );
         }
       },
@@ -1467,10 +1744,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _subscribeToChatRealtime() {
     if (_subscribedToChatRealtime) return;
-    final sent = _sendWsJson({
-      'type': 'subscribe',
-      'chat_id': widget.chatId,
-    });
+    final sent = _sendWsJson({'type': 'subscribe', 'chat_id': widget.chatId});
     if (sent) {
       _subscribedToChatRealtime = true;
     }
@@ -1587,17 +1861,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final label = (m['displayName'] ?? m['display_name'] ?? email).toString();
 
       if (query.isNotEmpty) {
-        if (!handle.contains(query) && !label.toLowerCase().contains(query) && !email.toLowerCase().contains(query)) {
+        if (!handle.contains(query) &&
+            !label.toLowerCase().contains(query) &&
+            !email.toLowerCase().contains(query)) {
           continue;
         }
       }
 
-      suggestions.add({'id': id, 'email': email, 'label': label, 'handle': handle});
+      suggestions.add({
+        'id': id,
+        'email': email,
+        'label': label,
+        'handle': handle,
+      });
       seen.add(handle);
       if (suggestions.length >= 8) break;
     }
 
-    final changed = _mentionStart != at || _mentionQuery != query || suggestions.length != _mentionSuggestions.length;
+    final changed =
+        _mentionStart != at ||
+        _mentionQuery != query ||
+        suggestions.length != _mentionSuggestions.length;
     if (!changed) return;
     setState(() {
       _mentionStart = at;
@@ -1611,7 +1895,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final sel = _controller.selection;
     int cursor = sel.baseOffset;
     if (cursor < 0 || cursor > text.length) cursor = text.length;
-    if (_mentionStart < 0 || _mentionStart >= text.length || _mentionStart > cursor) return;
+    if (_mentionStart < 0 ||
+        _mentionStart >= text.length ||
+        _mentionStart > cursor)
+      return;
     final before = text.substring(0, _mentionStart);
     final after = text.substring(cursor);
     final insert = '@$handle ';
@@ -1633,10 +1920,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (otherId.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          userId: otherId,
-          fallbackLabel: fallbackLabel,
-        ),
+        builder: (_) =>
+            UserProfileScreen(userId: otherId, fallbackLabel: fallbackLabel),
       ),
     );
   }
@@ -1644,7 +1929,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _openMentions() async {
     final myHandle = _handleFromEmail(widget.userEmail);
     if (myHandle.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось определить ваш handle')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Не удалось определить ваш handle'),
+        ),
+      );
       return;
     }
     final query = '@$myHandle';
@@ -1665,19 +1955,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             error = null;
           });
           try {
-            final found = await _messagesService.searchMessages(widget.chatId, query, limit: 50);
+            final found = await _messagesService.searchMessages(
+              widget.chatId,
+              query,
+              limit: 50,
+            );
             setModalState(() {
               results = found;
               isLoading = false;
             });
           } catch (e) {
             // fallback: локальный поиск в уже загруженных сообщениях
-            final local = _messages.where((m) => m.content.toLowerCase().contains(query.toLowerCase())).take(50).map((m) => {
-              'message_id': m.id,
-              'sender_email': m.senderEmail,
-              'content_snippet': m.content.length > 80 ? '${m.content.substring(0, 80)}…' : m.content,
-              'created_at': m.createdAt,
-            }).toList();
+            final local = _messages
+                .where(
+                  (m) => m.content.toLowerCase().contains(query.toLowerCase()),
+                )
+                .take(50)
+                .map(
+                  (m) => {
+                    'message_id': m.id,
+                    'sender_email': m.senderEmail,
+                    'content_snippet': m.content.length > 80
+                        ? '${m.content.substring(0, 80)}…'
+                        : m.content,
+                    'created_at': m.createdAt,
+                  },
+                )
+                .toList();
             setModalState(() {
               results = local;
               error = e.toString().replaceFirst('Exception: ', '');
@@ -1700,7 +2004,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 decoration: BoxDecoration(
                   color: scheme.surface,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: scheme.outline.withValues(alpha: 0.25)),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1714,12 +2020,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           Expanded(
                             child: Text(
                               'Упоминания $query',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           IconButton(
-                            onPressed: isLoading ? null : () => load(setModalState),
+                            onPressed: isLoading
+                                ? null
+                                : () => load(setModalState),
                             icon: const Icon(Icons.refresh_rounded),
                             tooltip: 'Обновить',
                           ),
@@ -1731,8 +2042,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       Padding(
                         padding: const EdgeInsets.all(24),
                         child: CircularProgressIndicator(
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primaryGlow,
+                          ),
                         ),
                       )
                     else if (results.isEmpty)
@@ -1740,7 +2052,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.all(24),
                         child: Text(
                           'Упоминаний пока нет',
-                          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.7),
+                          ),
                         ),
                       )
                     else
@@ -1748,15 +2062,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: results.length,
-                          separatorBuilder: (_, __) => Divider(height: 1, color: scheme.outline.withValues(alpha: 0.18)),
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color: scheme.outline.withValues(alpha: 0.18),
+                          ),
                           itemBuilder: (context, index) {
                             final r = results[index];
-                            final mid = (r['message_id'] ?? r['id'] ?? '').toString();
+                            final mid = (r['message_id'] ?? r['id'] ?? '')
+                                .toString();
                             final sender = (r['sender_email'] ?? '').toString();
-                            final snippet = (r['content_snippet'] ?? r['content'] ?? '').toString();
+                            final snippet =
+                                (r['content_snippet'] ?? r['content'] ?? '')
+                                    .toString();
                             return ListTile(
-                              title: Text(snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
-                              subtitle: sender.isEmpty ? null : Text(sender, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              title: Text(
+                                snippet,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: sender.isEmpty
+                                  ? null
+                                  : Text(
+                                      sender,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                               onTap: mid.isEmpty
                                   ? null
                                   : () async {
@@ -1772,7 +2102,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                         child: Text(
                           error!,
-                          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.55), fontSize: 12),
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.55),
+                            fontSize: 12,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1805,7 +2138,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     // online count (кроме себя)
-    final onlineOthers = _onlineUserIds.where((id) => id != widget.userId.toString()).length;
+    final onlineOthers = _onlineUserIds
+        .where((id) => id != widget.userId.toString())
+        .length;
     if (onlineOthers > 0) return 'Онлайн: $onlineOthers';
 
     return 'Вы: ${widget.displayName ?? widget.userEmail}';
@@ -1814,7 +2149,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _initWebSocket() async {
     try {
       await WebSocketService.instance.connectIfNeeded();
-      unawaited(E2eeService.processPendingKeyRequests(widget.chatId.toString()));
+      unawaited(
+        E2eeService.processPendingKeyRequests(widget.chatId.toString()),
+      );
       if (mounted) {
         _setupWebSocketListener();
       }
@@ -1839,12 +2176,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   /// E2EE: после requestChatKey ждём появления ключа на сервере и перерисовываем сообщения (расшифровка чужих).
-  Future<void> _retryChatKeyThenReloadMessages(String chatIdStr, {int? keyVersion}) async {
+  Future<void> _retryChatKeyThenReloadMessages(
+    String chatIdStr, {
+    int? keyVersion,
+  }) async {
     if (_isWaitingForE2eeKey) return;
     _isWaitingForE2eeKey = true;
     if (mounted) setState(() => _e2eeKeyState = _e2eeRequesting);
     _showE2eeWaitingSnack();
-    final obtained = await E2eeService.waitForChatKeyFromServer(chatIdStr, keyVersion: keyVersion);
+    final obtained = await E2eeService.waitForChatKeyFromServer(
+      chatIdStr,
+      keyVersion: keyVersion,
+    );
     _isWaitingForE2eeKey = false;
     if (obtained && mounted) {
       setState(() => _e2eeKeyState = _e2eeReady);
@@ -1858,14 +2201,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _ensureE2eeKeyAndReloadIfMissing(String chatIdStr, {int? keyVersion}) async {
+  Future<void> _ensureE2eeKeyAndReloadIfMissing(
+    String chatIdStr, {
+    int? keyVersion,
+  }) async {
     if (_isWaitingForE2eeKey) return;
     if (mounted) setState(() => _e2eeKeyState = _e2eeRequesting);
     await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
-    unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion));
+    unawaited(
+      _retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion),
+    );
   }
 
-  Future<void> _handleE2eeKeyRotation(String chatIdStr, int keyVersion, String? leaderUserId) async {
+  Future<void> _handleE2eeKeyRotation(
+    String chatIdStr,
+    int keyVersion,
+    String? leaderUserId,
+  ) async {
     if (!mounted) return;
     setState(() => _e2eeKeyState = _e2eeMissing);
 
@@ -1875,12 +2227,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       try {
         await E2eeService.ensureKeyPair();
         final members = await _chatsService.getChatMembers(chatIdStr);
-        final memberIds = members.map((m) => m['id']?.toString() ?? '').where((x) => x.isNotEmpty).toList();
+        final memberIds = members
+            .map((m) => m['id']?.toString() ?? '')
+            .where((x) => x.isNotEmpty)
+            .toList();
         final pubKeys = await E2eeService.fetchPublicKeys(memberIds);
         final keysMembers = memberIds
-            .map((id) => <String, dynamic>{'id': id, 'publicKey': pubKeys[id] ?? ''})
+            .map(
+              (id) => <String, dynamic>{
+                'id': id,
+                'publicKey': pubKeys[id] ?? '',
+              },
+            )
             .toList();
-        await E2eeService.createChatKey(chatIdStr, keysMembers, keyVersion: keyVersion);
+        await E2eeService.createChatKey(
+          chatIdStr,
+          keysMembers,
+          keyVersion: keyVersion,
+        );
         if (mounted) {
           setState(() => _e2eeKeyState = _e2eeReady);
           _showE2eeReadySnack();
@@ -1960,60 +2324,73 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     // Восстанавливаем отложенные вложения/голосовые, пережившие перезапуск приложения.
     await _restorePendingUploadDrafts();
-    
+
     // ✅ Сначала загружаем из кэша для быстрого отображения
-    final existingTempMessages = _messages.where((m) => 
-      m.id.startsWith('temp_') && 
-      m.userId == widget.userId.toString()
-    ).toList();
-    
+    final existingTempMessages = _messages
+        .where(
+          (m) =>
+              m.id.startsWith('temp_') && m.userId == widget.userId.toString(),
+        )
+        .toList();
+
     try {
-      final cachedMessages = await LocalMessagesService.getMessages(widget.chatId);
+      final cachedMessages = await LocalMessagesService.getMessages(
+        widget.chatId,
+      );
       if (cachedMessages.isNotEmpty && mounted) {
         setState(() {
           // ✅ Сохраняем временные сообщения при загрузке из кэша
           final cachedIds = cachedMessages.map((m) => m.id).toSet();
-          final uniqueTempMessages = existingTempMessages.where((m) => !cachedIds.contains(m.id)).toList();
+          final uniqueTempMessages = existingTempMessages
+              .where((m) => !cachedIds.contains(m.id))
+              .toList();
           // старые сверху, временные (новые) в конце
           _messages = [...cachedMessages, ...uniqueTempMessages];
         });
         if (shouldAutoScrollToBottom) {
           _scrollToBottomWithRetry();
         }
-        if (kDebugMode) print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
+        if (kDebugMode)
+          print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
       }
     } catch (e) {
       if (kDebugMode) print('⚠️ Ошибка загрузки из кэша: $e');
     }
-    
+
     // ✅ Затем загружаем с сервера и обновляем
     try {
       final result = await _messagesService.fetchMessagesPaginated(
         widget.chatId,
         limit: _messagesPerPage,
         offset: 0,
-        useCache: false, // ✅ НЕ используем кэш при загрузке с сервера, чтобы не перезаписывать текущие сообщения
+        useCache:
+            false, // ✅ НЕ используем кэш при загрузке с сервера, чтобы не перезаписывать текущие сообщения
       );
-      
+
       if (mounted) {
         setState(() {
           // ✅ Объединяем существующие сообщения с новыми (сохраняем временные сообщения)
-          final currentTempMessages = _messages.where((m) => 
-            m.id.startsWith('temp_') && 
-            m.userId == widget.userId.toString()
-          ).toList();
+          final currentTempMessages = _messages
+              .where(
+                (m) =>
+                    m.id.startsWith('temp_') &&
+                    m.userId == widget.userId.toString(),
+              )
+              .toList();
           final newMessages = result.messages;
-          
+
           // ✅ Удаляем дубликаты и сохраняем временные сообщения
           final existingIds = newMessages.map((m) => m.id).toSet();
-          final uniqueTempMessages = currentTempMessages.where((m) => !existingIds.contains(m.id)).toList();
-          
+          final uniqueTempMessages = currentTempMessages
+              .where((m) => !existingIds.contains(m.id))
+              .toList();
+
           // старые сверху, новые снизу: серверные сообщения + временные в конце
           _messages = [...newMessages, ...uniqueTempMessages];
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
         });
-        
+
         // Прокручиваем вниз (к новым сообщениям) после загрузки.
         if (shouldAutoScrollToBottom) {
           _scrollToBottomWithRetry();
@@ -2024,23 +2401,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           1,
           (best, m) => m.keyVersion > best ? m.keyVersion : best,
         );
-        final knownCurrentVersion = await E2eeService.getCurrentKeyVersion(widget.chatId.toString());
-        final requiredKeyVersion = knownCurrentVersion != null && knownCurrentVersion > newestMessageKeyVersion
+        final knownCurrentVersion = await E2eeService.getCurrentKeyVersion(
+          widget.chatId.toString(),
+        );
+        final requiredKeyVersion =
+            knownCurrentVersion != null &&
+                knownCurrentVersion > newestMessageKeyVersion
             ? knownCurrentVersion
             : newestMessageKeyVersion;
-        await E2eeService.markCurrentKeyVersion(widget.chatId.toString(), requiredKeyVersion);
+        await E2eeService.markCurrentKeyVersion(
+          widget.chatId.toString(),
+          requiredKeyVersion,
+        );
 
         // E2EE: если у нас есть ключ требуемой версии — отдать участникам без ключа; иначе запросить именно эту версию.
         final chatIdStr = widget.chatId.toString();
-        final hasKey = await E2eeService.getChatKey(chatIdStr, keyVersion: requiredKeyVersion) != null;
+        final hasKey =
+            await E2eeService.getChatKey(
+              chatIdStr,
+              keyVersion: requiredKeyVersion,
+            ) !=
+            null;
         if (hasKey) {
           if (mounted) setState(() => _e2eeKeyState = _e2eeReady);
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
           await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
           if (mounted) setState(() => _e2eeKeyState = _e2eeMissing);
-          await E2eeService.requestChatKey(chatIdStr, keyVersion: requiredKeyVersion);
-          unawaited(_retryChatKeyThenReloadMessages(chatIdStr, keyVersion: requiredKeyVersion));
+          await E2eeService.requestChatKey(
+            chatIdStr,
+            keyVersion: requiredKeyVersion,
+          );
+          unawaited(
+            _retryChatKeyThenReloadMessages(
+              chatIdStr,
+              keyVersion: requiredKeyVersion,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -2050,7 +2447,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка загрузки сообщений: ${networkErrorMessage(e)}'),
+            content: Text(
+              'Ошибка загрузки сообщений: ${networkErrorMessage(e)}',
+            ),
             action: SnackBarAction(
               label: 'Повторить',
               onPressed: () => _loadMessages(),
@@ -2075,14 +2474,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _loadMoreMessages() async {
     if (!mounted || _isLoadingMore || !_hasMoreMessages) return;
-    
+
     setState(() => _isLoadingMore = true);
-    
+
     try {
       // Сохраняем текущую позицию скролла и максимальную высоту контента
       final currentScrollPosition = _scrollController.position.pixels;
       final maxScrollExtentBefore = _scrollController.position.maxScrollExtent;
-      
+
       // Загружаем старые сообщения
       final result = await _messagesService.fetchMessagesPaginated(
         widget.chatId,
@@ -2090,7 +2489,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         beforeMessageId: _oldestMessageId,
         useCache: false,
       );
-      
+
       if (mounted && result.messages.isNotEmpty) {
         setState(() {
           // Добавляем новые сообщения в начало списка
@@ -2115,27 +2514,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               return 0;
             }
           });
-          
+
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
         });
-        
+
         // Восстанавливаем позицию скролла после добавления сообщений
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients && mounted) {
             // Вычисляем разницу в высоте контента
-            final maxScrollExtentAfter = _scrollController.position.maxScrollExtent;
+            final maxScrollExtentAfter =
+                _scrollController.position.maxScrollExtent;
             // Новая позиция = старая позиция + разница в высоте
             // Это сохраняет видимую позицию пользователя
-            final newScrollPosition = ChatScrollPolicy.preserveViewportAfterPrepend(
-              currentScrollPosition: currentScrollPosition,
-              maxScrollExtentBefore: maxScrollExtentBefore,
-              maxScrollExtentAfter: maxScrollExtentAfter,
-            );
-            
+            final newScrollPosition =
+                ChatScrollPolicy.preserveViewportAfterPrepend(
+                  currentScrollPosition: currentScrollPosition,
+                  maxScrollExtentBefore: maxScrollExtentBefore,
+                  maxScrollExtentAfter: maxScrollExtentAfter,
+                );
+
             // Прокручиваем к новой позиции
             _scrollController.jumpTo(
-              newScrollPosition.clamp(0.0, _scrollController.position.maxScrollExtent),
+              newScrollPosition.clamp(
+                0.0,
+                _scrollController.position.maxScrollExtent,
+              ),
             );
           }
         });
@@ -2150,7 +2554,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка загрузки сообщений: ${networkErrorMessage(e)}'),
+            content: Text(
+              'Ошибка загрузки сообщений: ${networkErrorMessage(e)}',
+            ),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -2191,1067 +2597,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final status = msg.status;
     IconData icon;
     Color color;
-    
+
     switch (status) {
       case MessageStatus.sent:
         icon = Icons.check;
-        color = Colors.white.withValues(alpha:0.6);
+        color = Colors.white.withValues(alpha: 0.6);
         break;
       case MessageStatus.delivered:
         icon = Icons.done_all;
-        color = Colors.white.withValues(alpha:0.6);
+        color = Colors.white.withValues(alpha: 0.6);
         break;
       case MessageStatus.read:
         icon = Icons.done_all;
         color = AppColors.accent; // прочитано — в стиле темы
         break;
     }
-    
-    return Icon(
-      icon,
-      size: 14,
-      color: color,
-    );
-  }
 
-  /// Только реальные сбои транспорта / TLS / таймауты. Не использовать подстроку "connection"
-  /// целиком — в тексте ошибок сервера часто встречается «database connection», «too many connections» и т.п.
-  bool _isQueueableSendError(Object e) {
-    if (e is SocketException) return true;
-    if (e is TimeoutException) return true;
-    if (e is HandshakeException) return true;
-    if (e is ClientException) return true;
-    final text = e.toString().toLowerCase();
-    return text.contains('нет подключения к интернету') ||
-        text.contains('socketexception') ||
-        text.contains('timeoutexception') ||
-        text.contains('timed out') ||
-        text.contains('failed host lookup') ||
-        text.contains('network is unreachable') ||
-        text.contains('connection refused') ||
-        text.contains('connection reset') ||
-        text.contains('connection closed') ||
-        text.contains('connection aborted') ||
-        text.contains('broken pipe') ||
-        text.contains('handshakeexception');
-  }
-
-  String _generateIdempotencyKey() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    final rnd = Random.secure().nextInt(1 << 32);
-    return '${widget.chatId}-$now-${rnd.toRadixString(16)}';
-  }
-
-  void _cleanupTempStateCache() {
-    final liveTempIds = _messages.where((m) => m.id.startsWith('temp_')).map((m) => m.id).toSet();
-    for (final id in liveTempIds) {
-      _tempMessageStates.putIfAbsent(id, () => _OutgoingUiState.queued);
-    }
-    _tempMessageStates.removeWhere((id, _) => !liveTempIds.contains(id));
-    _tempMessageIdempotencyKeys.removeWhere((id, _) => !liveTempIds.contains(id));
-    final toRemove = _pendingUploadDrafts.keys.where((id) => !liveTempIds.contains(id)).toList();
-    for (final id in toRemove) {
-      _pendingUploadDrafts.remove(id);
-      unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, id));
-    }
-  }
-
-  String _pendingPlaceholderText(_PendingUploadDraft draft) {
-    if (draft.text.trim().isNotEmpty) return draft.text.trim();
-    if (draft.hasImage) return '🖼️ Изображение (в очереди)';
-    if (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)) {
-      return '🎤 Голосовое сообщение (в очереди)';
-    }
-    if (draft.hasFile) return '📎 Файл (в очереди)';
-    return 'Сообщение в очереди';
-  }
-
-  Map<String, dynamic> _pendingDraftToJson(_PendingUploadDraft draft) {
-    return {
-      'text': draft.text,
-      'idempotencyKey': draft.idempotencyKey,
-      'replyToMessageId': draft.replyToMessageId,
-      'replyToMessage': draft.replyToMessage?.toJson(),
-      'imageBytesB64': draft.imageBytes != null ? base64Encode(draft.imageBytes!) : null,
-      'imagePath': draft.imagePath,
-      'imageName': draft.imageName,
-      'fileBytesB64': draft.fileBytes != null ? base64Encode(draft.fileBytes!) : null,
-      'filePath': draft.filePath,
-      'fileName': draft.fileName,
-      'fileSize': draft.fileSize,
-      'fileMime': draft.fileMime,
-    };
-  }
-
-  _PendingUploadDraft? _pendingDraftFromJson(Map<String, dynamic> json) {
-    try {
-      final replyRaw = json['replyToMessage'];
-      Message? reply;
-      if (replyRaw is Map) {
-        final data = <String, dynamic>{};
-        replyRaw.forEach((k, v) => data[k.toString()] = v);
-        reply = Message.fromJson(data);
-      }
-      final imageB64 = json['imageBytesB64']?.toString();
-      final fileB64 = json['fileBytesB64']?.toString();
-      return _PendingUploadDraft(
-        text: (json['text'] ?? '').toString(),
-        idempotencyKey: (json['idempotencyKey'] ?? '').toString().trim().isNotEmpty
-            ? (json['idempotencyKey'] ?? '').toString().trim()
-            : _generateIdempotencyKey(),
-        replyToMessageId: json['replyToMessageId']?.toString(),
-        replyToMessage: reply,
-        imageBytes: (imageB64 != null && imageB64.isNotEmpty) ? base64Decode(imageB64) : null,
-        imagePath: json['imagePath']?.toString(),
-        imageName: json['imageName']?.toString(),
-        fileBytes: (fileB64 != null && fileB64.isNotEmpty) ? base64Decode(fileB64) : null,
-        filePath: json['filePath']?.toString(),
-        fileName: json['fileName']?.toString(),
-        fileSize: json['fileSize'] is int
-            ? json['fileSize'] as int
-            : int.tryParse((json['fileSize'] ?? '').toString()),
-        fileMime: json['fileMime']?.toString(),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _restorePendingUploadDrafts() async {
-    final raw = await LocalMessagesService.getPendingUploadDrafts(widget.chatId);
-    if (raw.isEmpty || !mounted) return;
-
-    final existingIds = _messages.map((m) => m.id).toSet();
-    final restored = <Message>[];
-    raw.forEach((tempId, draftJson) {
-      final draft = _pendingDraftFromJson(draftJson);
-      if (draft == null) return;
-      _pendingUploadDrafts[tempId] = draft;
-      _tempMessageIdempotencyKeys[tempId] = draft.idempotencyKey;
-      _tempMessageStates.putIfAbsent(tempId, () => _OutgoingUiState.queued);
-      if (!existingIds.contains(tempId)) {
-        restored.add(
-          Message(
-            id: tempId,
-            chatId: widget.chatId,
-            userId: widget.userId,
-            content: _pendingPlaceholderText(draft),
-            fileName: draft.fileName,
-            fileSize: draft.fileSize,
-            fileMime: draft.fileMime,
-            messageType: draft.hasImage
-                ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
-                : (draft.hasFile
-                    ? (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
-                        ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
-                        : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
-                    : 'text'),
-            senderEmail: widget.userEmail,
-            senderAvatarUrl: widget.myAvatarUrl,
-            createdAt: DateTime.now().toIso8601String(),
-            replyToMessageId: draft.replyToMessageId,
-            replyToMessage: draft.replyToMessage,
-            keyVersion: 1,
-          ),
-        );
-      }
-    });
-
-    if (restored.isNotEmpty && mounted) {
-      setState(() {
-        _messages = List<Message>.from(_messages)..addAll(restored);
-      });
-    }
-  }
-
-  void _enqueuePendingUploadDraft(_PendingUploadDraft draft) {
-    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final placeholder = _pendingPlaceholderText(draft);
-    final tempMessage = Message(
-      id: tempId,
-      chatId: widget.chatId,
-      userId: widget.userId,
-      content: placeholder,
-      fileName: draft.fileName,
-      fileSize: draft.fileSize,
-      fileMime: draft.fileMime,
-      messageType: draft.hasImage
-          ? (draft.text.trim().isNotEmpty ? 'text_image' : 'image')
-          : (draft.hasFile
-              ? (looksLikeAudio(mime: draft.fileMime, fileName: draft.fileName)
-                  ? (draft.text.trim().isNotEmpty ? 'text_voice' : 'voice')
-                  : (draft.text.trim().isNotEmpty ? 'text_file' : 'file'))
-              : 'text'),
-      senderEmail: widget.userEmail,
-      senderAvatarUrl: widget.myAvatarUrl,
-      createdAt: DateTime.now().toIso8601String(),
-      replyToMessageId: draft.replyToMessageId,
-      replyToMessage: draft.replyToMessage,
-      keyVersion: 1,
-    );
-
-    setState(() {
-      _messages = List<Message>.from(_messages)..add(tempMessage);
-      _tempMessageStates[tempId] = _OutgoingUiState.queued;
-      _tempMessageIdempotencyKeys[tempId] = draft.idempotencyKey;
-      _pendingUploadDrafts[tempId] = draft;
-      _isUploadingImage = false;
-      _isUploadingFile = false;
-      _selectedImagePath = null;
-      _selectedImageBytes = null;
-      _selectedImageName = null;
-      _selectedFilePath = null;
-      _selectedFileBytes = null;
-      _selectedFileName = null;
-      _selectedFileSize = null;
-      _replyToMessage = null;
-    });
-    unawaited(LocalMessagesService.savePendingUploadDraft(widget.chatId, tempId, _pendingDraftToJson(draft)));
-    _controller.clear();
-    _scrollToBottom();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 3),
-        content: Text('Нет сети: вложение добавлено в очередь отправки'),
-      ),
-    );
-  }
-
-  Future<Message?> _sendPendingUploadDraft(_PendingUploadDraft draft) async {
-    String? imageUrl;
-    String? imageStorageKey;
-    String? originalImageUrl;
-    String? originalImageStorageKey;
-    String? fileUrl;
-    String? fileStorageKey;
-    String? fileName;
-    int? fileSize;
-    String? fileMime;
-
-    if (draft.hasImage) {
-      Uint8List originalBytes;
-      if (draft.imageBytes != null) {
-        originalBytes = draft.imageBytes!;
-      } else if (draft.imagePath != null && draft.imagePath!.isNotEmpty) {
-        originalBytes = await File(draft.imagePath!).readAsBytes();
-      } else {
-        throw Exception('Изображение для очереди не найдено');
-      }
-      final compressed = await _compressImage(originalBytes);
-      final imgName = draft.imageName ??
-          (draft.imagePath != null && draft.imagePath!.isNotEmpty ? draft.imagePath!.split('/').last : 'image.jpg');
-      final uploaded = await _messagesService.uploadImageWithUrls(
-        compressed,
-        imgName,
-        originalBytes: originalBytes,
-        chatId: widget.chatId.toString(),
-      );
-      imageUrl = uploaded.imageUrl;
-      imageStorageKey = uploaded.imageStorageKey;
-      originalImageUrl = uploaded.originalImageUrl;
-      originalImageStorageKey = uploaded.originalImageStorageKey;
-    }
-
-    if (draft.hasFile) {
-      List<int> bytes;
-      if (draft.fileBytes != null) {
-        bytes = draft.fileBytes!;
-      } else if (draft.filePath != null && draft.filePath!.isNotEmpty) {
-        bytes = await File(draft.filePath!).readAsBytes();
-      } else {
-        throw Exception('Файл для очереди не найден');
-      }
-      final name = draft.fileName ??
-          (draft.filePath != null && draft.filePath!.isNotEmpty ? draft.filePath!.split('/').last : 'file');
-      final meta = await _messagesService.uploadFile(bytes, name);
-      fileUrl = meta['file_url']?.toString();
-      fileStorageKey = meta['file_storage_key']?.toString();
-      fileName = (meta['file_name'] ?? name).toString();
-      fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? draft.fileSize ?? bytes.length;
-      fileMime = (meta['file_mime'] ?? draft.fileMime ?? '').toString();
-    }
-
-    return _messagesService.sendMessage(
-      widget.chatId,
-      draft.text,
-      idempotencyKey: draft.idempotencyKey,
-      imageUrl: imageUrl,
-      imageStorageKey: imageStorageKey,
-      originalImageUrl: originalImageUrl,
-      originalImageStorageKey: originalImageStorageKey,
-      fileUrl: fileUrl,
-      fileStorageKey: fileStorageKey,
-      fileName: fileName,
-      fileSize: fileSize,
-      fileMime: fileMime,
-      replyToMessageId: draft.replyToMessageId,
-    );
-  }
-
-  Future<void> _retryQueuedMessages() async {
-    if (!mounted || _isRetryingQueuedMessages || _isSendingMessage) return;
-    _cleanupTempStateCache();
-    final queuedMessages = _messages
-        .where((m) => m.id.startsWith('temp_') && _tempMessageStates[m.id] == _OutgoingUiState.queued)
-        .toList();
-    if (queuedMessages.isEmpty) return;
-
-    _isRetryingQueuedMessages = true;
-    try {
-      for (final temp in queuedMessages) {
-        if (!mounted) break;
-        if (!_messages.any((m) => m.id == temp.id)) continue;
-        setState(() => _tempMessageStates[temp.id] = _OutgoingUiState.sending);
-
-        try {
-          final draft = _pendingUploadDrafts[temp.id];
-          final sent = draft != null
-              ? await _sendPendingUploadDraft(draft)
-              : await _messagesService.sendMessage(
-                  widget.chatId,
-                  temp.content,
-                  idempotencyKey: _tempMessageIdempotencyKeys[temp.id],
-                  imageUrl: temp.imageUrl,
-                  originalImageUrl: temp.originalImageUrl,
-                  fileUrl: temp.fileUrl,
-                  fileName: temp.fileName,
-                  fileSize: temp.fileSize,
-                  fileMime: temp.fileMime,
-                  replyToMessageId: temp.replyToMessageId,
-                );
-
-          if (!mounted) break;
-          if (sent == null) {
-            setState(() => _tempMessageStates[temp.id] = _OutgoingUiState.queued);
-            continue;
-          }
-
-          setState(() {
-            final idx = _messages.indexWhere((m) => m.id == temp.id);
-            final newMessages = List<Message>.from(_messages);
-            if (idx != -1) {
-              newMessages[idx] = sent;
-            } else {
-              newMessages.add(sent);
-            }
-            _messages = newMessages;
-            _tempMessageStates.remove(temp.id);
-            _tempMessageIdempotencyKeys.remove(temp.id);
-            _pendingUploadDrafts.remove(temp.id);
-            unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, temp.id));
-            _cleanupTempStateCache();
-          });
-        } catch (e) {
-          final isE2eeKeyError = e.toString().contains('E2EE ключ для чата пока недоступен');
-          if (isE2eeKeyError) {
-            unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
-          }
-          final shouldStayQueued = isE2eeKeyError || _isQueueableSendError(e);
-          if (!mounted) break;
-          setState(() {
-            _tempMessageStates[temp.id] =
-                shouldStayQueued ? _OutgoingUiState.queued : _OutgoingUiState.error;
-          });
-        }
-      }
-    } finally {
-      _isRetryingQueuedMessages = false;
-      if (mounted) {
-        setState(() {
-          _cleanupTempStateCache();
-        });
-      }
-    }
-  }
-
-  String _formatDate(String dateString) {
-    try {
-      final date = DateTime.parse(dateString);
-      final now = DateTime.now();
-      final difference = now.difference(date);
-
-      if (difference.inDays == 0) {
-        // Сегодня - показываем только время
-        return DateFormat('HH:mm').format(date);
-      } else if (difference.inDays == 1) {
-        // Вчера
-        return 'Вчера ${DateFormat('HH:mm').format(date)}';
-      } else if (difference.inDays < 7) {
-        // На этой неделе - показываем день недели и время
-        final weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-        final weekday = weekdays[date.weekday - 1];
-        return '$weekday ${DateFormat('HH:mm').format(date)}';
-      } else {
-        // Старше недели - показываем полную дату
-        return DateFormat('dd.MM.yyyy HH:mm').format(date);
-      }
-    } catch (e) {
-      // Если не удалось распарсить, возвращаем как есть
-      return dateString;
-    }
-  }
-
-  String _sanitizeFileName(String input) {
-    final sanitized = input
-        .trim()
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_');
-    if (sanitized.isEmpty) return 'chat';
-    return sanitized.length > 60 ? sanitized.substring(0, 60) : sanitized;
-  }
-
-  String _formatExportTime(String createdAt) {
-    try {
-      return DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.parse(createdAt).toLocal());
-    } catch (_) {
-      return createdAt;
-    }
-  }
-
-  Future<List<Message>> _collectMessagesForExport() async {
-    final mergedById = <String, Message>{for (final m in _messages) m.id: m};
-    var offset = 0;
-    var hasMore = true;
-    var safety = 0;
-
-    while (hasMore && safety < 200) {
-      final page = await _messagesService.fetchMessagesPaginated(
-        widget.chatId,
-        limit: 100,
-        offset: offset,
-        useCache: true,
-      );
-      for (final m in page.messages) {
-        mergedById[m.id] = m;
-      }
-      if (page.messages.isEmpty) break;
-      hasMore = page.hasMore;
-      offset += page.messages.length;
-      safety++;
-    }
-
-    final result = mergedById.values.toList();
-    result.sort((a, b) {
-      final ta = DateTime.tryParse(a.createdAt);
-      final tb = DateTime.tryParse(b.createdAt);
-      if (ta == null && tb == null) return a.id.compareTo(b.id);
-      if (ta == null) return -1;
-      if (tb == null) return 1;
-      return ta.compareTo(tb);
-    });
-    return result;
-  }
-
-  String _buildChatExportText(List<Message> messages) {
-    final now = DateTime.now();
-    final buffer = StringBuffer()
-      ..writeln('Chat export')
-      ..writeln('Chat: ${widget.chatName}')
-      ..writeln('Chat ID: ${widget.chatId}')
-      ..writeln('Exported at: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}')
-      ..writeln('Total messages: ${messages.length}')
-      ..writeln('---');
-
-    for (final m in messages) {
-      final parts = <String>[];
-      final text = m.content.trim();
-      if (text.isNotEmpty) parts.add(text);
-      if (m.hasImage) parts.add('[image] ${m.imageUrl}');
-      if (m.hasFile) {
-        final fileLabel = (m.fileName != null && m.fileName!.trim().isNotEmpty) ? m.fileName!.trim() : 'file';
-        parts.add('[file] $fileLabel ${m.fileUrl}');
-      }
-      if (parts.isEmpty) parts.add('[empty message]');
-
-      final line = '[${_formatExportTime(m.createdAt)}] ${m.senderEmail}: ${parts.join(' | ')}';
-      buffer.writeln(line);
-    }
-
-    return buffer.toString();
-  }
-
-  Future<void> _exportChat() async {
-    if (_isExportingChat) return;
-    setState(() => _isExportingChat = true);
-    try {
-      final messages = await _collectMessagesForExport();
-      final text = _buildChatExportText(messages);
-      final timestamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-      final fileName = '${_sanitizeFileName(widget.chatName)}_$timestamp.txt';
-
-      final okWeb = await downloadTextFile(
-        filename: fileName,
-        content: text,
-        mimeType: 'text/plain; charset=utf-8',
-      );
-      if (okWeb) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            duration: Duration(seconds: 3),
-            content: Text('Экспорт чата начат'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        return;
-      }
-
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsString(text, flush: true);
-      if (!mounted) return;
-
-      final uri = Uri.file(file.path);
-      final canOpen = await canLaunchUrl(uri);
-      if (canOpen) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text('Экспорт сохранен: ${file.path}'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text('Не удалось экспортировать чат: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isExportingChat = false);
-      }
-    }
-  }
-
-  Future<void> _retryErroredMessages() async {
-    if (!mounted) return;
-    setState(() {
-      for (final entry in _tempMessageStates.entries.toList()) {
-        if (entry.value == _OutgoingUiState.error) {
-          _tempMessageStates[entry.key] = _OutgoingUiState.queued;
-        }
-      }
-    });
-    await _retryQueuedMessages();
-  }
-
-  Future<void> _clearPendingQueue() async {
-    if (!mounted) return;
-    final tempIds = _messages
-        .where((m) => m.id.startsWith('temp_'))
-        .map((m) => m.id)
-        .toSet();
-    if (tempIds.isEmpty) return;
-
-    setState(() {
-      _messages = _messages.where((m) => !tempIds.contains(m.id)).toList();
-      for (final id in tempIds) {
-        _tempMessageStates.remove(id);
-        _pendingUploadDrafts.remove(id);
-      }
-    });
-    await LocalMessagesService.clearPendingUploadDrafts(widget.chatId);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        content: Text('Очередь отправки очищена'),
-      ),
-    );
-  }
-
-  Future<void> _pickImageFromSource(ImageSource source) async {
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(source: source);
-      if (picked == null) return;
-
-      if (kIsWeb) {
-        final bytes = await picked.readAsBytes();
-        if (bytes.isEmpty) return;
-        setState(() {
-          _selectedImageBytes = bytes;
-          _selectedImageName = picked.name;
-          _selectedImagePath = null;
-          _selectedFilePath = null;
-          _selectedFileBytes = null;
-          _selectedFileName = null;
-          _selectedFileSize = null;
-        });
-      } else {
-        setState(() {
-          _selectedImagePath = picked.path;
-          _selectedImageBytes = null;
-          _selectedImageName = picked.name;
-          _selectedFilePath = null;
-          _selectedFileBytes = null;
-          _selectedFileName = null;
-          _selectedFileSize = null;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка выбора изображения: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickImage() async {
-    await _pickImageFromSource(ImageSource.gallery);
-  }
-
-  Future<void> _pickImageFromCamera() async {
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 3),
-          content: Text('Съемка с камеры недоступна в веб-версии'),
-        ),
-      );
-      return;
-    }
-    await _pickImageFromSource(ImageSource.camera);
-  }
-
-  Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        withData: kIsWeb,
-        type: FileType.any,
-      );
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.single;
-      setState(() {
-        _selectedFileName = file.name;
-        _selectedFileSize = file.size;
-        if (kIsWeb) {
-          _selectedFileBytes = file.bytes;
-          _selectedFilePath = null;
-        } else {
-          _selectedFilePath = file.path;
-          _selectedFileBytes = null;
-        }
-      });
-    } catch (e) {
-      if (kDebugMode) print('Ошибка выбора файла: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось выбрать файл')),
-      );
-    }
-  }
-
-  /// Обработка перетаскивания файлов (drag-and-drop). Вызывается только onDragDone — без оверлея, чтобы не перекрывать чат.
-  Future<void> _handleFilesDropped(DropDoneDetails details) async {
-    if (_isRecordingVoice || _isUploadingImage || _isUploadingFile) return;
-    final items = details.files;
-    if (items.isEmpty) return;
-    final DropItem fileItem = items.firstWhere(
-      (item) => item is! DropItemDirectory,
-      orElse: () => items.first,
-    );
-    if (fileItem is DropItemDirectory) return;
-    try {
-      final bytes = await fileItem.readAsBytes();
-      final fileName = fileItem.name;
-      if (bytes.isEmpty) return;
-      final parts = fileName.toLowerCase().split('.');
-      final ext = parts.length > 1 ? parts.last : '';
-      final imageExtensions = ['jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'avif', 'ico', 'svg'];
-      if (imageExtensions.contains(ext)) {
-        setState(() {
-          _selectedImageBytes = bytes;
-          _selectedImagePath = null;
-          _selectedImageName = fileName;
-          _selectedFilePath = null;
-          _selectedFileBytes = null;
-          _selectedFileName = null;
-          _selectedFileSize = null;
-        });
-      } else {
-        setState(() {
-          _selectedFileBytes = bytes;
-          _selectedFilePath = null;
-          _selectedFileName = fileName;
-          _selectedFileSize = bytes.length;
-          _selectedImagePath = null;
-          _selectedImageBytes = null;
-          _selectedImageName = null;
-        });
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Файл добавлен: $fileName')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка при добавлении файла: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    final kb = bytes / 1024.0;
-    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
-    final mb = kb / 1024.0;
-    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
-    final gb = mb / 1024.0;
-    return '${gb.toStringAsFixed(1)} GB';
-  }
-
-  /// Сжатие изображения для уменьшения размера файла и использования памяти
-  /// 
-  /// [imageBytes] - оригинальные байты изображения
-  /// [maxWidth] - максимальная ширина (по умолчанию 2560px для лучшего качества)
-  /// [quality] - качество JPEG (0-100, по умолчанию 92 для высокого качества)
-  /// 
-  /// Возвращает сжатые байты изображения
-  Future<Uint8List> _compressImage(Uint8List imageBytes, {int maxWidth = 2560, int quality = 92}) async {
-    try {
-      // Декодируем изображение
-      final originalImage = img.decodeImage(imageBytes);
-      if (originalImage == null) {
-        if (kDebugMode) print('⚠️  Не удалось декодировать изображение, возвращаем оригинал');
-        return imageBytes;
-      }
-      
-      // Вычисляем новый размер с сохранением пропорций
-      int newWidth = originalImage.width;
-      int newHeight = originalImage.height;
-      
-      if (originalImage.width > maxWidth) {
-        newHeight = (originalImage.height * maxWidth / originalImage.width).round();
-        newWidth = maxWidth;
-      }
-      
-      // Если изображение уже меньше maxWidth, не изменяем размер
-      if (newWidth == originalImage.width && newHeight == originalImage.height) {
-        // Просто перекодируем с качеством для уменьшения размера
-        final compressedBytes = Uint8List.fromList(
-          img.encodeJpg(originalImage, quality: quality)
-        );
-        
-        final savedBytes = imageBytes.length - compressedBytes.length;
-        if (savedBytes > 0) {
-          if (kDebugMode) print('📦 Сжатие (качество): ${imageBytes.length} → ${compressedBytes.length} байт (${(savedBytes / imageBytes.length * 100).toStringAsFixed(1)}% меньше)');
-        }
-        return compressedBytes;
-      }
-      
-      // Изменяем размер
-      final resizedImage = img.copyResize(
-        originalImage,
-        width: newWidth,
-        height: newHeight,
-      );
-      
-      // Кодируем обратно в JPEG с качеством
-      final compressedBytes = Uint8List.fromList(
-        img.encodeJpg(resizedImage, quality: quality)
-      );
-      
-      final savedBytes = imageBytes.length - compressedBytes.length;
-      final savedPercent = (savedBytes / imageBytes.length * 100).toStringAsFixed(1);
-      if (kDebugMode) print('📦 Сжатие изображения: ${imageBytes.length} → ${compressedBytes.length} байт ($savedPercent% меньше, ${originalImage.width}x${originalImage.height} → ${newWidth}x$newHeight)');
-      
-      return compressedBytes;
-    } catch (e) {
-      if (kDebugMode) print('⚠️  Ошибка сжатия изображения: $e, возвращаем оригинал');
-      return imageBytes; // Возвращаем оригинал при ошибке
-    }
-  }
-
-  /// Скачивание изображения
-  Future<void> _downloadImage(String imageUrl, String fileName) async {
-    try {
-      final url = Uri.parse(imageUrl);
-      if (await canLaunchUrl(url)) {
-        // Открываем изображение в браузере/приложении для просмотра
-        // Пользователь может сохранить его через контекстное меню
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(kIsWeb 
-                ? 'Изображение открыто в новой вкладке. Используйте "Сохранить как..." для скачивания.'
-                : 'Изображение открыто для просмотра'),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      } else {
-        throw Exception('Не удалось открыть URL');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка скачивания: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _toggleVoiceRecording() async {
-    if (_isUploadingImage || _isUploadingFile) return;
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Голосовые сообщения пока не поддерживаются в веб-версии')),
-      );
-      return;
-    }
-    if (_isRecordingVoice) {
-      await _stopAndSendVoiceRecording();
-    } else {
-      await _startVoiceRecording();
-    }
-  }
-
-  Future<void> _startVoiceRecordingIfNotRecording() async {
-    if (_isRecordingVoice) return;
-    await _startVoiceRecording();
-  }
-
-  Future<void> _stopAndSendVoiceRecordingIfRecording() async {
-    if (!_isRecordingVoice) return;
-    await _stopAndSendVoiceRecording();
-  }
-
-  Future<void> _startVoiceRecording() async {
-    if (!mounted) return;
-    // на всякий: не даём начать при выбранных вложениях
-    if (_selectedImagePath != null ||
-        _selectedImageBytes != null ||
-        _selectedFilePath != null ||
-        _selectedFileBytes != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Сначала отправьте/уберите вложение, затем запишите голосовое')),
-      );
-      return;
-    }
-
-    HapticFeedback.mediumImpact();
-
-    final hasPermission = await _voiceRecorder.hasPermission();
-    if (!hasPermission) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Нет доступа к микрофону. Разрешите доступ в настройках.')),
-      );
-      return;
-    }
-
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    _voiceRecordTempPath = path;
-
-    await _voiceRecorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
-        numChannels: 1,
-      ),
-      path: path,
-    );
-
-    _voiceRecordTimer?.cancel();
-    setState(() {
-      _isRecordingVoice = true;
-      _voiceRecordDuration = Duration.zero;
-    });
-    _voiceRecordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        _voiceRecordDuration += const Duration(seconds: 1);
-      });
-    });
-  }
-
-  Future<void> _cancelVoiceRecording() async {
-    HapticFeedback.lightImpact();
-    _voiceRecordTimer?.cancel();
-    _voiceRecordTimer = null;
-
-    try {
-      await _voiceRecorder.stop();
-    } catch (_) {}
-
-    final tmp = _voiceRecordTempPath;
-    _voiceRecordTempPath = null;
-    if (tmp != null) {
-      try {
-        final f = File(tmp);
-        if (await f.exists()) {
-          await f.delete();
-        }
-      } catch (_) {}
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _isRecordingVoice = false;
-      _voiceRecordDuration = Duration.zero;
-    });
-  }
-
-  Future<void> _stopAndSendVoiceRecording() async {
-    HapticFeedback.mediumImpact();
-    _voiceRecordTimer?.cancel();
-    _voiceRecordTimer = null;
-
-    String? recordedPath;
-    try {
-      recordedPath = await _voiceRecorder.stop();
-    } catch (_) {}
-
-    final tmp = recordedPath ?? _voiceRecordTempPath;
-    _voiceRecordTempPath = null;
-
-    if (tmp == null || tmp.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _isRecordingVoice = false;
-        _voiceRecordDuration = Duration.zero;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось сохранить запись')),
-      );
-      return;
-    }
-
-    try {
-      final file = File(tmp);
-      final bytes = await file.readAsBytes();
-      final name = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-      // ✅ Убираем режим записи + подставляем файл как вложение и отправляем обычным путём
-      if (!mounted) return;
-      setState(() {
-        _isRecordingVoice = false;
-        _voiceRecordDuration = Duration.zero;
-
-        _selectedFileBytes = bytes;
-        _selectedFileName = name;
-        _selectedFileSize = bytes.length;
-        _selectedFilePath = null;
-      });
-
-      // удаляем временный файл — дальше работаем с bytes
-      try {
-        await file.delete();
-      } catch (_) {}
-
-      await _sendMessage();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isRecordingVoice = false;
-        _voiceRecordDuration = Duration.zero;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка записи: $e')),
-      );
-    }
-  }
-
-  Future<void> _toggleVoicePlayback(Message msg) async {
-    final url = msg.fileUrl;
-    if (url == null || url.isEmpty) return;
-
-    HapticFeedback.lightImpact();
-
-    final same = _voicePlayingMessageId == msg.id;
-    try {
-      if (same && _voiceIsPlaying) {
-        await _voicePlayer.pause();
-        return;
-      }
-
-      if (!same) {
-        setState(() {
-          _voicePlayingMessageId = msg.id;
-          _voicePosition = Duration.zero;
-          _voiceDuration = null;
-        });
-        await _voicePlayer.setUrl(url);
-      }
-
-      await _voicePlayer.play();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _voicePlayingMessageId = null;
-        _voicePosition = Duration.zero;
-        _voiceDuration = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось воспроизвести аудио: ${e.toString().replaceFirst('Exception: ', '')}')),
-      );
-    }
-  }
-
-  Widget _buildVoiceBubble(Message msg, {required bool isMine}) {
-    final isCurrent = _voicePlayingMessageId == msg.id;
-    final dur = isCurrent ? (_voiceDuration ?? Duration.zero) : Duration.zero;
-    final pos = isCurrent ? _voicePosition : Duration.zero;
-    final isBusy = isCurrent &&
-        (_voiceProcessingState == ProcessingState.loading ||
-            _voiceProcessingState == ProcessingState.buffering);
-    final showPlaying = isCurrent && _voiceIsPlaying;
-
-    return ChatVoiceBubble(
-      isMine: isMine,
-      isBusy: isBusy,
-      showPlaying: showPlaying,
-      position: pos,
-      totalDuration: dur,
-      onPlayPause: () => _toggleVoicePlayback(msg),
-      onPositionDrag: isCurrent
-          ? (v) {
-              setState(() {
-                _voicePosition = Duration(milliseconds: v.toInt());
-              });
-            }
-          : null,
-      onSeekEnd: isCurrent
-          ? (v) async {
-              try {
-                await _voicePlayer.seek(Duration(milliseconds: v.toInt()));
-              } catch (_) {}
-            }
-          : null,
-    );
+    return Icon(icon, size: 14, color: color);
   }
 
   Future<void> _sendMessage() async {
@@ -3260,16 +2622,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (kDebugMode) print('⚠️ Widget not mounted, returning');
       return;
     }
-    
+
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
     final hasFile = _selectedFilePath != null || _selectedFileBytes != null;
     // Сохраняем до любых сбросов/ошибок для возможности поставить в очередь.
     final replyToMessageId = _replyToMessage?.id;
     final replyToMessage = _replyToMessage;
-    
-    if (kDebugMode) print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
-    
+
+    if (kDebugMode)
+      print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
+
     if (text.isEmpty && !hasImage && !hasFile) {
       if (kDebugMode) print('⚠️ Text is empty and no attachments, returning');
       return;
@@ -3283,1057 +2646,537 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _isSendingMessage = true;
 
     try {
-    if (kDebugMode) print('✅ Proceeding with message send');
+      if (kDebugMode) print('✅ Proceeding with message send');
 
-    // ✅ Останавливаем typing-индикатор перед отправкой
-    if (_sentTyping) {
-      _typingStopTimer?.cancel();
-      _sendTyping(false);
-    }
+      // ✅ Останавливаем typing-индикатор перед отправкой
+      if (_sentTyping) {
+        _typingStopTimer?.cancel();
+        _sendTyping(false);
+      }
 
-    String? imageUrl;
-    String? imageStorageKey;
-    String? originalImageUrl;
-    String? originalImageStorageKey;
-    String? fileUrl;
-    String? fileStorageKey;
-    String? fileName;
-    int? fileSize;
-    String? fileMime;
+      String? imageUrl;
+      String? imageStorageKey;
+      String? originalImageUrl;
+      String? originalImageStorageKey;
+      String? fileUrl;
+      String? fileStorageKey;
+      String? fileName;
+      int? fileSize;
+      String? fileMime;
 
-    // Загружаем изображение, если выбрано
-    if (hasImage) {
-      setState(() => _isUploadingImage = true);
-      try {
-        Uint8List bytes;
-        String fileName;
-        
-        Uint8List? originalBytes;
-        
-        if (kIsWeb) {
-          // На веб используем bytes напрямую
-          if (_selectedImageBytes != null) {
-            originalBytes = _selectedImageBytes!;
-            // ✅ Сжимаем изображение перед загрузкой (для отображения)
-            bytes = await _compressImage(_selectedImageBytes!);
-            fileName = _selectedImageName ?? 'image.jpg';
-            // Очищаем оригинальные байты из памяти после загрузки
+      // Загружаем изображение, если выбрано
+      if (hasImage) {
+        setState(() => _isUploadingImage = true);
+        try {
+          Uint8List bytes;
+          String fileName;
+
+          Uint8List? originalBytes;
+
+          if (kIsWeb) {
+            // На веб используем bytes напрямую
+            if (_selectedImageBytes != null) {
+              originalBytes = _selectedImageBytes!;
+              // ✅ Сжимаем изображение перед загрузкой (для отображения)
+              bytes = await _compressImage(_selectedImageBytes!);
+              fileName = _selectedImageName ?? 'image.jpg';
+              // Очищаем оригинальные байты из памяти после загрузки
+            } else {
+              throw Exception('Изображение не выбрано');
+            }
           } else {
-            throw Exception('Изображение не выбрано');
+            // На мобильных/десктоп читаем из файла
+            if (_selectedImagePath != null) {
+              final file = File(_selectedImagePath!);
+              originalBytes = await file.readAsBytes();
+              // ✅ Сжимаем изображение перед загрузкой (для отображения)
+              bytes = await _compressImage(originalBytes);
+              fileName = _selectedImagePath!.split('/').last;
+            } else {
+              throw Exception('Изображение не выбрано');
+            }
           }
-        } else {
-          // На мобильных/десктоп читаем из файла
-          if (_selectedImagePath != null) {
-            final file = File(_selectedImagePath!);
-            originalBytes = await file.readAsBytes();
-            // ✅ Сжимаем изображение перед загрузкой (для отображения)
-            bytes = await _compressImage(originalBytes);
-            fileName = _selectedImagePath!.split('/').last;
-          } else {
-            throw Exception('Изображение не выбрано');
-          }
-        }
-        
-        // ✅ Загружаем и оригинал, и сжатое изображение
-        final uploaded = await _messagesService.uploadImageWithUrls(
-          bytes,
-          fileName,
-          originalBytes: originalBytes,
-          chatId: widget.chatId.toString(),
-        );
-        imageUrl = uploaded.imageUrl;
-        imageStorageKey = uploaded.imageStorageKey;
-        originalImageUrl = uploaded.originalImageUrl;
-        originalImageStorageKey = uploaded.originalImageStorageKey;
-        
-        // ✅ Очищаем память после успешной загрузки
-        if (mounted) {
-          setState(() {
-            _selectedImagePath = null;
-            _selectedImageBytes = null;
-            _selectedImageName = null;
-          });
-        }
-      } catch (e) {
-        if (_isQueueableSendError(e)) {
-          _enqueuePendingUploadDraft(
-            _PendingUploadDraft(
-              text: text,
-              idempotencyKey: _generateIdempotencyKey(),
-              replyToMessageId: replyToMessageId,
-              replyToMessage: replyToMessage,
-              imageBytes: _selectedImageBytes,
-              imagePath: _selectedImagePath,
-              imageName: _selectedImageName,
-            ),
+
+          // ✅ Загружаем и оригинал, и сжатое изображение
+          final uploaded = await _messagesService.uploadImageWithUrls(
+            bytes,
+            fileName,
+            originalBytes: originalBytes,
+            chatId: widget.chatId.toString(),
           );
+          imageUrl = uploaded.imageUrl;
+          imageStorageKey = uploaded.imageStorageKey;
+          originalImageUrl = uploaded.originalImageUrl;
+          originalImageStorageKey = uploaded.originalImageStorageKey;
+
+          // ✅ Очищаем память после успешной загрузки
+          if (mounted) {
+            setState(() {
+              _selectedImagePath = null;
+              _selectedImageBytes = null;
+              _selectedImageName = null;
+            });
+          }
+        } catch (e) {
+          if (_isQueueableSendError(e)) {
+            _enqueuePendingUploadDraft(
+              _PendingUploadDraft(
+                text: text,
+                idempotencyKey: _generateIdempotencyKey(),
+                replyToMessageId: replyToMessageId,
+                replyToMessage: replyToMessage,
+                imageBytes: _selectedImageBytes,
+                imagePath: _selectedImagePath,
+                imageName: _selectedImageName,
+              ),
+            );
+            return;
+          }
+          if (mounted) {
+            setState(() => _isUploadingImage = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                duration: const Duration(seconds: 3),
+                content: Text('Ошибка загрузки изображения: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
           return;
         }
-        if (mounted) {
-          setState(() => _isUploadingImage = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: const Duration(seconds: 3),
-              content: Text('Ошибка загрузки изображения: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-      setState(() => _isUploadingImage = false);
-    }
-
-    // Загружаем файл, если выбран
-    if (hasFile) {
-      // Сервер сейчас не поддерживает "image+file" в одном сообщении.
-      // Смотрим на уже загруженный imageUrl, а не на hasImage из начала метода (после upload путь к фото уже очищен).
-      if (imageUrl != null && imageUrl.isNotEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(duration: Duration(seconds: 3), content: Text('Нельзя отправить изображение и файл в одном сообщении')),
-          );
-        }
-        return;
+        setState(() => _isUploadingImage = false);
       }
 
-      setState(() => _isUploadingFile = true);
-      try {
-        List<int> bytes;
-        String name;
-        
-        // ✅ Поддержка bytes и на мобилках (нужно для voice-recording)
-        if (_selectedFileBytes != null) {
-          bytes = _selectedFileBytes!;
-          name = _selectedFileName ?? 'file';
-        } else if (_selectedFilePath != null) {
-          final f = File(_selectedFilePath!);
-          bytes = await f.readAsBytes();
-          name = _selectedFileName ?? _selectedFilePath!.split('/').last;
-        } else {
-          throw Exception('Файл не выбран');
-        }
-
-        final meta = await _messagesService.uploadFile(bytes, name);
-        fileUrl = meta['file_url']?.toString();
-        fileStorageKey = meta['file_storage_key']?.toString();
-        fileName = (meta['file_name'] ?? name).toString();
-        fileSize = int.tryParse((meta['file_size'] ?? '').toString()) ?? _selectedFileSize ?? bytes.length;
-        fileMime = (meta['file_mime'] ?? '').toString();
-
-        if (fileUrl == null || fileUrl.isEmpty) {
-          throw Exception('Сервер не вернул file_url');
-        }
-
-        if (mounted) {
-          setState(() {
-            _selectedFilePath = null;
-            _selectedFileBytes = null;
-            _selectedFileName = null;
-            _selectedFileSize = null;
-          });
-        }
-      } catch (e) {
-        if (_isQueueableSendError(e)) {
-          _enqueuePendingUploadDraft(
-            _PendingUploadDraft(
-              text: text,
-              idempotencyKey: _generateIdempotencyKey(),
-              replyToMessageId: replyToMessageId,
-              replyToMessage: replyToMessage,
-              fileBytes: _selectedFileBytes,
-              filePath: _selectedFilePath,
-              fileName: _selectedFileName,
-              fileSize: _selectedFileSize,
-              fileMime: _selectedFileName?.toLowerCase().endsWith('.m4a') == true
-                  ? 'audio/mp4'
-                  : null,
-            ),
-          );
+      // Загружаем файл, если выбран
+      if (hasFile) {
+        // Сервер сейчас не поддерживает "image+file" в одном сообщении.
+        // Смотрим на уже загруженный imageUrl, а не на hasImage из начала метода (после upload путь к фото уже очищен).
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                duration: Duration(seconds: 3),
+                content: Text(
+                  'Нельзя отправить изображение и файл в одном сообщении',
+                ),
+              ),
+            );
+          }
           return;
         }
-        if (mounted) {
-          setState(() => _isUploadingFile = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка загрузки файла: ${e.toString().replaceFirst('Exception: ', '')}'),
-            backgroundColor: Colors.red,
-          ),
-          );
-        }
-        return;
-      }
-      setState(() => _isUploadingFile = false);
-    }
 
-    // ✅ Создаем временное сообщение для оптимистичного обновления UI
-    final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final idempotencyKey = _generateIdempotencyKey();
-    final tempMessage = Message(
-      id: tempMessageId,
-      chatId: widget.chatId,
-      userId: widget.userId,
-      content: text,
-      imageUrl: imageUrl,
-      originalImageUrl: imageUrl, // Временно используем тот же URL
-      fileUrl: fileUrl,
-      fileName: fileName,
-      fileSize: fileSize,
-      fileMime: fileMime,
-      messageType: fileUrl != null
-          ? (looksLikeAudio(mime: fileMime, fileName: fileName)
-              ? (text.isNotEmpty ? 'text_voice' : 'voice')
-              : (text.isNotEmpty ? 'text_file' : 'file'))
-          : (imageUrl != null ? (text.isNotEmpty ? 'text_image' : 'image') : 'text'),
-      senderEmail: widget.userEmail,
-      senderAvatarUrl: widget.myAvatarUrl,
-      createdAt: DateTime.now().toIso8601String(),
-      isRead: false,
-      replyToMessageId: replyToMessageId,
-      replyToMessage: replyToMessage,
-      keyVersion: 1,
-    );
-    
-    // Собственное новое сообщение всегда показываем внизу. На web пересчёт layout
-    // может занимать несколько кадров, поэтому ниже используем retry-скролл.
-    if (mounted) {
-      if (kDebugMode) print('🔍 Adding temp message to UI: id=$tempMessageId, content=$text');
-      if (kDebugMode) print('🔍 Current messages count before: ${_messages.length}');
-      setState(() {
-        // ✅ Создаем новый список для гарантированного обновления UI
-        final newMessages = List<Message>.from(_messages);
-        newMessages.add(tempMessage); // Добавляем в конец, чтобы новые были снизу
-        _messages = newMessages;
-        _tempMessageStates[tempMessageId] = _OutgoingUiState.sending;
-        _tempMessageIdempotencyKeys[tempMessageId] = idempotencyKey;
-        // Очищаем поле ответа
-        _replyToMessage = null;
-      });
-      if (kDebugMode) print('✅ Temp message added to UI. New count: ${_messages.length}');
-      if (kDebugMode) print('✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}');
-      _scrollToBottomWithRetry(attempts: 4, delay: const Duration(milliseconds: 60));
-      
-      // ✅ НЕ сохраняем временное сообщение в кэш сразу
-      // Оно будет сохранено только после получения реального ответа от сервера
-      // Это предотвращает перезагрузку списка сообщений
-    }
-    
-    try {
-      // ✅ Отправляем сообщение и получаем ответ от сервера
-      if (kDebugMode) {
-        // ignore: avoid_print
-        if (kDebugMode) print('sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId');
+        setState(() => _isUploadingFile = true);
+        try {
+          List<int> bytes;
+          String name;
+
+          // ✅ Поддержка bytes и на мобилках (нужно для voice-recording)
+          if (_selectedFileBytes != null) {
+            bytes = _selectedFileBytes!;
+            name = _selectedFileName ?? 'file';
+          } else if (_selectedFilePath != null) {
+            final f = File(_selectedFilePath!);
+            bytes = await f.readAsBytes();
+            name = _selectedFileName ?? _selectedFilePath!.split('/').last;
+          } else {
+            throw Exception('Файл не выбран');
+          }
+
+          final meta = await _messagesService.uploadFile(bytes, name);
+          fileUrl = meta['file_url']?.toString();
+          fileStorageKey = meta['file_storage_key']?.toString();
+          fileName = (meta['file_name'] ?? name).toString();
+          fileSize =
+              int.tryParse((meta['file_size'] ?? '').toString()) ??
+              _selectedFileSize ??
+              bytes.length;
+          fileMime = (meta['file_mime'] ?? '').toString();
+
+          if (fileUrl == null || fileUrl.isEmpty) {
+            throw Exception('Сервер не вернул file_url');
+          }
+
+          if (mounted) {
+            setState(() {
+              _selectedFilePath = null;
+              _selectedFileBytes = null;
+              _selectedFileName = null;
+              _selectedFileSize = null;
+            });
+          }
+        } catch (e) {
+          if (_isQueueableSendError(e)) {
+            _enqueuePendingUploadDraft(
+              _PendingUploadDraft(
+                text: text,
+                idempotencyKey: _generateIdempotencyKey(),
+                replyToMessageId: replyToMessageId,
+                replyToMessage: replyToMessage,
+                fileBytes: _selectedFileBytes,
+                filePath: _selectedFilePath,
+                fileName: _selectedFileName,
+                fileSize: _selectedFileSize,
+                fileMime:
+                    _selectedFileName?.toLowerCase().endsWith('.m4a') == true
+                    ? 'audio/mp4'
+                    : null,
+              ),
+            );
+            return;
+          }
+          if (mounted) {
+            setState(() => _isUploadingFile = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                duration: const Duration(seconds: 3),
+                content: Text(
+                  'Ошибка загрузки файла: ${e.toString().replaceFirst('Exception: ', '')}',
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() => _isUploadingFile = false);
       }
-      final sentMessage = await _messagesService.sendMessage(
-        widget.chatId, 
-        text, 
-        idempotencyKey: idempotencyKey,
+
+      // ✅ Создаем временное сообщение для оптимистичного обновления UI
+      final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+      final idempotencyKey = _generateIdempotencyKey();
+      final tempMessage = Message(
+        id: tempMessageId,
+        chatId: widget.chatId,
+        userId: widget.userId,
+        content: text,
         imageUrl: imageUrl,
-        imageStorageKey: imageStorageKey,
-        originalImageUrl: originalImageUrl,
-        originalImageStorageKey: originalImageStorageKey,
-        replyToMessageId: replyToMessageId,
+        originalImageUrl: imageUrl, // Временно используем тот же URL
         fileUrl: fileUrl,
-        fileStorageKey: fileStorageKey,
         fileName: fileName,
         fileSize: fileSize,
         fileMime: fileMime,
+        messageType: fileUrl != null
+            ? (looksLikeAudio(mime: fileMime, fileName: fileName)
+                  ? (text.isNotEmpty ? 'text_voice' : 'voice')
+                  : (text.isNotEmpty ? 'text_file' : 'file'))
+            : (imageUrl != null
+                  ? (text.isNotEmpty ? 'text_image' : 'image')
+                  : 'text'),
+        senderEmail: widget.userEmail,
+        senderAvatarUrl: widget.myAvatarUrl,
+        createdAt: DateTime.now().toIso8601String(),
+        isRead: false,
+        replyToMessageId: replyToMessageId,
+        replyToMessage: replyToMessage,
+        keyVersion: 1,
       );
-      if (kDebugMode) print('🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}');
-      
+
+      // Собственное новое сообщение всегда показываем внизу. На web пересчёт layout
+      // может занимать несколько кадров, поэтому ниже используем retry-скролл.
       if (mounted) {
-        _controller.clear();
-        // ✅ Память уже очищена выше после загрузки изображения
-        // Дополнительная очистка на случай, если изображения не было
-        if (_selectedImagePath != null || _selectedImageBytes != null) {
-          setState(() {
-            _selectedImagePath = null;
-            _selectedImageBytes = null;
-            _selectedImageName = null;
-          });
+        if (kDebugMode)
+          print(
+            '🔍 Adding temp message to UI: id=$tempMessageId, content=$text',
+          );
+        if (kDebugMode)
+          print('🔍 Current messages count before: ${_messages.length}');
+        setState(() {
+          // ✅ Создаем новый список для гарантированного обновления UI
+          final newMessages = List<Message>.from(_messages);
+          newMessages.add(
+            tempMessage,
+          ); // Добавляем в конец, чтобы новые были снизу
+          _messages = newMessages;
+          _tempMessageStates[tempMessageId] = _OutgoingUiState.sending;
+          _tempMessageIdempotencyKeys[tempMessageId] = idempotencyKey;
+          // Очищаем поле ответа
+          _replyToMessage = null;
+        });
+        if (kDebugMode)
+          print('✅ Temp message added to UI. New count: ${_messages.length}');
+        if (kDebugMode)
+          print(
+            '✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}',
+          );
+        _scrollToBottomWithRetry(
+          attempts: 4,
+          delay: const Duration(milliseconds: 60),
+        );
+
+        // ✅ НЕ сохраняем временное сообщение в кэш сразу
+        // Оно будет сохранено только после получения реального ответа от сервера
+        // Это предотвращает перезагрузку списка сообщений
+      }
+
+      try {
+        // ✅ Отправляем сообщение и получаем ответ от сервера
+        if (kDebugMode) {
+          // ignore: avoid_print
+          if (kDebugMode)
+            print(
+              'sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId',
+            );
         }
-        if (_selectedFilePath != null || _selectedFileBytes != null) {
-          setState(() {
-            _selectedFilePath = null;
-            _selectedFileBytes = null;
-            _selectedFileName = null;
-            _selectedFileSize = null;
-          });
-        }
-        
-        // ✅ Если получили сообщение от сервера, обновляем временное сообщение
-        if (sentMessage != null) {
-          if (kDebugMode) print('✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}');
-          if (kDebugMode) print('🔍 Looking for temp message with id: $tempMessageId');
-          if (kDebugMode) print('🔍 Current messages count: ${_messages.length}');
-          if (kDebugMode) print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
-          
-          // ✅ Обновляем сразу, без WidgetsBinding, чтобы не потерять сообщение
-          final tempIndex = _messages.indexWhere((m) => m.id == tempMessageId);
-          if (kDebugMode) print('🔍 Looking for temp message with id: $tempMessageId');
-          if (kDebugMode) print('🔍 Current messages count: ${_messages.length}');
-          if (kDebugMode) print('🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}');
-          if (kDebugMode) print('🔍 Temp message found at index: $tempIndex');
-          
-          if (tempIndex != -1) {
-            if (kDebugMode) print('✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}');
+        final sentMessage = await _messagesService.sendMessage(
+          widget.chatId,
+          text,
+          idempotencyKey: idempotencyKey,
+          imageUrl: imageUrl,
+          imageStorageKey: imageStorageKey,
+          originalImageUrl: originalImageUrl,
+          originalImageStorageKey: originalImageStorageKey,
+          replyToMessageId: replyToMessageId,
+          fileUrl: fileUrl,
+          fileStorageKey: fileStorageKey,
+          fileName: fileName,
+          fileSize: fileSize,
+          fileMime: fileMime,
+        );
+        if (kDebugMode)
+          print(
+            '🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}',
+          );
+
+        if (mounted) {
+          _controller.clear();
+          // ✅ Память уже очищена выше после загрузки изображения
+          // Дополнительная очистка на случай, если изображения не было
+          if (_selectedImagePath != null || _selectedImageBytes != null) {
             setState(() {
-              // ✅ Создаем новый список для принудительного обновления UI
-              final newMessages = List<Message>.from(_messages);
-              newMessages[tempIndex] = sentMessage;
-
-              // ✅ Если WebSocket успел добавить это же сообщение раньше, убираем дубликаты по id.
-              // Оставляем только ту запись, которую мы сейчас поставили на место tempIndex.
-              final realId = sentMessage.id;
-              for (int i = newMessages.length - 1; i >= 0; i--) {
-                if (i == tempIndex) continue;
-                if (newMessages[i].id == realId) {
-                  newMessages.removeAt(i);
-                }
-              }
-              _messages = newMessages;
-              _tempMessageStates.remove(tempMessageId);
-              _tempMessageIdempotencyKeys.remove(tempMessageId);
-              _pendingUploadDrafts.remove(tempMessageId);
-              unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
+              _selectedImagePath = null;
+              _selectedImageBytes = null;
+              _selectedImageName = null;
             });
-            if (kDebugMode) print('✅ Message updated in UI (new list created). Total messages: ${_messages.length}');
-            if (kDebugMode) print('✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}');
-          } else {
-            // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
-            final existingIndex = _messages.indexWhere((m) => m.id == sentMessage.id);
-            if (existingIndex != -1) {
-              if (kDebugMode) print('⚠️ Message already exists at index $existingIndex');
-              // Обновляем сообщение на текущей позиции, без перемещения
-              setState(() {
-                final newMessages = List<Message>.from(_messages);
-                newMessages[existingIndex] = sentMessage;
+          }
+          if (_selectedFilePath != null || _selectedFileBytes != null) {
+            setState(() {
+              _selectedFilePath = null;
+              _selectedFileBytes = null;
+              _selectedFileName = null;
+              _selectedFileSize = null;
+            });
+          }
 
-                // ✅ Убираем возможные дубликаты по id (оставляем updated на existingIndex)
-                final realId = sentMessage.id;
-                for (int i = newMessages.length - 1; i >= 0; i--) {
-                  if (i == existingIndex) continue;
-                  if (newMessages[i].id == realId) {
-                    newMessages.removeAt(i);
-                  }
-                }
-                newMessages.removeWhere((m) => m.id == tempMessageId);
-                
-                _messages = newMessages;
-                _tempMessageStates.remove(tempMessageId);
-                _tempMessageIdempotencyKeys.remove(tempMessageId);
-                _pendingUploadDrafts.remove(tempMessageId);
-                unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
-              });
-              if (kDebugMode) print('✅ Message updated in place at index $existingIndex');
-            } else {
-              if (kDebugMode) print('⚠️ Temp message not found and message not in list, adding it');
+          // ✅ Если получили сообщение от сервера, обновляем временное сообщение
+          if (sentMessage != null) {
+            if (kDebugMode)
+              print(
+                '✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}',
+              );
+            if (kDebugMode)
+              print('🔍 Looking for temp message with id: $tempMessageId');
+            if (kDebugMode)
+              print('🔍 Current messages count: ${_messages.length}');
+            if (kDebugMode)
+              print(
+                '🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}',
+              );
+
+            // ✅ Обновляем сразу, без WidgetsBinding, чтобы не потерять сообщение
+            final tempIndex = _messages.indexWhere(
+              (m) => m.id == tempMessageId,
+            );
+            if (kDebugMode)
+              print('🔍 Looking for temp message with id: $tempMessageId');
+            if (kDebugMode)
+              print('🔍 Current messages count: ${_messages.length}');
+            if (kDebugMode)
+              print(
+                '🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}',
+              );
+            if (kDebugMode) print('🔍 Temp message found at index: $tempIndex');
+
+            if (tempIndex != -1) {
+              if (kDebugMode)
+                print(
+                  '✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}',
+                );
               setState(() {
                 // ✅ Создаем новый список для принудительного обновления UI
                 final newMessages = List<Message>.from(_messages);
-                newMessages.add(sentMessage); // добавляем в конец, новые снизу
+                newMessages[tempIndex] = sentMessage;
 
-                // ✅ Убираем возможные дубликаты по id (если WS уже добавил)
+                // ✅ Если WebSocket успел добавить это же сообщение раньше, убираем дубликаты по id.
+                // Оставляем только ту запись, которую мы сейчас поставили на место tempIndex.
                 final realId = sentMessage.id;
-                for (int i = newMessages.length - 2; i >= 0; i--) {
+                for (int i = newMessages.length - 1; i >= 0; i--) {
+                  if (i == tempIndex) continue;
                   if (newMessages[i].id == realId) {
                     newMessages.removeAt(i);
                   }
                 }
-                newMessages.removeWhere((m) => m.id == tempMessageId);
-                
                 _messages = newMessages;
                 _tempMessageStates.remove(tempMessageId);
                 _tempMessageIdempotencyKeys.remove(tempMessageId);
                 _pendingUploadDrafts.remove(tempMessageId);
-                unawaited(LocalMessagesService.removePendingUploadDraft(widget.chatId, tempMessageId));
+                unawaited(
+                  LocalMessagesService.removePendingUploadDraft(
+                    widget.chatId,
+                    tempMessageId,
+                  ),
+                );
               });
-              if (kDebugMode) print('✅ Message added to end. Total: ${_messages.length} (new list created)');
+              if (kDebugMode)
+                print(
+                  '✅ Message updated in UI (new list created). Total messages: ${_messages.length}',
+                );
+              if (kDebugMode)
+                print(
+                  '✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}',
+                );
+            } else {
+              // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
+              final existingIndex = _messages.indexWhere(
+                (m) => m.id == sentMessage.id,
+              );
+              if (existingIndex != -1) {
+                if (kDebugMode)
+                  print('⚠️ Message already exists at index $existingIndex');
+                // Обновляем сообщение на текущей позиции, без перемещения
+                setState(() {
+                  final newMessages = List<Message>.from(_messages);
+                  newMessages[existingIndex] = sentMessage;
+
+                  // ✅ Убираем возможные дубликаты по id (оставляем updated на existingIndex)
+                  final realId = sentMessage.id;
+                  for (int i = newMessages.length - 1; i >= 0; i--) {
+                    if (i == existingIndex) continue;
+                    if (newMessages[i].id == realId) {
+                      newMessages.removeAt(i);
+                    }
+                  }
+                  newMessages.removeWhere((m) => m.id == tempMessageId);
+
+                  _messages = newMessages;
+                  _tempMessageStates.remove(tempMessageId);
+                  _tempMessageIdempotencyKeys.remove(tempMessageId);
+                  _pendingUploadDrafts.remove(tempMessageId);
+                  unawaited(
+                    LocalMessagesService.removePendingUploadDraft(
+                      widget.chatId,
+                      tempMessageId,
+                    ),
+                  );
+                });
+                if (kDebugMode)
+                  print('✅ Message updated in place at index $existingIndex');
+              } else {
+                if (kDebugMode)
+                  print(
+                    '⚠️ Temp message not found and message not in list, adding it',
+                  );
+                setState(() {
+                  // ✅ Создаем новый список для принудительного обновления UI
+                  final newMessages = List<Message>.from(_messages);
+                  newMessages.add(
+                    sentMessage,
+                  ); // добавляем в конец, новые снизу
+
+                  // ✅ Убираем возможные дубликаты по id (если WS уже добавил)
+                  final realId = sentMessage.id;
+                  for (int i = newMessages.length - 2; i >= 0; i--) {
+                    if (newMessages[i].id == realId) {
+                      newMessages.removeAt(i);
+                    }
+                  }
+                  newMessages.removeWhere((m) => m.id == tempMessageId);
+
+                  _messages = newMessages;
+                  _tempMessageStates.remove(tempMessageId);
+                  _tempMessageIdempotencyKeys.remove(tempMessageId);
+                  _pendingUploadDrafts.remove(tempMessageId);
+                  unawaited(
+                    LocalMessagesService.removePendingUploadDraft(
+                      widget.chatId,
+                      tempMessageId,
+                    ),
+                  );
+                });
+                if (kDebugMode)
+                  print(
+                    '✅ Message added to end. Total: ${_messages.length} (new list created)',
+                  );
+              }
             }
+
+            if (_isNearBottom(threshold: 500)) {
+              _scrollToBottomWithRetry(
+                attempts: 2,
+                delay: const Duration(milliseconds: 60),
+              );
+            }
+
+            // Принудительные обновления UI больше не нужны — список обновляется напрямую
+
+            // Кэш обновляется в MessagesService на raw-ответе сервера, чтобы не сохранять plaintext E2EE.
+          } else {
+            if (kDebugMode)
+              print('⚠️ No message received from server response');
           }
-          
-          if (_isNearBottom(threshold: 500)) {
-            _scrollToBottomWithRetry(attempts: 2, delay: const Duration(milliseconds: 60));
-          }
-          
-          // Принудительные обновления UI больше не нужны — список обновляется напрямую
-          
-          // Кэш обновляется в MessagesService на raw-ответе сервера, чтобы не сохранять plaintext E2EE.
-        } else {
-          if (kDebugMode) print('⚠️ No message received from server response');
-        }
-        
-        // ✅ Fallback: Если через 3 секунды временное сообщение все еще есть,
-        // значит WebSocket не получил сообщение - оставляем как есть
-        // (сообщение уже обновлено из ответа сервера выше)
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted && _messages.any((m) => m.id == tempMessageId)) {
-            if (kDebugMode) print('⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response');
-          }
-        });
-      }
-      
-      // ✅ Сообщение уже обновлено из ответа сервера
-      // Также будет обновлено через WebSocket (если придет) для синхронизации с другими клиентами
-      
-    } catch (e, stackTrace) {
-      if (kDebugMode) print('❌ Error sending message: $e');
-      if (kDebugMode) print('❌ Stack trace: $stackTrace');
-      final errorText = e.toString();
-      final isE2eeKeyError = errorText.contains('E2EE ключ для чата пока недоступен');
-      final isQueueableNetworkError = _isQueueableSendError(e);
-      if (isE2eeKeyError) {
-        unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
-      }
-      
-      if (mounted) {
-        setState(() {
-          _tempMessageStates[tempMessageId] =
-              (isE2eeKeyError || isQueueableNetworkError)
-                  ? _OutgoingUiState.queued
-                  : _OutgoingUiState.error;
-        });
-        
-        // Восстанавливаем поле ответа, если была ошибка
-        if (_replyToMessage == null && tempMessage.replyToMessage != null) {
-          setState(() {
-            _replyToMessage = tempMessage.replyToMessage;
+
+          // ✅ Fallback: Если через 3 секунды временное сообщение все еще есть,
+          // значит WebSocket не получил сообщение - оставляем как есть
+          // (сообщение уже обновлено из ответа сервера выше)
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted && _messages.any((m) => m.id == tempMessageId)) {
+              if (kDebugMode)
+                print(
+                  '⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response',
+                );
+            }
           });
         }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(
-              isQueueableNetworkError
-                  ? 'Нет сети: сообщение оставлено в очереди и будет отправлено при подключении.'
-                  : isE2eeKeyError
-                  ? 'Ожидаем ключ шифрования. Попробуйте отправить снова через пару секунд.'
-                  : 'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
-            ),
-          ),
+
+        // ✅ Сообщение уже обновлено из ответа сервера
+        // Также будет обновлено через WebSocket (если придет) для синхронизации с другими клиентами
+      } catch (e, stackTrace) {
+        if (kDebugMode) print('❌ Error sending message: $e');
+        if (kDebugMode) print('❌ Stack trace: $stackTrace');
+        final errorText = e.toString();
+        final isE2eeKeyError = errorText.contains(
+          'E2EE ключ для чата пока недоступен',
         );
+        final isQueueableNetworkError = _isQueueableSendError(e);
+        if (isE2eeKeyError) {
+          unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
+        }
+
+        if (mounted) {
+          setState(() {
+            _tempMessageStates[tempMessageId] =
+                (isE2eeKeyError || isQueueableNetworkError)
+                ? _OutgoingUiState.queued
+                : _OutgoingUiState.error;
+          });
+
+          // Восстанавливаем поле ответа, если была ошибка
+          if (_replyToMessage == null && tempMessage.replyToMessage != null) {
+            setState(() {
+              _replyToMessage = tempMessage.replyToMessage;
+            });
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text(
+                isQueueableNetworkError
+                    ? 'Нет сети: сообщение оставлено в очереди и будет отправлено при подключении.'
+                    : isE2eeKeyError
+                    ? 'Ожидаем ключ шифрования. Попробуйте отправить снова через пару секунд.'
+                    : 'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
+              ),
+            ),
+          );
+        }
       }
-    }
     } finally {
       _isSendingMessage = false;
       if (mounted) setState(() {});
     }
   }
 
-  /// Установить сообщение как ответ и прокрутить к полю ввода (для свайпа «Ответить» и меню).
-  void _setReplyAndScrollToInput(Message message) {
-    setState(() {
-      _replyToMessage = message;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  // ✅ Меню действий с сообщением
-  Future<void> _showMessageMenu(Message message, {bool isMine = true}) async {
-    if (!mounted) return;
-    
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final theme = Theme.of(context);
-        final scheme = theme.colorScheme;
-        final canEdit = isMine && message.hasText && !message.hasImage && !message.hasFile;
-
-        Widget chip({
-          required IconData icon,
-          required String label,
-          required String value,
-        }) {
-          return InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => Navigator.pop(context, value),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 18, color: scheme.onSurface.withValues(alpha:0.85)),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.cardDark, AppColors.surfaceDark],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.borderDark),
-              boxShadow: AppColors.neonGlowSoft,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    'Действия',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: scheme.onSurface.withValues(alpha:0.65),
-                    ),
-                  ),
-                ),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    chip(icon: Icons.reply_rounded, label: 'Ответить', value: 'reply'),
-                    chip(icon: Icons.forward_rounded, label: 'Переслать', value: 'forward'),
-                    chip(icon: Icons.emoji_emotions_rounded, label: 'Реакция', value: 'reaction'),
-                    if (canEdit) chip(icon: Icons.edit_rounded, label: 'Редакт.', value: 'edit'),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    message.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                    color: scheme.onSurface.withValues(alpha:0.85),
-                  ),
-                  title: Text(message.isPinned ? 'Открепить' : 'Закрепить'),
-                  onTap: () => Navigator.pop(context, message.isPinned ? 'unpin' : 'pin'),
-                ),
-                if (!isMine) ...[
-                  Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.flag_outlined, color: scheme.onSurface.withValues(alpha: 0.85)),
-                    title: const Text('Пожаловаться'),
-                    onTap: () => Navigator.pop(context, 'report'),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.block_rounded, color: Colors.orange.shade700),
-                    title: Text('Заблокировать пользователя', style: TextStyle(color: Colors.orange.shade700)),
-                    onTap: () => Navigator.pop(context, 'block'),
-                  ),
-                ],
-                if (isMine) ...[
-                  Divider(height: 1, color: scheme.outline.withValues(alpha: 0.20)),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400),
-                    title: Text('Удалить', style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.w700)),
-                    onTap: () => Navigator.pop(context, 'delete'),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    
-    if (action == 'reply') {
-      _setReplyAndScrollToInput(message);
-    } else if (action == 'forward') {
-      _showForwardDialog(message);
-    } else if (action == 'edit') {
-      _showEditMessageDialog(message);
-    } else if (action == 'pin') {
-      _pinMessage(message);
-    } else if (action == 'unpin') {
-      _unpinMessage(message);
-    } else if (action == 'reaction') {
-      _showReactionPicker(message);
-    } else if (action == 'delete') {
-      _showDeleteMessageDialog(message);
-    } else if (action == 'report') {
-      _reportMessage(message);
-    } else if (action == 'block') {
-      _blockSender(message);
-    }
-  }
-
   final ModerationService _moderationService = ModerationService();
-
-  Future<void> _reportMessage(Message message) async {
-    try {
-      await _moderationService.reportMessage(message.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(duration: Duration(seconds: 3), content: Text('Жалоба отправлена. Модерация рассмотрит в течение 24 часов.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
-      }
-    }
-  }
-
-  Future<void> _blockSender(Message message) async {
-    if (message.userId.isEmpty) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Заблокировать пользователя?'),
-        content: Text(
-          'Сообщения от ${message.senderEmail} будут скрыты. Вы сможете разблокировать через настройки.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            child: const Text('Заблокировать'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-    try {
-      await _moderationService.blockUser(message.userId);
-      if (mounted) {
-        setState(() {
-          _messages.removeWhere((m) => m.userId == message.userId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(duration: Duration(seconds: 3), content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
-      }
-    }
-  }
-  
-  // ✅ Диалог пересылки сообщения
-  Future<void> _showForwardDialog(Message message) async {
-    if (!mounted) return;
-    
-    // Загружаем список чатов пользователя
-    final chats = await _chatsService.fetchChats(widget.userId);
-    if (!mounted) return;
-    final availableChats = chats.where((chat) => chat.id != widget.chatId).toList();
-    
-    if (availableChats.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Нет других чатов для пересылки')),
-      );
-      return;
-    }
-    
-    // Состояние выбранных чатов
-    final selectedChatIds = <String>{};
-    
-    final selectedChats = await showDialog<List<String>>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Переслать сообщение'),
-              content: Container(
-                width: double.maxFinite,
-                constraints: const BoxConstraints(maxHeight: 400),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: availableChats.length,
-                  itemBuilder: (context, index) {
-                    final chat = availableChats[index];
-                    final isSelected = selectedChatIds.contains(chat.id);
-                    return CheckboxListTile(
-                      title: Text(chat.name),
-                      value: isSelected,
-                      onChanged: (value) {
-                        setDialogState(() {
-                          if (value == true) {
-                            selectedChatIds.add(chat.id);
-                          } else {
-                            selectedChatIds.remove(chat.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, null),
-                  child: const Text('Отмена'),
-                ),
-                ElevatedButton(
-                  onPressed: selectedChatIds.isEmpty
-                      ? null
-                      : () {
-                          Navigator.pop(context, selectedChatIds.toList());
-                        },
-                  child: const Text('Переслать'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    
-    if (selectedChats != null && selectedChats.isNotEmpty) {
-      try {
-        await _messagesService.forwardMessage(message, widget.chatId.toString(), selectedChats);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(duration: const Duration(seconds: 3), content: Text('Сообщение переслано в ${selectedChats.length} чат(ов)')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка пересылки: $e')),
-          );
-        }
-      }
-    }
-  }
-  
-  // ✅ Закрепить сообщение
-  Future<void> _pinMessage(Message message) async {
-    try {
-      await _messagesService.pinMessage(message.id);
-      if (!mounted) return;
-      await _loadPinnedMessages();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Сообщение закреплено')),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка закрепления: $e')),
-        );
-      }
-    }
-  }
-  
-  // ✅ Открепить сообщение
-  Future<void> _unpinMessage(Message message) async {
-    try {
-      await _messagesService.unpinMessage(message.id);
-      if (!mounted) return;
-      await _loadPinnedMessages();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('Сообщение откреплено')),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка открепления: $e')),
-        );
-      }
-    }
-  }
-  
-  // ✅ Показать выбор реакции
-  Future<void> _showReactionPicker(Message message) async {
-    if (!mounted) return;
-    
-    final reaction = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            alignment: WrapAlignment.center,
-            children: [
-              _buildReactionButton('👍', context),
-              _buildReactionButton('❤️', context),
-              _buildReactionButton('😂', context),
-              _buildReactionButton('😮', context),
-              _buildReactionButton('😢', context),
-              _buildReactionButton('🙏', context),
-              _buildReactionButton('🔥', context),
-              _buildReactionButton('⭐', context),
-            ],
-          ),
-        ),
-      ),
-    );
-    
-    if (reaction != null) {
-      try {
-        // Проверяем, есть ли уже такая реакция
-        final hasReaction = message.reactions?.any((r) => r.reaction == reaction) ?? false;
-        if (hasReaction) {
-          await _messagesService.removeReaction(message.id, reaction);
-        } else {
-          await _messagesService.addReaction(message.id, reaction);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e')),
-          );
-        }
-      }
-    }
-  }
-  
-  Widget _buildReactionButton(String emoji, BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(context, emoji),
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Center(
-          child: Text(
-            emoji,
-            style: const TextStyle(fontSize: 24),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ✅ Диалог редактирования сообщения
-  Future<void> _showEditMessageDialog(Message message) async {
-    if (!mounted) return;
-    
-    final textController = TextEditingController(text: message.content);
-    
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Редактировать сообщение'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Введите текст сообщения',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final newContent = textController.text.trim();
-              if (newContent.isNotEmpty) {
-                Navigator.pop(context, {'content': newContent});
-              }
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    
-    if (result != null && result['content'] != null) {
-      try {
-        await _messagesService.editMessage(
-          message.id,
-          content: result['content']!,
-          chatId: widget.chatId.toString(),
-        );
-        if (mounted) {
-          setState(() {
-            final index = _messages.indexWhere((m) => m.id == message.id);
-            if (index != -1) {
-              final prev = _messages[index];
-              _messages[index] = Message(
-                id: prev.id,
-                chatId: prev.chatId,
-                userId: prev.userId,
-                content: result['content']!,
-                imageUrl: prev.imageUrl,
-                originalImageUrl: prev.originalImageUrl,
-                fileUrl: prev.fileUrl,
-                fileName: prev.fileName,
-                fileSize: prev.fileSize,
-                fileMime: prev.fileMime,
-                messageType: prev.messageType,
-                senderEmail: prev.senderEmail,
-                senderAvatarUrl: prev.senderAvatarUrl,
-                createdAt: prev.createdAt,
-                deliveredAt: prev.deliveredAt,
-                editedAt: DateTime.now().toIso8601String(),
-                isRead: prev.isRead,
-                readAt: prev.readAt,
-                replyToMessageId: prev.replyToMessageId,
-                replyToMessage: prev.replyToMessage,
-                isPinned: prev.isPinned,
-                reactions: prev.reactions,
-                isForwarded: prev.isForwarded,
-                originalChatName: prev.originalChatName,
-                keyVersion: prev.keyVersion,
-              );
-            }
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка редактирования сообщения: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _showDeleteMessageDialog(Message message) async {
-    if (!mounted) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить сообщение?'),
-        content: const Text('Вы уверены, что хотите удалить это сообщение?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      await _messagesService.deleteMessage(message.id.toString(), widget.userId);
-      await LocalMessagesService.removeMessage(widget.chatId, message.id);
-      if (mounted) {
-        setState(() {
-          _messages.removeWhere((m) => m.id == message.id);
-          _pinnedMessages.removeWhere((m) => m.id == message.id);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Сообщение удалено'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка удаления сообщения: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при удалении сообщения: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _clearChat() async {
-    if (!mounted) return;
-
-    // Показываем диалог подтверждения
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Очистить чат?'),
-        content: const Text('Вы уверены, что хотите удалить все сообщения из этого чата? Это действие нельзя отменить.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Очистить'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      await _messagesService.clearChat(widget.chatId, widget.userId);
-      await LocalMessagesService.clearChat(widget.chatId);
-      if (mounted) {
-        setState(() {
-          _messages.clear();
-          _pinnedMessages.clear();
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Чат успешно очищен'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка очистки чата: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при очистке чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -4363,209 +3206,15 @@ SnackBar(
     super.dispose();
   }
 
-  Future<void> _showMembersDialog() async {
-    if (!mounted) return;
-    
-    try {
-      // Получаем участников чата
-      final members = await _chatsService.getChatMembers(widget.chatId);
-      
-      if (!mounted) return;
-      
-      // Показываем диалог со списком участников
-      await showDialog(
-        context: context,
-        builder: (context) => ChatMembersDialog(
-          members: members,
-          currentUserId: widget.userId,
-          chatId: widget.chatId,
-          chatsService: _chatsService,
-        ),
-      );
-    } catch (e) {
-      if (kDebugMode) print('Ошибка загрузки участников: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при загрузке участников: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  // ✅ Выход из чата
-  Future<void> _leaveChat() async {
-    if (!mounted) return;
-
-    // Показываем диалог подтверждения
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Выйти из чата?'),
-        content: Text('Вы уверены, что хотите выйти из чата "${widget.chatName}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-            ),
-            child: const Text('Выйти'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      await _chatsService.leaveChat(widget.chatId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Вы вышли из чата'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        // Возвращаемся на предыдущий экран
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка выхода из чата: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при выходе из чата: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _showAddMembersDialog() async {
-    if (!mounted) return;
-    
-    try {
-      // Получаем список всех пользователей
-      final allUsers = await _chatsService.getAllUsers(widget.userId);
-      
-      // Получаем текущих участников чата
-      final currentMembers = await _chatsService.getChatMembers(widget.chatId);
-      final currentMemberIds = currentMembers.map((m) => m['id']).toSet();
-      
-      // Фильтруем пользователей, которые еще не в чате
-      final availableUsers = allUsers
-          .where((user) => !currentMemberIds.contains(user['id']))
-          .toList();
-      
-      if (availableUsers.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(duration: Duration(seconds: 3), content: Text('Нет доступных пользователей для добавления')),
-          );
-        }
-        return;
-      }
-      
-      if (!mounted) return;
-      // Показываем диалог выбора пользователей
-      final selectedUsers = await showDialog<Set<String>>(
-        context: context,
-        builder: (context) => AddMembersDialog(availableUsers: availableUsers),
-      );
-      
-      if (selectedUsers != null && selectedUsers.isNotEmpty && mounted) {
-        try {
-          await _chatsService.addMembersToChat(
-            widget.chatId,
-            selectedUsers.toList(),
-          );
-          // E2EE: отправить ключ чата новым участникам (как при входе по инвайту)
-          E2eeService.shareChatKeyWithNewMembers(widget.chatId.toString());
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Участники успешно добавлены'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        } catch (e) {
-          if (kDebugMode) print('Ошибка добавления участников: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Ошибка при добавлении участников: ${e.toString().replaceFirst('Exception: ', '')}'),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка загрузки пользователей: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при загрузке списка пользователей: ${e.toString().replaceFirst('Exception: ', '')}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  void _openUserProfile(Message msg) {
-    final otherId = msg.userId.toString().trim();
-    if (otherId.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          userId: otherId,
-          fallbackLabel: msg.senderEmail,
-        ),
-      ),
-    );
-  }
-
-  void _openImageViewer(Message msg) {
-    final url = (msg.imageUrl ?? '').trim();
-    if (url.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: true,
-        barrierColor: Colors.black,
-        pageBuilder: (_, __, ___) => ChatFullscreenImageViewer(
-          imageUrl: url,
-          chatId: widget.chatId.toString(),
-          originalImageUrl: (msg.originalImageUrl ?? url),
-          fileName: url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
-          onDownload: () => _downloadImage(
-            (msg.originalImageUrl ?? url),
-            url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
-          ),
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 200),
-      ),
-    );
-  }
-
   // ✅ Вычисляем высоту блока закрепленных сообщений
   double _getPinnedMessagesHeight() {
     if (_pinnedMessages.isEmpty) return 0.0;
     // Компактные размеры
     const headerHeight = 28.0; // Компактный заголовок
     const messageHeight = 32.0; // Компактная высота одного сообщения
-    final messagesCount = _pinnedMessages.length > 3 ? 3 : _pinnedMessages.length;
+    final messagesCount = _pinnedMessages.length > 3
+        ? 3
+        : _pinnedMessages.length;
     const padding = 12.0; // Внутренние отступы
     const margin = 8.0; // Внешние отступы
     return headerHeight + (messagesCount * messageHeight) + padding + margin;
@@ -4598,7 +3247,10 @@ SnackBar(
             ),
             Text(
               _buildChatStatusLine(),
-              style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.65)),
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSurface.withValues(alpha: 0.65),
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -4607,7 +3259,7 @@ SnackBar(
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: _accent1.withValues(alpha:0.10),
+              color: _accent1.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -4619,7 +3271,7 @@ SnackBar(
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: _accent1.withValues(alpha:0.10),
+              color: _accent1.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -4635,7 +3287,7 @@ SnackBar(
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: _accent1.withValues(alpha:0.25),
+                  color: _accent1.withValues(alpha: 0.25),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -4643,14 +3295,20 @@ SnackBar(
             ),
             child: widget.isGroup
                 ? IconButton(
-                    icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+                    icon: const Icon(
+                      Icons.person_add_rounded,
+                      color: Colors.white,
+                    ),
                     onPressed: _showAddMembersDialog,
                     tooltip: 'Добавить участников',
                   )
                 : const SizedBox.shrink(),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha:0.75)),
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: scheme.onSurface.withValues(alpha: 0.75),
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -4668,7 +3326,11 @@ SnackBar(
                 value: 'gallery',
                 child: Row(
                   children: [
-                    Icon(Icons.photo_library_rounded, color: Colors.purple.shade300, size: 20),
+                    Icon(
+                      Icons.photo_library_rounded,
+                      color: Colors.purple.shade300,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     const Text('Медиа'),
                   ],
@@ -4679,7 +3341,11 @@ SnackBar(
                 enabled: !_isExportingChat,
                 child: Row(
                   children: [
-                    Icon(Icons.download_rounded, color: Colors.teal.shade600, size: 20),
+                    Icon(
+                      Icons.download_rounded,
+                      color: Colors.teal.shade600,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     Text(_isExportingChat ? 'Экспорт...' : 'Экспорт чата'),
                   ],
@@ -4689,7 +3355,11 @@ SnackBar(
                 value: 'mentions',
                 child: Row(
                   children: [
-                    Icon(Icons.alternate_email_rounded, color: Colors.blue.shade300, size: 20),
+                    Icon(
+                      Icons.alternate_email_rounded,
+                      color: Colors.blue.shade300,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     const Text('Упоминания'),
                   ],
@@ -4700,7 +3370,11 @@ SnackBar(
                   value: 'rename',
                   child: Row(
                     children: [
-                      Icon(Icons.edit_rounded, color: Colors.blueGrey.shade700, size: 20),
+                      Icon(
+                        Icons.edit_rounded,
+                        color: Colors.blueGrey.shade700,
+                        size: 20,
+                      ),
                       const SizedBox(width: 10),
                       const Text('Переименовать'),
                     ],
@@ -4711,7 +3385,11 @@ SnackBar(
                   value: 'invite',
                   child: Row(
                     children: [
-                      Icon(Icons.link_rounded, color: Colors.green.shade700, size: 20),
+                      Icon(
+                        Icons.link_rounded,
+                        color: Colors.green.shade700,
+                        size: 20,
+                      ),
                       const SizedBox(width: 10),
                       const Text('Пригласить (код)'),
                     ],
@@ -4721,7 +3399,11 @@ SnackBar(
                 value: 'clear',
                 child: Row(
                   children: [
-                    Icon(Icons.delete_sweep_rounded, color: Colors.red.shade400, size: 20),
+                    Icon(
+                      Icons.delete_sweep_rounded,
+                      color: Colors.red.shade400,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     const Text('Очистить чат'),
                   ],
@@ -4731,7 +3413,11 @@ SnackBar(
                 value: 'leave',
                 child: Row(
                   children: [
-                    Icon(Icons.exit_to_app_rounded, color: Colors.orange.shade700, size: 20),
+                    Icon(
+                      Icons.exit_to_app_rounded,
+                      color: Colors.orange.shade700,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     const Text('Выйти из чата'),
                   ],
@@ -4754,605 +3440,881 @@ SnackBar(
                     child: Container(
                       color: scaffoldBg,
                       child: _isLoading
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(_accent1),
-                          strokeWidth: 3,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Загрузка сообщений...',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: scheme.onSurface.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : _listEntries.isEmpty
-                    ? ChatEmptyMessages(accentColor: _accent1)
-                    : RepaintBoundary(
-                  child: Stack(
-                    children: [
-                      // Отступ сверху для закрепленных сообщений
-                      Padding(
-                        padding: EdgeInsets.only(
-                          top: pinnedHeight,
-                        ),
-                        child: RefreshIndicator(
-                          onRefresh: () async {
-                            await _loadMessages();
-                          },
-                          color: _accent1,
-                          child: ListView.builder(
-                            key: ValueKey('messages_list_${widget.chatId}'),
-                            controller: _scrollController,
-                            reverse: false, // старые сверху, новые снизу
-                            physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
-                            cacheExtent: 800, // Предзагрузка элементов для плавного скролла
-                            addAutomaticKeepAlives: false, // Меньше памяти при длинных списках
-                            itemCount: _listEntries.length,
-                        itemBuilder: (context, index) {
-                          final entry = _listEntries[index];
-                          if (entry is _LoadMoreEntry) {
-                            return ChatLoadMoreButton(
-                              onPressed: _loadMoreMessages,
-                              accentColor: _accent1,
-                            );
-                          }
-                          if (entry is _LoadingEntry) {
-                            return ChatLoadingRow(accentColor: _accent1);
-                          }
-                          if (entry is _DateHeaderEntry) {
-                            return ChatDateHeader(label: entry.label, accentColor: _accent1);
-                          }
-                          final msg = _messages[(entry as _MessageEntry).index];
-                    final isMine = msg.userId == widget.userId;
-
-                final isHighlighted = _highlightMessageId == msg.id;
-                return FadeScaleIn(
-                  key: ValueKey('fade_${msg.id}'),
-                  child: Slidable(
-                  key: _keyForMessage(msg.id),
-                  startActionPane: ActionPane(
-                    motion: const ScrollMotion(),
-                    extentRatio: 0.22,
-                    children: [
-                      SlidableAction(
-                        onPressed: (_) => _setReplyAndScrollToInput(msg),
-                        backgroundColor: _accent1.withValues(alpha: 0.85),
-                        foregroundColor: Colors.white,
-                        icon: Icons.reply_rounded,
-                        label: 'Ответить',
-                      ),
-                    ],
-                  ),
-                  endActionPane: isMine
-                      ? ActionPane(
-                          motion: const ScrollMotion(),
-                          extentRatio: 0.22,
-                          children: [
-                            SlidableAction(
-                              onPressed: (_) => _showDeleteMessageDialog(msg),
-                              backgroundColor: Colors.red.shade400,
-                              foregroundColor: Colors.white,
-                              icon: Icons.delete_outline_rounded,
-                              label: 'Удалить',
-                            ),
-                          ],
-                        )
-                      : null,
-                  child: ChatMessageTile(
-                  key: ValueKey('tile_${msg.id}'),
-                  msg: msg,
-                  isMine: isMine,
-                  isHighlighted: isHighlighted,
-                  scheme: scheme,
-                  accent1: _accent1,
-                  accent2: _accent2,
-                  accent3: _accent3,
-                  myUserId: widget.userId,
-                  myAvatarUrl: widget.myAvatarUrl,
-                  chatId: widget.chatId.toString(),
-                  myAvatarPlaceholder: _myAvatarPlaceholder(),
-                  otherAvatarPlaceholder: _otherAvatarPlaceholder(msg.senderEmail),
-                  memberByHandle: _memberByHandle,
-                  onOpenSenderProfile: () => _openUserProfile(msg),
-                  onShowMessageMenu: () => _showMessageMenu(msg, isMine: isMine),
-                  onOpenImage: () => _openImageViewer(msg),
-                  buildVoiceBubble: () => _buildVoiceBubble(msg, isMine: isMine),
-                  isVoiceMessage: () => isVoiceMessage(msg),
-                  formatBytes: _formatBytes,
-                  formatDate: _formatDate,
-                  buildMessageStatus: _buildMessageStatus(msg),
-                  onShowReactionPicker: () => _showReactionPicker(msg),
-                  onOpenUserProfileById: (uid, label) => _openUserProfileById(uid, fallbackLabel: label),
-                ),
-                ),
-                );
-                        },
-                          ),
-                        ),
-                      ),
-                      // ✅ Закрепленные сообщения - всегда видны вверху
-                      if (_pinnedMessages.isNotEmpty)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha:0.97),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: _accent1.withValues(alpha:0.18),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha:0.06),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Компактный заголовок
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.push_pin,
-                                        size: 12,
-                                        color: _accent1.withValues(alpha:0.8),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Закреплено',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 11,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: _accent1.withValues(alpha:0.12),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          '${_pinnedMessages.length}',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 10,
-                                            color: _accent1,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      _accent1,
+                                    ),
+                                    strokeWidth: 3,
                                   ),
-                                ),
-                                // Компактный список сообщений
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8, right: 8, bottom: 6),
-                                  child: Column(
-                                    children: _pinnedMessages.take(3).toList().asMap().entries.map((entry) {
-                                      final index = entry.key;
-                                      final pinned = entry.value;
-                                      final isLast = index == (_pinnedMessages.length > 3 ? 2 : _pinnedMessages.length - 1);
-                                      
-                                      return Container(
-                                        margin: EdgeInsets.only(bottom: isLast ? 0 : 4),
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            onTap: () {
-                                              final messageIndex = _messages.indexWhere((m) => m.id == pinned.id);
-                                              if (messageIndex != -1 && _scrollController.hasClients) {
-                                                final targetPosition = (messageIndex * 100.0) + pinnedHeight;
-                                                _scrollController.animateTo(
-                                                  targetPosition,
-                                                  duration: const Duration(milliseconds: 300),
-                                                  curve: Curves.easeInOut,
-                                                );
-                                              }
-                                            },
-                                            borderRadius: BorderRadius.circular(6),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                              decoration: BoxDecoration(
-                                                color: AppColors.primary.withValues(alpha: 0.08),
-                                                borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(
-                                                  color: scheme.outline.withValues(alpha: 0.18),
-                                                  width: 1.2,
-                                                ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Загрузка сообщений...',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: scheme.onSurface.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _listEntries.isEmpty
+                          ? ChatEmptyMessages(accentColor: _accent1)
+                          : RepaintBoundary(
+                              child: Stack(
+                                children: [
+                                  // Отступ сверху для закрепленных сообщений
+                                  Padding(
+                                    padding: EdgeInsets.only(top: pinnedHeight),
+                                    child: RefreshIndicator(
+                                      onRefresh: () async {
+                                        await _loadMessages();
+                                      },
+                                      color: _accent1,
+                                      child: ListView.builder(
+                                        key: ValueKey(
+                                          'messages_list_${widget.chatId}',
+                                        ),
+                                        controller: _scrollController,
+                                        reverse:
+                                            false, // старые сверху, новые снизу
+                                        physics:
+                                            const AlwaysScrollableScrollPhysics(
+                                              parent: ClampingScrollPhysics(),
+                                            ),
+                                        cacheExtent:
+                                            800, // Предзагрузка элементов для плавного скролла
+                                        addAutomaticKeepAlives:
+                                            false, // Меньше памяти при длинных списках
+                                        itemCount: _listEntries.length,
+                                        itemBuilder: (context, index) {
+                                          final entry = _listEntries[index];
+                                          if (entry is _LoadMoreEntry) {
+                                            return ChatLoadMoreButton(
+                                              onPressed: _loadMoreMessages,
+                                              accentColor: _accent1,
+                                            );
+                                          }
+                                          if (entry is _LoadingEntry) {
+                                            return ChatLoadingRow(
+                                              accentColor: _accent1,
+                                            );
+                                          }
+                                          if (entry is _DateHeaderEntry) {
+                                            return ChatDateHeader(
+                                              label: entry.label,
+                                              accentColor: _accent1,
+                                            );
+                                          }
+                                          final msg =
+                                              _messages[(entry as _MessageEntry)
+                                                  .index];
+                                          final isMine =
+                                              msg.userId == widget.userId;
+
+                                          final isHighlighted =
+                                              _highlightMessageId == msg.id;
+                                          return FadeScaleIn(
+                                            key: ValueKey('fade_${msg.id}'),
+                                            child: Slidable(
+                                              key: _keyForMessage(msg.id),
+                                              startActionPane: ActionPane(
+                                                motion: const ScrollMotion(),
+                                                extentRatio: 0.22,
+                                                children: [
+                                                  SlidableAction(
+                                                    onPressed: (_) =>
+                                                        _setReplyAndScrollToInput(
+                                                          msg,
+                                                        ),
+                                                    backgroundColor: _accent1
+                                                        .withValues(
+                                                          alpha: 0.85,
+                                                        ),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    icon: Icons.reply_rounded,
+                                                    label: 'Ответить',
+                                                  ),
+                                                ],
                                               ),
+                                              endActionPane: isMine
+                                                  ? ActionPane(
+                                                      motion:
+                                                          const ScrollMotion(),
+                                                      extentRatio: 0.22,
+                                                      children: [
+                                                        SlidableAction(
+                                                          onPressed: (_) =>
+                                                              _showDeleteMessageDialog(
+                                                                msg,
+                                                              ),
+                                                          backgroundColor:
+                                                              Colors
+                                                                  .red
+                                                                  .shade400,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          icon: Icons
+                                                              .delete_outline_rounded,
+                                                          label: 'Удалить',
+                                                        ),
+                                                      ],
+                                                    )
+                                                  : null,
+                                              child: ChatMessageTile(
+                                                key: ValueKey('tile_${msg.id}'),
+                                                msg: msg,
+                                                isMine: isMine,
+                                                isHighlighted: isHighlighted,
+                                                scheme: scheme,
+                                                accent1: _accent1,
+                                                accent2: _accent2,
+                                                accent3: _accent3,
+                                                myUserId: widget.userId,
+                                                myAvatarUrl: widget.myAvatarUrl,
+                                                chatId: widget.chatId
+                                                    .toString(),
+                                                myAvatarPlaceholder:
+                                                    _myAvatarPlaceholder(),
+                                                otherAvatarPlaceholder:
+                                                    _otherAvatarPlaceholder(
+                                                      msg.senderEmail,
+                                                    ),
+                                                memberByHandle: _memberByHandle,
+                                                onOpenSenderProfile: () =>
+                                                    _openUserProfile(msg),
+                                                onShowMessageMenu: () =>
+                                                    _showMessageMenu(
+                                                      msg,
+                                                      isMine: isMine,
+                                                    ),
+                                                onOpenImage: () =>
+                                                    _openImageViewer(msg),
+                                                buildVoiceBubble: () =>
+                                                    _buildVoiceBubble(
+                                                      msg,
+                                                      isMine: isMine,
+                                                    ),
+                                                isVoiceMessage: () =>
+                                                    isVoiceMessage(msg),
+                                                formatBytes: _formatBytes,
+                                                formatDate: _formatDate,
+                                                buildMessageStatus:
+                                                    _buildMessageStatus(msg),
+                                                onShowReactionPicker: () =>
+                                                    _showReactionPicker(msg),
+                                                onOpenUserProfileById:
+                                                    (uid, label) =>
+                                                        _openUserProfileById(
+                                                          uid,
+                                                          fallbackLabel: label,
+                                                        ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  // ✅ Закрепленные сообщения - всегда видны вверху
+                                  if (_pinnedMessages.isNotEmpty)
+                                    Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.97,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                          border: Border.all(
+                                            color: _accent1.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                            width: 1.2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.06,
+                                              ),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Компактный заголовок
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 8,
+                                                  ),
                                               child: Row(
                                                 children: [
                                                   Icon(
                                                     Icons.push_pin,
                                                     size: 12,
-                                                    color: _accent1.withValues(alpha:0.6),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      pinned.content.isNotEmpty 
-                                                          ? (pinned.content.length > 40 
-                                                              ? '${pinned.content.substring(0, 40)}...'
-                                                              : pinned.content)
-                                                          : 'Фото',
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight: FontWeight.w400,
-                                                        color: AppColors.onSurfaceVariantDark,
-                                                        height: 1.2,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
+                                                    color: _accent1.withValues(
+                                                      alpha: 0.8,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 6),
-                                                  Icon(
-                                                    Icons.chevron_right,
-                                                    size: 16,
-                                                    color: AppColors.onSurfaceVariantDark.withValues(alpha: 0.8),
+                                                  Text(
+                                                    'Закреплено',
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      fontSize: 11,
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 5,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: _accent1
+                                                          .withValues(
+                                                            alpha: 0.12,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      '${_pinnedMessages.length}',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 10,
+                                                        color: _accent1,
+                                                      ),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              color: scaffoldBg,
-              border: Border(top: BorderSide(color: AppColors.borderDark.withValues(alpha: 0.5))),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  blurRadius: 12,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // ✅ Индикатор очереди офлайн: сообщения будут отправлены при подключении
-                    if (_messages.any((m) => m.id.startsWith('temp_')))
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha:0.12),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.orange.withValues(alpha:0.35)),
-                        ),
-                        child: Builder(
-                          builder: (context) {
-                            final tempMessages = _messages.where((m) => m.id.startsWith('temp_')).toList();
-                            final queued = tempMessages
-                                .where((m) => _tempMessageStates[m.id] == _OutgoingUiState.queued)
-                                .length;
-                            final errors = tempMessages
-                                .where((m) => _tempMessageStates[m.id] == _OutgoingUiState.error)
-                                .length;
-                            final sending = tempMessages.length - queued - errors;
-                            final parts = <String>[];
-                            if (queued > 0) parts.add('в очереди: $queued');
-                            if (sending > 0) parts.add('отправляется: $sending');
-                            if (errors > 0) parts.add('ошибка: $errors');
-                            final details = parts.isEmpty ? 'сообщений: ${tempMessages.length}' : parts.join(', ');
+                                            // Компактный список сообщений
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                left: 8,
+                                                right: 8,
+                                                bottom: 6,
+                                              ),
+                                              child: Column(
+                                                children: _pinnedMessages.take(3).toList().asMap().entries.map((
+                                                  entry,
+                                                ) {
+                                                  final index = entry.key;
+                                                  final pinned = entry.value;
+                                                  final isLast =
+                                                      index ==
+                                                      (_pinnedMessages.length >
+                                                              3
+                                                          ? 2
+                                                          : _pinnedMessages
+                                                                    .length -
+                                                                1);
 
-                            return Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.cloud_off_rounded, size: 18, color: Colors.orange.shade700),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Черновики отправки — $details',
-                                        style: TextStyle(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
+                                                  return Container(
+                                                    margin: EdgeInsets.only(
+                                                      bottom: isLast ? 0 : 4,
+                                                    ),
+                                                    child: Material(
+                                                      color: Colors.transparent,
+                                                      child: InkWell(
+                                                        onTap: () {
+                                                          final messageIndex =
+                                                              _messages
+                                                                  .indexWhere(
+                                                                    (m) =>
+                                                                        m.id ==
+                                                                        pinned
+                                                                            .id,
+                                                                  );
+                                                          if (messageIndex !=
+                                                                  -1 &&
+                                                              _scrollController
+                                                                  .hasClients) {
+                                                            final targetPosition =
+                                                                (messageIndex *
+                                                                    100.0) +
+                                                                pinnedHeight;
+                                                            _scrollController.animateTo(
+                                                              targetPosition,
+                                                              duration:
+                                                                  const Duration(
+                                                                    milliseconds:
+                                                                        300,
+                                                                  ),
+                                                              curve: Curves
+                                                                  .easeInOut,
+                                                            );
+                                                          }
+                                                        },
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              6,
+                                                            ),
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 6,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: AppColors
+                                                                .primary
+                                                                .withValues(
+                                                                  alpha: 0.08,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  12,
+                                                                ),
+                                                            border: Border.all(
+                                                              color: scheme
+                                                                  .outline
+                                                                  .withValues(
+                                                                    alpha: 0.18,
+                                                                  ),
+                                                              width: 1.2,
+                                                            ),
+                                                          ),
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                Icons.push_pin,
+                                                                size: 12,
+                                                                color: _accent1
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.6,
+                                                                    ),
+                                                              ),
+                                                              const SizedBox(
+                                                                width: 8,
+                                                              ),
+                                                              Expanded(
+                                                                child: Text(
+                                                                  pinned
+                                                                          .content
+                                                                          .isNotEmpty
+                                                                      ? (pinned.content.length >
+                                                                                40
+                                                                            ? '${pinned.content.substring(0, 40)}...'
+                                                                            : pinned.content)
+                                                                      : 'Фото',
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w400,
+                                                                    color: AppColors
+                                                                        .onSurfaceVariantDark,
+                                                                    height: 1.2,
+                                                                  ),
+                                                                  maxLines: 1,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(
+                                                                width: 6,
+                                                              ),
+                                                              Icon(
+                                                                Icons
+                                                                    .chevron_right,
+                                                                size: 16,
+                                                                color: AppColors
+                                                                    .onSurfaceVariantDark
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.8,
+                                                                    ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    TextButton.icon(
-                                      onPressed: errors > 0 ? _retryErroredMessages : null,
-                                      icon: const Icon(Icons.refresh_rounded, size: 16),
-                                      label: const Text('Повторить ошибки'),
-                                      style: TextButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    TextButton.icon(
-                                      onPressed: tempMessages.isNotEmpty ? _clearPendingQueue : null,
-                                      icon: const Icon(Icons.delete_sweep_rounded, size: 16),
-                                      label: const Text('Очистить очередь'),
-                                      style: TextButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
+                                ],
+                              ),
+                            ),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scaffoldBg,
+                      border: Border(
+                        top: BorderSide(
+                          color: AppColors.borderDark.withValues(alpha: 0.5),
                         ),
                       ),
-                    // ✅ Превью ответа на сообщение
-                    if (_replyToMessage != null)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _accent1.withValues(alpha:0.10),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border(
-                            left: BorderSide(
-                              color: _accent1,
-                              width: 3,
-                            ),
-                          ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.15),
+                          blurRadius: 12,
+                          offset: const Offset(0, -2),
                         ),
-                        child: Row(
+                      ],
+                    ),
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Ответ на сообщение',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: _accent1,
+                            // ✅ Индикатор очереди офлайн: сообщения будут отправлены при подключении
+                            if (_messages.any((m) => m.id.startsWith('temp_')))
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.35,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  if (_replyToMessage!.hasFile)
-                                    Row(
+                                ),
+                                child: Builder(
+                                  builder: (context) {
+                                    final tempMessages = _messages
+                                        .where((m) => m.id.startsWith('temp_'))
+                                        .toList();
+                                    final queued = tempMessages
+                                        .where(
+                                          (m) =>
+                                              _tempMessageStates[m.id] ==
+                                              _OutgoingUiState.queued,
+                                        )
+                                        .length;
+                                    final errors = tempMessages
+                                        .where(
+                                          (m) =>
+                                              _tempMessageStates[m.id] ==
+                                              _OutgoingUiState.error,
+                                        )
+                                        .length;
+                                    final sending =
+                                        tempMessages.length - queued - errors;
+                                    final parts = <String>[];
+                                    if (queued > 0)
+                                      parts.add('в очереди: $queued');
+                                    if (sending > 0)
+                                      parts.add('отправляется: $sending');
+                                    if (errors > 0)
+                                      parts.add('ошибка: $errors');
+                                    final details = parts.isEmpty
+                                        ? 'сообщений: ${tempMessages.length}'
+                                        : parts.join(', ');
+
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.insert_drive_file_rounded, size: 14, color: Colors.grey.shade600),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            decodeFileNameForDisplay(_replyToMessage!.fileName),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.cloud_off_rounded,
+                                              size: 18,
+                                              color: Colors.orange.shade700,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                'Черновики отправки — $details',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.orange.shade900,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            TextButton.icon(
+                                              onPressed: errors > 0
+                                                  ? _retryErroredMessages
+                                                  : null,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16,
+                                              ),
+                                              label: const Text(
+                                                'Повторить ошибки',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            TextButton.icon(
+                                              onPressed: tempMessages.isNotEmpty
+                                                  ? _clearPendingQueue
+                                                  : null,
+                                              icon: const Icon(
+                                                Icons.delete_sweep_rounded,
+                                                size: 16,
+                                              ),
+                                              label: const Text(
+                                                'Очистить очередь',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            // ✅ Превью ответа на сообщение
+                            if (_replyToMessage != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: _accent1.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border(
+                                    left: BorderSide(color: _accent1, width: 3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Ответ на сообщение',
                                             style: TextStyle(
                                               fontSize: 12,
-                                              color: Colors.grey.shade600,
-                                              fontStyle: FontStyle.italic,
+                                              fontWeight: FontWeight.bold,
+                                              color: _accent1,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                      ],
-                                    )
-                                  else if (_replyToMessage!.hasImage)
-                                    Row(
-                                      children: [
-                                        Icon(Icons.image, size: 14, color: Colors.grey.shade600),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Фото',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey.shade600,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  else
-                                    Text(
-                                      _replyToMessage!.content.length > 50
-                                          ? '${_replyToMessage!.content.substring(0, 50)}...'
-                                          : _replyToMessage!.content,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
+                                          const SizedBox(height: 4),
+                                          if (_replyToMessage!.hasFile)
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons
+                                                      .insert_drive_file_rounded,
+                                                  size: 14,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    decodeFileNameForDisplay(
+                                                      _replyToMessage!.fileName,
+                                                    ),
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                      fontStyle:
+                                                          FontStyle.italic,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          else if (_replyToMessage!.hasImage)
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.image,
+                                                  size: 14,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Фото',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          else
+                                            Text(
+                                              _replyToMessage!.content.length >
+                                                      50
+                                                  ? '${_replyToMessage!.content.substring(0, 50)}...'
+                                                  : _replyToMessage!.content,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                        ],
                                       ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _replyToMessage = null;
-                                });
-                              },
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Превью выбранного изображения
-                    if (_selectedImagePath != null || _selectedImageBytes != null)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        height: 100,
-                        child: Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: kIsWeb && _selectedImageBytes != null
-                                  ? Image.memory(
-                                      _selectedImageBytes!,
-                                      width: 100,
-                                      height: 100,
-                                      fit: BoxFit.cover,
-                                    )
-                                  : _selectedImagePath != null
-                                      ? Image.file(
-                                          File(_selectedImagePath!),
-                                          width: 100,
-                                          height: 100,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const SizedBox.shrink(),
-                            ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white),
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedImagePath = null;
-                                    _selectedImageBytes = null;
-                                    _selectedImageName = null;
-                                  });
-                                },
-                                iconSize: 20,
-                                padding: const EdgeInsets.all(4),
-                                constraints: const BoxConstraints(),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: Colors.black54,
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () {
+                                        setState(() {
+                                          _replyToMessage = null;
+                                        });
+                                      },
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Превью выбранного файла
-                    if (_selectedFilePath != null || _selectedFileBytes != null)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.insert_drive_file_rounded, color: _accent2),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _selectedFileName ?? 'Файл',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
-                                  ),
-                                  if (_selectedFileSize != null)
-                                    Text(
-                                      _formatBytes(_selectedFileSize!),
-                                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha:0.65)),
+                            // Превью выбранного изображения
+                            if (_selectedImagePath != null ||
+                                _selectedImageBytes != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                height: 100,
+                                child: Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child:
+                                          kIsWeb && _selectedImageBytes != null
+                                          ? Image.memory(
+                                              _selectedImageBytes!,
+                                              width: 100,
+                                              height: 100,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : _selectedImagePath != null
+                                          ? Image.file(
+                                              File(_selectedImagePath!),
+                                              width: 100,
+                                              height: 100,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : const SizedBox.shrink(),
                                     ),
-                                ],
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _selectedImagePath = null;
+                                            _selectedImageBytes = null;
+                                            _selectedImageName = null;
+                                          });
+                                        },
+                                        iconSize: 20,
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(),
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: Colors.black54,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _selectedFilePath = null;
-                                  _selectedFileBytes = null;
-                                  _selectedFileName = null;
-                                  _selectedFileSize = null;
-                                });
-                              },
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
+                            // Превью выбранного файла
+                            if (_selectedFilePath != null ||
+                                _selectedFileBytes != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: scheme.outline.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.insert_drive_file_rounded,
+                                      color: _accent2,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            _selectedFileName ?? 'Файл',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (_selectedFileSize != null)
+                                            Text(
+                                              _formatBytes(_selectedFileSize!),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: scheme.onSurface
+                                                    .withValues(alpha: 0.65),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedFilePath = null;
+                                          _selectedFileBytes = null;
+                                          _selectedFileName = null;
+                                          _selectedFileSize = null;
+                                        });
+                                      },
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_e2eeStatusText() != null)
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: scheme.outline.withValues(
+                                      alpha: 0.2,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  _e2eeStatusText()!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: scheme.onSurface.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            // ✅ Индикатор записи голосового
+                            ChatInputBar(
+                              scheme: scheme,
+                              accent1: _accent1,
+                              accent2: _accent2,
+                              controller: _controller,
+                              isUploadingImage: _isUploadingImage,
+                              isUploadingFile: _isUploadingFile,
+                              isSendingMessage: _isSendingMessage,
+                              isRecordingVoice: _isRecordingVoice,
+                              voiceRecordDuration: _voiceRecordDuration,
+                              onCancelVoiceRecording: _cancelVoiceRecording,
+                              onPickFile: _pickFile,
+                              onPickImage: _pickImage,
+                              onPickCamera: _pickImageFromCamera,
+                              onToggleVoiceRecording: _toggleVoiceRecording,
+                              onVoiceLongPressStart:
+                                  _startVoiceRecordingIfNotRecording,
+                              onVoiceLongPressEnd:
+                                  _stopAndSendVoiceRecordingIfRecording,
+                              onSend: _sendMessage,
+                              onChanged: _handleComposerChanged,
+                              mentionSuggestions: _mentionSuggestions,
+                              onSelectMention: _insertMention,
                             ),
                           ],
                         ),
                       ),
-                    if (_e2eeStatusText() != null)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
-                        ),
-                        child: Text(
-                          _e2eeStatusText()!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurface.withValues(alpha: 0.8),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    // ✅ Индикатор записи голосового
-                    ChatInputBar(
-                      scheme: scheme,
-                      accent1: _accent1,
-                      accent2: _accent2,
-                      controller: _controller,
-                      isUploadingImage: _isUploadingImage,
-                      isUploadingFile: _isUploadingFile,
-                      isSendingMessage: _isSendingMessage,
-                      isRecordingVoice: _isRecordingVoice,
-                      voiceRecordDuration: _voiceRecordDuration,
-                      onCancelVoiceRecording: _cancelVoiceRecording,
-                      onPickFile: _pickFile,
-                      onPickImage: _pickImage,
-                      onPickCamera: _pickImageFromCamera,
-                      onToggleVoiceRecording: _toggleVoiceRecording,
-                      onVoiceLongPressStart: _startVoiceRecordingIfNotRecording,
-                      onVoiceLongPressEnd: _stopAndSendVoiceRecordingIfRecording,
-                      onSend: _sendMessage,
-                      onChanged: _handleComposerChanged,
-                      mentionSuggestions: _mentionSuggestions,
-                      onSelectMention: _insertMention,
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+                  ),
                 ],
               ),
             ],
