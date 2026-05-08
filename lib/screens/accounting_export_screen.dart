@@ -678,7 +678,9 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   return null;
                 }
 
-                if (lessonsFiltered.isEmpty) return null;
+                // Оставляем ученика без строк занятий (ещё не было уроков / нет уроков в периоде),
+                // кроме режима «только долги» — тогда нужны только неоплаченные занятия.
+                if (lessonsFiltered.isEmpty && _onlyDebts) return null;
 
                 return {
                   ...s,

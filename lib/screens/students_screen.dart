@@ -28,6 +28,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   String _searchQuery = '';
   Set<int> _hiddenStudentIds = <int>{};
   bool _showHidden = false;
+  bool _showOnlyDebtors = false;
   bool _isSuperuser = false;
   int _makeupPendingTotal = 0;
   List<Map<String, dynamic>> _makeupPendingItems = [];
@@ -325,6 +326,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           );
     final filteredStudents = _students.where((s) {
       if (!_showHidden && _hiddenStudentIds.contains(s.id)) return false;
+      if (_showOnlyDebtors && s.balance >= 0) return false;
       return _matchesStudent(s, q);
     }).toList();
     final addedChildrenCount = _students.length;
@@ -344,17 +346,120 @@ class _StudentsScreenState extends State<StudentsScreen> {
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Должники',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _showOnlyDebtors
+                        ? Colors.red.shade700
+                        : scheme.onSurface.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Switch.adaptive(
+                  value: _showOnlyDebtors,
+                  activeThumbColor: Colors.red.shade700,
+                  onChanged: (value) => setState(() => _showOnlyDebtors = value),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.10),
+              color: _accent1.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.replay_rounded, color: Colors.orange),
-                  onPressed: _openMakeupPendingSheet,
-                  tooltip: 'К отработке',
+                PopupMenuButton<String>(
+                  tooltip: 'Действия',
+                  icon: Icon(Icons.more_vert_rounded, color: _accent1),
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'makeup':
+                        _openMakeupPendingSheet();
+                        break;
+                      case 'hidden':
+                        setState(() => _showHidden = !_showHidden);
+                        break;
+                      case 'calendar':
+                        await Navigator.push<void>(
+                          context,
+                          MaterialPageRoute<void>(builder: (_) => const LessonsCalendarScreen()),
+                        );
+                        break;
+                      case 'export':
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AccountingExportScreen()),
+                        );
+                        break;
+                      case 'refresh':
+                        await _loadStudents();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'makeup',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.replay_rounded, color: Colors.orange),
+                          const SizedBox(width: 10),
+                          Text('К отработке${visibleMakeupTotal > 0 ? ' ($visibleMakeupTotal)' : ''}'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'hidden',
+                      child: Row(
+                        children: [
+                          Icon(
+                            _showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                            color: _showHidden ? Colors.teal : Colors.grey,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(_showHidden ? 'Скрыть выпускников' : 'Показать скрытых ($hiddenVisibleCount)'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'calendar',
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_month_rounded, color: Colors.teal),
+                          SizedBox(width: 10),
+                          Text('Календарь занятий'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'export',
+                      child: Row(
+                        children: [
+                          Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
+                          SizedBox(width: 10),
+                          Text('Выгрузка (бухгалтерия)'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'refresh',
+                      child: Row(
+                        children: [
+                          Icon(Icons.refresh_rounded, color: _accent1),
+                          const SizedBox(width: 10),
+                          const Text('Обновить'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 if (visibleMakeupTotal > 0)
                   Positioned(
@@ -377,64 +482,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
               ],
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: (_showHidden ? Colors.teal : Colors.grey).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: Icon(_showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: _showHidden ? Colors.teal : Colors.grey),
-              onPressed: () => setState(() => _showHidden = !_showHidden),
-              tooltip: _showHidden ? 'Скрыть выпускников' : 'Показать скрытых ($hiddenVisibleCount)',
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: Colors.teal.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.calendar_month_rounded, color: Colors.teal),
-              onPressed: () {
-                Navigator.push<void>(
-                  context,
-                  MaterialPageRoute<void>(builder: (_) => const LessonsCalendarScreen()),
-                );
-              },
-              tooltip: 'Календарь занятий',
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.withValues(alpha:0.08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AccountingExportScreen()),
-                );
-              },
-              tooltip: 'Выгрузка (бухгалтерия)',
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 12),
-            decoration: BoxDecoration(
-              color: _accent1.withValues(alpha:0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: _accent1),
-              onPressed: _loadStudents,
-              tooltip: 'Обновить',
             ),
           ),
         ],

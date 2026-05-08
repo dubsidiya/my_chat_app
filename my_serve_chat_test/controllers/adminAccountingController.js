@@ -342,22 +342,51 @@ export const exportAccounting = async (req, res) => {
     const teacherOut = [...teacherAgg.values()].sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));
 
     // Дерево: преподаватель -> дети -> занятия (с paid/unpaid)
+    // Сначала все пары из teacher_students — чтобы были видны дети без занятий в периоде.
     const treeByTeacher = new Map(); // teacherId -> {teacherId, teacherUsername, students: Map}
-    for (const l of lessonsInPeriod) {
-      const tid = l.teacherId;
+
+    const ensureTreeTeacherNode = (tid, teacherUsername) => {
+      const uname =
+        teacherUsername !== undefined && teacherUsername !== null
+          ? String(teacherUsername)
+          : (teacherById.get(tid) || '').toString();
       if (!treeByTeacher.has(tid)) {
         treeByTeacher.set(tid, {
           teacherId: tid,
-          teacherUsername: l.teacherUsername,
+          teacherUsername: uname,
           students: new Map(), // studentId -> {studentId, studentName, lessons: []}
         });
+      } else if (uname && !(treeByTeacher.get(tid).teacherUsername || '').toString().trim()) {
+        treeByTeacher.get(tid).teacherUsername = uname;
       }
-      const tNode = treeByTeacher.get(tid);
+      return treeByTeacher.get(tid);
+    };
+
+    for (const row of linksRes.rows) {
+      if (bankTransferOnly && !studentIdsBankTransfer.has(row.student_id)) continue;
+      const tNode = ensureTreeTeacherNode(row.teacher_id, row.teacher_username);
+      const sid = row.student_id;
+      if (!tNode.students.has(sid)) {
+        const st = studentById.get(sid);
+        tNode.students.set(sid, {
+          studentId: sid,
+          studentName: st?.name || '',
+          overallDebtAsOfTo: debtByStudent.get(sid) || 0,
+          overallPrepaidAsOfTo: remainingCreditByStudent.get(sid) || 0,
+          lessons: [],
+        });
+      }
+    }
+
+    for (const l of lessonsInPeriod) {
+      const tid = l.teacherId;
+      const tNode = ensureTreeTeacherNode(tid, l.teacherUsername);
       if (!tNode.students.has(l.studentId)) {
         const sid = l.studentId;
-        tNode.students.set(l.studentId, {
+        const st = studentById.get(sid);
+        tNode.students.set(sid, {
           studentId: sid,
-          studentName: l.studentName,
+          studentName: l.studentName || st?.name || '',
           overallDebtAsOfTo: debtByStudent.get(sid) || 0,
           overallPrepaidAsOfTo: remainingCreditByStudent.get(sid) || 0,
           lessons: [],
