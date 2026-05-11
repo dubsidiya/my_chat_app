@@ -671,6 +671,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemBuilder: (context, index) {
                       final student = filteredStudents[index];
+                      final isHiddenStudent = _hiddenStudentIds.contains(student.id);
                       return Dismissible(
                         key: Key('student_${student.id}'),
                         direction: DismissDirection.endToStart,
@@ -678,34 +679,39 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
                           decoration: BoxDecoration(
-                            color: Colors.red,
+                            color: isHiddenStudent ? Colors.teal : Colors.red,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Icon(
-                            Icons.delete_outline_rounded,
+                          child: Icon(
+                            isHiddenStudent ? Icons.visibility_rounded : Icons.delete_outline_rounded,
                             color: Colors.white,
-                            size: 32,
+                            size: 30,
                           ),
                         ),
                         confirmDismiss: (direction) async {
                           final result = await showDialog<String>(
                             context: context,
                             builder: (context) => AlertDialog(
-                              title: const Text('Что сделать с учеником?'),
+                              title: Text(isHiddenStudent ? 'Что сделать со скрытым учеником?' : 'Что сделать с учеником?'),
                               content: Text(
                                 'Ученик: "${student.name}"\n\n'
-                                'Удалить — только снять вашу связь с учеником.\n'
-                                'Скрыть — оставить в базе, но убрать из ваших списков.',
+                                '${isHiddenStudent ? 'Вернуть — снова показывать в вашем списке.\nУдалить — только снять вашу связь с учеником.' : 'Удалить — только снять вашу связь с учеником.\nСкрыть — оставить в базе, но убрать из ваших списков.'}',
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, 'cancel'),
                                   child: const Text('Отмена'),
                                 ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, 'hide'),
-                                  child: const Text('Скрыть'),
-                                ),
+                                if (isHiddenStudent)
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, 'unhide'),
+                                    child: const Text('Вернуть'),
+                                  )
+                                else
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, 'hide'),
+                                    child: const Text('Скрыть'),
+                                  ),
                                 if (_isSuperuser)
                                   TextButton(
                                     onPressed: () => Navigator.pop(context, 'delete_full'),
@@ -721,6 +727,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           if (!context.mounted) return false;
                           if (result == 'hide') {
                             await _hideStudent(student);
+                            return false;
+                          }
+                          if (result == 'unhide') {
+                            await _unhideStudent(student);
                             return false;
                           }
                           if (result == 'delete_full') {
@@ -825,6 +835,19 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                     ),
                                   ),
                                 ),
+                                if (isHiddenStudent) ...[
+                                  const SizedBox(height: 4),
+                                  TextButton(
+                                    onPressed: () => _unhideStudent(student),
+                                    style: TextButton.styleFrom(
+                                      minimumSize: const Size(0, 28),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                                    ),
+                                    child: const Text('Вернуть'),
+                                  ),
+                                ],
                                 if (student.isDebtor) ...[
                                   const SizedBox(height: 4),
                                   Container(
