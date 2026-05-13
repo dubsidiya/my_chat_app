@@ -41,6 +41,14 @@ Use less context **without skipping required work**:
 - **Avoid redundant duplication**: don’t paste the same long snippet twice or re-quote unchanged code blocks; summarize deltas.
 - Prefer **skills** (`my-chat-app-architecture`) and **scoped rules** (globs) over re-deriving layout from scratch when the answer is documented there.
 
+## Session size (same effectiveness, lower context cost)
+
+- **One goal per thread**; open a new chat for unrelated work so history stays short.
+- **@ only what matters**: files or a single folder, not the whole repo; name the symbol or route instead of pasting entire files.
+- **Errors**: paste `file:line` + message + minimal surrounding lines; avoid duplicating multi-hundred-line dumps.
+- **Large files**: ask for a region (“around line N”) or a function name so reads stay chunked.
+- **Rules**: keep `alwaysApply` rules lean; use scoped rules (globs) for niche areas instead of one giant global rule.
+
 ## Response Style
 
 - Report what was changed, what was verified, and any remaining risk.
