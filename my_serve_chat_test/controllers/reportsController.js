@@ -742,23 +742,22 @@ export const updateReport = async (req, res) => {
       });
     }
 
-    // Обновляем отчет и всегда пересчитываем is_late от новой даты отчёта.
+    // is_late определяется при создании отчёта; при редактировании не пересчитываем,
+    // чтобы вовремя сданный отчёт не становился «поздним» из-за правки спустя дни.
     const reportResult = superuser
       ? await client.query(
           `UPDATE reports 
-           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP,
-               is_late = ($1::date < $4::date)
+           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
            WHERE id = $3
            RETURNING *`,
-          [report_date, finalContent, reportId, todayIso]
+          [report_date, finalContent, reportId]
         )
       : await client.query(
           `UPDATE reports 
-           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP,
-               is_late = ($1::date < $5::date)
+           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
            WHERE id = $3 AND created_by = $4
            RETURNING *`,
-          [report_date, finalContent, reportId, reportOwnerId, todayIso]
+          [report_date, finalContent, reportId, reportOwnerId]
         );
     const report = reportResult.rows[0];
 
