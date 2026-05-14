@@ -6,7 +6,7 @@ import '../services/e2ee_service.dart';
 import '../utils/timed_http.dart';
 
 /// Изображение по URL; при [chatId] и зашифрованном ответе — расшифровывает ключом чата.
-class E2eeImage extends StatelessWidget {
+class E2eeImage extends StatefulWidget {
   final String imageUrl;
   final String? chatId;
   final BoxFit fit;
@@ -25,36 +25,76 @@ class E2eeImage extends StatelessWidget {
   });
 
   @override
+  State<E2eeImage> createState() => _E2eeImageState();
+}
+
+class _E2eeImageState extends State<E2eeImage> {
+  Future<Uint8List?>? _decryptFuture;
+
+  bool get _hasChatId => widget.chatId != null && widget.chatId!.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _primeFutureIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant E2eeImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sourceChanged =
+        oldWidget.imageUrl != widget.imageUrl || oldWidget.chatId != widget.chatId;
+    if (!sourceChanged) return;
+    _primeFutureIfNeeded();
+  }
+
+  void _primeFutureIfNeeded() {
+    if (!_hasChatId) {
+      _decryptFuture = null;
+      return;
+    }
+    _decryptFuture = _fetchAndDecrypt(widget.imageUrl, widget.chatId!);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (chatId == null || chatId!.isEmpty) {
+    if (!_hasChatId) {
       return CachedNetworkImage(
-        imageUrl: imageUrl,
-        fit: fit,
-        memCacheWidth: memCacheWidth,
+        imageUrl: widget.imageUrl,
+        fit: widget.fit,
+        memCacheWidth: widget.memCacheWidth,
         httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
-        placeholder: placeholder ?? (_, __) => const SizedBox.shrink(),
-        errorWidget: errorWidget ?? (_, __, ___) => const Icon(Icons.broken_image_rounded),
+        placeholder: widget.placeholder ?? (_, __) => const SizedBox.shrink(),
+        errorWidget:
+            widget.errorWidget ??
+            (_, __, ___) => const Icon(Icons.broken_image_rounded),
       );
     }
     return FutureBuilder<Uint8List?>(
-      future: _fetchAndDecrypt(imageUrl, chatId!),
+      future: _decryptFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return placeholder != null
-              ? placeholder!(context, imageUrl)
+          return widget.placeholder != null
+              ? widget.placeholder!(context, widget.imageUrl)
               : const Center(child: CircularProgressIndicator());
         }
         final bytes = snapshot.data;
         if (bytes != null && bytes.isNotEmpty) {
-          return Image.memory(bytes, fit: fit, cacheWidth: memCacheWidth);
+          return Image.memory(
+            bytes,
+            fit: widget.fit,
+            cacheWidth: widget.memCacheWidth,
+          );
         }
         return CachedNetworkImage(
-          imageUrl: imageUrl,
-          fit: fit,
-          memCacheWidth: memCacheWidth,
+          imageUrl: widget.imageUrl,
+          fit: widget.fit,
+          memCacheWidth: widget.memCacheWidth,
           httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
-          placeholder: placeholder ?? (_, __) => const SizedBox.shrink(),
-          errorWidget: errorWidget ?? (_, __, ___) => const Icon(Icons.broken_image_rounded),
+          placeholder: widget.placeholder ?? (_, __) => const SizedBox.shrink(),
+          errorWidget:
+              widget.errorWidget ??
+              (_, __, ___) => const Icon(Icons.broken_image_rounded),
         );
       },
     );

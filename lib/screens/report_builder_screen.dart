@@ -14,8 +14,18 @@ import '../utils/network_error_helper.dart';
 class ReportBuilderScreen extends StatefulWidget {
   final DateTime? initialDate;
   final int? reportId; // если задан — режим редактирования
+  /// Если задан и `reportId == null` — конструктор открывается как «новый отчёт»,
+  /// предзаполненный слотами из указанного отчёта-шаблона (например, отчёт двухнедельной давности).
+  /// Дата берётся из `initialDate`, статусы по детям сбрасываются в `attended`,
+  /// чтобы преподаватель сам отметил отмены/пропуски точечно.
+  final int? templateReportId;
 
-  const ReportBuilderScreen({super.key, this.initialDate, this.reportId});
+  const ReportBuilderScreen({
+    super.key,
+    this.initialDate,
+    this.reportId,
+    this.templateReportId,
+  });
 
   @override
   // ignore: library_private_types_in_public_api
@@ -50,6 +60,11 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   DateTime _selectedDate = DateTime.now();
 
   bool _isLoading = false;
+  /// Реентрант-гард для _save: блокирует повторный вход до завершения текущего
+  /// запроса. Защищает от двойного клика «Сохранить» в тот же фрейм, когда
+  /// onPressed ещё видит старое (false) значение _isLoading и Idempotency-Key
+  /// успел бы быть выписан второй раз → дубль отчёта на ту же дату.
+  bool _saveInFlight = false;
   List<Student> _students = [];
   final List<_SlotDraft> _slots = [];
   final Map<int, double> _lastPriceByStudent = {};
@@ -91,12 +106,23 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
           : await StorageService.getHiddenStudentIds(userId);
       final visibleStudents = students.where((s) => !hiddenIds.contains(s.id)).toList();
 
-      // Если редактирование — грузим отчет и заполняем слоты
-      if (widget.reportId != null) {
-        final report = await _reportsService.getReport(widget.reportId!);
+      // Режим редактирования: грузим отчёт по reportId, дату и статусы берём из него.
+      // Режим «по шаблону» (templateReportId): грузим отчёт-шаблон,
+      // переносим слоты/учеников/цены, но дату используем из initialDate, статусы — attended.
+      final int? sourceReportId = widget.reportId ?? widget.templateReportId;
+      final bool isTemplateMode = widget.reportId == null && widget.templateReportId != null;
+
+      if (sourceReportId != null) {
+        final report = await _reportsService.getReport(sourceReportId);
         final reportDate = report.reportDate;
 
         final lessons = report.lessons ?? const [];
+        // В шаблонном режиме ученика, которого больше нет в видимом списке
+        // (удалён или скрыт), нельзя выставлять в Dropdown — он упадёт с assertion.
+        // Поэтому такие пишем как null, а цену/время оставляем — учитель выберет ученика руками.
+        // В режиме редактирования старого отчёта поведение не меняем: подмешиваем
+        // отсутствующих учеников через фолбэк в _StudentPickerRow, чтобы не потерять данные.
+        final visibleIds = <int>{for (final s in visibleStudents) s.id};
         final slotDrafts = <_SlotDraft>[];
         final grouped = <String, List<Map<String, dynamic>>>{};
         for (final l in lessons) {
@@ -109,6 +135,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
           grouped.putIfAbsent(key, () => []).add(l);
         }
 
+        int droppedUnknownStudents = 0;
         for (final entry in grouped.entries) {
           final parts = entry.key.split('|');
           final start = parts[0];
@@ -124,8 +151,17 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
             for (int childIndex = 0; childIndex < chunk.length; childIndex++) {
               final item = chunk[childIndex];
-              slot.studentIds[childIndex] = int.tryParse(item['student_id'].toString());
-              slot.statuses[childIndex] = (item['status'] ?? 'attended').toString();
+              final parsedId = int.tryParse(item['student_id'].toString());
+              if (isTemplateMode && parsedId != null && !visibleIds.contains(parsedId)) {
+                slot.studentIds[childIndex] = null;
+                droppedUnknownStudents++;
+              } else {
+                slot.studentIds[childIndex] = parsedId;
+              }
+              // В режиме шаблона все статусы по умолчанию «проведено»;
+              // отмены/пропуски учитель отметит точечно сам.
+              slot.statuses[childIndex] =
+                  isTemplateMode ? 'attended' : (item['status'] ?? 'attended').toString();
               final price = item['price'];
               slot.priceControllers[childIndex].text =
                   price is num ? price.toString() : (double.tryParse(price.toString())?.toString() ?? '');
@@ -142,20 +178,33 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         if (!mounted) return;
         setState(() {
           _students = visibleStudents;
-          _selectedDate = reportDate;
-          _dateController.text = DateFormat('dd.MM.yyyy').format(reportDate);
+          if (!isTemplateMode) {
+            _selectedDate = reportDate;
+            _dateController.text = DateFormat('dd.MM.yyyy').format(reportDate);
+          }
           _slots.clear();
           _slots.addAll(slotDrafts.take(_maxSlots));
         });
+
+        if (isTemplateMode && droppedUnknownStudents > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 4),
+              content: Text(
+                'В шаблоне $droppedUnknownStudents ученик(а) больше недоступен(ы) — '
+                'выберите вручную.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       } else {
         if (!mounted) return;
         setState(() {
           _students = visibleStudents;
           if (_slots.isEmpty) _slots.add(_SlotDraft());
         });
-        if (widget.reportId == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_offerRestoreDraft()));
-        }
+        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_offerRestoreDraft()));
       }
     } catch (e) {
       if (!mounted) return;
@@ -181,6 +230,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
   Future<void> _persistDraftSafe() async {
     if (!mounted || widget.reportId != null) return;
+    // В шаблонном режиме черновик не пишем: иначе предзаполненная копия старого
+    // отчёта может всплыть в следующем «обычном» создании отчёта как «найден черновик».
+    if (widget.templateReportId != null) return;
     final uid = _userId ?? (await StorageService.getUserData())?['id'];
     if (uid == null) return;
     final map = _serializeDraft();
@@ -214,7 +266,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 
   Future<void> _offerRestoreDraft() async {
-    if (widget.reportId != null || !mounted) return;
+    if (widget.reportId != null || widget.templateReportId != null || !mounted) return;
     final uid = _userId ?? (await StorageService.getUserData())?['id'];
     if (uid == null) return;
     _userId = uid;
@@ -476,69 +528,78 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 
   Future<void> _save() async {
-    final built = _buildStructuredSlotsOrNull();
-    if (built == null) return;
-
-    final warnings = _priceWarningsForBuilt(built);
-    if (warnings.isNotEmpty && mounted) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Проверьте цены'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Обнаружены сильные отличия от последних цен по ученикам:'),
-                const SizedBox(height: 8),
-                ...warnings.map((s) => Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('• $s'))),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Исправить')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Всё верно, сохранить')),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
-
-    final slotsPayload = built.map((e) => e.toJson()).toList();
-
-    setState(() => _isLoading = true);
+    // Реентрант-гард: если предыдущий вызов ещё не завершился, второй клик
+    // молча игнорируется. _isLoading через setState может прийти позже, чем
+    // второй tap уже разглядит onPressed != null.
+    if (_saveInFlight) return;
+    _saveInFlight = true;
     try {
-      if (widget.reportId == null) {
-        await _reportsService.createReportStructured(
-          reportDate: _selectedDate,
-          slots: slotsPayload,
+      final built = _buildStructuredSlotsOrNull();
+      if (built == null) return;
+
+      final warnings = _priceWarningsForBuilt(built);
+      if (warnings.isNotEmpty && mounted) {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Проверьте цены'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Обнаружены сильные отличия от последних цен по ученикам:'),
+                  const SizedBox(height: 8),
+                  ...warnings.map((s) => Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('• $s'))),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Исправить')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Всё верно, сохранить')),
+            ],
+          ),
         );
-      } else {
-        await _reportsService.updateReportStructured(
-          id: widget.reportId!,
-          reportDate: _selectedDate,
-          slots: slotsPayload,
-        );
+        if (ok != true) return;
       }
-      final uid = _userId ?? (await StorageService.getUserData())?['id'];
-      if (uid != null) await ReportBuilderDraftStorage.clear(uid);
-      if (!mounted) return;
-      Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text(widget.reportId == null ? 'Отчет создан' : 'Отчет обновлен'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text(_reportSaveErrorText(e)), backgroundColor: Colors.red),
-      );
+
+      final slotsPayload = built.map((e) => e.toJson()).toList();
+
+      setState(() => _isLoading = true);
+      try {
+        if (widget.reportId == null) {
+          await _reportsService.createReportStructured(
+            reportDate: _selectedDate,
+            slots: slotsPayload,
+          );
+        } else {
+          await _reportsService.updateReportStructured(
+            id: widget.reportId!,
+            reportDate: _selectedDate,
+            slots: slotsPayload,
+          );
+        }
+        final uid = _userId ?? (await StorageService.getUserData())?['id'];
+        if (uid != null) await ReportBuilderDraftStorage.clear(uid);
+        if (!mounted) return;
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(widget.reportId == null ? 'Отчет создан' : 'Отчет обновлен'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(duration: const Duration(seconds: 3), content: Text(_reportSaveErrorText(e)), backgroundColor: Colors.red),
+        );
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _saveInFlight = false;
     }
   }
 

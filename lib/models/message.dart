@@ -62,6 +62,24 @@ class Message {
   bool get isImageOnly => messageType == 'image' || (hasImage && content.isEmpty);
   bool get hasText => content.isNotEmpty;
   bool get isEdited => editedAt != null && editedAt!.isNotEmpty;
+  bool get isVideo {
+    final mime = (fileMime ?? '').toLowerCase().trim();
+    if (mime.startsWith('video/')) return true;
+    final name = (fileName ?? '').toLowerCase().trim();
+    if (name.endsWith('.mp4') ||
+        name.endsWith('.mov') ||
+        name.endsWith('.m4v') ||
+        name.endsWith('.webm') ||
+        name.endsWith('.mkv')) {
+      return true;
+    }
+    final url = (fileUrl ?? '').toLowerCase().trim();
+    return url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.endsWith('.m4v') ||
+        url.endsWith('.webm') ||
+        url.endsWith('.mkv');
+  }
   
   // ✅ Статус сообщения для отображения
   MessageStatus get status {

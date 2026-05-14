@@ -17,6 +17,8 @@ class ChatInputBar extends StatelessWidget {
   final VoidCallback onPickFile;
   final VoidCallback onPickImage;
   final VoidCallback onPickCamera;
+  final VoidCallback onPickVideo;
+  final VoidCallback onPickVideoFromCamera;
   final VoidCallback onToggleVoiceRecording;
   final void Function() onVoiceLongPressStart;
   final void Function() onVoiceLongPressEnd;
@@ -40,6 +42,8 @@ class ChatInputBar extends StatelessWidget {
     required this.onPickFile,
     required this.onPickImage,
     required this.onPickCamera,
+    required this.onPickVideo,
+    required this.onPickVideoFromCamera,
     required this.onToggleVoiceRecording,
     required this.onVoiceLongPressStart,
     required this.onVoiceLongPressEnd,
@@ -56,8 +60,74 @@ class ChatInputBar extends StatelessWidget {
     return '$minutes:$seconds';
   }
 
+  Future<void> _showAttachmentSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: scheme.surface,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.attach_file_rounded, color: accent2),
+                title: const Text('Файл'),
+                subtitle: const Text('Документ, архив или другой файл'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onPickFile();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.image_rounded, color: accent1),
+                title: const Text('Фото из галереи'),
+                subtitle: const Text('Выбрать изображение из устройства'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onPickImage();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.photo_camera_rounded, color: accent1),
+                title: const Text('Камера'),
+                subtitle: const Text('Сделать новое фото'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onPickCamera();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.video_library_rounded, color: accent1),
+                title: const Text('Видео из галереи'),
+                subtitle: const Text('Выбрать видео из устройства'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onPickVideo();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.videocam_rounded, color: accent1),
+                title: const Text('Снять видео'),
+                subtitle: const Text('Записать видео с камеры'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onPickVideoFromCamera();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isBusy = isUploadingImage || isUploadingFile || isSendingMessage;
+    final canOpenAttachmentMenu = !isRecordingVoice && !isBusy;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -159,89 +229,84 @@ class ChatInputBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: IconButton(
-                icon: Icon(Icons.attach_file_rounded, color: accent2, size: 22),
-                onPressed: isRecordingVoice ? null : onPickFile,
-                tooltip: 'Прикрепить файл',
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              decoration: BoxDecoration(
-                color: accent1.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: IconButton(
-                icon: Icon(Icons.image_rounded, color: accent1, size: 22),
-                onPressed: isRecordingVoice ? null : onPickImage,
-                tooltip: 'Выбрать фото из галереи',
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              decoration: BoxDecoration(
-                color: accent1.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: IconButton(
-                icon: Icon(Icons.photo_camera_rounded, color: accent1, size: 22),
-                onPressed: isRecordingVoice ? null : onPickCamera,
-                tooltip: 'Снять фото на камеру',
+                icon: Icon(Icons.add_rounded, color: accent2, size: 22),
+                onPressed: canOpenAttachmentMenu
+                    ? () => _showAttachmentSheet(context)
+                    : null,
+                tooltip: 'Вложения',
               ),
             ),
             const SizedBox(width: 8),
-            Tooltip(
-              message: 'Удерживайте для записи. Отпустите — отправить. Тап — старт/стоп.',
-              child: GestureDetector(
-                onLongPressStart: (_) {
-                  if (isUploadingImage || isUploadingFile) return;
-                  onVoiceLongPressStart();
-                },
-                onLongPressEnd: (_) {
-                  if (isUploadingImage || isUploadingFile) return;
-                  onVoiceLongPressEnd();
-                },
-                child: Material(
-                  color: (isRecordingVoice ? scheme.error : accent1).withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: (isUploadingImage || isUploadingFile) ? null : onToggleVoiceRecording,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      child: Icon(
-                        isRecordingVoice ? Icons.stop_rounded : Icons.mic_rounded,
-                        color: isRecordingVoice ? scheme.error : accent1,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
                 ),
-                child: TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    hintText: 'Введите сообщение...',
-                    hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.55)),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  ),
-                  maxLines: 6,
-                  minLines: 1,
-                  textCapitalization: TextCapitalization.sentences,
-                  onChanged: onChanged,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        decoration: InputDecoration(
+                          hintText: 'Сообщение',
+                          hintStyle: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.55),
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        maxLines: 6,
+                        minLines: 1,
+                        textCapitalization: TextCapitalization.sentences,
+                        onChanged: onChanged,
+                      ),
+                    ),
+                    Tooltip(
+                      message:
+                          'Удерживайте для записи. Отпустите — отправить. Тап — старт/стоп.',
+                      child: GestureDetector(
+                        onLongPressStart: (_) {
+                          if (isBusy) return;
+                          onVoiceLongPressStart();
+                        },
+                        onLongPressEnd: (_) {
+                          if (isBusy) return;
+                          onVoiceLongPressEnd();
+                        },
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: isBusy ? null : onToggleVoiceRecording,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
+                              child: Icon(
+                                isRecordingVoice
+                                    ? Icons.stop_rounded
+                                    : Icons.mic_rounded,
+                                color: isRecordingVoice ? scheme.error : accent1,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            if (isUploadingImage || isUploadingFile || isSendingMessage)
+            if (isBusy)
               const Padding(
                 padding: EdgeInsets.all(12),
                 child: SizedBox(
@@ -261,7 +326,7 @@ class ChatInputBar extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.send, color: Colors.white),
+                  icon: const Icon(Icons.send_rounded, color: Colors.white),
                   onPressed: (isRecordingVoice || isSendingMessage) ? null : onSend,
                   tooltip: 'Отправить',
                 ),

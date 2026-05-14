@@ -182,28 +182,73 @@ extension _ChatScreenMembersPart on _ChatScreenState {
   }
 
   void _openImageViewer(Message msg) {
-    final url = (msg.imageUrl ?? '').trim();
-    if (url.isEmpty) return;
+    final images = <ChatViewerImageItem>[];
+    var selectedIndex = 0;
+    var foundById = false;
+    var foundByUrl = false;
+    final selectedUrl = (msg.imageUrl ?? '').trim();
+
+    for (final message in _messages) {
+      final imageUrl = (message.imageUrl ?? '').trim();
+      if (imageUrl.isEmpty) continue;
+      final originalUrl = (message.originalImageUrl ?? imageUrl).trim();
+      final parsedName = originalUrl.split('/').last;
+      final fileName = parsedName.isNotEmpty ? parsedName : 'image.jpg';
+
+      if (!foundById && message.id == msg.id) {
+        selectedIndex = images.length;
+        foundById = true;
+      } else if (!foundById &&
+          !foundByUrl &&
+          selectedUrl.isNotEmpty &&
+          imageUrl == selectedUrl) {
+        selectedIndex = images.length;
+        foundByUrl = true;
+      }
+
+      images.add(
+        ChatViewerImageItem(
+          imageUrl: imageUrl,
+          originalImageUrl: originalUrl,
+          fileName: fileName,
+        ),
+      );
+    }
+
+    if (images.isEmpty) return;
+
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
         barrierColor: Colors.black,
         pageBuilder: (_, __, ___) => ChatFullscreenImageViewer(
-          imageUrl: url,
+          images: images,
+          initialIndex: selectedIndex,
           chatId: widget.chatId.toString(),
-          originalImageUrl: (msg.originalImageUrl ?? url),
-          fileName: url.split('/').last.isNotEmpty
-              ? url.split('/').last
-              : 'image.jpg',
-          onDownload: () => _downloadImage(
-            (msg.originalImageUrl ?? url),
-            url.split('/').last.isNotEmpty ? url.split('/').last : 'image.jpg',
+          onDownload: (item) => _downloadImage(
+            item.originalImageUrl,
+            item.fileName,
           ),
         ),
         transitionsBuilder: (_, animation, __, child) {
           return FadeTransition(opacity: animation, child: child);
         },
         transitionDuration: const Duration(milliseconds: 200),
+      ),
+    );
+  }
+
+  void _openVideoViewer(Message msg) {
+    final url = (msg.fileUrl ?? '').trim();
+    if (url.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerScreen(
+          videoUrl: url,
+          title: msg.fileName?.trim().isNotEmpty == true
+              ? msg.fileName!.trim()
+              : 'Видео',
+        ),
       ),
     );
   }

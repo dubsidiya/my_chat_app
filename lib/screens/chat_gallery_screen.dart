@@ -2,14 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_media_item.dart';
 import '../services/messages_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import '../widgets/skeleton_placeholder.dart';
+import '../widgets/video_thumbnail_view.dart';
 import 'photo_viewer_screen.dart';
+import 'video_player_screen.dart';
 
 class ChatGalleryScreen extends StatefulWidget {
   final String chatId;
@@ -116,10 +117,17 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
     return incoming.where((e) => !existing.contains(e.id)).toList();
   }
 
-  Future<void> _openVideo(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openVideo(ChatMediaItem item) async {
+    final url = (item.fileUrl ?? '').trim();
+    if (url.isEmpty || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerScreen(
+          videoUrl: url,
+          title: decodeFileNameForDisplay(item.fileName, fallback: 'Видео'),
+        ),
+      ),
+    );
   }
 
   void _openImage(ChatMediaItem item) {
@@ -227,34 +235,62 @@ class _ChatGalleryScreenState extends State<ChatGalleryScreen> {
                                 // video tile
                                 final url = (item.fileUrl ?? '').trim();
                                 return GestureDetector(
-                                  onTap: url.isEmpty ? null : () => _openVideo(url),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: scheme.outline.withValues(alpha: 0.25)),
-                                    ),
-                                    child: Stack(
+                                  onTap: url.isEmpty ? null : () => _openVideo(item),
+                                  child: VideoThumbnailView(
+                                    videoUrl: url,
+                                    borderRadius: BorderRadius.circular(12),
+                                    showDuration: true,
+                                    overlay: Stack(
+                                      fit: StackFit.expand,
                                       children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.black.withValues(alpha: 0.05),
+                                                Colors.black.withValues(alpha: 0.45),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
                                         Center(
-                                          child: Icon(
-                                            Icons.play_circle_fill_rounded,
-                                            size: 44,
-                                            color: scheme.onSurface.withValues(alpha: 0.65),
+                                          child: Container(
+                                            width: 42,
+                                            height: 42,
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.45),
+                                              borderRadius: BorderRadius.circular(21),
+                                            ),
+                                            child: const Icon(
+                                              Icons.play_arrow_rounded,
+                                              color: Colors.white,
+                                              size: 28,
+                                            ),
                                           ),
                                         ),
                                         Positioned(
                                           left: 8,
-                                          right: 8,
+                                          right: 58,
                                           bottom: 8,
                                           child: Text(
-                                            decodeFileNameForDisplay(item.fileName, fallback: 'Видео'),
+                                            decodeFileNameForDisplay(
+                                              item.fileName,
+                                              fallback: 'Видео',
+                                            ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 11,
-                                              color: scheme.onSurface.withValues(alpha: 0.75),
+                                              color: Colors.white,
                                               fontWeight: FontWeight.w600,
+                                              shadows: [
+                                                Shadow(
+                                                  color: Colors.black87,
+                                                  blurRadius: 3,
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ),

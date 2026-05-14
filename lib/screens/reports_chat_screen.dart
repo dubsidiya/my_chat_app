@@ -194,6 +194,93 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     }
   }
 
+  /// Защита от двойного тапа на кнопку «По шаблону»: пока идёт поиск/открытие,
+  /// повторные нажатия игнорируются (флаг быстрее, чем перерисовка через _isLoading).
+  bool _openingTemplate = false;
+
+  /// Открыть конструктор, предзаполненный отчётом ровно 14 дней назад от выбранной даты.
+  /// Учитель чаще всего ведёт занятия с тем же расписанием по дням недели —
+  /// шаблон ускоряет ввод, а отмены он внесёт точечно сам.
+  Future<void> _openBuilderFromTwoWeeksAgo() async {
+    if (_openingTemplate) return;
+    _openingTemplate = true;
+    try {
+      // Календарное вычитание (а не Duration(days:14)) — устойчиво к DST.
+      // DateTime сам нормализует отрицательный день месяца.
+      final target = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14);
+
+      // report_date приходит из Postgres типа `date`; pg-драйвер часто отдаёт его
+      // как UTC-метку (XX:00:00Z), и сырая дата может «съезжать» на ±1 день
+      // относительно локального дня пользователя. Сравниваем по локальным компонентам.
+      bool sameLocalDay(Report r) {
+        final d = r.reportDate.toLocal();
+        return d.year == target.year && d.month == target.month && d.day == target.day;
+      }
+      bool ownedByMe(Report r) {
+        // В «Все отчёты» нужно взять именно свой отчёт; в «Мои отчёты» список и так свой.
+        if (!_allReportsMode) return true;
+        if (r.createdBy == null) return true;
+        return r.createdBy?.toString() == widget.userId;
+      }
+
+      Report? template;
+      for (final r in _reports) {
+        if (sameLocalDay(r) && ownedByMe(r)) {
+          template = r;
+          break;
+        }
+      }
+
+      // Если в локальном кэше шаблон не нашёлся — добираем свежий список с сервера.
+      // GET /reports всегда возвращает только мои отчёты, поэтому подходит и для режима
+      // «Все отчёты» (нам всё равно нужен именно свой шаблон). Это же закрывает
+      // потенциальную пагинацию /reports в будущем и устаревший кэш после правок
+      // отчётов в другой сессии/устройстве.
+      if (template == null) {
+        try {
+          final fresh = await _reportsService.getAllReports();
+          for (final r in fresh) {
+            if (sameLocalDay(r)) {
+              template = r;
+              break;
+            }
+          }
+        } catch (_) {
+          // молча: ниже покажем «не найден»; настоящие сетевые ошибки уже видны в _loadReports.
+        }
+      }
+
+      if (!mounted) return;
+      if (template == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(
+              'Ваш отчёт за ${DateFormat('dd.MM.yyyy').format(target)} не найден. '
+              'Шаблон взять не из чего.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReportBuilderScreen(
+            initialDate: _selectedDate,
+            templateReportId: template!.id,
+          ),
+        ),
+      );
+      if (result == true) {
+        await _onRefresh();
+      }
+    } finally {
+      _openingTemplate = false;
+    }
+  }
+
   Future<void> _openReportText(Report report) async {
     await Navigator.push<void>(
       context,
@@ -564,6 +651,40 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 ),
                               ),
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading ? null : _openBuilderFromTwoWeeksAgo,
+                            icon: Icon(Icons.event_repeat_rounded, color: _accent1),
+                            label: Text(
+                              'По шаблону 2-недельной давности',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _accent1,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: _accent1.withValues(alpha: 0.6)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Заполнит шаблон отчета за '
+                          '${DateFormat('dd.MM.yyyy').format(DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14))}. '
+                          'У всех будет стоять ПРОВЕДЕНО!!!. Обательно к ручной проверке!',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.3,
+                            color: scheme.onSurface.withValues(alpha: 0.55),
                           ),
                         ),
                       ],

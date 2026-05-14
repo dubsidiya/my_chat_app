@@ -47,6 +47,12 @@ const allowedExtensions = new Set([
   '.ogg',
   '.opus',
   '.wav',
+  // video
+  '.mp4',
+  '.mov',
+  '.m4v',
+  '.webm',
+  '.mkv',
 ]);
 
 // Допускаем типы документов/архивов. Если MIME приходит "кривой" (часто на web),
@@ -68,6 +74,8 @@ const allowedMimePrefixes = [
   'text/css',
   // audio (voice messages)
   'audio/',
+  // video
+  'video/',
 ];
 
 const fileFilter = (req, file, cb) => {
@@ -79,7 +87,7 @@ const fileFilter = (req, file, cb) => {
 
   if (okByExt || okByMime) return cb(null, true);
 
-  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, код (.py, .js, .ts, .html, .css), а также аудио (M4A/AAC/MP3/OGG/OPUS/WAV)'));
+  cb(new Error('Недопустимый тип файла. Разрешены: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, JSON, ZIP, код (.py, .js, .ts, .html, .css), аудио (M4A/AAC/MP3/OGG/OPUS/WAV) и видео (MP4/MOV/M4V/WEBM/MKV)'));
 };
 
 // Лимит размера файла для загрузки в чат (100 MB — защита от DoS: файл хранится в памяти до загрузки в облако)

@@ -63,6 +63,71 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     await _pickImageFromSource(ImageSource.camera);
   }
 
+  Future<void> _pickVideoFromSource(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickVideo(source: source);
+      if (picked == null) return;
+
+      final pickedName = picked.name.trim().isNotEmpty
+          ? picked.name
+          : (source == ImageSource.camera ? 'video.mp4' : 'video');
+
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        if (bytes.isEmpty) return;
+        setState(() {
+          _selectedFileBytes = bytes;
+          _selectedFilePath = null;
+          _selectedFileName = pickedName;
+          _selectedFileSize = bytes.length;
+          _selectedImagePath = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+        });
+      } else {
+        final length = await picked.length();
+        setState(() {
+          _selectedFilePath = picked.path;
+          _selectedFileBytes = null;
+          _selectedFileName = pickedName;
+          _selectedFileSize = length;
+          _selectedImagePath = null;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ошибка выбора видео: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    await _pickVideoFromSource(ImageSource.gallery);
+  }
+
+  Future<void> _pickVideoFromCamera() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Съёмка с камеры недоступна в веб-версии'),
+        ),
+      );
+      return;
+    }
+    await _pickVideoFromSource(ImageSource.camera);
+  }
+
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(

@@ -11,6 +11,7 @@ import 'e2ee_image.dart';
 import 'link_preview_card.dart';
 import 'mention_text.dart';
 import 'skeleton_placeholder.dart';
+import 'video_thumbnail_view.dart';
 
 class ChatMessageTile extends StatelessWidget {
   final Message msg;
@@ -31,6 +32,7 @@ class ChatMessageTile extends StatelessWidget {
   final VoidCallback onOpenSenderProfile;
   final VoidCallback onShowMessageMenu;
   final VoidCallback onOpenImage;
+  final VoidCallback onOpenVideo;
   final Widget Function() buildVoiceBubble;
   final bool Function() isVoiceMessage;
   final String Function(int bytes) formatBytes;
@@ -57,6 +59,7 @@ class ChatMessageTile extends StatelessWidget {
     required this.onOpenSenderProfile,
     required this.onShowMessageMenu,
     required this.onOpenImage,
+    required this.onOpenVideo,
     required this.buildVoiceBubble,
     required this.isVoiceMessage,
     required this.formatBytes,
@@ -271,6 +274,123 @@ class ChatMessageTile extends StatelessWidget {
                       if (msg.hasFile) ...[
                         if (isVoiceMessage()) ...[
                           buildVoiceBubble(),
+                        ] else if (msg.isVideo) ...[
+                          GestureDetector(
+                            onTap: onOpenVideo,
+                            child: Container(
+                              constraints: const BoxConstraints(maxWidth: 260),
+                              decoration: BoxDecoration(
+                                color: isMine
+                                    ? Colors.white.withValues(alpha: 0.18)
+                                    : AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isMine
+                                      ? Colors.white.withValues(alpha: 0.25)
+                                      : AppColors.borderDark,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 132,
+                                    child: VideoThumbnailView(
+                                      videoUrl: (msg.fileUrl ?? '').trim(),
+                                      borderRadius: BorderRadius.circular(10),
+                                      showDuration: true,
+                                      overlay: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: [
+                                                  Colors.black.withValues(alpha: 0.1),
+                                                  Colors.black.withValues(alpha: 0.45),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          Center(
+                                            child: Container(
+                                              width: 44,
+                                              height: 44,
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(alpha: 0.45),
+                                                borderRadius: BorderRadius.circular(22),
+                                              ),
+                                              child: const Icon(
+                                                Icons.play_arrow_rounded,
+                                                color: Colors.white,
+                                                size: 30,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          decodeFileNameForDisplay(
+                                            msg.fileName,
+                                            fallback: 'Видео',
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: isMine
+                                                ? Colors.white
+                                                : AppColors.onSurfaceDark,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Видео',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isMine
+                                                    ? Colors.white70
+                                                    : AppColors
+                                                        .onSurfaceVariantDark,
+                                              ),
+                                            ),
+                                            if (msg.fileSize != null) ...[
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                formatBytes(msg.fileSize!),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isMine
+                                                      ? Colors.white70
+                                                      : AppColors
+                                                          .onSurfaceVariantDark,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ] else ...[
                           GestureDetector(
                             onTap: () async {

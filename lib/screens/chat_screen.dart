@@ -41,6 +41,7 @@ import '../widgets/fade_scale_in.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 import 'chat_gallery_screen.dart';
+import 'video_player_screen.dart';
 import 'user_profile_screen.dart';
 import '../widgets/chat_fullscreen_image_viewer.dart';
 import '../widgets/chat_voice_bubble.dart';
@@ -1183,6 +1184,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                     ),
                                                 onOpenImage: () =>
                                                     _openImageViewer(msg),
+                                                onOpenVideo: () =>
+                                                    _openVideoViewer(msg),
                                                 buildVoiceBubble: () =>
                                                     _buildVoiceBubble(
                                                       msg,
@@ -1886,6 +1889,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onPickFile: _pickFile,
                               onPickImage: _pickImage,
                               onPickCamera: _pickImageFromCamera,
+                              onPickVideo: _pickVideo,
+                              onPickVideoFromCamera: _pickVideoFromCamera,
                               onToggleVoiceRecording: _toggleVoiceRecording,
                               onVoiceLongPressStart:
                                   _startVoiceRecordingIfNotRecording,
