@@ -680,7 +680,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                         Text(
                           'Заполнит шаблон отчета за '
                           '${DateFormat('dd.MM.yyyy').format(DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14))}. '
-                          'У всех будет стоять ПРОВЕДЕНО!!!. Обательно к ручной проверке!',
+                          'У всех будет стоять ПРОВЕДЕНО!!!. Обательно к ручной проверке! ',
                           style: TextStyle(
                             fontSize: 11,
                             height: 1.3,
