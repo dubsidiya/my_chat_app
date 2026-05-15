@@ -1,5 +1,11 @@
 import pool from '../db.js';
 import { sqlUserAccountingName, sqlUserAccountingNameOrEmpty } from '../utils/userAccountingDisplaySql.js';
+import { closedOriginLessonIds } from '../utils/makeupDebts.js';
+import {
+  buildAccountingExport,
+  queryAccountingTransactions,
+} from '../services/accounting/buildAccountingExport.js';
+import { buildAccountingWorkbookBuffer } from '../services/accounting/buildAccountingWorkbook.js';
 
 const isValidISODate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
@@ -434,11 +440,14 @@ export const exportAccounting = async (req, res) => {
         cancelSameDayCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day').length,
         cancelSameDayFreeCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && !x.isChargeable).length,
         cancelSameDayPaidCount: lessonsInPeriod.filter((x) => x.status === 'cancel_same_day' && x.isChargeable).length,
-        makeupPendingCount: Math.max(
-          lessonsInPeriod.filter((x) => x.status === 'missed' || x.status === 'cancel_same_day').length -
-            lessonsInPeriod.filter((x) => x.status === 'makeup').length,
-          0
-        ),
+        makeupPendingCount: (() => {
+          const closed = closedOriginLessonIds(lessonsRes.rows);
+          return lessonsInPeriod.filter(
+            (x) =>
+              (x.status === 'missed' || x.status === 'cancel_same_day') &&
+              !closed.has(x.lessonId)
+          ).length;
+        })(),
       },
       teachers: teacherOut,
       students: studentsOut,
@@ -581,6 +590,38 @@ export const exportAccountingTransactions = async (req, res) => {
   } catch (error) {
     console.error('Ошибка выгрузки транзакций:', error);
     return res.status(500).json({ message: 'Ошибка выгрузки транзакций' });
+  }
+};
+
+// GET /admin/accounting/export-xlsx?from=YYYY-MM-DD&to=YYYY-MM-DD&bank_transfer_only=0|1
+// Красивая выписка для бухгалтерии: 5 листов, русские заголовки, авто-фильтр, итоги.
+// Существующие endpoints export/transactions-export не затрагивает.
+export const exportAccountingXlsx = async (req, res) => {
+  try {
+    const from = (req.query.from || '').toString();
+    const to = (req.query.to || '').toString();
+    const bankTransferOnly =
+      req.query.bank_transfer_only === '1' || req.query.bank_transfer_only === 'true';
+
+    const payload = await buildAccountingExport(pool, { from, to, bankTransferOnly });
+    const transactions = await queryAccountingTransactions(pool, { from, to, bankTransferOnly });
+    const buffer = await buildAccountingWorkbookBuffer(payload, transactions);
+
+    const suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
+    const filename = `buhgalteriya_${from}_${to}${suffix}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    return res.status(200).send(Buffer.from(buffer));
+  } catch (error) {
+    if (error?.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error('Ошибка XLSX-выгрузки бухгалтерии:', error);
+    return res.status(500).json({ message: 'Ошибка XLSX-выгрузки бухгалтерии' });
   }
 };
 

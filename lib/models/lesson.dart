@@ -38,6 +38,27 @@ class Lesson {
 
   bool get isFromDailyReport => linkedReportId != null;
 
+  /// Пропуск или отмена в день без привязанной отработки (в т.ч. платная отмена).
+  bool get isOpenMakeupDebt =>
+      status == 'missed' || status == 'cancel_same_day';
+
+  /// Число открытых долгов отработки в списке занятий одного преподавателя.
+  static int countOpenMakeupDebts(List<Lesson> lessons) {
+    final closedOrigins = <int>{};
+    for (final l in lessons) {
+      if (l.status == 'makeup' && l.originLessonId != null) {
+        closedOrigins.add(l.originLessonId!);
+      }
+    }
+    var n = 0;
+    for (final l in lessons) {
+      if (l.isOpenMakeupDebt && !closedOrigins.contains(l.id)) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
     if (v is int) return v;

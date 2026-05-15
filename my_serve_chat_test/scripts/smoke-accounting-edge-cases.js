@@ -7,6 +7,7 @@
 import pool from '../db.js';
 import { createLesson, deleteLesson } from '../controllers/lessonsController.js';
 import { createReport } from '../controllers/reportsController.js';
+import { getMakeupPendingSummary } from '../controllers/studentsController.js';
 import { isSuperuser } from '../middleware/auth.js';
 
 const makeRes = () => ({
@@ -174,6 +175,73 @@ const run = async () => {
     }
   } else {
     console.warn('⚠️  Пропущено: superuser delete чужого занятия (нет superuser в окружении)');
+  }
+
+  // 4) Платная отмена в день входит в «к отработке» (открытый долг, не «пропуски − отработки»).
+  const now3 = new Date();
+  const lessonDate3 = now3.toISOString().slice(0, 10);
+  const hh3a = String((now3.getUTCHours() + 8) % 24).padStart(2, '0');
+  const mm3a = String((now3.getUTCMinutes() + 23) % 60).padStart(2, '0');
+  const hh3b = String((now3.getUTCHours() + 9) % 24).padStart(2, '0');
+  const mm3b = String((now3.getUTCMinutes() + 29) % 60).padStart(2, '0');
+  const freeCancelRes = makeRes();
+  await createLesson(
+    {
+      user: { userId: teacherId },
+      params: { studentId: String(studentId) },
+      body: {
+        lesson_date: lessonDate3,
+        lesson_time: `${hh3a}:${mm3a}`,
+        duration_minutes: 60,
+        price: 998,
+        status: 'cancel_same_day',
+        notes: 'smoke-free-cancel',
+      },
+      headers: { 'idempotency-key': `free-cancel-${Date.now()}` },
+    },
+    freeCancelRes
+  );
+  assert(freeCancelRes.statusCode === 201, `free cancel статус ${freeCancelRes.statusCode}`);
+  const freeCancelLessonId = Number(freeCancelRes.body?.id);
+
+  const paidCancelRes = makeRes();
+  await createLesson(
+    {
+      user: { userId: teacherId },
+      params: { studentId: String(studentId) },
+      body: {
+        lesson_date: lessonDate3,
+        lesson_time: `${hh3b}:${mm3b}`,
+        duration_minutes: 60,
+        price: 999,
+        status: 'cancel_same_day',
+        notes: 'smoke-paid-cancel-makeup-debt',
+      },
+      headers: { 'idempotency-key': `paid-cancel-${Date.now()}` },
+    },
+    paidCancelRes
+  );
+  assert(paidCancelRes.statusCode === 201, `paid cancel_same_day статус ${paidCancelRes.statusCode}`);
+  const paidCancelLessonId = Number(paidCancelRes.body?.id);
+  assert(paidCancelRes.body?.is_chargeable === true, 'вторая отмена должна быть chargeable');
+
+  const pendingRes = makeRes();
+  await getMakeupPendingSummary({ user: { userId: teacherId } }, pendingRes);
+  assert(pendingRes.statusCode === 200, `makeup-pending статус ${pendingRes.statusCode}`);
+  const item = (pendingRes.body?.items || []).find((x) => Number(x.studentId) === Number(studentId));
+  assert(item, 'ученик должен быть в makeup-pending');
+  assert(
+    Number(item.openCancelCount ?? 0) >= 2,
+    `ожидали openCancelCount >= 2 (бесплатная + платная), получили ${item.openCancelCount}`
+  );
+
+  for (const lessonId of [paidCancelLessonId, freeCancelLessonId]) {
+    if (Number.isFinite(lessonId)) {
+      await deleteLesson(
+        { user: { userId: teacherId }, params: { id: String(lessonId) } },
+        makeRes()
+      );
+    }
   }
 
   console.log('✅ smoke-accounting-edge-cases: ok');

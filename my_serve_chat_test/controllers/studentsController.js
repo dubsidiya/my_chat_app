@@ -9,6 +9,7 @@ import {
   getIdempotencyKey,
   hashIdempotencyPayload,
 } from '../utils/idempotency.js';
+import { SQL_OPEN_MAKEUP_DEBT_ON_LESSON } from '../utils/makeupDebts.js';
 
 const normalizePhoneDigits = (v) => (v || '').toString().replace(/\D/g, '');
 const normalizeEmail = (v) => (v || '').toString().trim().toLowerCase();
@@ -86,49 +87,53 @@ export const getAllStudents = async (req, res) => {
   }
 };
 
-// Сводка "к отработке" для преподавателя:
-// pending = (пропуски + отмены в день) - отработки, только по урокам текущего преподавателя.
+// Сводка «к отработке»: открытые долги (missed + cancel_same_day без привязанной makeup).
 export const getMakeupPendingSummary = async (req, res) => {
   try {
     const userId = req.user.userId;
     const result = await pool.query(
-      `WITH base AS (
-         SELECT
-           s.id AS student_id,
-           s.name AS student_name,
-           COUNT(*) FILTER (WHERE l.status IN ('missed', 'cancel_same_day'))::int AS missed_count,
-           COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
-         FROM teacher_students ts
-         JOIN students s ON s.id = ts.student_id
-         LEFT JOIN lessons l
-           ON l.student_id = s.id
-          AND l.created_by = $1
-         WHERE ts.teacher_id = $1
-         GROUP BY s.id, s.name
-       )
-       SELECT
-         student_id,
-         student_name,
-         missed_count,
-         makeup_count,
-         GREATEST(missed_count - makeup_count, 0)::int AS pending_count
-       FROM base
-       WHERE GREATEST(missed_count - makeup_count, 0) > 0
-       ORDER BY pending_count DESC, student_name ASC`,
+      `SELECT
+         s.id AS student_id,
+         s.name AS student_name,
+         COUNT(*) FILTER (
+           WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+             AND l.status = 'missed'
+         )::int AS open_missed_count,
+         COUNT(*) FILTER (
+           WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+             AND l.status = 'cancel_same_day'
+         )::int AS open_cancel_count,
+         COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
+       FROM teacher_students ts
+       JOIN students s ON s.id = ts.student_id
+       JOIN lessons l ON l.student_id = s.id AND l.created_by = $1
+       WHERE ts.teacher_id = $1
+       GROUP BY s.id, s.name
+       HAVING COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) > 0
+       ORDER BY COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) DESC, s.name ASC`,
       [userId]
     );
 
-    const totalPending = result.rows.reduce((acc, r) => acc + Number(r.pending_count || 0), 0);
+    const totalPending = result.rows.reduce(
+      (acc, r) => acc + Number(r.open_missed_count || 0) + Number(r.open_cancel_count || 0),
+      0
+    );
     return res.json({
       totalPending,
       studentsCount: result.rows.length,
-      items: result.rows.map((r) => ({
-        studentId: r.student_id,
-        studentName: r.student_name,
-        missedCount: Number(r.missed_count || 0),
-        makeupCount: Number(r.makeup_count || 0),
-        pendingCount: Number(r.pending_count || 0),
-      })),
+      items: result.rows.map((r) => {
+        const openMissed = Number(r.open_missed_count || 0);
+        const openCancel = Number(r.open_cancel_count || 0);
+        return {
+          studentId: r.student_id,
+          studentName: r.student_name,
+          openMissedCount: openMissed,
+          openCancelCount: openCancel,
+          missedCount: openMissed,
+          makeupCount: Number(r.makeup_count || 0),
+          pendingCount: openMissed + openCancel,
+        };
+      }),
     });
   } catch (error) {
     console.error('Ошибка получения сводки отработок:', error);

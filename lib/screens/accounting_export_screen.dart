@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../services/admin_service.dart';
 import '../services/students_service.dart';
 import '../utils/download_text_file.dart';
+import '../utils/download_binary_file.dart';
 import 'bank_statement_screen.dart';
 import 'deposit_pick_student_screen.dart';
 import 'deposit_screen.dart';
@@ -458,6 +459,66 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
+  Future<void> _downloadXlsxFile({required bool bankTransferOnly}) async {
+    try {
+      final bytes = await _adminService.exportAccountingXlsxBytes(
+        from: _fmt(_from),
+        to: _fmt(_to),
+        bankTransferOnly: bankTransferOnly,
+      );
+      final suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
+      final filename = 'buhgalteriya_${_fmt(_from)}_${_fmt(_to)}$suffix.xlsx';
+      const mimeType =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+      final okWeb = await downloadBinaryFile(
+        filename: filename,
+        bytes: bytes,
+        mimeType: mimeType,
+      );
+      if (okWeb) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 3),
+            content: Text('Excel для бухгалтерии скачан'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsBytes(bytes, flush: true);
+
+      if (!mounted) return;
+      final uri = Uri.file(file.path);
+      final can = await canLaunchUrl(uri);
+      if (!mounted) return;
+      if (can) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Excel сохранён: ${file.path}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Ошибка Excel-выгрузки: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _downloadTransactionsCsvFile({required bool bankTransferOnly}) async {
     try {
       final csv = await _adminService.exportTransactionsCsv(
@@ -829,6 +890,39 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                           onPressed: _isLoading ? null : _downloadCsvFile,
                           icon: const Icon(Icons.download_rounded),
                           label: const Text('CSV файл'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Excel для бухгалтерии (сводка, преподаватели, ученики, занятия, транзакции):',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading
+                              ? null
+                              : () => _downloadXlsxFile(bankTransferOnly: false),
+                          icon: const Icon(Icons.table_view_rounded),
+                          label: const Text('Excel для бухгалтерии'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4F46E5),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading
+                              ? null
+                              : () => _downloadXlsxFile(bankTransferOnly: true),
+                          icon: const Icon(Icons.account_balance_rounded),
+                          label: const Text('Excel (расч. счёт)'),
                         ),
                       ),
                     ],

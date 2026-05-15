@@ -36,6 +36,32 @@ void main() {
       expect(l.durationMinutes, 90);
     });
 
+    test('countOpenMakeupDebts учитывает платную отмену в день', () {
+      final lessons = [
+        Lesson(
+          id: 1,
+          studentId: 10,
+          lessonDate: DateTime(2025, 3, 1),
+          durationMinutes: 60,
+          price: 1000,
+          status: 'cancel_same_day',
+          isChargeable: true,
+          createdAt: DateTime(2025, 3, 1),
+        ),
+        Lesson(
+          id: 2,
+          studentId: 10,
+          lessonDate: DateTime(2025, 3, 2),
+          durationMinutes: 60,
+          price: 1000,
+          status: 'makeup',
+          originLessonId: 99,
+          createdAt: DateTime(2025, 3, 2),
+        ),
+      ];
+      expect(Lesson.countOpenMakeupDebts(lessons), 1);
+    });
+
     test('linked_report_id и linked_report_date', () {
       final l = Lesson.fromJson({
         'id': 3,

@@ -373,10 +373,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     final isDebtor = _balance < 0;
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final makeupPending = _lessons
-            .where((l) => l.status == 'missed' || l.status == 'cancel_same_day')
-            .length -
-        _lessons.where((l) => l.status == 'makeup').length;
+    final makeupPending = Lesson.countOpenMakeupDebts(_lessons);
 
     return Scaffold(
       appBar: AppBar(

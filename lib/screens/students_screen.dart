@@ -272,13 +272,21 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     final item = visibleMakeupItems[index];
                     final name = (item['studentName'] ?? '').toString();
                     final pending = (item['pendingCount'] as num?)?.toInt() ?? 0;
-                    final missed = (item['missedCount'] as num?)?.toInt() ?? 0;
+                    final openMissed = (item['openMissedCount'] as num?)?.toInt() ??
+                        (item['missedCount'] as num?)?.toInt() ??
+                        0;
+                    final openCancel = (item['openCancelCount'] as num?)?.toInt() ?? 0;
                     final makeup = (item['makeupCount'] as num?)?.toInt() ?? 0;
                     final studentId = (item['studentId'] as num?)?.toInt();
+                    final subtitleParts = <String>[
+                      if (openMissed > 0) 'пропусков: $openMissed',
+                      if (openCancel > 0) 'отмен: $openCancel',
+                      'отработок всего: $makeup',
+                    ];
                     return ListTile(
                       leading: const Icon(Icons.person_rounded),
                       title: Text(name),
-                      subtitle: Text('Пропуски: $missed • Отработано: $makeup'),
+                      subtitle: Text(subtitleParts.join(' • ')),
                       trailing: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
