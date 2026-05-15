@@ -139,6 +139,15 @@ const writeSummarySheet = (sheet, payload) => {
   addKV('Остаток предоплаты на конец', totals.prepaidAmount, { format: MONEY_FORMAT });
   addKV('Долг учеников на конец периода', totals.debtAmount, { format: MONEY_FORMAT });
 
+  const salariesTotals = payload.salariesTotals;
+  if (salariesTotals) {
+    sheet.addRow([]);
+    addSectionRow('Зарплаты за период');
+    addKV('Доход в зарплату', salariesTotals.incomeCounted || 0, { format: MONEY_FORMAT });
+    addKV('Поздние отчёты (не в доход)', salariesTotals.lateAmount || 0, { format: MONEY_FORMAT });
+    addKV('Итого зарплат (50%)', salariesTotals.salary || 0, { format: MONEY_FORMAT });
+  }
+
   sheet.views = [{ state: 'normal' }];
 };
 
@@ -404,8 +413,173 @@ const writeTransactionsSheet = (sheet, transactions) => {
   };
 };
 
+const writeSalariesSheet = (sheet, payload) => {
+  sheet.columns = [
+    { header: 'Преподаватель', key: 'teacher', width: 30 },
+    { header: 'Платных занятий', key: 'lessonsCount', width: 16, style: { numFmt: INT_FORMAT } },
+    { header: 'Сумма платных', key: 'totalChargeable', width: 18, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Из них в поздних отчётах', key: 'lateAmount', width: 22, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Без отчёта (входит в доход)', key: 'noReportAmount', width: 24, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Доход в зарплату', key: 'incomeCounted', width: 20, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Зарплата 50%', key: 'salary', width: 18, style: { numFmt: MONEY_FORMAT } },
+  ];
+
+  styleHeaderRow(sheet.getRow(1));
+
+  for (const s of payload.salaries || []) {
+    const row = sheet.addRow({
+      teacher: s.teacherUsername || '—',
+      lessonsCount: s.chargeableLessonsCount,
+      totalChargeable: s.totalChargeable,
+      lateAmount: s.lateAmount,
+      noReportAmount: s.noReportAmount,
+      incomeCounted: s.incomeCounted,
+      salary: s.salary,
+    });
+    row.getCell('salary').font = { bold: true, color: { argb: COLORS.okText } };
+    if (s.lateAmount > 0) {
+      row.getCell('lateAmount').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    row.eachCell((cell) => setBorder(cell));
+  }
+
+  if ((payload.salaries || []).length > 0) {
+    const t = payload.salariesTotals || {};
+    const totalsRow = sheet.addRow({
+      teacher: 'ИТОГО',
+      lessonsCount: t.chargeableLessonsCount || 0,
+      totalChargeable: t.totalChargeable || 0,
+      lateAmount: t.lateAmount || 0,
+      noReportAmount: t.noReportAmount || 0,
+      incomeCounted: t.incomeCounted || 0,
+      salary: t.salary || 0,
+    });
+    styleTotalsRow(totalsRow);
+  } else {
+    const row = sheet.addRow({
+      teacher: 'Нет платных занятий в выбранном периоде',
+    });
+    sheet.mergeCells(`A${row.number}:G${row.number}`);
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  // Подсказка под таблицей, что считается зарплатой.
+  sheet.addRow([]);
+  const explainRow = sheet.addRow([
+    'Зарплата = 50% от суммы платных занятий (без поздних отчётов). Уроки без отчёта засчитываются в доход.',
+  ]);
+  sheet.mergeCells(`A${explainRow.number}:G${explainRow.number}`);
+  explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
+
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: sheet.columnCount },
+  };
+};
+
+const writeKpiSheet = (sheet, payload) => {
+  sheet.columns = [
+    { header: 'Преподаватель', key: 'teacher', width: 30 },
+    { header: 'Всего занятий', key: 'total', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: 'Состоялось', key: 'happened', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: '• Проведено', key: 'attended', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: '• Отработок', key: 'makeup', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: 'Пропусков', key: 'missed', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: 'Отмен (бесплатных)', key: 'cancelFree', width: 20, style: { numFmt: INT_FORMAT } },
+    { header: 'Отмен (платных)', key: 'cancelPaid', width: 18, style: { numFmt: INT_FORMAT } },
+    { header: 'К отработке', key: 'openDebt', width: 14, style: { numFmt: INT_FORMAT } },
+    { header: 'КПД, %', key: 'kpi', width: 12, style: { numFmt: '0.0' } },
+  ];
+
+  styleHeaderRow(sheet.getRow(1));
+
+  for (const s of payload.teacherStats || []) {
+    const row = sheet.addRow({
+      teacher: s.teacherUsername || '—',
+      total: s.totalLessons,
+      happened: s.happenedCount,
+      attended: s.attendedCount,
+      makeup: s.makeupCount,
+      missed: s.missedCount,
+      cancelFree: s.cancelSameDayFreeCount,
+      cancelPaid: s.cancelSameDayPaidCount,
+      openDebt: s.openMakeupDebtCount,
+      kpi: s.kpiPercent == null ? '' : s.kpiPercent,
+    });
+
+    if (s.missedCount > 0) {
+      row.getCell('missed').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    if (s.openMakeupDebtCount > 0) {
+      row.getCell('openDebt').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    if (typeof s.kpiPercent === 'number') {
+      if (s.kpiPercent >= 90) {
+        row.getCell('kpi').font = { color: { argb: COLORS.okText }, bold: true };
+      } else if (s.kpiPercent < 70) {
+        row.getCell('kpi').font = { color: { argb: COLORS.debtText }, bold: true };
+      } else {
+        row.getCell('kpi').font = { bold: true };
+      }
+    }
+    row.eachCell((cell) => setBorder(cell));
+  }
+
+  const stats = payload.teacherStats || [];
+  if (stats.length > 0) {
+    const sum = (key) => stats.reduce((acc, s) => acc + (s[key] || 0), 0);
+    const totalAttended = sum('attendedCount');
+    const totalMakeup = sum('makeupCount');
+    const totalMissed = sum('missedCount');
+    const totalCancelFree = sum('cancelSameDayFreeCount');
+    const happened = totalAttended + totalMakeup;
+    const denom = happened + totalMissed + totalCancelFree;
+    const kpi = denom > 0 ? Math.round((happened / denom) * 1000) / 10 : '';
+    const totalsRow = sheet.addRow({
+      teacher: 'ИТОГО',
+      total: sum('totalLessons'),
+      happened,
+      attended: totalAttended,
+      makeup: totalMakeup,
+      missed: totalMissed,
+      cancelFree: totalCancelFree,
+      cancelPaid: sum('cancelSameDayPaidCount'),
+      openDebt: sum('openMakeupDebtCount'),
+      kpi,
+    });
+    styleTotalsRow(totalsRow);
+  } else {
+    const row = sheet.addRow({ teacher: 'В выбранном периоде нет занятий' });
+    sheet.mergeCells(`A${row.number}:J${row.number}`);
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  sheet.addRow([]);
+  const explainRow = sheet.addRow([
+    'КПД = (Проведено + Отработок) ÷ (Проведено + Отработок + Пропуски + Отмены бесплатные). Платные отмены в КПД не учитываются.',
+  ]);
+  sheet.mergeCells(`A${explainRow.number}:J${explainRow.number}`);
+  explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
+
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: sheet.columnCount },
+  };
+};
+
 /**
- * Собирает Excel-книгу с 5 листами по бухгалтерии за период.
+ * Собирает Excel-книгу по бухгалтерии за период.
+ * Листы: Сводка, Зарплаты, КПД, Преподаватели, Ученики, Занятия, Транзакции.
  *
  * @param {Object} payload результат buildAccountingExport(...)
  * @param {Array} transactions результат queryAccountingTransactions(...)
@@ -419,6 +593,8 @@ export const buildAccountingWorkbookBuffer = async (payload, transactions) => {
   wb.properties = { date1904: false };
 
   writeSummarySheet(wb.addWorksheet('Сводка', { properties: { tabColor: { argb: 'FF4F46E5' } } }), payload);
+  writeSalariesSheet(wb.addWorksheet('Зарплаты', { properties: { tabColor: { argb: 'FF15803D' } } }), payload);
+  writeKpiSheet(wb.addWorksheet('КПД', { properties: { tabColor: { argb: 'FFEA580C' } } }), payload);
   writeTeachersSheet(wb.addWorksheet('Преподаватели', { properties: { tabColor: { argb: 'FF22C55E' } } }), payload);
   writeStudentsSheet(wb.addWorksheet('Ученики', { properties: { tabColor: { argb: 'FFF59E0B' } } }), payload);
   writeLessonsSheet(wb.addWorksheet('Занятия', { properties: { tabColor: { argb: 'FF06B6D4' } } }), payload);

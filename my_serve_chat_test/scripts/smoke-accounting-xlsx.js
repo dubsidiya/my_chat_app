@@ -77,7 +77,7 @@ const run = async () => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(okRes.body);
   const sheetNames = wb.worksheets.map((s) => s.name);
-  const expected = ['Сводка', 'Преподаватели', 'Ученики', 'Занятия', 'Транзакции'];
+  const expected = ['Сводка', 'Зарплаты', 'КПД', 'Преподаватели', 'Ученики', 'Занятия', 'Транзакции'];
   for (const name of expected) {
     assert(sheetNames.includes(name), `В книге нет листа "${name}". Есть: ${sheetNames.join(', ')}`);
   }
@@ -88,6 +88,18 @@ const run = async () => {
   assert(
     teacherHeader.includes('Преподаватель') && teacherHeader.includes('Долг'),
     `Заголовки "Преподаватели" неверные: ${teacherHeader.join(' | ')}`
+  );
+
+  // Заголовки "Зарплаты" и "КПД" — тоже на русском.
+  const salaryHeader = wb.getWorksheet('Зарплаты').getRow(1).values.filter(Boolean).map(String);
+  assert(
+    salaryHeader.includes('Зарплата 50%') && salaryHeader.includes('Доход в зарплату'),
+    `Заголовки "Зарплаты" неверные: ${salaryHeader.join(' | ')}`
+  );
+  const kpiHeader = wb.getWorksheet('КПД').getRow(1).values.filter(Boolean).map(String);
+  assert(
+    kpiHeader.includes('КПД, %') && kpiHeader.includes('К отработке'),
+    `Заголовки "КПД" неверные: ${kpiHeader.join(' | ')}`
   );
 
   // 4) Bank transfer flag меняет суффикс файла.

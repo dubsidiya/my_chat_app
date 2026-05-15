@@ -237,10 +237,52 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
 
   const lessonsInPeriod = [];
   const teacherAgg = new Map();
+  // Полная статистика по преподу (всегда без bank_transfer_only фильтра — это про "сколько провёл и сколько висит").
+  const teacherStatsMap = new Map();
+  const ensureStatsNode = (tid, teacherUsername) => {
+    if (!teacherStatsMap.has(tid)) {
+      teacherStatsMap.set(tid, {
+        teacherId: tid,
+        teacherUsername: teacherUsername || teacherById.get(tid) || '',
+        totalLessons: 0,
+        attendedCount: 0,
+        missedCount: 0,
+        makeupCount: 0,
+        cancelSameDayFreeCount: 0,
+        cancelSameDayPaidCount: 0,
+        openMakeupDebtCount: 0,
+      });
+    } else if (teacherUsername && !(teacherStatsMap.get(tid).teacherUsername || '').trim()) {
+      teacherStatsMap.get(tid).teacherUsername = teacherUsername;
+    }
+    return teacherStatsMap.get(tid);
+  };
+
+  const closedOrigins = closedOriginLessonIds(lessonsRes.rows);
+
   for (const l of lessonsRes.rows) {
     const d = toIsoDate(l.lesson_date);
     if (d < from || d > to) continue;
+    const lessonStatus = (l.status || 'attended').toString();
+    const lessonIsChargeable = l.is_chargeable === true;
+    const teacherUsername = l.teacher_username || teacherById.get(l.teacher_id) || '';
+
+    // Статистика без bank_transfer_only — это про работу препода.
+    const stats = ensureStatsNode(l.teacher_id, teacherUsername);
+    stats.totalLessons += 1;
+    if (lessonStatus === 'attended') stats.attendedCount += 1;
+    else if (lessonStatus === 'missed') stats.missedCount += 1;
+    else if (lessonStatus === 'makeup') stats.makeupCount += 1;
+    else if (lessonStatus === 'cancel_same_day') {
+      if (lessonIsChargeable) stats.cancelSameDayPaidCount += 1;
+      else stats.cancelSameDayFreeCount += 1;
+    }
+    if ((lessonStatus === 'missed' || lessonStatus === 'cancel_same_day') && !closedOrigins.has(l.id)) {
+      stats.openMakeupDebtCount += 1;
+    }
+
     if (bankTransferOnly && !studentIdsBankTransfer.has(l.student_id)) continue;
+
     const cov = coverageByLessonId.get(l.id) || { paid: 0, unpaid: toNumber(l.price) };
     const st = studentById.get(l.student_id);
     const row = {
@@ -255,10 +297,10 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
       unpaidAmount: cov.unpaid,
       isPaid: cov.unpaid <= 0.000001,
       teacherId: l.teacher_id,
-      teacherUsername: l.teacher_username || teacherById.get(l.teacher_id) || '',
+      teacherUsername,
       notes: l.notes || null,
-      status: (l.status || 'attended').toString(),
-      isChargeable: l.is_chargeable === true,
+      status: lessonStatus,
+      isChargeable: lessonIsChargeable,
       originLessonId: l.origin_lesson_id || null,
       originLessonDate: l.origin_lesson_date ? toIsoDate(l.origin_lesson_date) : null,
       payByBankTransfer: st?.pay_by_bank_transfer === true,
@@ -317,7 +359,83 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     }))
     .sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));
 
-  const closedOrigins = closedOriginLessonIds(lessonsRes.rows);
+  // Зарплаты за период: 50% от chargeable дохода без поздних отчётов
+  // (поздним считается отчёт, помеченный is_late=true).
+  // Уроки без отчёта — считаются как доход.
+  const salariesRes = await pool.query(
+    `WITH period_lessons AS (
+       SELECT l.id, l.created_by, l.price, l.lesson_date,
+              COALESCE(l.is_chargeable, true) AS is_chargeable,
+              r.id AS report_id, r.is_late
+       FROM lessons l
+       LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
+       LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
+       WHERE l.lesson_date >= $1::date AND l.lesson_date <= $2::date
+     )
+     SELECT
+       created_by AS teacher_id,
+       COALESCE(SUM(CASE WHEN is_chargeable THEN price ELSE 0 END), 0) AS total_chargeable,
+       COUNT(*) FILTER (WHERE is_chargeable)::int AS chargeable_lessons_count,
+       COALESCE(SUM(CASE WHEN is_chargeable AND is_late = true THEN price ELSE 0 END), 0) AS late_amount,
+       COALESCE(SUM(CASE WHEN is_chargeable AND (report_id IS NULL OR is_late IS DISTINCT FROM true) THEN price ELSE 0 END), 0) AS income_counted,
+       COALESCE(SUM(CASE WHEN is_chargeable AND report_id IS NULL THEN price ELSE 0 END), 0) AS no_report_amount
+     FROM period_lessons
+     WHERE created_by IS NOT NULL
+     GROUP BY created_by`,
+    [from, to]
+  );
+
+  const salaryByTeacher = new Map();
+  for (const r of salariesRes.rows) {
+    const tid = r.teacher_id;
+    const income = toNumber(r.income_counted);
+    salaryByTeacher.set(tid, {
+      teacherId: tid,
+      teacherUsername: teacherById.get(tid) || '',
+      totalChargeable: toNumber(r.total_chargeable),
+      lateAmount: toNumber(r.late_amount),
+      incomeCounted: income,
+      noReportAmount: toNumber(r.no_report_amount),
+      chargeableLessonsCount: Number(r.chargeable_lessons_count || 0),
+      salary: Math.round(income * 0.5),
+    });
+    // Подхватим preподов, у которых не было ни одного занятия в периоде, но они есть в teacherStats.
+    if (!teacherStatsMap.has(tid)) {
+      ensureStatsNode(tid, teacherById.get(tid) || '');
+    }
+  }
+  // Гарантируем, что у каждого препода со статистикой есть запись про зарплату.
+  for (const tid of teacherStatsMap.keys()) {
+    if (!salaryByTeacher.has(tid)) {
+      salaryByTeacher.set(tid, {
+        teacherId: tid,
+        teacherUsername: teacherById.get(tid) || '',
+        totalChargeable: 0,
+        lateAmount: 0,
+        incomeCounted: 0,
+        noReportAmount: 0,
+        chargeableLessonsCount: 0,
+        salary: 0,
+      });
+    }
+  }
+
+  const salariesOut = [...salaryByTeacher.values()].sort((a, b) =>
+    (a.teacherUsername || '').localeCompare(b.teacherUsername || '')
+  );
+
+  const teacherStatsOut = [...teacherStatsMap.values()]
+    .map((s) => {
+      const happened = s.attendedCount + s.makeupCount;
+      const denom = s.attendedCount + s.makeupCount + s.missedCount + s.cancelSameDayFreeCount;
+      return {
+        ...s,
+        happenedCount: happened,
+        kpiPercent: denom > 0 ? Math.round((happened / denom) * 1000) / 10 : null,
+      };
+    })
+    .sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));
+
   const totals = {
     lessonsCount: lessonsInPeriod.length,
     lessonsAmount: lessonsInPeriod.reduce((acc, x) => acc + x.price, 0),
@@ -339,6 +457,18 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     debtAmount: studentsOut.reduce((acc, s) => acc + (s.debtAsOfTo || 0), 0),
   };
 
+  const salariesTotals = salariesOut.reduce(
+    (acc, s) => ({
+      totalChargeable: acc.totalChargeable + s.totalChargeable,
+      lateAmount: acc.lateAmount + s.lateAmount,
+      incomeCounted: acc.incomeCounted + s.incomeCounted,
+      noReportAmount: acc.noReportAmount + s.noReportAmount,
+      chargeableLessonsCount: acc.chargeableLessonsCount + s.chargeableLessonsCount,
+      salary: acc.salary + s.salary,
+    }),
+    { totalChargeable: 0, lateAmount: 0, incomeCounted: 0, noReportAmount: 0, chargeableLessonsCount: 0, salary: 0 }
+  );
+
   return {
     period: { from, to },
     bankTransferOnly,
@@ -349,6 +479,9 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     },
     totals,
     teachers: teacherOut,
+    teacherStats: teacherStatsOut,
+    salaries: salariesOut,
+    salariesTotals,
     students: studentsOut,
     lessons: lessonsInPeriod,
     teacherById: Object.fromEntries(teacherById),
