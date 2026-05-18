@@ -174,6 +174,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
               .toList();
           // старые сверху, временные (новые) в конце
           _messages = [...cachedMessages, ...uniqueTempMessages];
+          _markMessagesSeen(_messages.map((m) => m.id));
         });
         if (shouldAutoScrollToBottom) {
           _scrollToBottomWithRetry();
@@ -217,6 +218,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           _messages = [...newMessages, ...uniqueTempMessages];
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
+          _markMessagesSeen(_messages.map((m) => m.id));
         });
 
         // Прокручиваем вниз (к новым сообщениям) после загрузки.
@@ -345,6 +347,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
 
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
+          _markMessagesSeen(result.messages.map((m) => m.id));
         });
 
         // Восстанавливаем позицию скролла после добавления сообщений

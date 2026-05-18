@@ -78,6 +78,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _query = '';
   StreamSubscription<dynamic>? _wsSubscription;
   DateTime? _lastWsReconnectHandledAt;
+  Timer? _loadChatsDebounce;
+  Timer? _searchDebounce;
+  List<Chat>? _filteredChatsCache;
+  String _filteredChatsCacheKey = '';
 
   Widget _avatarInitial(String initial) {
     return Container(
@@ -280,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastWsReconnectHandledAt = now;
         // Единая точка мягкого восстановления после реконнекта:
         // обновляем список чатов и пробуем закрыть отложенные E2EE key-requests.
-        _loadChats();
+        _scheduleLoadChats(immediate: true);
         final chatIds = _chats.map((c) => c.id).where((id) => id.isNotEmpty).toSet();
         for (final chatId in chatIds) {
           unawaited(E2eeService.processPendingKeyRequests(chatId));
@@ -317,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (event is Map && event['chat_id'] != null && event['id'] != null) {
         final type = event['type']?.toString();
         if (type == null || type.isEmpty || type == 'message') {
-          _loadChats();
+          _scheduleLoadChats();
         }
       }
     });
@@ -349,8 +353,75 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _wsSubscription?.cancel();
+    _loadChatsDebounce?.cancel();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _invalidateFilteredChatsCache() {
+    _filteredChatsCache = null;
+    _filteredChatsCacheKey = '';
+  }
+
+  /// Снижает частоту полных перезагрузок списка при пачке WS-событий.
+  void _scheduleLoadChats({bool immediate = false}) {
+    if (immediate) {
+      _loadChatsDebounce?.cancel();
+      _loadChatsDebounce = null;
+      _loadChats();
+      return;
+    }
+    _loadChatsDebounce?.cancel();
+    _loadChatsDebounce = Timer(const Duration(milliseconds: 450), () {
+      _loadChatsDebounce = null;
+      if (mounted) _loadChats();
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 220), () {
+      if (!mounted) return;
+      if (_query == value) return;
+      setState(() {
+        _query = value;
+        _invalidateFilteredChatsCache();
+      });
+    });
+  }
+
+  List<Chat> _computeFilteredChats() {
+    final q = _query.trim().toLowerCase();
+    final folderId = (_folderFilterId ?? '').trim();
+    final sortedChats = _sortedChats;
+    if (folderId.isEmpty && q.isEmpty) return sortedChats;
+
+    final previews = <String, String>{
+      for (final c in sortedChats) c.id: _buildLastMessagePreview(c),
+    };
+    return sortedChats.where((c) {
+      if (folderId.isNotEmpty) {
+        final cf = (c.folderId ?? '').trim();
+        if (cf != folderId) return false;
+      }
+      if (q.isEmpty) return true;
+      final name = c.name.toLowerCase();
+      final preview = (previews[c.id] ?? '').toLowerCase();
+      return name.contains(q) || preview.contains(q);
+    }).toList();
+  }
+
+  List<Chat> get _filteredChats {
+    final key =
+        '${_folderFilterId ?? ''}|${_query.trim().toLowerCase()}|${_chats.length}|${_chatOrder.join(',')}|${_chats.map((c) => '${c.id}:${c.lastMessageId}:${c.unreadCount}').join(';')}';
+    if (_filteredChatsCache != null && _filteredChatsCacheKey == key) {
+      return _filteredChatsCache!;
+    }
+    final list = _computeFilteredChats();
+    _filteredChatsCacheKey = key;
+    _filteredChatsCache = list;
+    return list;
   }
 
   Future<void> _loadChats() async {
@@ -361,32 +432,42 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       var chats = await _chatsService.fetchChats(widget.userId);
-      final List<Chat> decryptedChats = [];
-      for (final c in chats) {
-        if (c.lastMessageText != null && E2eeService.isEncrypted(c.lastMessageText!)) {
-          final plain = await E2eeService.decryptMessage(c.id, c.lastMessageText!);
-          decryptedChats.add(Chat(
-            id: c.id, name: c.name, isGroup: c.isGroup,
-            folderId: c.folderId, folderName: c.folderName,
-            otherUserId: c.otherUserId, otherUserAvatarUrl: c.otherUserAvatarUrl,
-            lastMessageId: c.lastMessageId, lastMessageText: plain,
-            lastMessageType: c.lastMessageType, lastMessageImageUrl: c.lastMessageImageUrl,
-            lastMessageFileUrl: c.lastMessageFileUrl, lastMessageFileName: c.lastMessageFileName,
-            lastMessageFileSize: c.lastMessageFileSize, lastMessageFileMime: c.lastMessageFileMime,
-            lastMessageAt: c.lastMessageAt, lastSenderEmail: c.lastSenderEmail,
-            unreadCount: c.unreadCount,
-          ));
-        } else {
-          decryptedChats.add(c);
-        }
-      }
-      chats = decryptedChats;
+      chats = await Future.wait(
+        chats.map((c) async {
+          final text = c.lastMessageText;
+          if (text != null && E2eeService.isEncrypted(text)) {
+            final plain = await E2eeService.decryptMessage(c.id, text);
+            return Chat(
+              id: c.id,
+              name: c.name,
+              isGroup: c.isGroup,
+              folderId: c.folderId,
+              folderName: c.folderName,
+              otherUserId: c.otherUserId,
+              otherUserAvatarUrl: c.otherUserAvatarUrl,
+              lastMessageId: c.lastMessageId,
+              lastMessageText: plain,
+              lastMessageType: c.lastMessageType,
+              lastMessageImageUrl: c.lastMessageImageUrl,
+              lastMessageFileUrl: c.lastMessageFileUrl,
+              lastMessageFileName: c.lastMessageFileName,
+              lastMessageFileSize: c.lastMessageFileSize,
+              lastMessageFileMime: c.lastMessageFileMime,
+              lastMessageAt: c.lastMessageAt,
+              lastSenderEmail: c.lastSenderEmail,
+              unreadCount: c.unreadCount,
+            );
+          }
+          return c;
+        }),
+      );
       final order = await StorageService.getChatOrder(widget.userId);
       if (mounted) {
         setState(() {
           _chats = chats;
           _chatOrder = order;
           _loadError = null;
+          _invalidateFilteredChatsCache();
           if (_chatOrder.isEmpty && _chats.isNotEmpty) {
             _chatOrder = _chats.map((c) => c.id).toList();
           }
@@ -442,18 +523,19 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Чаты в сохранённом порядке (сначала по _chatOrder, затем остальные по дате последнего сообщения).
   List<Chat> get _sortedChats {
     if (_chats.isEmpty) return [];
-    final orderIds = _chatOrder.where((id) => _chats.any((c) => c.id == id)).toList();
-    final rest = _chats.where((c) => !_chatOrder.contains(c.id)).toList();
+    final byId = {for (final c in _chats) c.id: c};
+    final orderSet = _chatOrder.toSet();
+    final out = <Chat>[];
+    for (final id in _chatOrder) {
+      final chat = byId[id];
+      if (chat != null) out.add(chat);
+    }
+    final rest = _chats.where((c) => !orderSet.contains(c.id)).toList();
     rest.sort((a, b) {
       final at = a.lastMessageAt ?? '';
       final bt = b.lastMessageAt ?? '';
       return bt.compareTo(at);
     });
-    final List<Chat> out = [];
-    for (final id in orderIds) {
-      final found = _chats.where((c) => c.id == id).toList();
-      if (found.isNotEmpty) out.add(found.first);
-    }
     out.addAll(rest);
     return out;
   }
@@ -466,6 +548,7 @@ class _HomeScreenState extends State<HomeScreen> {
     sorted.insert(insertIndex, item);
     setState(() {
       _chatOrder = sorted.map((c) => c.id).toList();
+      _invalidateFilteredChatsCache();
     });
     StorageService.saveChatOrder(widget.userId, _chatOrder);
   }
@@ -1441,19 +1524,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    final q = _query.trim().toLowerCase();
-    final sortedChats = _sortedChats;
-    final folderId = (_folderFilterId ?? '').trim();
-    final filteredChats = sortedChats.where((c) {
-      if (folderId.isNotEmpty) {
-        final cf = (c.folderId ?? '').trim();
-        if (cf != folderId) return false;
-      }
-      if (q.isEmpty) return true;
-      final name = c.name.toLowerCase();
-      final preview = _buildLastMessagePreview(c).toLowerCase();
-      return name.contains(q) || preview.contains(q);
-    }).toList();
+    final filteredChats = _filteredChats;
 
     final displayLabel = (_displayName ?? widget.userEmail).trim().isEmpty ? widget.userEmail : (_displayName ?? widget.userEmail);
     final initial = displayLabel.isNotEmpty ? displayLabel[0].toUpperCase() : '?';
@@ -1612,7 +1683,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: TextField(
                           controller: _searchController,
-                          onChanged: (v) => setState(() => _query = v),
+                          onChanged: _onSearchChanged,
                           style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w500),
                           decoration: InputDecoration(
                             hintText: 'Поиск по чатам',
@@ -1623,9 +1694,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : IconButton(
                                     icon: Icon(Icons.close_rounded, color: scheme.onSurface.withValues(alpha: 0.70)),
                                     onPressed: () {
+                                      _searchDebounce?.cancel();
                                       setState(() {
                                         _query = '';
                                         _searchController.clear();
+                                        _invalidateFilteredChatsCache();
                                       });
                                     },
                                   ),
@@ -1726,9 +1799,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                             const SizedBox(height: 16),
                                             OutlinedButton.icon(
                                               onPressed: () {
+                                                _searchDebounce?.cancel();
                                                 setState(() {
                                                   _query = '';
                                                   _searchController.clear();
+                                                  _invalidateFilteredChatsCache();
                                                 });
                                               },
                                               icon: const Icon(Icons.clear_all_rounded, size: 20),
@@ -1797,7 +1872,10 @@ class _HomeScreenState extends State<HomeScreen> {
         color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.9),
         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
       ),
-      onSelected: (_) => setState(() => _folderFilterId = value),
+      onSelected: (_) => setState(() {
+        _folderFilterId = value;
+        _invalidateFilteredChatsCache();
+      }),
     );
   }
 }

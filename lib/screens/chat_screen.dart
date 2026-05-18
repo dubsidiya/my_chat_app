@@ -232,6 +232,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<_ListEntry>? _cachedListEntries;
   int _listEntriesCacheKey = -1;
 
+  Widget? _cachedMyAvatarPlaceholder;
+  final Map<String, Widget> _otherAvatarPlaceholderBySender = {};
+  final Set<String> _messageIdsWithoutFade = {};
+  static const int _maxCachedOtherAvatars = 64;
+
+  Widget get _myAvatarPlaceholderWidget {
+    return _cachedMyAvatarPlaceholder ??= _myAvatarPlaceholder();
+  }
+
+  Widget _otherAvatarWidget(String senderEmail) {
+    final key = senderEmail.trim();
+    final hit = _otherAvatarPlaceholderBySender[key];
+    if (hit != null) return hit;
+    final widget = _otherAvatarPlaceholder(key);
+    if (_otherAvatarPlaceholderBySender.length >= _maxCachedOtherAvatars) {
+      _otherAvatarPlaceholderBySender.remove(
+        _otherAvatarPlaceholderBySender.keys.first,
+      );
+    }
+    _otherAvatarPlaceholderBySender[key] = widget;
+    return widget;
+  }
+
+  void _markMessagesSeen(Iterable<String> ids) {
+    _messageIdsWithoutFade.addAll(ids);
+  }
+
+  bool _shouldFadeInMessage(String id) => !_messageIdsWithoutFade.contains(id);
+
   List<_ListEntry> get _listEntries {
     final len = _messages.length;
     final key =
@@ -1107,106 +1136,113 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
                                           final isHighlighted =
                                               _highlightMessageId == msg.id;
+                                          final messageBody = Slidable(
+                                            key: _keyForMessage(msg.id),
+                                            startActionPane: ActionPane(
+                                              motion: const ScrollMotion(),
+                                              extentRatio: 0.22,
+                                              children: [
+                                                SlidableAction(
+                                                  onPressed: (_) =>
+                                                      _setReplyAndScrollToInput(
+                                                        msg,
+                                                      ),
+                                                  backgroundColor: _accent1
+                                                      .withValues(
+                                                        alpha: 0.85,
+                                                      ),
+                                                  foregroundColor:
+                                                      Colors.white,
+                                                  icon: Icons.reply_rounded,
+                                                  label: 'Ответить',
+                                                ),
+                                              ],
+                                            ),
+                                            endActionPane: isMine
+                                                ? ActionPane(
+                                                    motion:
+                                                        const ScrollMotion(),
+                                                    extentRatio: 0.22,
+                                                    children: [
+                                                      SlidableAction(
+                                                        onPressed: (_) =>
+                                                            _showDeleteMessageDialog(
+                                                              msg,
+                                                            ),
+                                                        backgroundColor:
+                                                            Colors
+                                                                .red
+                                                                .shade400,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        icon: Icons
+                                                            .delete_outline_rounded,
+                                                        label: 'Удалить',
+                                                      ),
+                                                    ],
+                                                  )
+                                                : null,
+                                            child: ChatMessageTile(
+                                              key: ValueKey('tile_${msg.id}'),
+                                              msg: msg,
+                                              isMine: isMine,
+                                              isHighlighted: isHighlighted,
+                                              scheme: scheme,
+                                              accent1: _accent1,
+                                              accent2: _accent2,
+                                              accent3: _accent3,
+                                              myUserId: widget.userId,
+                                              myAvatarUrl: widget.myAvatarUrl,
+                                              chatId: widget.chatId
+                                                  .toString(),
+                                              myAvatarPlaceholder:
+                                                  _myAvatarPlaceholderWidget,
+                                              otherAvatarPlaceholder:
+                                                  _otherAvatarWidget(
+                                                    msg.senderEmail,
+                                                  ),
+                                              memberByHandle: _memberByHandle,
+                                              onOpenSenderProfile: () =>
+                                                  _openUserProfile(msg),
+                                              onShowMessageMenu: () =>
+                                                  _showMessageMenu(
+                                                    msg,
+                                                    isMine: isMine,
+                                                  ),
+                                              onOpenImage: () =>
+                                                  _openImageViewer(msg),
+                                              onOpenVideo: () =>
+                                                  _openVideoViewer(msg),
+                                              buildVoiceBubble: () =>
+                                                  _buildVoiceBubble(
+                                                    msg,
+                                                    isMine: isMine,
+                                                  ),
+                                              isVoiceMessage: () =>
+                                                  isVoiceMessage(msg),
+                                              formatBytes: _formatBytes,
+                                              formatDate: _formatDate,
+                                              buildMessageStatus:
+                                                  _buildMessageStatus(msg),
+                                              onShowReactionPicker: () =>
+                                                  _showReactionPicker(msg),
+                                              onOpenUserProfileById:
+                                                  (uid, label) =>
+                                                      _openUserProfileById(
+                                                        uid,
+                                                        fallbackLabel: label,
+                                                      ),
+                                            ),
+                                          );
+                                          if (!_shouldFadeInMessage(msg.id)) {
+                                            return messageBody;
+                                          }
                                           return FadeScaleIn(
                                             key: ValueKey('fade_${msg.id}'),
-                                            child: Slidable(
-                                              key: _keyForMessage(msg.id),
-                                              startActionPane: ActionPane(
-                                                motion: const ScrollMotion(),
-                                                extentRatio: 0.22,
-                                                children: [
-                                                  SlidableAction(
-                                                    onPressed: (_) =>
-                                                        _setReplyAndScrollToInput(
-                                                          msg,
-                                                        ),
-                                                    backgroundColor: _accent1
-                                                        .withValues(
-                                                          alpha: 0.85,
-                                                        ),
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons.reply_rounded,
-                                                    label: 'Ответить',
-                                                  ),
-                                                ],
-                                              ),
-                                              endActionPane: isMine
-                                                  ? ActionPane(
-                                                      motion:
-                                                          const ScrollMotion(),
-                                                      extentRatio: 0.22,
-                                                      children: [
-                                                        SlidableAction(
-                                                          onPressed: (_) =>
-                                                              _showDeleteMessageDialog(
-                                                                msg,
-                                                              ),
-                                                          backgroundColor:
-                                                              Colors
-                                                                  .red
-                                                                  .shade400,
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                          icon: Icons
-                                                              .delete_outline_rounded,
-                                                          label: 'Удалить',
-                                                        ),
-                                                      ],
-                                                    )
-                                                  : null,
-                                              child: ChatMessageTile(
-                                                key: ValueKey('tile_${msg.id}'),
-                                                msg: msg,
-                                                isMine: isMine,
-                                                isHighlighted: isHighlighted,
-                                                scheme: scheme,
-                                                accent1: _accent1,
-                                                accent2: _accent2,
-                                                accent3: _accent3,
-                                                myUserId: widget.userId,
-                                                myAvatarUrl: widget.myAvatarUrl,
-                                                chatId: widget.chatId
-                                                    .toString(),
-                                                myAvatarPlaceholder:
-                                                    _myAvatarPlaceholder(),
-                                                otherAvatarPlaceholder:
-                                                    _otherAvatarPlaceholder(
-                                                      msg.senderEmail,
-                                                    ),
-                                                memberByHandle: _memberByHandle,
-                                                onOpenSenderProfile: () =>
-                                                    _openUserProfile(msg),
-                                                onShowMessageMenu: () =>
-                                                    _showMessageMenu(
-                                                      msg,
-                                                      isMine: isMine,
-                                                    ),
-                                                onOpenImage: () =>
-                                                    _openImageViewer(msg),
-                                                onOpenVideo: () =>
-                                                    _openVideoViewer(msg),
-                                                buildVoiceBubble: () =>
-                                                    _buildVoiceBubble(
-                                                      msg,
-                                                      isMine: isMine,
-                                                    ),
-                                                isVoiceMessage: () =>
-                                                    isVoiceMessage(msg),
-                                                formatBytes: _formatBytes,
-                                                formatDate: _formatDate,
-                                                buildMessageStatus:
-                                                    _buildMessageStatus(msg),
-                                                onShowReactionPicker: () =>
-                                                    _showReactionPicker(msg),
-                                                onOpenUserProfileById:
-                                                    (uid, label) =>
-                                                        _openUserProfileById(
-                                                          uid,
-                                                          fallbackLabel: label,
-                                                        ),
-                                              ),
-                                            ),
+                                            onComplete: () =>
+                                                _messageIdsWithoutFade
+                                                    .add(msg.id),
+                                            child: messageBody,
                                           );
                                         },
                                       ),

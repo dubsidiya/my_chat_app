@@ -6,12 +6,14 @@ class FadeScaleIn extends StatefulWidget {
   final Widget child;
   final Duration duration;
   final Curve curve;
+  final VoidCallback? onComplete;
 
   const FadeScaleIn({
     super.key,
     required this.child,
     this.duration = const Duration(milliseconds: 260),
     this.curve = Curves.easeOut,
+    this.onComplete,
   });
 
   @override
@@ -38,6 +40,13 @@ class _FadeScaleInState extends State<FadeScaleIn>
     _scale = Tween<double>(begin: 0.96, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: widget.curve),
     );
+    if (widget.onComplete != null) {
+      _controller.addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          widget.onComplete?.call();
+        }
+      });
+    }
     _controller.forward();
   }
 

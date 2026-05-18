@@ -757,11 +757,14 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                         onRefresh: _onRefresh,
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          cacheExtent: 400,
                           itemCount: _reports.length,
                           itemBuilder: (context, index) {
                             final report = _reports[index];
                             final canEdit = _canEditReport(report);
-                            return Card(
+                            return RepaintBoundary(
+                              key: ValueKey('report_${report.id}'),
+                              child: Card(
                               margin: const EdgeInsets.symmetric(vertical: 6),
                               elevation: 2,
                               shadowColor: Colors.black.withValues(alpha:0.08),
@@ -987,6 +990,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   },
                                 ),
                               ),
+                            ),
                             );
                           },
                         ),
