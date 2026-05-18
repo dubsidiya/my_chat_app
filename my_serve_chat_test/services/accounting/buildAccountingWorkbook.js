@@ -685,9 +685,7 @@ const writeQualitySheet = (sheet, payload) => {
 
   sheet.addRow([]);
   const note1 = sheet.addRow([
-    'Quality Index — внутренний индикатор для бухгалтерии. 100 = базовая планка, '
-      + 'штрафы добавляются за низкий КПД, долги отработки, поздние/отсутствующие отчёты, '
-      + 'падение нагрузки относительно своего обычного графика и пропуски в типичные дни.',
+    'Quality Index — внутренний индикатор для бухгалтерии. 100 = базовая планка, ',
   ]);
   sheet.mergeCells(`A${note1.number}:L${note1.number}`);
   note1.getCell(1).alignment = { horizontal: 'left', wrapText: true };
@@ -695,15 +693,14 @@ const writeQualitySheet = (sheet, payload) => {
 
   const note2 = sheet.addRow([
     'Профиль строится по последним 84 дням состоявшихся chargeable-занятий. Прочерк (—) '
-      + 'означает мало истории для надёжной оценки — преподаватель не штрафуется.',
+      + 'означает мало истории для надёжной оценки',
   ]);
   sheet.mergeCells(`A${note2.number}:L${note2.number}`);
   note2.getCell(1).alignment = { horizontal: 'left', wrapText: true };
   note2.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
 
   const note3 = sheet.addRow([
-    'Индекс не привязан к зарплате автоматически и не предназначен для показа преподавателю. '
-      + 'Используйте как подсказку для решений руководства, а не как триггер штрафа.',
+    'Quality Index — внутренний индикатор. Не предназначен для показа преподавателю.',
   ]);
   sheet.mergeCells(`A${note3.number}:L${note3.number}`);
   note3.getCell(1).alignment = { horizontal: 'left', wrapText: true };
