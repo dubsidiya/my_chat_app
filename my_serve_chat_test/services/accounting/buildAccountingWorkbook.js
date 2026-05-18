@@ -577,9 +577,151 @@ const writeKpiSheet = (sheet, payload) => {
   };
 };
 
+const DOW_LABELS_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+const formatTopFactors = (qualityFactors) => {
+  if (!Array.isArray(qualityFactors) || qualityFactors.length === 0) return '';
+  return qualityFactors
+    .slice(0, 3)
+    .map((f) => `${f.label} (${f.delta > 0 ? '+' : ''}${f.delta})`)
+    .join('; ');
+};
+
+const formatTypicalDows = (workProfile) => {
+  if (!workProfile || workProfile.hasEnoughData === false) return '—';
+  const dows = workProfile.typicalDows || [];
+  if (dows.length === 0) return '—';
+  return dows.map((d) => DOW_LABELS_RU[d] || d).join(', ');
+};
+
+/**
+ * Лист «Аналитика (внутр.)». СКРЫТАЯ оценка работы преподавателей для бухгалтерии:
+ * виден только потому, что весь admin/accounting/* за `requireSuperuser`.
+ * Не показывать преподавателям, не выгружать в teacher API.
+ */
+const writeQualitySheet = (sheet, payload) => {
+  sheet.columns = [
+    { header: 'Преподаватель', key: 'teacher', width: 30 },
+    { header: 'Quality Index', key: 'quality', width: 14, style: { numFmt: '0' } },
+    { header: 'КПД, %', key: 'kpi', width: 10, style: { numFmt: '0.0' } },
+    { header: 'Типичные дни', key: 'dows', width: 18 },
+    { header: 'Ожидалось', key: 'expected', width: 12, style: { numFmt: '0.0' } },
+    { header: 'Факт', key: 'actual', width: 10, style: { numFmt: INT_FORMAT } },
+    { header: 'Δ к графику, %', key: 'ratio', width: 14, style: { numFmt: '0' } },
+    { header: 'Долги отработки', key: 'openDebt', width: 16, style: { numFmt: INT_FORMAT } },
+    { header: 'Поздние, руб', key: 'late', width: 14, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Без отчёта, руб', key: 'noReport', width: 16, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Пропуски в типичные дни', key: 'missedDow', width: 22, style: { numFmt: INT_FORMAT } },
+    { header: 'Топ-3 фактора', key: 'factors', width: 60 },
+  ];
+
+  styleHeaderRow(sheet.getRow(1));
+
+  const stats = payload.teacherStats || [];
+  const salariesById = new Map((payload.salaries || []).map((s) => [s.teacherId, s]));
+
+  if (stats.length === 0) {
+    const row = sheet.addRow({ teacher: 'В выбранном периоде нет преподавателей' });
+    sheet.mergeCells(`A${row.number}:L${row.number}`);
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  for (const s of stats) {
+    const salary = salariesById.get(s.teacherId) || {};
+    const expected = Number(s.expectedLessons || 0);
+    const actual = Number(s.happenedCount || 0);
+    const ratio = expected > 0 ? Math.round((actual / expected) * 100) : null;
+    const row = sheet.addRow({
+      teacher: s.teacherUsername || '—',
+      quality: s.qualityIndex == null ? '—' : s.qualityIndex,
+      kpi: s.kpiPercent == null ? '' : s.kpiPercent,
+      dows: formatTypicalDows(s.workProfile),
+      expected: expected || '',
+      actual,
+      ratio: ratio == null ? '' : ratio,
+      openDebt: s.openMakeupDebtCount || 0,
+      late: Number(salary.lateAmount || 0),
+      noReport: Number(salary.noReportAmount || 0),
+      missedDow: s.missedOnTypicalDowCount || 0,
+      factors: formatTopFactors(s.qualityFactors),
+    });
+
+    if (typeof s.qualityIndex === 'number') {
+      const qCell = row.getCell('quality');
+      if (s.qualityIndex >= 80) {
+        qCell.font = { color: { argb: COLORS.okText }, bold: true };
+      } else if (s.qualityIndex < 60) {
+        qCell.font = { color: { argb: COLORS.debtText }, bold: true };
+      } else {
+        qCell.font = { bold: true };
+      }
+    } else {
+      row.getCell('quality').font = { italic: true, color: { argb: 'FF6B7280' } };
+      row.getCell('factors').font = { italic: true, color: { argb: 'FF6B7280' } };
+    }
+
+    if (typeof ratio === 'number') {
+      const rCell = row.getCell('ratio');
+      if (ratio < 50) rCell.font = { color: { argb: COLORS.debtText }, bold: true };
+      else if (ratio < 70) rCell.font = { bold: true };
+      else if (ratio >= 100) rCell.font = { color: { argb: COLORS.okText } };
+    }
+
+    if ((s.openMakeupDebtCount || 0) > 0) {
+      row.getCell('openDebt').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    if (Number(salary.lateAmount || 0) > 0) {
+      row.getCell('late').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    if (Number(salary.noReportAmount || 0) > 0) {
+      row.getCell('noReport').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    row.alignment = { vertical: 'top', wrapText: true };
+    row.eachCell((cell) => setBorder(cell));
+  }
+
+  if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
+
+  sheet.addRow([]);
+  const note1 = sheet.addRow([
+    'Quality Index — внутренний индикатор для бухгалтерии. 100 = базовая планка, '
+      + 'штрафы добавляются за низкий КПД, долги отработки, поздние/отсутствующие отчёты, '
+      + 'падение нагрузки относительно своего обычного графика и пропуски в типичные дни.',
+  ]);
+  sheet.mergeCells(`A${note1.number}:L${note1.number}`);
+  note1.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  note1.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  const note2 = sheet.addRow([
+    'Профиль строится по последним 84 дням состоявшихся chargeable-занятий. Прочерк (—) '
+      + 'означает мало истории для надёжной оценки — преподаватель не штрафуется.',
+  ]);
+  sheet.mergeCells(`A${note2.number}:L${note2.number}`);
+  note2.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  note2.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  const note3 = sheet.addRow([
+    'Индекс не привязан к зарплате автоматически и не предназначен для показа преподавателю. '
+      + 'Используйте как подсказку для решений руководства, а не как триггер штрафа.',
+  ]);
+  sheet.mergeCells(`A${note3.number}:L${note3.number}`);
+  note3.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  note3.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: sheet.columnCount },
+  };
+};
+
 /**
  * Собирает Excel-книгу по бухгалтерии за период.
- * Листы: Сводка, Зарплаты, КПД, Преподаватели, Ученики, Занятия, Транзакции.
+ * Листы: Сводка, Зарплаты, КПД, Аналитика (внутр.), Преподаватели, Ученики, Занятия, Транзакции.
+ *
+ * Лист «Аналитика (внутр.)» содержит СКРЫТУЮ оценку преподавателей; вся книга
+ * выдаётся только superuser через /admin/accounting/export-xlsx.
  *
  * @param {Object} payload результат buildAccountingExport(...)
  * @param {Array} transactions результат queryAccountingTransactions(...)
@@ -595,6 +737,10 @@ export const buildAccountingWorkbookBuffer = async (payload, transactions) => {
   writeSummarySheet(wb.addWorksheet('Сводка', { properties: { tabColor: { argb: 'FF4F46E5' } } }), payload);
   writeSalariesSheet(wb.addWorksheet('Зарплаты', { properties: { tabColor: { argb: 'FF15803D' } } }), payload);
   writeKpiSheet(wb.addWorksheet('КПД', { properties: { tabColor: { argb: 'FFEA580C' } } }), payload);
+  writeQualitySheet(
+    wb.addWorksheet('Аналитика (внутр.)', { properties: { tabColor: { argb: 'FF6D28D9' } } }),
+    payload
+  );
   writeTeachersSheet(wb.addWorksheet('Преподаватели', { properties: { tabColor: { argb: 'FF22C55E' } } }), payload);
   writeStudentsSheet(wb.addWorksheet('Ученики', { properties: { tabColor: { argb: 'FFF59E0B' } } }), payload);
   writeLessonsSheet(wb.addWorksheet('Занятия', { properties: { tabColor: { argb: 'FF06B6D4' } } }), payload);

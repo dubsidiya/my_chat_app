@@ -96,41 +96,14 @@ class AdminService {
     throw Exception('Не удалось получить CSV: ${response.statusCode}');
   }
 
-  Future<String> exportTransactionsCsv({
-    required String from, // YYYY-MM-DD
-    required String to, // YYYY-MM-DD
-    bool bankTransferOnly = false,
-  }) async {
-    final headers = await _getAuthHeaders();
-    final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
-    final uri = Uri.parse('$baseUrl/admin/accounting/transactions-export?from=$from&to=$to&format=csv$bank');
-    final response = await timedGet(uri, headers: headers);
-
-    if (response.statusCode == 200) {
-      return utf8.decode(response.bodyBytes);
-    }
-
-    try {
-      final bodyText = utf8.decode(response.bodyBytes);
-      final error = _tryDecodeJson(bodyText);
-      if (error != null && error['message'] != null) {
-        throw Exception('${error['message']} (HTTP ${response.statusCode})');
-      }
-    } catch (_) {}
-
-    throw Exception('Не удалось получить CSV транзакций: ${response.statusCode}');
-  }
-
   /// Красивая выписка для бухгалтерии в формате XLSX (Excel).
   /// Возвращает байты файла; экран сам решает, сохранить или предложить браузеру.
   Future<Uint8List> exportAccountingXlsxBytes({
     required String from, // YYYY-MM-DD
     required String to, // YYYY-MM-DD
-    bool bankTransferOnly = false,
   }) async {
     final headers = await _getAuthHeaders();
-    final bank = bankTransferOnly ? '&bank_transfer_only=true' : '';
-    final uri = Uri.parse('$baseUrl/admin/accounting/export-xlsx?from=$from&to=$to$bank');
+    final uri = Uri.parse('$baseUrl/admin/accounting/export-xlsx?from=$from&to=$to');
     final response = await timedGet(uri, headers: headers);
 
     if (response.statusCode == 200) {

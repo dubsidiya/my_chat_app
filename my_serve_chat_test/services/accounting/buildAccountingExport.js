@@ -1,5 +1,11 @@
 import { sqlUserAccountingName } from '../../utils/userAccountingDisplaySql.js';
 import { closedOriginLessonIds } from '../../utils/makeupDebts.js';
+import {
+  computeTeacherWorkProfile,
+  expectedLessonsInPeriod,
+  countMissedOnTypicalDow,
+  computeTeacherQuality,
+} from './teacherWorkProfile.js';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -424,7 +430,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     (a.teacherUsername || '').localeCompare(b.teacherUsername || '')
   );
 
-  const teacherStatsOut = [...teacherStatsMap.values()]
+  const teacherStatsBase = [...teacherStatsMap.values()]
     .map((s) => {
       const happened = s.attendedCount + s.makeupCount;
       const denom = s.attendedCount + s.makeupCount + s.missedCount + s.cancelSameDayFreeCount;
@@ -432,6 +438,58 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
         ...s,
         happenedCount: happened,
         kpiPercent: denom > 0 ? Math.round((happened / denom) * 1000) / 10 : null,
+      };
+    });
+
+  // Скрытый профиль работы + индекс качества по каждому преподавателю.
+  // Используется ТОЛЬКО в admin-выгрузке (требует requireSuperuser).
+  // Никогда не отдаётся в teacher-facing API — см. teacherWorkProfile.js.
+  const profilesByTeacher = new Map();
+  for (const s of teacherStatsBase) {
+    const profile = await computeTeacherWorkProfile(pool, s.teacherId, {
+      anchorDate: from,
+      lookbackDays: 84,
+    });
+    profilesByTeacher.set(s.teacherId, profile);
+  }
+
+  const teacherStatsOut = teacherStatsBase
+    .map((s) => {
+      const profile = profilesByTeacher.get(s.teacherId);
+      const salary = salaryByTeacher.get(s.teacherId) || {};
+      const expected = expectedLessonsInPeriod(profile, from, to);
+      const missedDow = countMissedOnTypicalDow(
+        lessonsRes.rows,
+        s.teacherId,
+        profile,
+        { from, to }
+      );
+      const facts = {
+        kpiPercent: s.kpiPercent,
+        openMakeupDebtCount: s.openMakeupDebtCount,
+        totalChargeable: Number(salary.totalChargeable || 0),
+        lateAmount: Number(salary.lateAmount || 0),
+        noReportAmount: Number(salary.noReportAmount || 0),
+        actualLessons: s.happenedCount,
+        expectedLessons: expected,
+        missedOnTypicalDowCount: missedDow,
+      };
+      const { qualityIndex, qualityFactors, reason } = computeTeacherQuality(facts, profile);
+      return {
+        ...s,
+        expectedLessons: expected,
+        missedOnTypicalDowCount: missedDow,
+        qualityIndex,
+        qualityFactors,
+        qualityReason: reason,
+        workProfile: profile && profile.hasEnoughData
+          ? {
+              typicalDows: profile.typicalDows,
+              medianPerWorkDay: profile.medianPerWorkDay,
+              sampleDays: profile.sampleDays,
+              lookbackDays: profile.lookbackDays,
+            }
+          : { hasEnoughData: false, sampleDays: profile ? profile.sampleDays : 0 },
       };
     })
     .sort((a, b) => (a.teacherUsername || '').localeCompare(b.teacherUsername || ''));

@@ -315,30 +315,6 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
-  Future<void> _copyCsvBankTransfer() async {
-    try {
-      final csv = await _adminService.exportAccountingCsv(
-        from: _fmt(_from),
-        to: _fmt(_to),
-        bankTransferOnly: true,
-      );
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 3),
-          content: Text('Выписка по расчётному счёту скопирована в буфер'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
   Future<void> _downloadCsvFile() async {
     try {
       final csv = await _adminService.exportAccountingCsv(from: _fmt(_from), to: _fmt(_to));
@@ -376,98 +352,13 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     }
   }
 
-  Future<void> _downloadCsvFileBankTransfer() async {
-    try {
-      final csv = await _adminService.exportAccountingCsv(
-        from: _fmt(_from),
-        to: _fmt(_to),
-        bankTransferOnly: true,
-      );
-      final filename = 'accounting_${_fmt(_from)}_${_fmt(_to)}_raschetnyi_schet.csv';
-
-      final okWeb = await downloadTextFile(
-        filename: filename,
-        content: csv,
-        mimeType: 'text/csv; charset=utf-8',
-      );
-      if (okWeb) return;
-
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$filename');
-      await file.writeAsString(csv, flush: true);
-
-      if (!mounted) return;
-      final uri = Uri.file(file.path);
-      final can = await canLaunchUrl(uri);
-      if (!mounted) return;
-      if (can) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text('Выписка по расчётному счёту сохранена: ${file.path}'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _copyTransactionsCsv() async {
-    try {
-      final csv = await _adminService.exportTransactionsCsv(from: _fmt(_from), to: _fmt(_to));
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(duration: Duration(seconds: 3), content: Text('CSV транзакций скопирован в буфер'), backgroundColor: Colors.green),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка CSV транзакций: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _copyTransactionsCsvBankTransfer() async {
-    try {
-      final csv = await _adminService.exportTransactionsCsv(
-        from: _fmt(_from),
-        to: _fmt(_to),
-        bankTransferOnly: true,
-      );
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 3),
-          content: Text('CSV транзакций (расч. счёт) скопирован в буфер'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _downloadXlsxFile({required bool bankTransferOnly}) async {
+  Future<void> _downloadXlsxFile() async {
     try {
       final bytes = await _adminService.exportAccountingXlsxBytes(
         from: _fmt(_from),
         to: _fmt(_to),
-        bankTransferOnly: bankTransferOnly,
       );
-      final suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
-      final filename = 'buhgalteriya_${_fmt(_from)}_${_fmt(_to)}$suffix.xlsx';
+      final filename = 'buhgalteriya_${_fmt(_from)}_${_fmt(_to)}.xlsx';
       const mimeType =
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -515,46 +406,6 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
           content: Text('Ошибка Excel-выгрузки: $e'),
           backgroundColor: Colors.red,
         ),
-      );
-    }
-  }
-
-  Future<void> _downloadTransactionsCsvFile({required bool bankTransferOnly}) async {
-    try {
-      final csv = await _adminService.exportTransactionsCsv(
-        from: _fmt(_from),
-        to: _fmt(_to),
-        bankTransferOnly: bankTransferOnly,
-      );
-      final suffix = bankTransferOnly ? '_raschetnyi_schet' : '';
-      final filename = 'transactions_${_fmt(_from)}_${_fmt(_to)}$suffix.csv';
-
-      final okWeb = await downloadTextFile(
-        filename: filename,
-        content: csv,
-        mimeType: 'text/csv; charset=utf-8',
-      );
-      if (okWeb) return;
-
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$filename');
-      await file.writeAsString(csv, flush: true);
-
-      if (!mounted) return;
-      final uri = Uri.file(file.path);
-      final can = await canLaunchUrl(uri);
-      if (!mounted) return;
-      if (can) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -900,103 +751,17 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading
-                              ? null
-                              : () => _downloadXlsxFile(bankTransferOnly: false),
-                          icon: const Icon(Icons.table_view_rounded),
-                          label: const Text('Excel для бухгалтерии'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4F46E5),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _downloadXlsxFile,
+                      icon: const Icon(Icons.table_view_rounded),
+                      label: const Text('Excel для бухгалтерии'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        foregroundColor: Colors.white,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading
-                              ? null
-                              : () => _downloadXlsxFile(bankTransferOnly: true),
-                          icon: const Icon(Icons.account_balance_rounded),
-                          label: const Text('Excel (расч. счёт)'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Выписка только по ученикам с оплатой на расчётный счёт:',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _copyCsvBankTransfer,
-                          icon: const Icon(Icons.account_balance_rounded),
-                          label: const Text('Копия (расч. счёт)'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _downloadCsvFileBankTransfer,
-                          icon: const Icon(Icons.download_rounded),
-                          label: const Text('Скачать выписку'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  const Divider(height: 20),
-                  const Text(
-                    'Экспорт транзакций за период (по операциям):',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _copyTransactionsCsv,
-                          icon: const Icon(Icons.copy),
-                          label: const Text('Транзакции (копия)'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : () => _downloadTransactionsCsvFile(bankTransferOnly: false),
-                          icon: const Icon(Icons.download_rounded),
-                          label: const Text('Транзакции (файл)'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _copyTransactionsCsvBankTransfer,
-                          icon: const Icon(Icons.account_balance_rounded),
-                          label: const Text('Транзакции (расч. счёт)'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : () => _downloadTransactionsCsvFile(bankTransferOnly: true),
-                          icon: const Icon(Icons.download_rounded),
-                          label: const Text('Скачать (расч. счёт)'),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 6),
                   const Text(
