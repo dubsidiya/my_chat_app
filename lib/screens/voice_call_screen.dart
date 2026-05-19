@@ -28,6 +28,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _calls.stateStream.listen((s) {
       if (!mounted) return;
       setState(() => _snap = s);
+      if (s.phase == VoiceCallPhase.connected) {
+        _attachRemote();
+      }
       if (s.phase == VoiceCallPhase.failed &&
           (s.statusMessage?.contains('микрофон') ?? false)) {
         _showMicDeniedHint();

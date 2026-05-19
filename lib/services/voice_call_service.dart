@@ -86,6 +86,9 @@ class VoiceCallService {
   MediaStream? _remoteStream;
   List<Map<String, dynamic>>? _iceServers;
   MicrophoneAccess? _lastMicAccess;
+  final List<RTCIceCandidate> _pendingRemoteCandidates = [];
+  bool _remoteDescriptionSet = false;
+  Timer? _connectingTimer;
 
   VoiceCallSnapshot get snapshot => _snapshot;
   MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
@@ -166,6 +169,7 @@ class VoiceCallService {
         statusMessage: 'Соединение…',
       ),
     );
+    _startConnectingTimeout();
     _sendSignal({
       'type': 'call_accept',
       'call_id': callId,
@@ -335,6 +339,7 @@ class VoiceCallService {
         statusMessage: 'Соединение…',
       ),
     );
+    _startConnectingTimeout();
     await _ensurePeerConnection();
     try {
       final offer = await _pc!.createOffer({'offerToReceiveAudio': true});
@@ -405,7 +410,7 @@ class VoiceCallService {
         sdpMap['sdp']?.toString() ?? '',
         sdpMap['type']?.toString() ?? '',
       );
-      await _pc!.setRemoteDescription(desc);
+      await _setRemoteDescription(desc);
       final answer = await _pc!.createAnswer();
       await _pc!.setLocalDescription(answer);
       _sendSignal({
@@ -414,12 +419,15 @@ class VoiceCallService {
         'chat_id': _snapshot.chatId,
         'sdp': {'type': answer.type, 'sdp': answer.sdp},
       });
-      _emit(
-        _snapshot.copyWith(
-          phase: VoiceCallPhase.connecting,
-          statusMessage: 'Соединение…',
-        ),
-      );
+      if (_snapshot.phase != VoiceCallPhase.connecting) {
+        _emit(
+          _snapshot.copyWith(
+            phase: VoiceCallPhase.connecting,
+            statusMessage: 'Соединение…',
+          ),
+        );
+      }
+      _startConnectingTimeout();
     } catch (e) {
       if (kDebugMode) print('VoiceCall answer error: $e');
       _emitFailed('Ошибка согласования медиа');
@@ -437,7 +445,7 @@ class VoiceCallService {
         sdpMap['sdp']?.toString() ?? '',
         sdpMap['type']?.toString() ?? '',
       );
-      await _pc!.setRemoteDescription(desc);
+      await _setRemoteDescription(desc);
     } catch (e) {
       if (kDebugMode) print('VoiceCall set answer error: $e');
     }
@@ -448,19 +456,7 @@ class VoiceCallService {
     if (_pc == null) return;
     final candidate = event['candidate'];
     if (candidate is! Map) return;
-    try {
-      await _pc!.addCandidate(
-        RTCIceCandidate(
-          candidate['candidate']?.toString(),
-          candidate['sdpMid']?.toString(),
-          candidate['sdpMLineIndex'] is int
-              ? candidate['sdpMLineIndex'] as int
-              : int.tryParse('${candidate['sdpMLineIndex']}'),
-        ),
-      );
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall ICE error: $e');
-    }
+    await _addRemoteIceCandidate(_iceCandidateFromMap(candidate));
   }
 
   bool _matchesActiveCall(Map event, {bool allowNoCallId = false}) {
@@ -475,6 +471,8 @@ class VoiceCallService {
 
   Future<void> _ensurePeerConnection() async {
     if (_pc != null) return;
+    _remoteDescriptionSet = false;
+    _pendingRemoteCandidates.clear();
     final servers = await _loadIceServers();
     final config = <String, dynamic>{
       'iceServers': servers,
@@ -493,19 +491,28 @@ class VoiceCallService {
     };
 
     _pc!.onTrack = (RTCTrackEvent event) {
-      if (event.streams.isNotEmpty) {
-        _remoteStream = event.streams.first;
-        _emit(
-          _snapshot.copyWith(
-            phase: VoiceCallPhase.connected,
-            statusMessage: 'На связи',
-          ),
-        );
+      if (event.track.kind != 'audio') return;
+      unawaited(_bindRemoteAudioTrack(event));
+    };
+
+    _pc!.onAddStream = (MediaStream stream) {
+      unawaited(_handleRemoteStream(stream));
+    };
+
+    _pc!.onIceConnectionState = (RTCIceConnectionState state) {
+      if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+          state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+        _markConnected();
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+        _emitFailed('Не удалось установить медиа-соединение (ICE)');
+        unawaited(hangUp());
       }
     };
 
     _pc!.onConnectionState = (RTCPeerConnectionState state) {
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        _markConnected();
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
         _emitFailed('Соединение потеряно');
         unawaited(hangUp());
       }
@@ -559,10 +566,12 @@ class VoiceCallService {
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         if (body is Map && body['iceServers'] is List) {
-          _iceServers = (body['iceServers'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          _iceServers = _normalizeIceServers(
+            (body['iceServers'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList(),
+          );
           if (_iceServers!.isNotEmpty) return _iceServers!;
         }
       }
@@ -606,6 +615,119 @@ class VoiceCallService {
     }
   }
 
+  Future<void> _bindRemoteAudioTrack(RTCTrackEvent event) async {
+    if (event.streams.isNotEmpty) {
+      await _handleRemoteStream(event.streams.first);
+      return;
+    }
+    final stream =
+        await createLocalMediaStream('remote-audio-${_snapshot.callId ?? "call"}');
+    await stream.addTrack(event.track);
+    await _handleRemoteStream(stream);
+  }
+
+  Future<void> _handleRemoteStream(MediaStream stream) async {
+    if (stream.getAudioTracks().isEmpty) return;
+    _remoteStream = stream;
+    _markConnected();
+  }
+
+  void _markConnected() {
+    if (_snapshot.phase == VoiceCallPhase.connected) return;
+    _cancelConnectingTimeout();
+    _emit(
+      _snapshot.copyWith(
+        phase: VoiceCallPhase.connected,
+        statusMessage: 'На связи',
+      ),
+    );
+  }
+
+  void _startConnectingTimeout() {
+    _connectingTimer?.cancel();
+    _connectingTimer = Timer(const Duration(seconds: 45), () {
+      if (_snapshot.phase != VoiceCallPhase.connecting) return;
+      _emitFailed(
+        'Не удалось соединиться. Проверьте интернет; на сервере нужен TURN (UDP 3478 и 49152–49252).',
+      );
+      unawaited(hangUp());
+    });
+  }
+
+  void _cancelConnectingTimeout() {
+    _connectingTimer?.cancel();
+    _connectingTimer = null;
+  }
+
+  RTCIceCandidate _iceCandidateFromMap(Map candidate) {
+    return RTCIceCandidate(
+      candidate['candidate']?.toString(),
+      candidate['sdpMid']?.toString(),
+      candidate['sdpMLineIndex'] is int
+          ? candidate['sdpMLineIndex'] as int
+          : int.tryParse('${candidate['sdpMLineIndex']}'),
+    );
+  }
+
+  Future<void> _setRemoteDescription(RTCSessionDescription desc) async {
+    if (_pc == null) return;
+    await _pc!.setRemoteDescription(desc);
+    _remoteDescriptionSet = true;
+    await _flushPendingIceCandidates();
+  }
+
+  Future<void> _addRemoteIceCandidate(RTCIceCandidate candidate) async {
+    if (_pc == null) return;
+    if (!_remoteDescriptionSet) {
+      _pendingRemoteCandidates.add(candidate);
+      return;
+    }
+    try {
+      await _pc!.addCandidate(candidate);
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall ICE error: $e');
+    }
+  }
+
+  Future<void> _flushPendingIceCandidates() async {
+    if (_pc == null || _pendingRemoteCandidates.isEmpty) return;
+    final pending = List<RTCIceCandidate>.from(_pendingRemoteCandidates);
+    _pendingRemoteCandidates.clear();
+    for (final candidate in pending) {
+      try {
+        await _pc!.addCandidate(candidate);
+      } catch (e) {
+        if (kDebugMode) print('VoiceCall ICE flush error: $e');
+      }
+    }
+  }
+
+  List<Map<String, dynamic>> _normalizeIceServers(
+    List<Map<String, dynamic>> servers,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final raw in servers) {
+      final map = Map<String, dynamic>.from(raw);
+      final urls = map['urls'];
+      if (urls is String) {
+        final parts = urls
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        map['urls'] = parts.length == 1 ? parts.first : parts;
+      }
+      out.add(map);
+    }
+    return out;
+  }
+
+  void _resetPeerConnectionState() {
+    _remoteDescriptionSet = false;
+    _pendingRemoteCandidates.clear();
+    _cancelConnectingTimeout();
+  }
+
   Future<void> _tearDownLocalStreamOnly() async {
     try {
       await _localStream?.dispose();
@@ -614,6 +736,7 @@ class VoiceCallService {
   }
 
   Future<void> _tearDownMedia() async {
+    _resetPeerConnectionState();
     try {
       await _localStream?.dispose();
     } catch (_) {}

@@ -11,12 +11,24 @@ function parseIceServersFromEnv() {
     servers.push({ urls: url });
   }
 
-  const turnUrl = (process.env.WEBRTC_TURN_URL || '').trim();
+  const turnUrlRaw = (process.env.WEBRTC_TURN_URL || '').trim();
   const turnUser = (process.env.WEBRTC_TURN_USERNAME || '').trim();
   const turnCred = (process.env.WEBRTC_TURN_CREDENTIAL || '').trim();
-  if (turnUrl && turnUser && turnCred) {
+  if (turnUrlRaw && turnUser && turnCred) {
+    const turnUrls = new Set(
+      turnUrlRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    // TCP fallback helps on strict mobile NAT / firewalls.
+    for (const url of [...turnUrls]) {
+      if (url.startsWith('turn:') && !url.includes('transport=tcp')) {
+        turnUrls.add(url.includes('?') ? `${url}&transport=tcp` : `${url}?transport=tcp`);
+      }
+    }
     servers.push({
-      urls: turnUrl,
+      urls: [...turnUrls],
       username: turnUser,
       credential: turnCred,
     });

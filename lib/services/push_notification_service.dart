@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../utils/timed_http.dart';
@@ -159,12 +160,28 @@ class PushNotificationService {
       final notification = message.notification;
       final title = notification?.title ?? 'Новое сообщение';
       final body = notification?.body ?? 'Сообщение в чате';
+      // iOS/macOS: setForegroundNotificationPresentationOptions уже показывает баннер из FCM payload.
+      if (_shouldSkipLocalForegroundMessageNotification(message)) {
+        return;
+      }
       _showForegroundNotification(title: title, body: body, data: data);
     });
   }
 
   static bool _isIncomingCallData(Map<String, dynamic> data) {
     return data['type']?.toString() == 'incoming_call';
+  }
+
+  /// На Apple-платформах FCM с notification payload уже показывается системой в foreground.
+  static bool _shouldSkipLocalForegroundMessageNotification(RemoteMessage message) {
+    if (message.notification == null) return false;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return true;
+      default:
+        return false;
+    }
   }
 
   static void _handleIncomingCallPush(

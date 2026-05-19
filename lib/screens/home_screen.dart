@@ -73,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (oldWidget.avatarUrl != widget.avatarUrl) _avatarUrl = widget.avatarUrl;
   }
   List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
+  bool _useManualChatOrder = false; // true после ручной сортировки, сбрасывается при новом сообщении
   bool _isLoading = false;
   String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
   final TextEditingController _searchController = TextEditingController();
@@ -318,10 +319,12 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         return;
       }
-      // Новое сообщение в любой чат: обновляем список чатов
+      // Новое сообщение в любой чат: поднимаем чат наверх и синхронизируем с сервером
       if (event is Map && event['chat_id'] != null && event['id'] != null) {
         final type = event['type']?.toString();
         if (type == null || type.isEmpty || type == 'message') {
+          _useManualChatOrder = false;
+          _applyIncomingMessageToChatList(Map<String, dynamic>.from(event));
           _scheduleLoadChats();
         }
       }
@@ -521,24 +524,83 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Чаты в сохранённом порядке (сначала по _chatOrder, затем остальные по дате последнего сообщения).
+  int _compareChatsByActivity(Chat a, Chat b) {
+    final at = a.lastMessageAt ?? '';
+    final bt = b.lastMessageAt ?? '';
+    final byTime = bt.compareTo(at);
+    if (byTime != 0) return byTime;
+    final aid = a.lastMessageId ?? '';
+    final bid = b.lastMessageId ?? '';
+    final byId = bid.compareTo(aid);
+    if (byId != 0) return byId;
+    final ai = _chatOrder.indexOf(a.id);
+    final bi = _chatOrder.indexOf(b.id);
+    if (ai != -1 && bi != -1) return ai.compareTo(bi);
+    if (ai != -1) return -1;
+    if (bi != -1) return 1;
+    return b.id.compareTo(a.id);
+  }
+
+  /// Сортировка: по умолчанию — последняя активность сверху; после ручного reorder — сохранённый порядок.
   List<Chat> get _sortedChats {
     if (_chats.isEmpty) return [];
-    final byId = {for (final c in _chats) c.id: c};
-    final orderSet = _chatOrder.toSet();
-    final out = <Chat>[];
-    for (final id in _chatOrder) {
-      final chat = byId[id];
-      if (chat != null) out.add(chat);
+    if (_useManualChatOrder && _chatOrder.isNotEmpty) {
+      final byId = {for (final c in _chats) c.id: c};
+      final out = <Chat>[];
+      for (final id in _chatOrder) {
+        final chat = byId[id];
+        if (chat != null) out.add(chat);
+      }
+      final orderSet = _chatOrder.toSet();
+      final rest = _chats.where((c) => !orderSet.contains(c.id)).toList()..sort(_compareChatsByActivity);
+      out.addAll(rest);
+      return out;
     }
-    final rest = _chats.where((c) => !orderSet.contains(c.id)).toList();
-    rest.sort((a, b) {
-      final at = a.lastMessageAt ?? '';
-      final bt = b.lastMessageAt ?? '';
-      return bt.compareTo(at);
+    final sorted = List<Chat>.from(_chats)..sort(_compareChatsByActivity);
+    return sorted;
+  }
+
+  void _applyIncomingMessageToChatList(Map<String, dynamic> event) {
+    final chatId = event['chat_id']?.toString();
+    final messageId = event['id']?.toString();
+    if (chatId == null || chatId.isEmpty || messageId == null || messageId.isEmpty) return;
+
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx < 0) return;
+
+    final old = _chats[idx];
+    final senderId = event['user_id']?.toString();
+    final isFromOther = senderId != null && senderId != widget.userId;
+    final createdAt = event['created_at']?.toString() ?? DateTime.now().toUtc().toIso8601String();
+
+    final updated = Chat(
+      id: old.id,
+      name: old.name,
+      isGroup: old.isGroup,
+      folderId: old.folderId,
+      folderName: old.folderName,
+      otherUserId: old.otherUserId,
+      otherUserAvatarUrl: old.otherUserAvatarUrl,
+      lastMessageId: messageId,
+      lastMessageText: event['content']?.toString(),
+      lastMessageType: event['message_type']?.toString() ?? 'text',
+      lastMessageImageUrl: event['image_url']?.toString(),
+      lastMessageFileUrl: event['file_url']?.toString(),
+      lastMessageFileName: event['file_name']?.toString(),
+      lastMessageFileSize: event['file_size'] is int
+          ? event['file_size'] as int
+          : int.tryParse(event['file_size']?.toString() ?? ''),
+      lastMessageFileMime: event['file_mime']?.toString(),
+      lastMessageAt: createdAt,
+      lastSenderEmail: event['sender_email']?.toString() ?? old.lastSenderEmail,
+      unreadCount: isFromOther ? old.unreadCount + 1 : old.unreadCount,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _chats = [..._chats.sublist(0, idx), updated, ..._chats.sublist(idx + 1)];
+      _invalidateFilteredChatsCache();
     });
-    out.addAll(rest);
-    return out;
   }
 
   void _onReorderChats(int oldIndex, int newIndex) {
@@ -548,6 +610,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final insertIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
     sorted.insert(insertIndex, item);
     setState(() {
+      _useManualChatOrder = true;
       _chatOrder = sorted.map((c) => c.id).toList();
       _invalidateFilteredChatsCache();
     });
