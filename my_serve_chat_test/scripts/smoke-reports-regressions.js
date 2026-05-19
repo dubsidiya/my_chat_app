@@ -2,7 +2,7 @@
  * Regression smoke tests for reports/lessons integrity fixes.
  *
  * Covers:
- * 1) owner updateReport with changed report_date recalculates reports.is_late
+ * 1) owner updateReport with changed report_date does NOT flip is_late (submitted on time)
  * 2) deleteLesson is blocked for lessons linked to report_lessons
  * 3) invalid IDs for report/lesson mutations are rejected with 400
  * 4) text report create does not silently skip unknown students (returns 400)
@@ -191,7 +191,44 @@ const run = async () => {
     const afterCount = await countReportsOnDate(ownerUserId, textDate);
     assert(afterCount === beforeCount, 'Неуспешный text create не должен оставлять запись reports');
 
-    // 1) Owner updateReport with changed report_date must recalc is_late.
+    // 1.0) Создание отчёта сразу на прошлую дату — is_late=true при create.
+    const createPastRes = makeRes();
+    await createReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        body: {
+          report_date: freePastDate,
+          slots: [
+            {
+              timeStart: '10:00',
+              timeEnd: '11:00',
+              students: [{ studentId: ownerStudentId, price: 1400, status: 'attended' }],
+            },
+          ],
+        },
+        headers: { 'idempotency-key': `smoke-regression-create-past-${Date.now()}` },
+      },
+      createPastRes
+    );
+    assert(createPastRes.statusCode === 201, `createReport(past) статус ${createPastRes.statusCode}`);
+    const reportIdPast = Number(createPastRes.body?.id);
+    assert(Number.isFinite(reportIdPast), 'createReport(past) не вернул report.id');
+    assert(
+      createPastRes.body?.is_late === true,
+      'Отчёт с report_date в прошлом должен быть is_late=true при создании'
+    );
+    const cleanupPast = makeRes();
+    await deleteReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportIdPast) },
+      },
+      cleanupPast
+    );
+    assert(cleanupPast.statusCode === 200, `cleanup past report статус ${cleanupPast.statusCode}`);
+
+    // 1) Owner updateReport: сдвиг report_date в прошлое не делает отчёт «поздним»,
+    //    если он был сдан вовремя (is_late фиксируется при create).
     const createRes1 = makeRes();
     await createReport(
       {
@@ -234,7 +271,10 @@ const run = async () => {
       ownerUpdateRes
     );
     assert(ownerUpdateRes.statusCode === 200, `owner updateReport статус ${ownerUpdateRes.statusCode}`);
-    assert(ownerUpdateRes.body?.is_late === true, 'owner updateReport должен вернуть is_late=true после сдвига даты в прошлое');
+    assert(
+      ownerUpdateRes.body?.is_late === false,
+      'owner updateReport не должен ставить is_late=true, если отчёт был сдан вовремя'
+    );
 
     const dbLateCheck = await pool.query(
       'SELECT report_date::text AS report_date, is_late FROM reports WHERE id = $1',
@@ -242,7 +282,10 @@ const run = async () => {
     );
     assert(dbLateCheck.rowCount === 1, 'Не найден обновленный отчет для проверки is_late');
     assert(dbLateCheck.rows[0].report_date === freePastDate, 'report_date в БД не обновился');
-    assert(dbLateCheck.rows[0].is_late === true, 'is_late в БД не пересчитался для owner update');
+    assert(
+      dbLateCheck.rows[0].is_late === false,
+      'is_late в БД не должен меняться при правке вовремя сданного отчёта'
+    );
 
     // 2) deleteLesson must reject lessons linked to reports.
     const reportDate2 = await pickFreeReportDate(ownerUserId, todayIso, 0, 60);

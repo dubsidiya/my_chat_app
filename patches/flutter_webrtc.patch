@@ -1,0 +1,27 @@
+--- a/android/src/main/java/com/cloudwebrtc/webrtc/MethodCallHandlerImpl.java
++++ b/android/src/main/java/com/cloudwebrtc/webrtc/MethodCallHandlerImpl.java
+@@ -1963,11 +1963,11 @@
+   public boolean peerConnectionDispose(final PeerConnectionObserver pco) {
+     if (pco.getPeerConnection() == null) {
+       Log.d(TAG, "peerConnectionDispose() peerConnection is null");
++      return true;
+     } else {
+       pco.dispose();
+       return true;
+     }
+-    return false;
+   }
+ 
+   public void streamDispose(final String streamId) {
+--- a/android/src/main/java/com/cloudwebrtc/webrtc/PeerConnectionObserver.java
++++ b/android/src/main/java/com/cloudwebrtc/webrtc/PeerConnectionObserver.java
+@@ -1120,6 +1120,9 @@
+     if (this.configuration.sdpSemantics != PeerConnection.SdpSemantics.UNIFIED_PLAN) {
+       return null;
+     }
++    if (peerConnection == null) {
++      return null;
++    }
+     MediaStreamTrack track = null;
+     List<RtpTransceiver> transceivers = peerConnection.getTransceivers();
+     for (RtpTransceiver transceiver : transceivers) {

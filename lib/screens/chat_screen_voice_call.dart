@@ -12,25 +12,31 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
 
   Future<void> _startVoiceCall() async {
     if (widget.isGroup) return;
-    final peerId = _peerUserIdForDm();
-    if (peerId == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Не удалось определить собеседника. Попробуйте позже.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      if (_chatMembers.isEmpty) {
-        await _loadChatMembers();
+    try {
+      final peerId = _peerUserIdForDm();
+      if (peerId == null) {
         if (!mounted) return;
-        final retry = _peerUserIdForDm();
-        if (retry == null) return;
-        return _startVoiceCallWithPeer(retry);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не удалось определить собеседника. Попробуйте позже.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        if (_chatMembers.isEmpty) {
+          await _loadChatMembers();
+          if (!mounted) return;
+          final retry = _peerUserIdForDm();
+          if (retry == null) return;
+          return _startVoiceCallWithPeer(retry);
+        }
+        return;
       }
-      return;
+      await _startVoiceCallWithPeer(peerId);
+    } catch (_) {
+      if (mounted) {
+        _showVoiceCallStartError('Не удалось начать звонок');
+      }
     }
-    await _startVoiceCallWithPeer(peerId);
   }
 
   Future<void> _startVoiceCallWithPeer(String peerId) async {
@@ -50,13 +56,14 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
       peerLabel: label,
     );
     if (!ok && mounted) {
-      _showVoiceCallMicError();
+      _showVoiceCallStartError();
     }
   }
 
-  void _showVoiceCallMicError() {
-    final msg = VoiceCallService.instance.snapshot.statusMessage ??
-        'Нет доступа к микрофону';
+  void _showVoiceCallStartError([String? overrideMessage]) {
+    final msg = overrideMessage ??
+        VoiceCallService.instance.snapshot.statusMessage ??
+        'Не удалось начать звонок';
     final permanent = VoiceCallService.instance.lastMicrophoneAccess ==
         MicrophoneAccess.permanentlyDenied;
     ScaffoldMessenger.of(context).showSnackBar(

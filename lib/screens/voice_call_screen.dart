@@ -45,7 +45,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         });
       }
     });
-    Helper.setSpeakerphoneOn(true);
+    try {
+      Helper.setSpeakerphoneOn(true);
+    } catch (_) {}
   }
 
   Future<void> _initRenderer() async {
@@ -101,7 +103,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   @override
   void dispose() {
-    Helper.setSpeakerphoneOn(false);
+    try {
+      Helper.setSpeakerphoneOn(false);
+    } catch (_) {}
     _remoteRenderer?.srcObject = null;
     _remoteRenderer?.dispose();
     super.dispose();

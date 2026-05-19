@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../config/api_config.dart';
@@ -89,9 +90,13 @@ class VoiceCallService {
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   bool _remoteDescriptionSet = false;
   Timer? _connectingTimer;
+  Timer? _outgoingTimer;
   Future<void>? _peerConnectionSetupInFlight;
   Future<void>? _localAudioSetupInFlight;
   bool _webRtcInitialized = false;
+  bool _hasTurnServer = false;
+  /// После сбойного createPeerConnection повторный getUserMedia на Android падает (баг плагина).
+  bool _webRtcMediaBroken = false;
 
   VoiceCallSnapshot get snapshot => _snapshot;
   MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
@@ -119,59 +124,88 @@ class VoiceCallService {
     required String peerUserId,
     required String peerLabel,
   }) async {
-    if (kIsWeb) {
-      _emitFailed('Голосовые звонки пока только в мобильном приложении');
-      return false;
-    }
-    if (_snapshot.isActive) return false;
-    await bindUserIfNeeded();
-    if (_myUserId == null) return false;
+    try {
+      if (kIsWeb) {
+        _emitFailed('Голосовые звонки пока только в мобильном приложении');
+        return false;
+      }
+      if (_snapshot.isActive) {
+        _emitFailed('Звонок уже идёт');
+        return false;
+      }
+      await bindUserIfNeeded();
+      if (_myUserId == null) {
+        _emitFailed('Не удалось начать звонок. Перезайдите в приложение.');
+        return false;
+      }
 
-    if (!await _ensureMicrophonePermission()) {
-      return false;
-    }
+      if (!await _ensureMicrophonePermission()) {
+        return false;
+      }
 
-    final callId = _newCallId();
-    _emit(
-      VoiceCallSnapshot(
-        phase: VoiceCallPhase.outgoing,
-        callId: callId,
-        chatId: chatId,
-        peerUserId: peerUserId,
-        peerLabel: peerLabel,
-        statusMessage: 'Вызов…',
-      ),
-    );
+      if (!await _ensureSignalingConnected()) {
+        _emitFailed('Нет соединения с сервером. Проверьте интернет.');
+        return false;
+      }
 
-    await _ensureWebRtcInitialized();
-    if (!await _ensureLocalAudioStream()) {
-      await _tearDownMedia();
+      final callId = _newCallId();
       _emit(
         VoiceCallSnapshot(
-          phase: VoiceCallPhase.failed,
+          phase: VoiceCallPhase.outgoing,
           callId: callId,
           chatId: chatId,
           peerUserId: peerUserId,
           peerLabel: peerLabel,
-          statusMessage: _snapshot.statusMessage ??
-              'Не удалось включить микрофон для звонка',
+          statusMessage: 'Вызов…',
         ),
       );
-      _scheduleIdleReset();
-      return false;
-    }
+      _startOutgoingTimeout();
 
-    final sent = _sendSignal({
-      'type': 'call_invite',
-      'call_id': callId,
-      'chat_id': chatId,
-    });
-    if (!sent) {
+      // Микрофон и PeerConnection — только после call_accept (см. _createAndSendOffer).
+      unawaited(_preloadIceServers());
+
+      final sent = _sendSignal({
+        'type': 'call_invite',
+        'call_id': callId,
+        'chat_id': chatId,
+      });
+      if (!sent) {
+        _cancelOutgoingTimeout();
+        await _tearDownMedia();
+        _emitFailed('Нет соединения с сервером');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall startOutgoingCall: $e');
+      _cancelOutgoingTimeout();
       await _tearDownMedia();
-      _emitFailed('Нет соединения с сервером');
+      _emitFailed('Не удалось начать звонок');
       return false;
     }
-    return true;
+  }
+
+  /// Сброс активного звонка, если UI не удалось открыть (см. [VoiceCallHost]).
+  Future<void> abortActiveCall(String message) async {
+    if (!_snapshot.isActive) return;
+    await hangUp();
+    _emitFailed(message);
+  }
+
+  Future<bool> _ensureSignalingConnected() async {
+    await WebSocketService.instance.connectIfNeeded();
+    if (WebSocketService.instance.isConnected) return true;
+    for (var i = 0; i < 30; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (WebSocketService.instance.isConnected) return true;
+    }
+    return WebSocketService.instance.isConnected;
+  }
+
+  Future<void> _preloadIceServers() async {
+    try {
+      await _loadIceServers();
+    } catch (_) {}
   }
 
   Future<void> acceptIncoming() async {
@@ -188,21 +222,10 @@ class VoiceCallService {
     _emit(
       _snapshot.copyWith(
         phase: VoiceCallPhase.connecting,
-        statusMessage: 'Соединение…',
+        statusMessage: _connectingStatusHint(),
       ),
     );
     _startConnectingTimeout();
-    try {
-      await _ensureWebRtcInitialized();
-      if (!await _ensureLocalAudioStream()) {
-        await rejectIncoming(reason: 'no_mic');
-        return;
-      }
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall media prep on accept: $e');
-      await rejectIncoming(reason: 'media_error');
-      return;
-    }
     _sendSignal({
       'type': 'call_accept',
       'call_id': callId,
@@ -371,37 +394,35 @@ class VoiceCallService {
         statusMessage: 'Входящий звонок',
       ),
     );
+    unawaited(_preloadIceServers());
   }
 
   Future<void> _onAccept(Map event) async {
     if (!_matchesActiveCall(event)) return;
     if (_snapshot.phase != VoiceCallPhase.outgoing) return;
+    _cancelOutgoingTimeout();
     _emit(
       _snapshot.copyWith(
         phase: VoiceCallPhase.connecting,
-        statusMessage: 'Соединение…',
+        statusMessage: _connectingStatusHint(),
       ),
     );
     _startConnectingTimeout();
-    await _ensurePeerConnection();
     try {
-      final offer = await _pc!.createOffer({'offerToReceiveAudio': true});
-      await _pc!.setLocalDescription(offer);
-      _sendSignal({
-        'type': 'call_offer',
-        'call_id': _snapshot.callId,
-        'chat_id': _snapshot.chatId,
-        'sdp': {'type': offer.type, 'sdp': offer.sdp},
-      });
+      await _createAndSendOffer();
     } catch (e) {
       if (kDebugMode) print('VoiceCall offer error: $e');
-      _emitFailed('Не удалось установить соединение');
+      final msg = _webRtcMediaBroken
+          ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
+          : 'Не удалось установить соединение';
+      _emitFailed(msg);
       unawaited(hangUp());
     }
   }
 
   void _onReject(Map event) {
     if (!_matchesActiveCall(event)) return;
+    _cancelOutgoingTimeout();
     _tearDownMedia();
     _emit(
       const VoiceCallSnapshot(
@@ -447,30 +468,24 @@ class VoiceCallService {
     if (!_matchesActiveCall(event)) return;
     final sdpMap = event['sdp'];
     if (sdpMap is! Map) return;
-    await _ensurePeerConnection();
     try {
       final desc = RTCSessionDescription(
         sdpMap['sdp']?.toString() ?? '',
         sdpMap['type']?.toString() ?? '',
       );
-      await _setRemoteDescription(desc);
-      final answer = await _pc!.createAnswer();
-      await _pc!.setLocalDescription(answer);
-      _sendSignal({
-        'type': 'call_answer',
-        'call_id': _snapshot.callId,
-        'chat_id': _snapshot.chatId,
-        'sdp': {'type': answer.type, 'sdp': answer.sdp},
-      });
+      if (desc.sdp == null || desc.sdp!.isEmpty) return;
+
       if (_snapshot.phase != VoiceCallPhase.connecting) {
         _emit(
           _snapshot.copyWith(
             phase: VoiceCallPhase.connecting,
-            statusMessage: 'Соединение…',
+            statusMessage: _connectingStatusHint(),
           ),
         );
       }
       _startConnectingTimeout();
+
+      await _createAndSendAnswer(desc);
     } catch (e) {
       if (kDebugMode) print('VoiceCall answer error: $e');
       _emitFailed('Ошибка согласования медиа');
@@ -512,13 +527,62 @@ class VoiceCallService {
     return eventCallId == activeId;
   }
 
-  Future<void> _ensurePeerConnection() async {
-    await _ensureWebRtcInitialized();
+  String _connectingStatusHint() {
+    if (!_hasTurnServer) {
+      return 'Соединение… (без TURN часть сетей не соединится)';
+    }
+    return 'Соединение…';
+  }
+
+  /// Offerer (звонящий после call_accept): PC → микрофон → offer.
+  Future<void> _createAndSendOffer() async {
+    await _preparePeerConnectionShell();
     if (!await _ensureLocalAudioStream()) {
       throw StateError('local audio unavailable');
     }
-    await _preparePeerConnectionShell();
     await _attachLocalTracksToPeerConnection();
+
+    final offer = await _pc!.createOffer(<String, dynamic>{});
+    await _pc!.setLocalDescription(offer);
+    if (kDebugMode) {
+      print('VoiceCall: offer created, sdp length=${offer.sdp?.length ?? 0}');
+    }
+
+    final sent = _sendSignal({
+      'type': 'call_offer',
+      'call_id': _snapshot.callId,
+      'chat_id': _snapshot.chatId,
+      'sdp': {'type': offer.type, 'sdp': offer.sdp},
+    });
+    if (!sent) {
+      throw StateError('failed to send call_offer');
+    }
+  }
+
+  /// Answerer: PC → remote offer → микрофон → answer (unified-plan).
+  Future<void> _createAndSendAnswer(RTCSessionDescription remoteOffer) async {
+    await _preparePeerConnectionShell();
+    await _setRemoteDescription(remoteOffer);
+    if (!await _ensureLocalAudioStream()) {
+      throw StateError('local audio unavailable');
+    }
+    await _attachLocalTracksToPeerConnection();
+
+    final answer = await _pc!.createAnswer(<String, dynamic>{});
+    await _pc!.setLocalDescription(answer);
+    if (kDebugMode) {
+      print('VoiceCall: answer created, sdp length=${answer.sdp?.length ?? 0}');
+    }
+
+    final sent = _sendSignal({
+      'type': 'call_answer',
+      'call_id': _snapshot.callId,
+      'chat_id': _snapshot.chatId,
+      'sdp': {'type': answer.type, 'sdp': answer.sdp},
+    });
+    if (!sent) {
+      throw StateError('failed to send call_answer');
+    }
   }
 
   Future<void> _ensureWebRtcInitialized() async {
@@ -532,13 +596,21 @@ class VoiceCallService {
     _webRtcInitialized = true;
   }
 
-  /// На Android getUserMedia падает, если в плагине уже есть PeerConnection с null native PC.
-  /// Микрофон включаем до первого createPeerConnection.
   Future<bool> _ensureLocalAudioStream() async {
+    if (_webRtcMediaBroken) {
+      _emitFailed(
+        'Ошибка WebRTC. Полностью закройте приложение и откройте снова.',
+      );
+      return false;
+    }
     if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
       return true;
     }
     if (!_snapshot.isActive) return false;
+    if (_pc == null) {
+      if (kDebugMode) print('VoiceCall getUserMedia: PeerConnection missing');
+      return false;
+    }
 
     if (_localAudioSetupInFlight != null) {
       await _localAudioSetupInFlight;
@@ -560,10 +632,6 @@ class VoiceCallService {
     if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
       return true;
     }
-    if (_pc != null) {
-      // Уже создали PC без локального аудио — сбрасываем и начинаем заново.
-      await _tearDownMedia();
-    }
 
     if (!await _ensureMicrophonePermission()) {
       return false;
@@ -579,13 +647,20 @@ class VoiceCallService {
     } catch (e) {
       if (kDebugMode) print('VoiceCall getUserMedia: $e');
       final err = e.toString().toLowerCase();
+      if (err.contains('peerconnection') ||
+          err.contains('transceivers') ||
+          err.contains('nullpointer')) {
+        _markWebRtcMediaBroken();
+      }
       final notAllowed = err.contains('notallowed') ||
           err.contains('permission') ||
           err.contains('denied');
       _emitFailed(
-        notAllowed
-            ? 'Нет доступа к микрофону'
-            : 'Не удалось запустить аудио для звонка',
+        _webRtcMediaBroken
+            ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
+            : notAllowed
+                ? 'Нет доступа к микрофону'
+                : 'Не удалось запустить аудио для звонка',
       );
       if (_snapshot.isActive) {
         unawaited(hangUp());
@@ -614,21 +689,119 @@ class VoiceCallService {
     }
   }
 
-  Future<void> _preparePeerConnectionShellImpl() async {
-    if (_pc != null || !_snapshot.isActive) return;
+  Future<bool> _isPeerConnectionAlive(RTCPeerConnection pc) async {
+    try {
+      final state = await pc.getSignalingState();
+      return state != null;
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall PC alive check: $e');
+      return false;
+    }
+  }
 
-    _remoteDescriptionSet = false;
-    _pendingRemoteCandidates.clear();
-    await _prepareAudioSessionForCall();
+  Future<void> _disposePeerConnectionSafe(RTCPeerConnection? pc) async {
+    if (pc == null) return;
+    try {
+      await pc.dispose();
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall dispose PC: $e');
+    }
+  }
 
-    final servers = await _loadIceServers();
-    final config = <String, dynamic>{
-      'iceServers': servers,
-      'sdpSemantics': 'unified-plan',
-    };
-    _pc = await createPeerConnection(config);
+  void _markWebRtcMediaBroken() {
+    _webRtcMediaBroken = true;
+  }
 
-    _pc!.onIceCandidate = (RTCIceCandidate candidate) {
+  List<Map<String, dynamic>> _iceServersStunOnly(
+    List<Map<String, dynamic>> servers,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final raw in servers) {
+      final urls = raw['urls'];
+      final List<String> stunUrls;
+      if (urls is List) {
+        stunUrls = urls.map((e) => e.toString()).where((u) => u.startsWith('stun:')).toList();
+      } else {
+        final u = urls?.toString() ?? '';
+        stunUrls = u.startsWith('stun:') ? [u] : <String>[];
+      }
+      if (stunUrls.isEmpty) continue;
+      out.add({
+        'urls': stunUrls.length == 1 ? stunUrls.first : stunUrls,
+      });
+    }
+    return out;
+  }
+
+  Future<RTCPeerConnection> _createAlivePeerConnection() async {
+    if (_webRtcMediaBroken) {
+      throw StateError('WebRTC media stack broken');
+    }
+
+    final full = await _loadIceServers();
+    final stunOnly = _iceServersStunOnly(full);
+    const defaults = WebRtcConfig.defaultIceServers;
+    // Android: full ICE (especially TURN) often yields a null native PC; retries
+    // used to leave zombie observers and crash getUserMedia (patched in flutter_webrtc).
+    final attempts = <List<Map<String, dynamic>>>[
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) ...[
+        if (stunOnly.isNotEmpty) stunOnly,
+        defaults,
+        full,
+      ] else ...[
+        full,
+        if (stunOnly.isNotEmpty) stunOnly,
+        defaults,
+      ],
+    ];
+
+    Object? lastError;
+    for (var i = 0; i < attempts.length; i++) {
+      final servers = attempts[i];
+      RTCPeerConnection? pc;
+      try {
+        await _ensureWebRtcInitialized();
+        await _prepareAudioSessionForCall();
+
+        pc = await createPeerConnection(<String, dynamic>{
+          'iceServers': servers,
+          'sdpSemantics': 'unified-plan',
+          'bundlePolicy': 'max-bundle',
+          'rtcpMuxPolicy': 'require',
+        });
+
+        if (!await _isPeerConnectionAlive(pc)) {
+          if (kDebugMode) {
+            print(
+              'VoiceCall: native PC null, retry ${i + 1}/${attempts.length} '
+              '(servers=${servers.length})',
+            );
+          }
+          await _disposePeerConnectionSafe(pc);
+          // Let the plugin drop the observer (patched on Android).
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          lastError = StateError('native PeerConnection null');
+          continue;
+        }
+
+        if (kDebugMode) {
+          print('VoiceCall: PeerConnection OK on attempt ${i + 1}');
+        }
+        return pc;
+      } catch (e) {
+        lastError = e;
+        await _disposePeerConnectionSafe(pc);
+        if (kDebugMode) print('VoiceCall createPC attempt ${i + 1}: $e');
+      }
+    }
+
+    _markWebRtcMediaBroken();
+    throw lastError ?? StateError('PeerConnection unavailable');
+  }
+
+  void _wirePeerConnectionHandlers(RTCPeerConnection pc) {
+    _pc = pc;
+    pc.onIceCandidate = (RTCIceCandidate candidate) {
       if (_snapshot.callId == null || _snapshot.chatId == null) return;
       _sendSignal({
         'type': 'call_ice',
@@ -638,26 +811,32 @@ class VoiceCallService {
       });
     };
 
-    _pc!.onTrack = (RTCTrackEvent event) {
+    pc.onTrack = (RTCTrackEvent event) {
       if (event.track.kind != 'audio') return;
       unawaited(_bindRemoteAudioTrack(event));
     };
 
-    _pc!.onAddStream = (MediaStream stream) {
+    pc.onAddStream = (MediaStream stream) {
       unawaited(_handleRemoteStream(stream));
     };
 
-    _pc!.onIceConnectionState = (RTCIceConnectionState state) {
+    pc.onIceConnectionState = (RTCIceConnectionState state) {
+      if (kDebugMode) print('VoiceCall ICE: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
           state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
         _markConnected();
       } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
-        _emitFailed('Не удалось установить медиа-соединение (ICE)');
+        _emitFailed(
+          _hasTurnServer
+              ? 'Не удалось установить медиа-соединение (ICE)'
+              : 'Не удалось соединиться. Нужен TURN на сервере (см. docs/VOICE_CALLS_COTURN.md)',
+        );
         unawaited(hangUp());
       }
     };
 
-    _pc!.onConnectionState = (RTCPeerConnectionState state) {
+    pc.onConnectionState = (RTCPeerConnectionState state) {
+      if (kDebugMode) print('VoiceCall PC state: $state');
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _markConnected();
       } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
@@ -666,10 +845,21 @@ class VoiceCallService {
       }
     };
 
+    pc.onSignalingState = (RTCSignalingState state) {
+      if (kDebugMode) print('VoiceCall signaling: $state');
+    };
+  }
+
+  Future<void> _preparePeerConnectionShellImpl() async {
+    if (_pc != null || !_snapshot.isActive) return;
+
+    _remoteDescriptionSet = false;
+    _pendingRemoteCandidates.clear();
+
     try {
-      await _pc!.getSignalingState();
+      final pc = await _createAlivePeerConnection();
+      _wirePeerConnectionHandlers(pc);
     } catch (e) {
-      if (kDebugMode) print('VoiceCall PC not ready: $e');
       await _tearDownMedia();
       rethrow;
     }
@@ -697,6 +887,7 @@ class VoiceCallService {
       final token = await StorageService.getToken();
       if (token == null || token.isEmpty) {
         _iceServers = WebRtcConfig.defaultIceServers;
+        _hasTurnServer = _detectTurnInServers(_iceServers!);
         return _iceServers!;
       }
       final response = await timedGet(
@@ -713,12 +904,36 @@ class VoiceCallService {
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList(),
           );
+          _hasTurnServer = _detectTurnInServers(_iceServers!);
+          if (kDebugMode) {
+            print(
+              'VoiceCall ICE servers: count=${_iceServers!.length}, hasTurn=$_hasTurnServer',
+            );
+          }
           if (_iceServers!.isNotEmpty) return _iceServers!;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall ICE load error: $e');
+    }
     _iceServers = WebRtcConfig.defaultIceServers;
+    _hasTurnServer = _detectTurnInServers(_iceServers!);
     return _iceServers!;
+  }
+
+  bool _detectTurnInServers(List<Map<String, dynamic>> servers) {
+    for (final s in servers) {
+      final urls = s['urls'];
+      final list = urls is List
+          ? urls.map((e) => e.toString())
+          : [urls?.toString() ?? ''];
+      for (final url in list) {
+        if (url.startsWith('turn:') || url.startsWith('turns:')) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   Future<bool> _ensureMicrophonePermission() async {
@@ -775,6 +990,7 @@ class VoiceCallService {
 
   void _markConnected() {
     if (_snapshot.phase == VoiceCallPhase.connected) return;
+    _webRtcMediaBroken = false;
     _cancelConnectingTimeout();
     _emit(
       _snapshot.copyWith(
@@ -786,10 +1002,14 @@ class VoiceCallService {
 
   void _startConnectingTimeout() {
     _connectingTimer?.cancel();
-    _connectingTimer = Timer(const Duration(seconds: 45), () {
+    _connectingTimer = Timer(const Duration(seconds: 35), () {
       if (_snapshot.phase != VoiceCallPhase.connecting) return;
       _emitFailed(
-        'Не удалось соединиться. Проверьте интернет; на сервере нужен TURN (UDP 3478 и 49152–49252).',
+        _hasTurnServer
+            ? 'Не удалось соединиться за 35 с. Проверьте интернет и повторите.'
+            : 'Не удалось соединиться. На сервере не настроен TURN — '
+                'эмулятор и телефон в разных сетях без него не соединятся. '
+                'См. docs/VOICE_CALLS_COTURN.md',
       );
       unawaited(hangUp());
     });
@@ -867,12 +1087,31 @@ class VoiceCallService {
     _remoteDescriptionSet = false;
     _pendingRemoteCandidates.clear();
     _cancelConnectingTimeout();
+    _cancelOutgoingTimeout();
+  }
+
+  void _startOutgoingTimeout() {
+    _outgoingTimer?.cancel();
+    _outgoingTimer = Timer(const Duration(seconds: 60), () {
+      if (_snapshot.phase != VoiceCallPhase.outgoing) return;
+      _emitFailed('Нет ответа');
+      unawaited(hangUp());
+    });
+  }
+
+  void _cancelOutgoingTimeout() {
+    _outgoingTimer?.cancel();
+    _outgoingTimer = null;
   }
 
   Future<void> _tearDownMedia() async {
     _resetPeerConnectionState();
     _peerConnectionSetupInFlight = null;
     _localAudioSetupInFlight = null;
+    _iceServers = null;
+    _hasTurnServer = false;
+    final pc = _pc;
+    _pc = null;
     try {
       await _localStream?.dispose();
     } catch (_) {}
@@ -881,10 +1120,7 @@ class VoiceCallService {
     } catch (_) {}
     _localStream = null;
     _remoteStream = null;
-    try {
-      await _pc?.close();
-    } catch (_) {}
-    _pc = null;
+    await _disposePeerConnectionSafe(pc);
   }
 
   bool _sendSignal(Map<String, dynamic> payload) {
