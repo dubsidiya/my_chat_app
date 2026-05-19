@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../services/voice_call_service.dart';
@@ -19,34 +20,118 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   final VoiceCallService _calls = VoiceCallService.instance;
   RTCVideoRenderer? _remoteRenderer;
   VoiceCallSnapshot _snap = VoiceCallService.instance.snapshot;
+  StreamSubscription<VoiceCallSnapshot>? _stateSub;
+  Timer? _durationTicker;
+  Timer? _ringerTicker;
+  DateTime? _connectedAt;
+  Duration _callDuration = Duration.zero;
+  bool _speakerOn = true;
+  bool _autoCloseScheduled = false;
+  VoiceCallPhase? _lastHapticPhase;
 
   @override
   void initState() {
     super.initState();
     _snap = _calls.snapshot;
+    _syncConnectedTimer();
+    _syncRingerFor(_snap.phase);
     _initRenderer();
-    _calls.stateStream.listen((s) {
+    _stateSub = _calls.stateStream.listen(_onCallState);
+    _applySpeakerphone(_speakerOn);
+  }
+
+  void _onCallState(VoiceCallSnapshot s) {
+    if (!mounted) return;
+    setState(() => _snap = s);
+    if (s.phase == VoiceCallPhase.connected) {
+      _attachRemote();
+    }
+    _syncConnectedTimer();
+    _syncRingerFor(s.phase);
+    if (s.phase == VoiceCallPhase.failed &&
+        (s.statusMessage?.contains('микрофон') ?? false)) {
+      _showMicDeniedHint();
+    }
+    if (s.phase == VoiceCallPhase.ended ||
+        s.phase == VoiceCallPhase.failed ||
+        s.phase == VoiceCallPhase.idle) {
+      _scheduleAutoClose();
+    }
+  }
+
+  void _scheduleAutoClose() {
+    if (_autoCloseScheduled) return;
+    _autoCloseScheduled = true;
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
-      setState(() => _snap = s);
-      if (s.phase == VoiceCallPhase.connected) {
-        _attachRemote();
-      }
-      if (s.phase == VoiceCallPhase.failed &&
-          (s.statusMessage?.contains('микрофон') ?? false)) {
-        _showMicDeniedHint();
-      }
-      if (s.phase == VoiceCallPhase.ended ||
-          s.phase == VoiceCallPhase.failed ||
-          s.phase == VoiceCallPhase.idle) {
-        Future<void>.delayed(const Duration(milliseconds: 1200), () {
-          if (mounted && Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
-        });
+      final phase = _calls.snapshot.phase;
+      if (phase == VoiceCallPhase.ended ||
+          phase == VoiceCallPhase.failed ||
+          phase == VoiceCallPhase.idle) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      } else {
+        _autoCloseScheduled = false;
       }
     });
+  }
+
+  void _syncConnectedTimer() {
+    if (_snap.phase == VoiceCallPhase.connected) {
+      _connectedAt ??= DateTime.now();
+      _callDuration = DateTime.now().difference(_connectedAt!);
+      _durationTicker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || _connectedAt == null) return;
+        setState(() {
+          _callDuration = DateTime.now().difference(_connectedAt!);
+        });
+      });
+    } else {
+      _durationTicker?.cancel();
+      _durationTicker = null;
+      if (_snap.phase != VoiceCallPhase.connecting) {
+        _connectedAt = null;
+        _callDuration = Duration.zero;
+      }
+    }
+  }
+
+  /// Mimic ringtone/ringback while the call is ringing in foreground: WS invite
+  /// reaches us before any FCM banner (or instead of it), so the call screen
+  /// would otherwise be silent until the peer picks up.
+  void _syncRingerFor(VoiceCallPhase phase) {
+    if (phase == VoiceCallPhase.incoming || phase == VoiceCallPhase.outgoing) {
+      if (_lastHapticPhase == phase && _ringerTicker != null) return;
+      _lastHapticPhase = phase;
+      _ringerTicker?.cancel();
+      _emitRingerHaptic(phase);
+      _ringerTicker = Timer.periodic(
+        phase == VoiceCallPhase.incoming
+            ? const Duration(milliseconds: 1800)
+            : const Duration(seconds: 3),
+        (_) => _emitRingerHaptic(phase),
+      );
+    } else {
+      _lastHapticPhase = phase;
+      _ringerTicker?.cancel();
+      _ringerTicker = null;
+    }
+  }
+
+  void _emitRingerHaptic(VoiceCallPhase phase) {
     try {
-      Helper.setSpeakerphoneOn(true);
+      if (phase == VoiceCallPhase.incoming) {
+        HapticFeedback.heavyImpact();
+        Future<void>.delayed(const Duration(milliseconds: 180), () {
+          if (!mounted || _calls.snapshot.phase != VoiceCallPhase.incoming) {
+            return;
+          }
+          HapticFeedback.heavyImpact();
+        });
+      } else {
+        HapticFeedback.mediumImpact();
+      }
     } catch (_) {}
   }
 
@@ -101,11 +186,26 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     });
   }
 
+  void _applySpeakerphone(bool enabled) {
+    try {
+      Helper.setSpeakerphoneOn(enabled);
+    } catch (_) {}
+  }
+
+  void _toggleSpeaker() {
+    setState(() => _speakerOn = !_speakerOn);
+    _applySpeakerphone(_speakerOn);
+  }
+
   @override
   void dispose() {
-    try {
-      Helper.setSpeakerphoneOn(false);
-    } catch (_) {}
+    _stateSub?.cancel();
+    _stateSub = null;
+    _durationTicker?.cancel();
+    _durationTicker = null;
+    _ringerTicker?.cancel();
+    _ringerTicker = null;
+    _applySpeakerphone(false);
     _remoteRenderer?.srcObject = null;
     _remoteRenderer?.dispose();
     super.dispose();
@@ -119,7 +219,11 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     final initial = label.isNotEmpty ? label[0].toUpperCase() : '?';
     final isIncoming = _snap.phase == VoiceCallPhase.incoming;
     final isConnected = _snap.phase == VoiceCallPhase.connected;
-    final status = _snap.statusMessage ?? _phaseLabel(_snap.phase);
+    final canShowMediaControls =
+        isConnected || _snap.phase == VoiceCallPhase.connecting;
+    final status = isConnected
+        ? _formatDuration(_callDuration)
+        : (_snap.statusMessage ?? _phaseLabel(_snap.phase));
 
     return PopScope(
       canPop: false,
@@ -190,20 +294,26 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     ),
                   ),
                   const Spacer(),
-                  if (isConnected)
+                  if (canShowMediaControls)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
-                      child: IconButton(
-                        onPressed: () => unawaited(_calls.toggleMute()),
-                        icon: Icon(
-                          _snap.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.12),
-                          padding: const EdgeInsets.all(16),
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _mediaToggleButton(
+                            icon: _snap.isMuted
+                                ? Icons.mic_off_rounded
+                                : Icons.mic_rounded,
+                            onTap: () => unawaited(_calls.toggleMute()),
+                          ),
+                          const SizedBox(width: 24),
+                          _mediaToggleButton(
+                            icon: _speakerOn
+                                ? Icons.volume_up_rounded
+                                : Icons.volume_down_rounded,
+                            onTap: _toggleSpeaker,
+                          ),
+                        ],
                       ),
                     ),
                   Padding(
@@ -256,6 +366,27 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       default:
         return '';
     }
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  Widget _mediaToggleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, color: Colors.white, size: 28),
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.12),
+        padding: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   Widget _roundButton({

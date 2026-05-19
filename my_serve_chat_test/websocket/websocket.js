@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
-import { handleCallSignaling } from './callSignaling.js';
+import { handleCallSignaling, releaseCallsForUser } from './callSignaling.js';
 
 const clients = new Map(); // userId -> Set<ws>
 
@@ -443,6 +443,7 @@ export function setupWebSocket(server) {
       if (hasAnyOnlineSocket(userId)) {
         return;
       }
+      releaseCallsForUser(userId, sendToUserSockets);
       try {
         const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
         subs.forEach((chatIdStr) => {

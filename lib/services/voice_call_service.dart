@@ -369,19 +369,34 @@ class VoiceCallService {
   }
 
   void _onInvite(Map event) {
+    final inviteCallId = event['call_id']?.toString();
+    final inviteChatId = event['chat_id']?.toString();
+
     if (_snapshot.isActive) {
-      final callId = event['call_id']?.toString();
-      final chatId = event['chat_id']?.toString();
-      if (callId != null && chatId != null) {
+      if (inviteCallId != null && inviteCallId == _snapshot.callId) {
+        return;
+      }
+      // Оба нажали «позвонить» в одном чате: отменяем свой исходящий и показываем входящий.
+      if (inviteChatId != null &&
+          inviteChatId == _snapshot.chatId &&
+          _snapshot.phase == VoiceCallPhase.outgoing) {
+        unawaited(_replaceOutgoingWithIncoming(event));
+        return;
+      }
+      if (inviteCallId != null && inviteChatId != null) {
         _sendSignal({
           'type': 'call_reject',
-          'call_id': callId,
-          'chat_id': chatId,
+          'call_id': inviteCallId,
+          'chat_id': inviteChatId,
           'reason': 'busy',
         });
       }
       return;
     }
+    _applyIncomingInvite(event);
+  }
+
+  void _applyIncomingInvite(Map event) {
     final fromId = event['from_user_id']?.toString() ?? '';
     final fromEmail = event['from_user_email']?.toString() ?? 'Пользователь';
     _emit(
@@ -395,6 +410,21 @@ class VoiceCallService {
       ),
     );
     unawaited(_preloadIceServers());
+  }
+
+  Future<void> _replaceOutgoingWithIncoming(Map event) async {
+    _cancelOutgoingTimeout();
+    final oldCallId = _snapshot.callId;
+    final oldChatId = _snapshot.chatId;
+    await _tearDownMedia();
+    if (oldCallId != null && oldChatId != null) {
+      _sendSignal({
+        'type': 'call_hangup',
+        'call_id': oldCallId,
+        'chat_id': oldChatId,
+      });
+    }
+    _applyIncomingInvite(event);
   }
 
   Future<void> _onAccept(Map event) async {
@@ -424,10 +454,20 @@ class VoiceCallService {
     if (!_matchesActiveCall(event)) return;
     _cancelOutgoingTimeout();
     _tearDownMedia();
+    final reason = event['reason']?.toString() ?? 'declined';
+    final statusMessage = reason == 'busy'
+        ? 'Абонент занят'
+        : reason == 'no_mic' || reason == 'media_error'
+            ? 'Абонент не смог принять звонок'
+            : 'Абонент отклонил';
     _emit(
-      const VoiceCallSnapshot(
+      VoiceCallSnapshot(
         phase: VoiceCallPhase.ended,
-        statusMessage: 'Абонент отклонил',
+        callId: _snapshot.callId,
+        chatId: _snapshot.chatId,
+        peerUserId: _snapshot.peerUserId,
+        peerLabel: _snapshot.peerLabel,
+        statusMessage: statusMessage,
       ),
     );
     _scheduleIdleReset();

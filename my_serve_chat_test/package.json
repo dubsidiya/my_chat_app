@@ -13,6 +13,7 @@
     "smoke:audit:hardening": "node scripts/smoke-audit-hardening.js",
     "smoke:reports:permissions": "node scripts/smoke-reports-permissions.js",
     "smoke:reports:regressions": "node scripts/smoke-reports-regressions.js",
+    "smoke:call:signaling": "node scripts/smoke-call-signaling.js",
     "smoke:all": "npm run smoke:accounting && npm run smoke:accounting:edge && npm run smoke:accounting:xlsx && npm run smoke:accounting:hidden-quality && npm run smoke:audit:hardening",
     "migrate-passwords": "node migrate_passwords.js",
     "check-setup": "node check_setup.js",

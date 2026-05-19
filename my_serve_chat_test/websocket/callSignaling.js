@@ -9,6 +9,7 @@ const activeCalls = new Map(); // callId -> { chatId, callerId, calleeId, state 
 const userActiveCallId = new Map(); // userId -> callId
 
 const CALL_TTL_MS = 5 * 60 * 1000;
+const RINGING_STALE_MS = 90 * 1000;
 
 function cleanupCall(callId) {
   const call = activeCalls.get(callId);
@@ -87,6 +88,52 @@ function relayToPeer(sendToUserSockets, call, fromUserId, payload) {
   sendToUserSockets(target, payload);
 }
 
+function cleanupStaleCallsForUser(userId) {
+  const uid = userId?.toString();
+  if (!uid) return;
+  const callId = userActiveCallId.get(uid);
+  if (!callId) return;
+  const call = activeCalls.get(callId);
+  if (!call) {
+    userActiveCallId.delete(uid);
+    return;
+  }
+  const age = Date.now() - call.createdAt;
+  if (age > CALL_TTL_MS) {
+    cleanupCall(callId);
+    return;
+  }
+  if (call.state === 'ringing' && age > RINGING_STALE_MS) {
+    cleanupCall(callId);
+  }
+}
+
+/**
+ * When user has no WS connections left, drop server-side call locks.
+ */
+export function releaseCallsForUser(userId, sendToUserSockets) {
+  const uid = userId?.toString();
+  if (!uid) return;
+  const callId = userActiveCallId.get(uid);
+  if (!callId) return;
+  const call = activeCalls.get(callId);
+  if (!call) {
+    userActiveCallId.delete(uid);
+    return;
+  }
+  const peer = peerIdFor(call, uid);
+  const base = {
+    call_id: callId,
+    chat_id: call.chatId,
+    from_user_id: uid,
+    ts: new Date().toISOString(),
+  };
+  if (sendToUserSockets && peer) {
+    sendToUserSockets(peer, { type: 'call_hangup', ...base });
+  }
+  cleanupCall(callId);
+}
+
 /**
  * @param {object} data - parsed WS JSON
  * @param {{ userId: string, userEmail: string, pool: import('pg').Pool, sendToUserSockets: Function, callLimiter: { allow: (key: string) => boolean } }} ctx
@@ -125,6 +172,9 @@ export async function handleCallSignaling(data, ctx) {
       });
       return true;
     }
+
+    cleanupStaleCallsForUser(userId);
+    cleanupStaleCallsForUser(dm.peerId);
 
     if (userActiveCallId.has(userId.toString())) {
       sendCallError(sendToUserSockets, userId, {
