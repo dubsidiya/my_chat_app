@@ -1,8 +1,13 @@
-# coturn для reollity voice calls (генерируется setup-coturn-on-vm.sh)
+# coturn для reollity (Yandex Cloud / NAT)
+# Генерируется setup-coturn-on-vm.sh
+#
+# Важно: relay-ip = внутренний IP ВМ, external-ip = публичный/внутренний.
+# Иначе allocate OK, но error 508 (Cannot create socket).
+
 listening-port=3478
 listening-ip=0.0.0.0
-relay-ip=TURN_PUBLIC_IP_PLACEHOLDER
-external-ip=TURN_PUBLIC_IP_PLACEHOLDER
+relay-ip=TURN_PRIVATE_IP_PLACEHOLDER
+external-ip=TURN_PUBLIC_IP_PLACEHOLDER/TURN_PRIVATE_IP_PLACEHOLDER
 
 fingerprint
 lt-cred-mech

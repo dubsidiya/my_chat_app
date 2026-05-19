@@ -106,14 +106,41 @@ pm2 restart chat-server
 
 ### Шаг 5. Проверка coturn
 
-На ВМ:
+На ВМ (подставьте свой секрет):
 
 ```bash
+export TURN_SECRET='ваш-секрет-из-env'
 sudo systemctl status coturn
-sudo turnutils_uclient -v -u reollity -w "$TURN_SECRET" YOUR_PUBLIC_IP
+# Лучше с другого устройства в интернете. С самой ВМ иногда странности из‑за NAT.
+turnutils_uclient -v -u reollity -w "$TURN_SECRET" YOUR_PUBLIC_IP
 ```
 
-Успех — в выводе `allocate` / relay.
+Успех — в конце **нет** `error 508`, есть relay/transfer.
+
+#### Ошибка 508 (Cannot create socket)
+
+Частая причина на Yandex Cloud: в конфиге указан только публичный IP, а relay нужно вешать на **внутренний** (у вас обычно `10.128.0.x`).
+
+В `/etc/turnserver.conf` должно быть так (пример):
+
+```ini
+listening-ip=0.0.0.0
+relay-ip=10.128.0.14
+external-ip=93.77.185.6/10.128.0.14
+```
+
+Поправить и перезапустить:
+
+```bash
+PRIVATE=$(hostname -I | awk '{print $1}')
+PUBLIC=$(curl -s ifconfig.me)
+sudo sed -i "s|^relay-ip=.*|relay-ip=$PRIVATE|" /etc/turnserver.conf
+sudo sed -i "s|^external-ip=.*|external-ip=$PUBLIC/$PRIVATE|" /etc/turnserver.conf
+grep -E '^(relay-ip|external-ip|listening-ip)=' /etc/turnserver.conf
+sudo systemctl restart coturn
+```
+
+Также проверьте **группу безопасности Yandex**: входящий **UDP 49152–49252** (не только 3478).
 
 ### Ресурсы ВМ (2 vCPU, 2 GB)
 

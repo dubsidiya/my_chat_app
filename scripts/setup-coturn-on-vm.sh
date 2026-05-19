@@ -3,6 +3,7 @@
 #
 # Использование на ВМ:
 #   export TURN_PUBLIC_IP=93.77.185.6   # публичный IP этой ВМ
+#   export TURN_PRIVATE_IP=10.128.0.14  # опционально; иначе берётся из hostname -I
 #   export TURN_SECRET='случайная-строка-32+'
 #   export TURN_USER=reollity            # опционально, по умолчанию reollity
 #   cd ~/my_chat_app && sudo -E ./scripts/setup-coturn-on-vm.sh
@@ -26,6 +27,15 @@ fi
 
 TURN_USER="${TURN_USER:-reollity}"
 
+TURN_PRIVATE_IP="${TURN_PRIVATE_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+if [ -z "$TURN_PRIVATE_IP" ]; then
+  echo "Ошибка: не удалось определить внутренний IP. Задай вручную:"
+  echo "  export TURN_PRIVATE_IP=10.128.0.14"
+  exit 1
+fi
+
+echo "=== coturn: public=$TURN_PUBLIC_IP private=$TURN_PRIVATE_IP ==="
+
 echo "=== Установка coturn ==="
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y coturn
@@ -35,6 +45,7 @@ chown turnserver:turnserver /var/log/turnserver 2>/dev/null || true
 
 TMP_CONF="$(mktemp)"
 sed -e "s/TURN_PUBLIC_IP_PLACEHOLDER/$TURN_PUBLIC_IP/g" \
+    -e "s/TURN_PRIVATE_IP_PLACEHOLDER/$TURN_PRIVATE_IP/g" \
     -e "s/TURN_SECRET_PLACEHOLDER/$TURN_SECRET/g" \
     -e "s/TURN_USER_PLACEHOLDER/$TURN_USER/g" \
     "$SCRIPT_DIR/coturn/turnserver.conf.template" > "$TMP_CONF"
