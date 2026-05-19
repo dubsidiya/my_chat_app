@@ -78,3 +78,27 @@ flutter.sdk=/path/to/flutter
 ---
 
 **Итог:** открывайте корень `my_chat_app`, делайте Sync Project with Gradle Files (или `./gradlew tasks`), при необходимости выполните `flutter build apk`. После этого символы в `GeneratedPluginRegistrant.java` должны разрешаться.
+
+---
+
+## iOS: dSYM для WebRTC.framework (App Store Connect)
+
+При загрузке архива в App Store Connect может появиться:
+
+> The archive did not include a dSYM for the WebRTC.framework with the UUIDs [4C4C445C-5555-3144-A123-D3009B21938E]
+
+Это из‑за `flutter_webrtc`: бинарник без отладочных символов, но Xcode 16+ требует dSYM в архиве.
+
+**В проекте уже есть** Run Script **Generate WebRTC dSYM** (после Embed Pods Frameworks) — `ios/scripts/generate_webrtc_dsym.sh`.
+
+После Archive в логе может быть `warning: no debug symbols in executable` — **это нормально**, UUID в dSYM совпадает.
+
+Если фаза не сработала, вручную после Archive:
+
+```bash
+cd ~/Library/Developer/Xcode/Archives/.../YourApp.xcarchive/Products/Applications/Runner.app/Frameworks/WebRTC.framework
+dsymutil WebRTC -o ~/Desktop/WebRTC.framework.dSYM
+cp -R ~/Desktop/WebRTC.framework.dSYM ../../../../../dSYMs/
+```
+
+Затем снова **Distribute App** → Upload.

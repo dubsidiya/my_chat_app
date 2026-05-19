@@ -72,6 +72,9 @@ PODS:
     - Flutter
   - flutter_secure_storage (6.0.0):
     - Flutter
+  - flutter_webrtc (0.12.6):
+    - Flutter
+    - WebRTC-SDK (= 125.6422.06)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -163,6 +166,7 @@ PODS:
   - video_thumbnail (0.0.1):
     - Flutter
     - libwebp
+  - WebRTC-SDK (125.6422.06)
 
 DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
@@ -173,6 +177,7 @@ DEPENDENCIES:
   - Flutter (from `Flutter`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - GoogleUtilities
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - just_audio (from `.symlinks/plugins/just_audio/darwin`)
@@ -202,6 +207,7 @@ SPEC REPOS:
     - PromisesObjC
     - SDWebImage
     - SwiftyGif
+    - WebRTC-SDK
 
 EXTERNAL SOURCES:
   audio_session:
@@ -218,6 +224,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  flutter_webrtc:
+    :path: ".symlinks/plugins/flutter_webrtc/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
   just_audio:
@@ -254,6 +262,7 @@ SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
+  flutter_webrtc: 57f32415b8744e806f9c2a96ccdb60c6a627ba33
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
@@ -271,6 +280,7 @@ SPEC CHECKSUMS:
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
   video_thumbnail: b637e0ad5f588ca9945f6e2c927f73a69a661140
+  WebRTC-SDK: 79942c006ea64f6fb48d7da8a4786dfc820bc1db
 
 PODFILE CHECKSUM: c816e32943908f61577c1ff8a8605385a95582ca
 
