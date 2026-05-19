@@ -32,6 +32,7 @@ import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
 import '../utils/download_text_file.dart';
 import '../utils/voice_message_utils.dart';
+import '../utils/microphone_permission.dart';
 import '../widgets/chat_date_header.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';

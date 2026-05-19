@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../config/api_config.dart';
 import '../config/webrtc_config.dart';
+import '../utils/microphone_permission.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'websocket_service.dart';
@@ -84,8 +85,10 @@ class VoiceCallService {
   MediaStream? _localStream;
   MediaStream? _remoteStream;
   List<Map<String, dynamic>>? _iceServers;
+  MicrophoneAccess? _lastMicAccess;
 
   VoiceCallSnapshot get snapshot => _snapshot;
+  MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
 
   void bindUser(String userId) {
     final uid = userId.trim();
@@ -118,9 +121,7 @@ class VoiceCallService {
     await bindUserIfNeeded();
     if (_myUserId == null) return false;
 
-    final micOk = await _ensureMicrophone();
-    if (!micOk) {
-      _emitFailed('Нет доступа к микрофону');
+    if (!await _ensureMicrophonePermission()) {
       return false;
     }
 
@@ -154,10 +155,8 @@ class VoiceCallService {
     final chatId = _snapshot.chatId;
     if (callId == null || chatId == null) return;
 
-    final micOk = await _ensureMicrophone();
-    if (!micOk) {
+    if (!await _ensureMicrophonePermission()) {
       await rejectIncoming(reason: 'no_mic');
-      _emitFailed('Нет доступа к микрофону');
       return;
     }
 
@@ -512,10 +511,33 @@ class VoiceCallService {
       }
     };
 
-    _localStream = await navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': false,
-    });
+    if (_localStream != null) {
+      final tracks = _localStream!.getAudioTracks();
+      if (tracks.isNotEmpty && tracks.first.enabled) {
+        for (final track in tracks) {
+          await _pc!.addTrack(track, _localStream!);
+        }
+        return;
+      }
+      await _tearDownLocalStreamOnly();
+    }
+
+    await _prepareAudioSessionForCall();
+    try {
+      _localStream = await navigator.mediaDevices.getUserMedia({
+        'audio': {
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      });
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall getUserMedia: $e');
+      _emitFailed('Не удалось включить микрофон');
+      unawaited(hangUp());
+      return;
+    }
     for (final track in _localStream!.getAudioTracks()) {
       await _pc!.addTrack(track, _localStream!);
     }
@@ -549,20 +571,46 @@ class VoiceCallService {
     return _iceServers!;
   }
 
-  Future<bool> _ensureMicrophone() async {
-    try {
-      final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': false,
-      });
-      for (final t in stream.getTracks()) {
-        await t.stop();
-      }
-      return true;
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall mic permission: $e');
-      return false;
+  Future<bool> _ensureMicrophonePermission() async {
+    final access = await MicrophonePermission.ensure();
+    _lastMicAccess = access;
+    switch (access) {
+      case MicrophoneAccess.granted:
+        return true;
+      case MicrophoneAccess.permanentlyDenied:
+        _emitFailed(
+          'Нет доступа к микрофону. Разрешите в Настройках → Reollity → Микрофон.',
+        );
+        return false;
+      case MicrophoneAccess.denied:
+        _emitFailed('Нет доступа к микрофону');
+        return false;
     }
+  }
+
+  Future<void> _prepareAudioSessionForCall() async {
+    if (kIsWeb) return;
+    try {
+      if (WebRTC.platformIsIOS) {
+        await Helper.setAppleAudioIOMode(
+          AppleAudioIOMode.localAndRemote,
+          preferSpeakerOutput: true,
+        );
+      } else if (WebRTC.platformIsAndroid) {
+        await Helper.setAndroidAudioConfiguration(
+          AndroidAudioConfiguration.communication,
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall audio session: $e');
+    }
+  }
+
+  Future<void> _tearDownLocalStreamOnly() async {
+    try {
+      await _localStream?.dispose();
+    } catch (_) {}
+    _localStream = null;
   }
 
   Future<void> _tearDownMedia() async {

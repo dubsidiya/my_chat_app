@@ -34,6 +34,15 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
   }
 
   Future<void> _startVoiceCallWithPeer(String peerId) async {
+    // Освобождаем аудиосессию от just_audio (голосовые сообщения), иначе WebRTC на iOS
+    // часто не получает микрофон.
+    try {
+      await _voicePlayer.pause();
+    } catch (_) {}
+    if (_isRecordingVoice) {
+      await _cancelVoiceRecording();
+    }
+
     final label = _chatTitle.trim().isNotEmpty ? _chatTitle : widget.chatName;
     final ok = await VoiceCallService.instance.startOutgoingCall(
       chatId: widget.chatId,
@@ -41,12 +50,28 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
       peerLabel: label,
     );
     if (!ok && mounted) {
-      final msg = VoiceCallService.instance.snapshot.statusMessage;
-      if (msg != null && msg.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
-        );
-      }
+      _showVoiceCallMicError();
     }
+  }
+
+  void _showVoiceCallMicError() {
+    final msg = VoiceCallService.instance.snapshot.statusMessage ??
+        'Нет доступа к микрофону';
+    final permanent = VoiceCallService.instance.lastMicrophoneAccess ==
+        MicrophoneAccess.permanentlyDenied;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 5),
+        action: permanent
+            ? SnackBarAction(
+                label: 'Настройки',
+                onPressed: () {
+                  unawaited(MicrophonePermission.openSettings());
+                },
+              )
+            : null,
+      ),
+    );
   }
 }

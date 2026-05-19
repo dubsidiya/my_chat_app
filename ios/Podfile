@@ -65,6 +65,10 @@ post_install do |installer|
       if ['FirebaseCore', 'FirebaseMessaging', 'FirebaseCoreInternal', 'FirebaseInstallations'].include?(target.name)
         config.build_settings['DEFINES_MODULE'] = 'YES'
       end
+
+      # permission_handler: микрофон для WebRTC-звонков
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
     end
   end
 

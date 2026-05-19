@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/microphone_permission.dart';
 
 /// Full-screen UI for an active or ringing voice call.
 class VoiceCallScreen extends StatefulWidget {
@@ -27,6 +28,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _calls.stateStream.listen((s) {
       if (!mounted) return;
       setState(() => _snap = s);
+      if (s.phase == VoiceCallPhase.failed &&
+          (s.statusMessage?.contains('микрофон') ?? false)) {
+        _showMicDeniedHint();
+      }
       if (s.phase == VoiceCallPhase.ended ||
           s.phase == VoiceCallPhase.failed ||
           s.phase == VoiceCallPhase.idle) {
@@ -57,6 +62,38 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (stream != null && renderer != null) {
       renderer.srcObject = stream;
     }
+  }
+
+  void _showMicDeniedHint() {
+    final permanent =
+        _calls.lastMicrophoneAccess == MicrophoneAccess.permanentlyDenied;
+    if (!permanent) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Нужен микрофон'),
+          content: const Text(
+            'Разрешите доступ к микрофону в Настройках → Reollity → Микрофон, '
+            'затем повторите звонок.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                unawaited(MicrophonePermission.openSettings());
+              },
+              child: const Text('Настройки'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   @override
