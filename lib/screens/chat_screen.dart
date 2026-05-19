@@ -25,6 +25,7 @@ import '../services/local_messages_service.dart'; // ✅ Импорт серви
 import '../services/notification_feedback_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
+import '../services/voice_call_service.dart';
 import '../services/e2ee_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
@@ -60,6 +61,7 @@ part 'chat_screen_websocket.dart';
 part 'chat_screen_typing_composer.dart';
 part 'chat_screen_messages_sync.dart';
 part 'chat_screen_send.dart';
+part 'chat_screen_voice_call.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -872,6 +874,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          if (!widget.isGroup)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _accent1.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.call_rounded, color: _accent1),
+                onPressed: _startVoiceCall,
+                tooltip: 'Голосовой звонок',
+              ),
+            ),
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(

@@ -6,6 +6,7 @@ import '../services/version_check_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/reload_util.dart';
 import 'home_screen.dart';
+import '../widgets/voice_call_host.dart';
 
 class MainTabsScreen extends StatefulWidget {
   final String userId;
@@ -50,12 +51,15 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
         children: [
           if (showUpdateBanner) _buildUpdateBanner(context),
           Expanded(
-            child: HomeScreen(
+            child: VoiceCallHost(
               userId: widget.userId,
-              userEmail: widget.userEmail,
-              displayName: widget.displayName,
-              avatarUrl: widget.avatarUrl,
-              isSuperuser: widget.isSuperuser,
+              child: HomeScreen(
+                userId: widget.userId,
+                userEmail: widget.userEmail,
+                displayName: widget.displayName,
+                avatarUrl: widget.avatarUrl,
+                isSuperuser: widget.isSuperuser,
+              ),
             ),
           ),
         ],

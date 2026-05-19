@@ -166,3 +166,82 @@ export async function sendPushToTokens(tokens, title, body, data = {}) {
     errorEvent('fcm_send_error', err);
   }
 }
+
+/**
+ * Push о входящем голосовом звонке (1-на-1).
+ * @param {import('pg').Pool} pool
+ * @param {string|number} calleeUserId
+ * @param {{ callId: string, chatId: string, chatName?: string, fromUserId: string, fromEmail?: string }} payload
+ */
+export async function sendIncomingCallPushToUser(pool, calleeUserId, payload) {
+  const { callId, chatId, chatName, fromUserId, fromEmail } = payload;
+  if (!callId || !chatId || !fromUserId) return;
+
+  try {
+    const tokensResult = await pool.query(
+      `SELECT fcm_token FROM users
+       WHERE id = $1 AND fcm_token IS NOT NULL AND fcm_token != ''`,
+      [calleeUserId]
+    );
+    const tokens = tokensResult.rows.map((r) => r.fcm_token).filter(Boolean);
+    if (tokens.length === 0) {
+      appEvent('incoming_call_push_skipped', { reason: 'no_token', calleeUserId: String(calleeUserId) });
+      return;
+    }
+
+    const callerLabel = (fromEmail || chatName || 'Пользователь').toString().slice(0, 80);
+    const title = 'Входящий звонок';
+    const body = `${callerLabel} звонит`;
+
+    const fcm = await getMessaging();
+    if (!fcm) {
+      console.warn('Incoming call push skipped: Firebase not configured');
+      return;
+    }
+
+    const data = {
+      type: 'incoming_call',
+      callId: String(callId),
+      chatId: String(chatId),
+      chatName: (chatName || callerLabel).toString().slice(0, 120),
+      fromUserId: String(fromUserId),
+      fromEmail: callerLabel,
+      isGroup: '0',
+    };
+
+    const message = {
+      notification: { title, body },
+      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
+      tokens,
+      android: {
+        priority: 'high',
+        ttl: 60 * 1000,
+        notification: {
+          channelId: 'voice_calls',
+          priority: 'max',
+          defaultSound: true,
+          visibility: 'public',
+        },
+      },
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: {
+          aps: {
+            sound: 'default',
+            'content-available': 1,
+          },
+        },
+      },
+    };
+
+    const result = await fcm.sendEachForMulticast(message);
+    appEvent('incoming_call_push_result', {
+      callId: String(callId),
+      chatId: String(chatId),
+      successCount: result.successCount,
+      failureCount: result.failureCount,
+    });
+  } catch (err) {
+    errorEvent('incoming_call_push_error', err, { callId: String(callId), chatId: String(chatId) });
+  }
+}

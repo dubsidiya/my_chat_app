@@ -1,0 +1,21 @@
+# coturn для reollity voice calls (генерируется setup-coturn-on-vm.sh)
+listening-port=3478
+listening-ip=0.0.0.0
+relay-ip=TURN_PUBLIC_IP_PLACEHOLDER
+external-ip=TURN_PUBLIC_IP_PLACEHOLDER
+
+fingerprint
+lt-cred-mech
+realm=reollity
+user=TURN_USER_PLACEHOLDER:TURN_SECRET_PLACEHOLDER
+
+total-quota=100
+stale-nonce=600
+no-multicast-peers
+no-cli
+
+min-port=49152
+max-port=49252
+
+log-file=/var/log/turnserver/turnserver.log
+simple-log

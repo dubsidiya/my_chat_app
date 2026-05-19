@@ -9,6 +9,7 @@ import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
+import '../services/voice_call_service.dart';
 import '../services/e2ee_service.dart';
 import '../services/local_messages_service.dart';
 import '../theme/app_colors.dart';
@@ -1094,6 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
               final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
               await _authService.logout();
+              VoiceCallService.instance.reset();
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
               await E2eeService.clearAll();
@@ -1411,6 +1413,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _authService.deleteAccount(widget.userId, password);
 
+      VoiceCallService.instance.reset();
       WebSocketService.instance.disconnect();
       await PushNotificationService.clearTokenOnBackend();
       await E2eeService.clearAll();

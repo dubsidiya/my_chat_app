@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -8,10 +9,16 @@ import '../utils/timed_http.dart';
 import '../config/api_config.dart';
 import '../screens/chat_screen.dart';
 import 'storage_service.dart';
+import 'voice_call_service.dart';
+import 'websocket_service.dart';
 
 /// Канал для уведомлений о сообщениях (Android).
 const String _channelId = 'chat_messages';
 const String _channelName = 'Сообщения в чатах';
+
+/// Канал для входящих голосовых звонков (Android).
+const String _callChannelId = 'voice_calls';
+const String _callChannelName = 'Голосовые звонки';
 
 /// Сервис push-уведомлений через Firebase Cloud Messaging.
 /// Если Firebase не настроен (нет GoogleService-Info.plist и т.д.), инициализация пропускается без ошибки.
@@ -80,6 +87,18 @@ class PushNotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(androidChannel);
 
+    const androidCallChannel = AndroidNotificationChannel(
+      _callChannelId,
+      _callChannelName,
+      description: 'Входящие голосовые звонки',
+      importance: Importance.max,
+      playSound: true,
+    );
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(androidCallChannel);
+
     final messaging = FirebaseMessaging.instance;
 
     // iOS: показывать баннер/звук при получении пуша в foreground
@@ -130,6 +149,10 @@ class PushNotificationService {
     // Сообщение при открытом приложении — показываем локальное уведомление (если не в этом чате)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       final data = message.data;
+      if (_isIncomingCallData(data)) {
+        _handleIncomingCallPush(data, message.notification);
+        return;
+      }
       if (_currentChatId != null && data['chatId']?.toString() == _currentChatId) {
         return; // уже в этом чате — не показываем
       }
@@ -138,6 +161,48 @@ class PushNotificationService {
       final body = notification?.body ?? 'Сообщение в чате';
       _showForegroundNotification(title: title, body: body, data: data);
     });
+  }
+
+  static bool _isIncomingCallData(Map<String, dynamic> data) {
+    return data['type']?.toString() == 'incoming_call';
+  }
+
+  static void _handleIncomingCallPush(
+    Map<String, dynamic> data,
+    RemoteNotification? notification,
+  ) {
+    final callId = data['callId']?.toString() ?? '';
+    final chatId = data['chatId']?.toString() ?? '';
+    final peerUserId = data['fromUserId']?.toString() ?? '';
+    final peerLabel = data['fromEmail']?.toString() ??
+        data['chatName']?.toString() ??
+        'Звонок';
+    if (callId.isEmpty || chatId.isEmpty || peerUserId.isEmpty) return;
+
+    unawaited(WebSocketService.instance.connectIfNeeded());
+    final before = VoiceCallService.instance.snapshot;
+    VoiceCallService.instance.applyIncomingFromPush(
+      callId: callId,
+      chatId: chatId,
+      peerUserId: peerUserId,
+      peerLabel: peerLabel,
+    );
+    final after = VoiceCallService.instance.snapshot;
+
+    // Уже звоним по WebSocket — не дублируем баннер.
+    if (before.isActive && before.callId == callId) return;
+    if (after.callId != callId || after.phase != VoiceCallPhase.incoming) return;
+
+    final title = notification?.title ?? 'Входящий звонок';
+    final body = notification?.body ?? '$peerLabel звонит';
+    unawaited(
+      _showForegroundNotification(
+        title: title,
+        body: body,
+        data: data,
+        isCall: true,
+      ),
+    );
   }
 
   static void _onLocalNotificationTapped(NotificationResponse response) {
@@ -157,22 +222,27 @@ class PushNotificationService {
     required String title,
     required String body,
     required Map<String, dynamic> data,
+    bool isCall = false,
   }) async {
     final payload = jsonEncode(data);
-    const androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Уведомления о новых сообщениях в чатах',
-      importance: Importance.high,
-      priority: Priority.high,
+    final androidDetails = AndroidNotificationDetails(
+      isCall ? _callChannelId : _channelId,
+      isCall ? _callChannelName : _channelName,
+      channelDescription: isCall
+          ? 'Входящие голосовые звонки'
+          : 'Уведомления о новых сообщениях в чатах',
+      importance: isCall ? Importance.max : Importance.high,
+      priority: isCall ? Priority.max : Priority.high,
       playSound: true,
+      category: isCall ? AndroidNotificationCategory.call : null,
+      fullScreenIntent: isCall,
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
     );
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -181,6 +251,10 @@ class PushNotificationService {
   }
 
   static void _handleOpenFromNotification(Map<String, dynamic> data) {
+    if (_isIncomingCallData(data)) {
+      _handleIncomingCallPush(data, null);
+      return;
+    }
     final chatId = data['chatId']?.toString();
     if (chatId == null || chatId.isEmpty) return;
     final chatName = data['chatName']?.toString() ?? 'Чат';

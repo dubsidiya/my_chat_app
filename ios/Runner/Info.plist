@@ -29,7 +29,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Нужно для записи голосовых сообщений в чате.</string>
+	<string>Нужно для голосовых сообщений и голосовых звонков в чате.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нужно для выбора и отправки фото в чате.</string>
 	<key>NSCameraUsageDescription</key>

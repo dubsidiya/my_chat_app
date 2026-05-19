@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
+import { handleCallSignaling } from './callSignaling.js';
 
 const clients = new Map(); // userId -> Set<ws>
 
@@ -78,6 +79,7 @@ const sendLimiter = new WsRateLimiter(30, 10_000);
 const typingLimiter = new WsRateLimiter(20, 10_000);
 const markReadLimiter = new WsRateLimiter(60, 10_000);
 const subscribeLimiter = new WsRateLimiter(30, 10_000);
+const callLimiter = new WsRateLimiter(80, 10_000);
 
 async function ensureChatMember(chatId, userId) {
   const chatIdNum = parseInt(chatId, 10);
@@ -236,6 +238,17 @@ export function setupWebSocket(server) {
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
+
+        if (data?.type && typeof data.type === 'string' && data.type.startsWith('call_')) {
+          await handleCallSignaling(data, {
+            userId,
+            userEmail,
+            pool,
+            sendToUserSockets,
+            callLimiter,
+          });
+          return;
+        }
         
         if (data.type === 'subscribe') {
           if (!subscribeLimiter.allow(userId)) return;

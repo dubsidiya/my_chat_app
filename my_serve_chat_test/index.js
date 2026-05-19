@@ -18,6 +18,7 @@ import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
 import moderationRoutes from './routes/moderation.js';
 import e2eeRoutes from './routes/e2ee.js';
+import callsRoutes from './routes/calls.js';
 import { setupWebSocket } from './websocket/websocket.js';
 import pool from './db.js';
 
@@ -386,6 +387,7 @@ app.use('/messages/upload-file', uploadLimiter);
 app.use('/bank-statement/upload', uploadLimiter);
 
 app.use('/auth', authRoutes);
+app.use('/calls', callsRoutes);
 app.use('/chats', chatRoutes);
 app.use('/messages', messageRoutes);
 app.use('/students', studentsRoutes);
