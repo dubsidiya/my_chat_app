@@ -17,6 +17,25 @@ class MicrophonePermission {
   static Future<MicrophoneAccess> ensure() async {
     if (kIsWeb) return MicrophoneAccess.granted;
 
+    // Сначала permission_handler — тот же RECORD_AUDIO, что у WebRTC getUserMedia.
+    var status = await Permission.microphone.status;
+    if (status.isGranted || status.isLimited) {
+      return MicrophoneAccess.granted;
+    }
+    if (status.isPermanentlyDenied) {
+      return MicrophoneAccess.permanentlyDenied;
+    }
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+      if (status.isGranted || status.isLimited) {
+        return MicrophoneAccess.granted;
+      }
+      if (status.isPermanentlyDenied) {
+        return MicrophoneAccess.permanentlyDenied;
+      }
+    }
+
+    // Fallback: record (как у голосовых сообщений в чате).
     try {
       final recorder = AudioRecorder();
       if (await recorder.hasPermission()) {
@@ -28,22 +47,6 @@ class MicrophonePermission {
       if (kDebugMode) print('MicrophonePermission record: $e');
     }
 
-    var status = await Permission.microphone.status;
-    if (status.isGranted || status.isLimited) {
-      return MicrophoneAccess.granted;
-    }
-
-    if (status.isPermanentlyDenied) {
-      return MicrophoneAccess.permanentlyDenied;
-    }
-
-    status = await Permission.microphone.request();
-    if (status.isGranted || status.isLimited) {
-      return MicrophoneAccess.granted;
-    }
-    if (status.isPermanentlyDenied) {
-      return MicrophoneAccess.permanentlyDenied;
-    }
     return MicrophoneAccess.denied;
   }
 

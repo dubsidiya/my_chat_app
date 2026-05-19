@@ -89,6 +89,9 @@ class VoiceCallService {
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   bool _remoteDescriptionSet = false;
   Timer? _connectingTimer;
+  Future<void>? _peerConnectionSetupInFlight;
+  Future<void>? _localAudioSetupInFlight;
+  bool _webRtcInitialized = false;
 
   VoiceCallSnapshot get snapshot => _snapshot;
   MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
@@ -140,12 +143,31 @@ class VoiceCallService {
       ),
     );
 
+    await _ensureWebRtcInitialized();
+    if (!await _ensureLocalAudioStream()) {
+      await _tearDownMedia();
+      _emit(
+        VoiceCallSnapshot(
+          phase: VoiceCallPhase.failed,
+          callId: callId,
+          chatId: chatId,
+          peerUserId: peerUserId,
+          peerLabel: peerLabel,
+          statusMessage: _snapshot.statusMessage ??
+              'Не удалось включить микрофон для звонка',
+        ),
+      );
+      _scheduleIdleReset();
+      return false;
+    }
+
     final sent = _sendSignal({
       'type': 'call_invite',
       'call_id': callId,
       'chat_id': chatId,
     });
     if (!sent) {
+      await _tearDownMedia();
       _emitFailed('Нет соединения с сервером');
       return false;
     }
@@ -170,6 +192,17 @@ class VoiceCallService {
       ),
     );
     _startConnectingTimeout();
+    try {
+      await _ensureWebRtcInitialized();
+      if (!await _ensureLocalAudioStream()) {
+        await rejectIncoming(reason: 'no_mic');
+        return;
+      }
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall media prep on accept: $e');
+      await rejectIncoming(reason: 'media_error');
+      return;
+    }
     _sendSignal({
       'type': 'call_accept',
       'call_id': callId,
@@ -178,7 +211,10 @@ class VoiceCallService {
   }
 
   Future<void> rejectIncoming({String reason = 'declined'}) async {
-    if (_snapshot.phase != VoiceCallPhase.incoming) return;
+    final phase = _snapshot.phase;
+    if (phase != VoiceCallPhase.incoming && phase != VoiceCallPhase.connecting) {
+      return;
+    }
     final callId = _snapshot.callId;
     final chatId = _snapshot.chatId;
     if (callId != null && chatId != null) {
@@ -190,10 +226,17 @@ class VoiceCallService {
       });
     }
     await _tearDownMedia();
+    final statusMessage = reason == 'no_mic' || reason == 'media_error'
+        ? (_snapshot.statusMessage ?? 'Не удалось принять звонок')
+        : 'Отклонён';
     _emit(
-      const VoiceCallSnapshot(
+      VoiceCallSnapshot(
         phase: VoiceCallPhase.ended,
-        statusMessage: 'Отклонён',
+        callId: callId,
+        chatId: chatId,
+        peerUserId: _snapshot.peerUserId,
+        peerLabel: _snapshot.peerLabel,
+        statusMessage: statusMessage,
       ),
     );
     _scheduleIdleReset();
@@ -470,9 +513,114 @@ class VoiceCallService {
   }
 
   Future<void> _ensurePeerConnection() async {
+    await _ensureWebRtcInitialized();
+    if (!await _ensureLocalAudioStream()) {
+      throw StateError('local audio unavailable');
+    }
+    await _preparePeerConnectionShell();
+    await _attachLocalTracksToPeerConnection();
+  }
+
+  Future<void> _ensureWebRtcInitialized() async {
+    if (kIsWeb || _webRtcInitialized) return;
+    await WebRTC.initialize(
+      options: <String, dynamic>{
+        'androidAudioConfiguration':
+            AndroidAudioConfiguration.communication.toMap(),
+      },
+    );
+    _webRtcInitialized = true;
+  }
+
+  /// На Android getUserMedia падает, если в плагине уже есть PeerConnection с null native PC.
+  /// Микрофон включаем до первого createPeerConnection.
+  Future<bool> _ensureLocalAudioStream() async {
+    if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
+      return true;
+    }
+    if (!_snapshot.isActive) return false;
+
+    if (_localAudioSetupInFlight != null) {
+      await _localAudioSetupInFlight;
+      return _localStream != null && _localStream!.getAudioTracks().isNotEmpty;
+    }
+
+    final setup = _ensureLocalAudioStreamImpl();
+    _localAudioSetupInFlight = setup;
+    try {
+      return await setup;
+    } finally {
+      if (identical(_localAudioSetupInFlight, setup)) {
+        _localAudioSetupInFlight = null;
+      }
+    }
+  }
+
+  Future<bool> _ensureLocalAudioStreamImpl() async {
+    if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
+      return true;
+    }
+    if (_pc != null) {
+      // Уже создали PC без локального аудио — сбрасываем и начинаем заново.
+      await _tearDownMedia();
+    }
+
+    if (!await _ensureMicrophonePermission()) {
+      return false;
+    }
+
+    await _prepareAudioSessionForCall();
+    try {
+      _localStream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+      return _localStream!.getAudioTracks().isNotEmpty;
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall getUserMedia: $e');
+      final err = e.toString().toLowerCase();
+      final notAllowed = err.contains('notallowed') ||
+          err.contains('permission') ||
+          err.contains('denied');
+      _emitFailed(
+        notAllowed
+            ? 'Нет доступа к микрофону'
+            : 'Не удалось запустить аудио для звонка',
+      );
+      if (_snapshot.isActive) {
+        unawaited(hangUp());
+      }
+      return false;
+    }
+  }
+
+  Future<void> _preparePeerConnectionShell() async {
     if (_pc != null) return;
+    if (!_snapshot.isActive) return;
+
+    if (_peerConnectionSetupInFlight != null) {
+      await _peerConnectionSetupInFlight;
+      return;
+    }
+
+    final setup = _preparePeerConnectionShellImpl();
+    _peerConnectionSetupInFlight = setup;
+    try {
+      await setup;
+    } finally {
+      if (identical(_peerConnectionSetupInFlight, setup)) {
+        _peerConnectionSetupInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _preparePeerConnectionShellImpl() async {
+    if (_pc != null || !_snapshot.isActive) return;
+
     _remoteDescriptionSet = false;
     _pendingRemoteCandidates.clear();
+    await _prepareAudioSessionForCall();
+
     final servers = await _loadIceServers();
     final config = <String, dynamic>{
       'iceServers': servers,
@@ -518,35 +666,28 @@ class VoiceCallService {
       }
     };
 
-    if (_localStream != null) {
-      final tracks = _localStream!.getAudioTracks();
-      if (tracks.isNotEmpty && tracks.first.enabled) {
-        for (final track in tracks) {
-          await _pc!.addTrack(track, _localStream!);
-        }
-        return;
-      }
-      await _tearDownLocalStreamOnly();
+    try {
+      await _pc!.getSignalingState();
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall PC not ready: $e');
+      await _tearDownMedia();
+      rethrow;
+    }
+  }
+
+  Future<void> _attachLocalTracksToPeerConnection() async {
+    if (_pc == null || !_snapshot.isActive) return;
+    final stream = _localStream;
+    if (stream == null || stream.getAudioTracks().isEmpty) {
+      throw StateError('local audio stream missing');
     }
 
-    await _prepareAudioSessionForCall();
-    try {
-      _localStream = await navigator.mediaDevices.getUserMedia({
-        'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-        },
-        'video': false,
-      });
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall getUserMedia: $e');
-      _emitFailed('Не удалось включить микрофон');
-      unawaited(hangUp());
-      return;
-    }
-    for (final track in _localStream!.getAudioTracks()) {
-      await _pc!.addTrack(track, _localStream!);
+    final senders = await _pc!.getSenders();
+    final hasAudio = senders.any((s) => s.track?.kind == 'audio');
+    if (hasAudio) return;
+
+    for (final track in stream.getAudioTracks()) {
+      await _pc!.addTrack(track, stream);
     }
   }
 
@@ -728,15 +869,10 @@ class VoiceCallService {
     _cancelConnectingTimeout();
   }
 
-  Future<void> _tearDownLocalStreamOnly() async {
-    try {
-      await _localStream?.dispose();
-    } catch (_) {}
-    _localStream = null;
-  }
-
   Future<void> _tearDownMedia() async {
     _resetPeerConnectionState();
+    _peerConnectionSetupInFlight = null;
+    _localAudioSetupInFlight = null;
     try {
       await _localStream?.dispose();
     } catch (_) {}

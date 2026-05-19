@@ -125,6 +125,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
             return;
           }
 
+          // Голосовые звонки обрабатывает VoiceCallService — не парсим как Message.
+          if (messageType is String && messageType.startsWith('call_')) {
+            return;
+          }
+
           // ✅ Typing indicator
           if (messageType == 'typing') {
             final chatId = data['chat_id']?.toString();
@@ -416,16 +421,29 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
             return;
           }
 
+          // Только события сообщений (не presence/call/typing и т.д.)
+          final typeStr = messageType?.toString();
+          if (typeStr != null &&
+              typeStr.isNotEmpty &&
+              typeStr != 'message') {
+            return;
+          }
+
           // Проверяем, что это сообщение для текущего чата
           // Преобразуем chat_id в строку для сравнения
           final chatId =
               data['chat_id']?.toString() ?? data['chatId']?.toString();
           final currentChatId = widget.chatId.toString();
+          final messageId = data['id']?.toString();
 
           if (kDebugMode)
             print(
               'WebSocket chat_id: $chatId, current chat_id: $currentChatId',
             );
+
+          if (messageId == null || messageId.isEmpty) {
+            return;
+          }
 
           if (chatId == currentChatId) {
             if (kDebugMode) print('Message is for current chat');
