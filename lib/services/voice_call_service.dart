@@ -1115,7 +1115,7 @@ class VoiceCallService {
       if (WebRTC.platformIsIOS) {
         await Helper.setAppleAudioIOMode(
           AppleAudioIOMode.localAndRemote,
-          preferSpeakerOutput: true,
+          preferSpeakerOutput: false,
         );
       } else if (WebRTC.platformIsAndroid) {
         await Helper.setAndroidAudioConfiguration(
@@ -1158,11 +1158,8 @@ class VoiceCallService {
     if (_snapshot.phase == VoiceCallPhase.connected) return;
     _webRtcMediaBroken = false;
     _cancelConnectingTimeout();
-    // К моменту onTrack/ICE-connected аудиосессия уже стоит в .playAndRecord
-    // (см. _prepareAudioSessionForCall). Перезапрашиваем спикер ещё раз: ранний
-    // вызов setSpeakerphoneOn из VoiceCallScreen.initState срабатывает на iOS
-    // только до конфигурации сессии и часто молча игнорируется.
-    unawaited(_reassertCallAudioOutput());
+    // Аудиосессия в режиме звонка; маршрут (earpiece/громкая связь) — в VoiceCallScreen.
+    unawaited(_reassertCallAudioSession());
     _emit(
       _snapshot.copyWith(
         phase: VoiceCallPhase.connected,
@@ -1171,18 +1168,23 @@ class VoiceCallService {
     );
   }
 
-  Future<void> _reassertCallAudioOutput() async {
+  /// Подтверждаем режим «звонок» без принудительной громкой связи.
+  Future<void> _reassertCallAudioSession() async {
     if (kIsWeb) return;
     try {
       if (WebRTC.platformIsIOS) {
         await Helper.setAppleAudioIOMode(
           AppleAudioIOMode.localAndRemote,
-          preferSpeakerOutput: true,
+          preferSpeakerOutput: false,
         );
+      } else if (WebRTC.platformIsAndroid) {
+        await Helper.setAndroidAudioConfiguration(
+          AndroidAudioConfiguration.communication,
+        );
+        await Helper.setSpeakerphoneOn(false);
       }
-      await Helper.setSpeakerphoneOn(true);
     } catch (e) {
-      if (kDebugMode) print('VoiceCall reassert audio out: $e');
+      if (kDebugMode) print('VoiceCall reassert audio session: $e');
     }
   }
 

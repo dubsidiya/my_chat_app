@@ -25,7 +25,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   Timer? _ringerTicker;
   DateTime? _connectedAt;
   Duration _callDuration = Duration.zero;
-  bool _speakerOn = true;
+  /// По умолчанию разговорный динамик (как обычный телефонный звонок), не громкая связь.
+  bool _speakerOn = false;
   bool _autoCloseScheduled = false;
   VoiceCallPhase? _lastHapticPhase;
 
@@ -45,6 +46,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     setState(() => _snap = s);
     if (s.phase == VoiceCallPhase.connected) {
       _attachRemote();
+      // После configure audio session на iOS ранний setSpeakerphoneOn в initState
+      // часто игнорируется — повторяем выбранный маршрут при «На связи».
+      _applySpeakerphone(_speakerOn);
     }
     _syncConnectedTimer();
     _syncRingerFor(s.phase);
@@ -186,6 +190,13 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     });
   }
 
+  /// Свернуть экран звонка без завершения (плашка в [VoiceCallHost]).
+  void _minimizeCall() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   void _applySpeakerphone(bool enabled) {
     try {
       Helper.setSpeakerphoneOn(enabled);
@@ -226,16 +237,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         : (_snap.statusMessage ?? _phaseLabel(_snap.phase));
 
     return PopScope(
-      canPop: false,
+      canPop: true,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        // На входящем "back" семантически = «отклонить», иначе peer услышит
-        // call_hangup до того, как зазвонило.
-        if (_snap.phase == VoiceCallPhase.incoming) {
-          unawaited(_calls.rejectIncoming());
-        } else {
-          unawaited(_calls.hangUp());
-        }
+        if (!didPop) _minimizeCall();
       },
       child: Scaffold(
         backgroundColor: AppColors.backgroundDark,
@@ -263,7 +267,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     alignment: Alignment.centerRight,
                     child: IconButton(
                       icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurface),
-                      onPressed: () => unawaited(_calls.hangUp()),
+                      tooltip: 'Свернуть',
+                      onPressed: _minimizeCall,
                     ),
                   ),
                   const Spacer(),
@@ -317,7 +322,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                           _mediaToggleButton(
                             icon: _speakerOn
                                 ? Icons.volume_up_rounded
-                                : Icons.volume_down_rounded,
+                                : Icons.phone_in_talk_rounded,
                             onTap: _toggleSpeaker,
                           ),
                         ],

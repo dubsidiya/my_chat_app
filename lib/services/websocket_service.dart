@@ -18,6 +18,7 @@ class WebSocketService {
   bool _connecting = false;
   bool _wasDisconnected = false;
   Timer? _reconnectTimer;
+  Timer? _keepAliveTimer;
   int _connectSeq = 0;
   static const String _reconnectedEventType = '_ws_reconnected';
 
@@ -56,6 +57,7 @@ class WebSocketService {
     _connecting = true;
     try {
       _reconnectTimer?.cancel();
+      _stopKeepAlive();
       _channel?.sink.close();
       _channel = null;
       _currentToken = token;
@@ -89,6 +91,7 @@ class WebSocketService {
         final hadChannel = _channel == disconnectedChannel;
         _channel = null;
         if (hadChannel) {
+          _stopKeepAlive();
           _wasDisconnected = true;
           _reconnectTimer?.cancel();
           _reconnectTimer = Timer(const Duration(seconds: 2), () {
@@ -122,6 +125,8 @@ class WebSocketService {
         _wasDisconnected = false;
         _streamController.add(<String, dynamic>{'type': _reconnectedEventType});
       }
+
+      _startKeepAlive();
     } catch (e) {
       if (kDebugMode) print('WebSocketService connect error: $e');
       _channel = null;
@@ -147,8 +152,23 @@ class WebSocketService {
 
   void disconnect() {
     _reconnectTimer?.cancel();
+    _stopKeepAlive();
     _channel?.sink.close();
     _channel = null;
     _currentToken = null;
+  }
+
+  void _startKeepAlive() {
+    if (kIsWeb) return;
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (_channel == null) return;
+      send(<String, dynamic>{'type': 'ws_ping'});
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
   }
 }
