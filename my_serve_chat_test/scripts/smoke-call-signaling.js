@@ -40,7 +40,6 @@ function connectWs(token) {
 
 function waitForType(ws, type, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout waiting for ${type}`)), timeoutMs);
     const onMessage = (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
@@ -51,6 +50,10 @@ function waitForType(ws, type, timeoutMs = 15000) {
         }
       } catch (_) {}
     };
+    const timer = setTimeout(() => {
+      ws.off('message', onMessage);
+      reject(new Error(`timeout waiting for ${type}`));
+    }, timeoutMs);
     ws.on('message', onMessage);
   });
 }
@@ -85,25 +88,8 @@ async function findDmChat(tokenA, tokenB, userIdA, userIdB) {
   return String(created.id ?? created.chat_id);
 }
 
-async function main() {
-  const emailA = process.env.SMOKE_USER_A_EMAIL || process.env.SMOKE_EMAIL;
-  const passA = process.env.SMOKE_USER_A_PASSWORD || process.env.SMOKE_PASSWORD;
-  const emailB = process.env.SMOKE_USER_B_EMAIL;
-  const passB = process.env.SMOKE_USER_B_PASSWORD;
-
-  if (!emailA || !passA || !emailB || !passB) {
-    console.error('Set SMOKE_USER_A_EMAIL, SMOKE_USER_A_PASSWORD, SMOKE_USER_B_EMAIL, SMOKE_USER_B_PASSWORD');
-    process.exit(1);
-  }
-
-  const userA = await login(emailA, passA);
-  const userB = await login(emailB, passB);
-  const chatId = await findDmChat(userA.token, userB.token, userA.userId, userB.userId);
-
-  const wsA = await connectWs(userA.token);
-  const wsB = await connectWs(userB.token);
-
-  const callId = `smoke-${Date.now()}`;
+async function scenarioHappyPath(wsA, wsB, chatId) {
+  const callId = `smoke-happy-${Date.now()}`;
   const inviteWait = waitForType(wsB, 'call_invite');
   send(wsA, { type: 'call_invite', call_id: callId, chat_id: chatId });
   const invite = await inviteWait;
@@ -136,11 +122,84 @@ async function main() {
   });
   await iceWait;
 
+  const hangupWait = waitForType(wsB, 'call_hangup');
   send(wsA, { type: 'call_hangup', call_id: callId, chat_id: chatId });
-  wsA.close();
-  wsB.close();
+  await hangupWait;
+}
 
-  console.log('smoke-call-signaling: OK (invite, accept, offer, answer, ice relayed)');
+async function scenarioReject(wsA, wsB, chatId) {
+  const callId = `smoke-reject-${Date.now()}`;
+  const inviteWait = waitForType(wsB, 'call_invite');
+  send(wsA, { type: 'call_invite', call_id: callId, chat_id: chatId });
+  await inviteWait;
+
+  const rejectWait = waitForType(wsA, 'call_reject');
+  send(wsB, {
+    type: 'call_reject',
+    call_id: callId,
+    chat_id: chatId,
+    reason: 'declined',
+  });
+  const reject = await rejectWait;
+  if (reject.reason !== 'declined') {
+    throw new Error(`reject reason mismatch: ${reject.reason}`);
+  }
+}
+
+async function scenarioBusy(wsA, wsB, chatId) {
+  // A→B уже ringing, второй invite от A с другим callId должен получить call_error{busy}.
+  const firstCallId = `smoke-busy-1-${Date.now()}`;
+  const firstInviteWait = waitForType(wsB, 'call_invite');
+  send(wsA, { type: 'call_invite', call_id: firstCallId, chat_id: chatId });
+  await firstInviteWait;
+
+  const secondCallId = `smoke-busy-2-${Date.now()}`;
+  const errorWait = waitForType(wsA, 'call_error');
+  send(wsA, { type: 'call_invite', call_id: secondCallId, chat_id: chatId });
+  const err = await errorWait;
+  if (err.code !== 'busy') {
+    throw new Error(`expected call_error{busy}, got ${JSON.stringify(err)}`);
+  }
+
+  // Прибираем за собой.
+  const hangupWait = waitForType(wsB, 'call_hangup');
+  send(wsA, { type: 'call_hangup', call_id: firstCallId, chat_id: chatId });
+  await hangupWait;
+}
+
+async function main() {
+  const emailA = process.env.SMOKE_USER_A_EMAIL || process.env.SMOKE_EMAIL;
+  const passA = process.env.SMOKE_USER_A_PASSWORD || process.env.SMOKE_PASSWORD;
+  const emailB = process.env.SMOKE_USER_B_EMAIL;
+  const passB = process.env.SMOKE_USER_B_PASSWORD;
+
+  if (!emailA || !passA || !emailB || !passB) {
+    console.error('Set SMOKE_USER_A_EMAIL, SMOKE_USER_A_PASSWORD, SMOKE_USER_B_EMAIL, SMOKE_USER_B_PASSWORD');
+    process.exit(1);
+  }
+
+  const userA = await login(emailA, passA);
+  const userB = await login(emailB, passB);
+  const chatId = await findDmChat(userA.token, userB.token, userA.userId, userB.userId);
+
+  const wsA = await connectWs(userA.token);
+  const wsB = await connectWs(userB.token);
+
+  try {
+    await scenarioHappyPath(wsA, wsB, chatId);
+    console.log('smoke-call-signaling[happy]: OK (invite/accept/offer/answer/ice/hangup)');
+
+    await scenarioReject(wsA, wsB, chatId);
+    console.log('smoke-call-signaling[reject]: OK (invite/reject relayed)');
+
+    await scenarioBusy(wsA, wsB, chatId);
+    console.log('smoke-call-signaling[busy]: OK (second invite → call_error{busy})');
+  } finally {
+    wsA.close();
+    wsB.close();
+  }
+
+  console.log('smoke-call-signaling: ALL OK');
 }
 
 main().catch((e) => {

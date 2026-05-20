@@ -228,7 +228,14 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) unawaited(_calls.hangUp());
+        if (didPop) return;
+        // На входящем "back" семантически = «отклонить», иначе peer услышит
+        // call_hangup до того, как зазвонило.
+        if (_snap.phase == VoiceCallPhase.incoming) {
+          unawaited(_calls.rejectIncoming());
+        } else {
+          unawaited(_calls.hangUp());
+        }
       },
       child: Scaffold(
         backgroundColor: AppColors.backgroundDark,

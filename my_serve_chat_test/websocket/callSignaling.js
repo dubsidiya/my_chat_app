@@ -99,11 +99,13 @@ function cleanupStaleCallsForUser(userId) {
     return;
   }
   const age = Date.now() - call.createdAt;
-  if (age > CALL_TTL_MS) {
+  // TTL чистит ТОЛЬКО ringing-сессии. Принятый звонок может длиться долго;
+  // его убирает либо явный call_hangup, либо releaseCallsForUser на disconnect.
+  if (call.state === 'ringing' && age > RINGING_STALE_MS) {
     cleanupCall(callId);
     return;
   }
-  if (call.state === 'ringing' && age > RINGING_STALE_MS) {
+  if (call.state === 'ringing' && age > CALL_TTL_MS) {
     cleanupCall(callId);
   }
 }
@@ -217,22 +219,33 @@ export async function handleCallSignaling(data, ctx) {
 
     // FCM: дублируем приглашение push-ом (клиент дедуплирует с WS).
     // Если WS онлайн, но приложение в фоне — push всё равно полезен.
-    let chatName = userEmail || 'Звонок';
-    try {
-      const nameRow = await pool.query('SELECT name FROM chats WHERE id = $1', [dm.chatIdNum]);
-      if (nameRow.rows[0]?.name) {
-        chatName = String(nameRow.rows[0].name);
+    // ВАЖНО: push отправляем fire-and-forget. Иначе медленный/упавший Firebase
+    // блокирует обработчик WS на несколько секунд — следующее сообщение от
+    // того же клиента (offer/ICE) подвисает.
+    (async () => {
+      let chatName = userEmail || 'Звонок';
+      try {
+        const nameRow = await pool.query('SELECT name FROM chats WHERE id = $1', [dm.chatIdNum]);
+        if (nameRow.rows[0]?.name) {
+          chatName = String(nameRow.rows[0].name);
+        }
+      } catch (_) {
+        /* best-effort */
       }
-    } catch (_) {
-      /* best-effort */
-    }
-    await sendIncomingCallPushToUser(pool, dm.peerId, {
-      callId,
-      chatId: chatIdStr,
-      chatName,
-      fromUserId: userId.toString(),
-      fromEmail: userEmail || '',
-    });
+      try {
+        await sendIncomingCallPushToUser(pool, dm.peerId, {
+          callId,
+          chatId: chatIdStr,
+          chatName,
+          fromUserId: userId.toString(),
+          fromEmail: userEmail || '',
+        });
+      } catch (err) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('sendIncomingCallPushToUser failed:', err?.message || err);
+        }
+      }
+    })();
 
     return true;
   }
@@ -254,7 +267,9 @@ export async function handleCallSignaling(data, ctx) {
     return true;
   }
 
-  if (Date.now() - call.createdAt > CALL_TTL_MS) {
+  // TTL применяем только к ringing-инвайтам — длинный разговор не должен
+  // обрываться через 5 минут из-за того, что прилетел очередной ICE-candidate.
+  if (call.state === 'ringing' && Date.now() - call.createdAt > CALL_TTL_MS) {
     cleanupCall(callId);
     sendCallError(sendToUserSockets, userId, { code: 'call_expired', call_id: callId });
     return true;
@@ -307,7 +322,9 @@ export async function handleCallSignaling(data, ctx) {
   }
 
   if (type === 'call_offer' || type === 'call_answer') {
-    if (call.state !== 'accepted' && call.state !== 'ringing') {
+    // Offer/answer допустимы только после call_accept (state=accepted).
+    // Принять SDP в ringing — узкое окно гонок и потенциальный вектор подмены.
+    if (call.state !== 'accepted') {
       return true;
     }
     const sdp = data.sdp;

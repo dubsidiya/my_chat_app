@@ -32,11 +32,21 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
         return;
       }
       await _startVoiceCallWithPeer(peerId);
-    } catch (_) {
+    } catch (e, st) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('chat_screen voice call start: $e\n$st');
+      }
       if (mounted) {
-        _showVoiceCallStartError('Не удалось начать звонок');
+        _showVoiceCallStartError('Не удалось начать звонок: ${_shortErr(e)}');
       }
     }
+  }
+
+  String _shortErr(Object e) {
+    final raw = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (raw.isEmpty) return 'неизвестная ошибка';
+    return raw.length > 160 ? '${raw.substring(0, 160)}…' : raw;
   }
 
   Future<void> _startVoiceCallWithPeer(String peerId) async {

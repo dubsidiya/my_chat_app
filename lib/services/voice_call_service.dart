@@ -88,9 +88,11 @@ class VoiceCallService {
   List<Map<String, dynamic>>? _iceServers;
   MicrophoneAccess? _lastMicAccess;
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
+  static const int _maxPendingRemoteCandidates = 80;
   bool _remoteDescriptionSet = false;
   Timer? _connectingTimer;
   Timer? _outgoingTimer;
+  Timer? _idleResetTimer;
   Future<void>? _peerConnectionSetupInFlight;
   Future<void>? _localAudioSetupInFlight;
   bool _webRtcInitialized = false;
@@ -115,6 +117,10 @@ class VoiceCallService {
     _wsSub?.cancel();
     _wsSub = null;
     _myUserId = null;
+    _idleResetTimer?.cancel();
+    _idleResetTimer = null;
+    _lastMicAccess = null;
+    _webRtcMediaBroken = false;
     unawaited(_tearDownMedia());
     _emit(const VoiceCallSnapshot(phase: VoiceCallPhase.idle));
   }
@@ -176,13 +182,19 @@ class VoiceCallService {
         return false;
       }
       return true;
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall startOutgoingCall: $e');
+    } catch (e, st) {
+      if (kDebugMode) print('VoiceCall startOutgoingCall: $e\n$st');
       _cancelOutgoingTimeout();
       await _tearDownMedia();
-      _emitFailed('Не удалось начать звонок');
+      _emitFailed('Не удалось начать звонок: ${_shortError(e)}');
       return false;
     }
+  }
+
+  String _shortError(Object e) {
+    final raw = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (raw.isEmpty) return 'неизвестная ошибка';
+    return raw.length > 160 ? '${raw.substring(0, 160)}…' : raw;
   }
 
   /// Сброс активного звонка, если UI не удалось открыть (см. [VoiceCallHost]).
@@ -195,9 +207,16 @@ class VoiceCallService {
   Future<bool> _ensureSignalingConnected() async {
     await WebSocketService.instance.connectIfNeeded();
     if (WebSocketService.instance.isConnected) return true;
-    for (var i = 0; i < 30; i++) {
+    // На iOS release TLS+WS handshake может занять заметно больше времени, чем
+    // в Android-эмуляторе. 10 с — компромисс между «звонок реально не начнётся
+    // быстро» и «не оставлять кнопку без ответа».
+    for (var i = 0; i < 100; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
       if (WebSocketService.instance.isConnected) return true;
+      if (i == 30 || i == 60) {
+        // Триггерим повторное connectIfNeeded, если первая попытка отвалилась.
+        await WebSocketService.instance.connectIfNeeded();
+      }
     }
     return WebSocketService.instance.isConnected;
   }
@@ -1012,6 +1031,11 @@ class VoiceCallService {
   }
 
   Future<void> _bindRemoteAudioTrack(RTCTrackEvent event) async {
+    // Defensive: на iOS бывает, что удалённый трек приходит с enabled=false и
+    // звук молчит, пока его явно не включить.
+    try {
+      event.track.enabled = true;
+    } catch (_) {}
     if (event.streams.isNotEmpty) {
       await _handleRemoteStream(event.streams.first);
       return;
@@ -1024,6 +1048,11 @@ class VoiceCallService {
 
   Future<void> _handleRemoteStream(MediaStream stream) async {
     if (stream.getAudioTracks().isEmpty) return;
+    for (final track in stream.getAudioTracks()) {
+      try {
+        track.enabled = true;
+      } catch (_) {}
+    }
     _remoteStream = stream;
     _markConnected();
   }
@@ -1032,12 +1061,32 @@ class VoiceCallService {
     if (_snapshot.phase == VoiceCallPhase.connected) return;
     _webRtcMediaBroken = false;
     _cancelConnectingTimeout();
+    // К моменту onTrack/ICE-connected аудиосессия уже стоит в .playAndRecord
+    // (см. _prepareAudioSessionForCall). Перезапрашиваем спикер ещё раз: ранний
+    // вызов setSpeakerphoneOn из VoiceCallScreen.initState срабатывает на iOS
+    // только до конфигурации сессии и часто молча игнорируется.
+    unawaited(_reassertCallAudioOutput());
     _emit(
       _snapshot.copyWith(
         phase: VoiceCallPhase.connected,
         statusMessage: 'На связи',
       ),
     );
+  }
+
+  Future<void> _reassertCallAudioOutput() async {
+    if (kIsWeb) return;
+    try {
+      if (WebRTC.platformIsIOS) {
+        await Helper.setAppleAudioIOMode(
+          AppleAudioIOMode.localAndRemote,
+          preferSpeakerOutput: true,
+        );
+      }
+      await Helper.setSpeakerphoneOn(true);
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall reassert audio out: $e');
+    }
   }
 
   void _startConnectingTimeout() {
@@ -1080,6 +1129,11 @@ class VoiceCallService {
   Future<void> _addRemoteIceCandidate(RTCIceCandidate candidate) async {
     if (_pc == null) return;
     if (!_remoteDescriptionSet) {
+      // Defensive: на стороне клиента ограничиваем очередь, чтобы при гонке
+      // (поток ICE от peer до setRemoteDescription) не разрастаться без границ.
+      if (_pendingRemoteCandidates.length >= _maxPendingRemoteCandidates) {
+        _pendingRemoteCandidates.removeAt(0);
+      }
       _pendingRemoteCandidates.add(candidate);
       return;
     }
@@ -1194,7 +1248,9 @@ class VoiceCallService {
   }
 
   void _scheduleIdleReset() {
-    Future<void>.delayed(const Duration(seconds: 2), () {
+    _idleResetTimer?.cancel();
+    _idleResetTimer = Timer(const Duration(seconds: 2), () {
+      _idleResetTimer = null;
       if (_snapshot.phase == VoiceCallPhase.ended ||
           _snapshot.phase == VoiceCallPhase.failed) {
         _emit(const VoiceCallSnapshot(phase: VoiceCallPhase.idle));
