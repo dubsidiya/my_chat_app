@@ -9,6 +9,8 @@ FAST_MODE="${1:-}"
 echo "==> Flutter: pub get"
 cd "$ROOT_DIR"
 flutter pub get
+bash tool/check_ios_plugin_registrant.sh
+bash tool/apply_webrtc_patch.sh
 
 echo "==> Flutter: analyze"
 flutter analyze

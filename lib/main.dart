@@ -47,22 +47,135 @@ void main() {
   };
 
   // Обработка асинхронных ошибок
-  runZonedGuarded(() async {
+  runZonedGuarded(() {
     WidgetsFlutterBinding.ensureInitialized();
-    await initializeDateFormatting('ru');
-    await initializeDateFormatting('en_US');
-    await LocalMessagesService.init();
-    // Восстановим сохранённую тему до первого build, чтобы не было «вспышки»
-    // тёмной темы при выборе светлой.
-    await ThemeController.instance.loadFromStorage();
-    await PushNotificationService.init(navigatorKey);
-    runApp(const MyApp());
+    // runApp сразу — иначе на iOS виден белый LaunchScreen/Main.storyboard,
+    // пока в main() await-ятся Hive, Firebase и т.д.
+    runApp(const _BootstrapApp());
   }, (error, stack) {
     if (kDebugMode) {
       print('Uncaught error: $error');
       print('Stack trace: $stack');
     }
   });
+}
+
+/// Стартовая оболочка: показывает экран загрузки, пока идёт init в фоне.
+class _BootstrapApp extends StatefulWidget {
+  const _BootstrapApp();
+
+  @override
+  State<_BootstrapApp> createState() => _BootstrapAppState();
+}
+
+class _BootstrapAppState extends State<_BootstrapApp> {
+  late final Future<void> _initFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFuture = _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    try {
+      await initializeDateFormatting('ru').timeout(const Duration(seconds: 8));
+      await initializeDateFormatting('en_US').timeout(const Duration(seconds: 8));
+    } catch (e) {
+      if (kDebugMode) print('date formatting init: $e');
+    }
+    try {
+      await LocalMessagesService.init().timeout(const Duration(seconds: 10));
+    } catch (e) {
+      if (kDebugMode) print('LocalMessagesService.init: $e');
+    }
+    try {
+      await ThemeController.instance.loadFromStorage().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      if (kDebugMode) print('ThemeController.loadFromStorage: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _initFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: _StartupLoadingScreen(),
+          );
+        }
+        if (snapshot.hasError) {
+          return MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Ошибка запуска: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return const MyApp();
+      },
+    );
+  }
+}
+
+/// Экран до [MyApp]: тот же градиент, что и при проверке сессии.
+class _StartupLoadingScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final isLight = AppColors.isLight;
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isLight
+                ? [
+                    AppColors.backgroundDark,
+                    AppColors.cardDark,
+                    AppColors.accent.withValues(alpha: 0.45),
+                  ]
+                : [
+                    AppColors.backgroundDark,
+                    AppColors.surfaceDark,
+                    AppColors.primaryDeep,
+                  ],
+            stops: const [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Загрузка...',
+                style: TextStyle(
+                  color: AppColors.onSurfaceDark.withValues(alpha: 0.85),
+                  fontSize: 16,
+                  letterSpacing: 0.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -73,11 +186,45 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
+/// Проверка сессии при старте; не блокируем UI дольше [kStartupSessionTimeout].
+const Duration kStartupSessionTimeout = Duration(seconds: 12);
+
+Future<Map<String, dynamic>?> _resolveStartupSession() async {
+  final userData = await StorageService.getUserData();
+  if (userData == null || userData['token'] == null) return null;
+
+  bool? sessionState;
+  try {
+    sessionState = await AuthService().hasValidSession().timeout(
+      kStartupSessionTimeout,
+      onTimeout: () => null,
+    );
+  } catch (e) {
+    if (kDebugMode) print('startup session check: $e');
+    sessionState = null;
+  }
+
+  if (sessionState == false) {
+    await StorageService.clearUserData();
+    return null;
+  }
+
+  final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
+  return {'userData': userData, 'eulaAccepted': eulaAccepted};
+}
+
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  late final Future<Map<String, dynamic>?> _sessionFuture;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _sessionFuture = _resolveStartupSession();
+    unawaited(PushNotificationService.init(navigatorKey));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(PushNotificationService.requestPermissionIfNeeded());
+    });
   }
 
   @override
@@ -105,63 +252,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             title: 'Chat App',
             theme: theme,
             home: FutureBuilder<Map<String, dynamic>?>(
-              future: () async {
-                final userData = await StorageService.getUserData();
-                if (userData == null || userData['token'] == null) return null;
-                final sessionState = await AuthService().hasValidSession();
-                if (sessionState == false) {
-                  await StorageService.clearUserData();
-                  return null;
-                }
-                final eulaAccepted = await StorageService.getEulaAccepted(userData['id']!);
-                return {'userData': userData, 'eulaAccepted': eulaAccepted};
-              }(),
+              future: _sessionFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  final isLight = AppColors.isLight;
-                  return Scaffold(
-                    body: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: isLight
-                              ? [
-                                  AppColors.backgroundDark,
-                                  AppColors.cardDark,
-                                  AppColors.accent.withValues(alpha: 0.45),
-                                ]
-                              : [
-                                  AppColors.backgroundDark,
-                                  AppColors.surfaceDark,
-                                  AppColors.primaryDeep,
-                                ],
-                          stops: const [0.0, 0.5, 1.0],
-                        ),
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Загрузка...',
-                              style: TextStyle(
-                                color: AppColors.onSurfaceDark.withValues(alpha: 0.85),
-                                fontSize: 16,
-                                letterSpacing: 0.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
+                  return _StartupLoadingScreen();
                 }
 
                 final data = snapshot.data;

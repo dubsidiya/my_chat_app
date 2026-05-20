@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -29,6 +31,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(PushNotificationService.requestPermissionIfNeeded());
       PushNotificationService.sendTokenToBackendIfNeeded();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) async {

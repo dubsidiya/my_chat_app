@@ -10,13 +10,17 @@ enum StablePluginRegistrant {
     register(registry, pluginKey: "FLTFirebaseMessagingPlugin", classCandidates: ["FLTFirebaseMessagingPlugin", "firebase_messaging.FLTFirebaseMessagingPlugin"])
     register(registry, pluginKey: "FlutterLocalNotificationsPlugin", classCandidates: ["FlutterLocalNotificationsPlugin", "flutter_local_notifications.FlutterLocalNotificationsPlugin"])
     register(registry, pluginKey: "FlutterSecureStoragePlugin", classCandidates: ["FlutterSecureStoragePlugin", "flutter_secure_storage.FlutterSecureStoragePlugin"])
+    register(registry, pluginKey: "FlutterWebRTCPlugin", classCandidates: ["FlutterWebRTCPlugin", "flutter_webrtc.FlutterWebRTCPlugin"])
     register(registry, pluginKey: "JustAudioPlugin", classCandidates: ["JustAudioPlugin", "just_audio.JustAudioPlugin"])
     register(registry, pluginKey: "FPPPackageInfoPlusPlugin", classCandidates: ["FPPPackageInfoPlusPlugin", "package_info_plus.FPPPackageInfoPlusPlugin"])
     register(registry, pluginKey: "PathProviderPlugin", classCandidates: ["PathProviderPlugin", "path_provider_foundation.PathProviderPlugin"])
+    register(registry, pluginKey: "PermissionHandlerPlugin", classCandidates: ["PermissionHandlerPlugin", "permission_handler_apple.PermissionHandlerPlugin"])
     register(registry, pluginKey: "RecordIosPlugin", classCandidates: ["RecordIosPlugin", "record_ios.RecordIosPlugin"])
     register(registry, pluginKey: "SharedPreferencesPlugin", classCandidates: ["SharedPreferencesPlugin", "shared_preferences_foundation.SharedPreferencesPlugin"])
     register(registry, pluginKey: "SqflitePlugin", classCandidates: ["SqflitePlugin", "sqflite_darwin.SqflitePlugin"])
     register(registry, pluginKey: "URLLauncherPlugin", classCandidates: ["URLLauncherPlugin", "url_launcher_ios.URLLauncherPlugin"])
+    register(registry, pluginKey: "VideoPlayerPlugin", classCandidates: ["VideoPlayerPlugin", "video_player_avfoundation.VideoPlayerPlugin"])
+    register(registry, pluginKey: "VideoThumbnailPlugin", classCandidates: ["VideoThumbnailPlugin", "video_thumbnail.VideoThumbnailPlugin"])
   }
 
   private static func register(_ registry: FlutterPluginRegistry, pluginKey: String, classCandidates: [String]) {

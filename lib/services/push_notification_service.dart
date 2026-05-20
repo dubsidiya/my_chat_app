@@ -109,6 +109,31 @@ class PushNotificationService {
       sound: true,
     );
 
+    _initialized = true;
+    _attachMessagingHandlers(messaging);
+
+    // На iOS системный диалог push блокирует старт, если await-ить в main().
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return;
+    }
+
+    await _requestPermissionAndRegisterToken(messaging);
+  }
+
+  /// Запросить разрешение на уведомления после появления UI (не блокировать splash).
+  static Future<void> requestPermissionIfNeeded() async {
+    if (kIsWeb || !_initialized) return;
+    try {
+      await _requestPermissionAndRegisterToken(FirebaseMessaging.instance);
+    } catch (e) {
+      if (kDebugMode) print('PushNotificationService.requestPermissionIfNeeded: $e');
+    }
+  }
+
+  static Future<void> _requestPermissionAndRegisterToken(
+    FirebaseMessaging messaging,
+  ) async {
     final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
@@ -118,8 +143,6 @@ class PushNotificationService {
       if (kDebugMode) print('PushNotificationService: permission denied');
       return;
     }
-
-    _initialized = true;
 
     // Токен для отправки на бэкенд
     messaging.getToken().then((token) {
@@ -131,14 +154,14 @@ class PushNotificationService {
     }).catchError((e) {
       if (kDebugMode) print('PushNotificationService: getToken error: $e');
     });
+  }
 
-    // Обновление токена
+  static void _attachMessagingHandlers(FirebaseMessaging messaging) {
     messaging.onTokenRefresh.listen((token) {
       _fcmToken = token;
       sendTokenToBackendIfNeeded();
     });
 
-    // Уведомление открыто из фона/закрытого состояния
     FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
       if (message != null) _handleOpenFromNotification(message.data);
     });
@@ -147,7 +170,6 @@ class PushNotificationService {
       _handleOpenFromNotification(message.data);
     });
 
-    // Сообщение при открытом приложении — показываем локальное уведомление (если не в этом чате)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       final data = message.data;
       if (_isIncomingCallData(data)) {
@@ -155,12 +177,11 @@ class PushNotificationService {
         return;
       }
       if (_currentChatId != null && data['chatId']?.toString() == _currentChatId) {
-        return; // уже в этом чате — не показываем
+        return;
       }
       final notification = message.notification;
       final title = notification?.title ?? 'Новое сообщение';
       final body = notification?.body ?? 'Сообщение в чате';
-      // iOS/macOS: setForegroundNotificationPresentationOptions уже показывает баннер из FCM payload.
       if (_shouldSkipLocalForegroundMessageNotification(message)) {
         return;
       }

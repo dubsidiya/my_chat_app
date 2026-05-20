@@ -16,6 +16,7 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		9B1C2D3E4F5061728394A5B6 /* StablePluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B1C2D3E4F5061728394A5B5 /* StablePluginRegistrant.swift */; };
+		R3D7C3H4N5E60718293A4B5D /* ReollityDeviceChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = R3D7C3H4N5E60718293A4B5E /* ReollityDeviceChannel.swift */; };
 		C2D7A91E3B4C4C3B8A1F2D3E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B7B3F1A8C0D14B59A9E5F0A1 /* PrivacyInfo.xcprivacy */; };
 		G5F1A2B3C4D5E6F7012345679 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = G5F1A2B3C4D5E6F7012345678 /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
@@ -71,6 +72,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9B1C2D3E4F5061728394A5B5 /* StablePluginRegistrant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StablePluginRegistrant.swift; sourceTree = "<group>"; };
+		R3D7C3H4N5E60718293A4B5E /* ReollityDeviceChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReollityDeviceChannel.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C /* Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Profile.xcconfig; path = Flutter/Profile.xcconfig; sourceTree = "<group>"; };
 		B580BD82EC5F3212CA738949 /* libPods-RunnerTests.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-RunnerTests.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B65E5B5A6B3A0E106E138319 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				9B1C2D3E4F5061728394A5B5 /* StablePluginRegistrant.swift */,
+				R3D7C3H4N5E60718293A4B5E /* ReollityDeviceChannel.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -433,6 +436,7 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				9B1C2D3E4F5061728394A5B6 /* StablePluginRegistrant.swift in Sources */,
+				R3D7C3H4N5E60718293A4B5D /* ReollityDeviceChannel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

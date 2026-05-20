@@ -9,6 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../config/api_config.dart';
 import '../config/webrtc_config.dart';
 import '../utils/microphone_permission.dart';
+import '../utils/webrtc_device_support.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import 'websocket_service.dart';
@@ -135,6 +136,10 @@ class VoiceCallService {
         _emitFailed('Голосовые звонки пока только в мобильном приложении');
         return false;
       }
+      if (await WebRtcDeviceSupport.isUnsupportedSimulator()) {
+        _emitFailed(WebRtcDeviceSupport.unsupportedSimulatorMessage);
+        return false;
+      }
       if (_snapshot.isActive) {
         _emitFailed('Звонок уже идёт');
         return false;
@@ -241,6 +246,11 @@ class VoiceCallService {
     // Ловим всё локально и переводим звонок в failed с понятным текстом.
     try {
       if (_snapshot.phase != VoiceCallPhase.incoming) return;
+      if (await WebRtcDeviceSupport.isUnsupportedSimulator()) {
+        _emitFailed(WebRtcDeviceSupport.unsupportedSimulatorMessage);
+        await rejectIncoming(reason: 'media_error');
+        return;
+      }
       final callId = _snapshot.callId;
       final chatId = _snapshot.chatId;
       if (callId == null || chatId == null) return;
@@ -841,6 +851,12 @@ class VoiceCallService {
     if (pc == null) return;
     try {
       await pc.dispose();
+      // iOS: дать нативному слою сбросить eventSink до следующего createPeerConnection.
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.android)) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
     } catch (e) {
       if (kDebugMode) print('VoiceCall dispose PC: $e');
     }
@@ -916,8 +932,12 @@ class VoiceCallService {
             );
           }
           await _disposePeerConnectionSafe(pc);
-          // Let the plugin drop the observer (patched on Android).
-          await Future<void>.delayed(const Duration(milliseconds: 50));
+          // Пауза после dispose: нативные колбэки ICE/signaling (см. patch postEvent iOS).
+          if (!kIsWeb &&
+              (defaultTargetPlatform == TargetPlatform.android ||
+                  defaultTargetPlatform == TargetPlatform.iOS)) {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+          }
           lastError = StateError('native PeerConnection null');
           continue;
         }
