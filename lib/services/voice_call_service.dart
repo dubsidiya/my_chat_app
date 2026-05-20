@@ -149,6 +149,13 @@ class VoiceCallService {
         return false;
       }
 
+      // Заранее проверяем, что нативный flutter_webrtc вообще доступен.
+      // Если на iOS release сломан pod install — здесь же отдадим понятное
+      // сообщение, а не упадём на середине offer/answer когда peer уже принял.
+      if (!await _ensureWebRtcReady()) {
+        return false;
+      }
+
       if (!await _ensureSignalingConnected()) {
         _emitFailed('Нет соединения с сервером. Проверьте интернет.');
         return false;
@@ -243,6 +250,13 @@ class VoiceCallService {
         return;
       }
 
+      // Тот же ранний контракт, что и в startOutgoingCall: если flutter_webrtc
+      // не зарегистрирован, peer не должен узнать о принятии звонка.
+      if (!await _ensureWebRtcReady()) {
+        await rejectIncoming(reason: 'media_error');
+        return;
+      }
+
       _emit(
         _snapshot.copyWith(
           phase: VoiceCallPhase.connecting,
@@ -317,6 +331,28 @@ class VoiceCallService {
       ),
     );
     _scheduleIdleReset();
+  }
+
+  /// Завершить активный звонок изнутри (медиа-ошибка, ICE failed, timeout),
+  /// сохранив детальный [message] в snapshot.statusMessage.
+  ///
+  /// Чистый [hangUp] поверх любого failed-сообщения затирает текст на "Завершён";
+  /// в катчах внутренних путей это убивало диагностику ("вызов завершён" вместо
+  /// "Не удалось запустить аудио для звонка: …"). Этот хелпер сначала шлёт
+  /// call_hangup peer-у пока snapshot ещё активен, потом эмитит failed с
+  /// сохранением деталей.
+  Future<void> _finalizeFailedCall(String message) async {
+    final callId = _snapshot.callId;
+    final chatId = _snapshot.chatId;
+    if (callId != null && chatId != null && _snapshot.isActive) {
+      _sendSignal({
+        'type': 'call_hangup',
+        'call_id': callId,
+        'chat_id': chatId,
+      });
+    }
+    _emitFailed(message);
+    await _tearDownMedia();
   }
 
   Future<void> toggleMute() async {
@@ -474,13 +510,19 @@ class VoiceCallService {
     _startConnectingTimeout();
     try {
       await _createAndSendOffer();
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall offer error: $e');
-      final msg = _webRtcMediaBroken
-          ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
-          : 'Не удалось установить соединение';
-      _emitFailed(msg);
-      unawaited(hangUp());
+    } catch (e, st) {
+      if (kDebugMode) print('VoiceCall offer error: $e\n$st');
+      // Под-вызов мог уже сам позвать _finalizeFailedCall с детальным
+      // сообщением — не затираем его generic-текстом.
+      final alreadyFailed = _snapshot.phase == VoiceCallPhase.failed ||
+          _snapshot.phase == VoiceCallPhase.ended ||
+          _snapshot.phase == VoiceCallPhase.idle;
+      if (!alreadyFailed) {
+        final msg = _webRtcMediaBroken
+            ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
+            : 'Не удалось установить соединение: ${_shortError(e)}';
+        unawaited(_finalizeFailedCall(msg));
+      }
     }
   }
 
@@ -560,10 +602,16 @@ class VoiceCallService {
       _startConnectingTimeout();
 
       await _createAndSendAnswer(desc);
-    } catch (e) {
-      if (kDebugMode) print('VoiceCall answer error: $e');
-      _emitFailed('Ошибка согласования медиа');
-      unawaited(hangUp());
+    } catch (e, st) {
+      if (kDebugMode) print('VoiceCall answer error: $e\n$st');
+      final alreadyFailed = _snapshot.phase == VoiceCallPhase.failed ||
+          _snapshot.phase == VoiceCallPhase.ended ||
+          _snapshot.phase == VoiceCallPhase.idle;
+      if (!alreadyFailed) {
+        unawaited(
+          _finalizeFailedCall('Ошибка согласования медиа: ${_shortError(e)}'),
+        );
+      }
     }
   }
 
@@ -670,6 +718,26 @@ class VoiceCallService {
     _webRtcInitialized = true;
   }
 
+  /// Ранний sanity-check на доступность flutter_webrtc. На iOS release часто
+  /// прилетает MissingPluginException, если pod-ы не подтянулись (та же
+  /// причина, что у permission_handler). Хотим узнать до отправки сигнала, а
+  /// не на половине offer/answer-handshake, когда peer уже думает «приняли».
+  Future<bool> _ensureWebRtcReady() async {
+    if (kIsWeb) return true;
+    try {
+      await _ensureWebRtcInitialized();
+      return true;
+    } catch (e, st) {
+      if (kDebugMode) print('VoiceCall WebRTC not ready: $e\n$st');
+      _emitFailed(
+        'WebRTC недоступен в этой сборке. '
+        'Пересоберите приложение из чистого состояния (pod install). '
+        'Детали: ${_shortError(e)}',
+      );
+      return false;
+    }
+  }
+
   Future<bool> _ensureLocalAudioStream() async {
     if (_webRtcMediaBroken) {
       _emitFailed(
@@ -729,16 +797,12 @@ class VoiceCallService {
       final notAllowed = err.contains('notallowed') ||
           err.contains('permission') ||
           err.contains('denied');
-      _emitFailed(
-        _webRtcMediaBroken
-            ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
-            : notAllowed
-                ? 'Нет доступа к микрофону'
-                : 'Не удалось запустить аудио для звонка',
-      );
-      if (_snapshot.isActive) {
-        unawaited(hangUp());
-      }
+      final msg = _webRtcMediaBroken
+          ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
+          : notAllowed
+              ? 'Нет доступа к микрофону'
+              : 'Не удалось запустить аудио: ${_shortError(e)}';
+      await _finalizeFailedCall(msg);
       return false;
     }
   }
@@ -900,12 +964,11 @@ class VoiceCallService {
           state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
         _markConnected();
       } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
-        _emitFailed(
+        unawaited(_finalizeFailedCall(
           _hasTurnServer
               ? 'Не удалось установить медиа-соединение (ICE)'
               : 'Не удалось соединиться. Нужен TURN на сервере (см. docs/VOICE_CALLS_COTURN.md)',
-        );
-        unawaited(hangUp());
+        ));
       }
     };
 
@@ -914,8 +977,7 @@ class VoiceCallService {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _markConnected();
       } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        _emitFailed('Соединение потеряно');
-        unawaited(hangUp());
+        unawaited(_finalizeFailedCall('Соединение потеряно'));
       }
     };
 
@@ -1108,14 +1170,13 @@ class VoiceCallService {
     _connectingTimer?.cancel();
     _connectingTimer = Timer(const Duration(seconds: 35), () {
       if (_snapshot.phase != VoiceCallPhase.connecting) return;
-      _emitFailed(
+      unawaited(_finalizeFailedCall(
         _hasTurnServer
             ? 'Не удалось соединиться за 35 с. Проверьте интернет и повторите.'
             : 'Не удалось соединиться. На сервере не настроен TURN — '
                 'эмулятор и телефон в разных сетях без него не соединятся. '
                 'См. docs/VOICE_CALLS_COTURN.md',
-      );
-      unawaited(hangUp());
+      ));
     });
   }
 
@@ -1203,8 +1264,7 @@ class VoiceCallService {
     _outgoingTimer?.cancel();
     _outgoingTimer = Timer(const Duration(seconds: 60), () {
       if (_snapshot.phase != VoiceCallPhase.outgoing) return;
-      _emitFailed('Нет ответа');
-      unawaited(hangUp());
+      unawaited(_finalizeFailedCall('Нет ответа'));
     });
   }
 
