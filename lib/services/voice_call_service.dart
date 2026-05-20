@@ -228,28 +228,43 @@ class VoiceCallService {
   }
 
   Future<void> acceptIncoming() async {
-    if (_snapshot.phase != VoiceCallPhase.incoming) return;
-    final callId = _snapshot.callId;
-    final chatId = _snapshot.chatId;
-    if (callId == null || chatId == null) return;
+    // Кнопка «Принять» в UI вызывает acceptIncoming через `unawaited(...)`,
+    // т.е. любая внезапная ошибка (MissingPluginException, ошибка mic и т.д.)
+    // молча терялась — пользователь видел, что «Принять» ничего не делает.
+    // Ловим всё локально и переводим звонок в failed с понятным текстом.
+    try {
+      if (_snapshot.phase != VoiceCallPhase.incoming) return;
+      final callId = _snapshot.callId;
+      final chatId = _snapshot.chatId;
+      if (callId == null || chatId == null) return;
 
-    if (!await _ensureMicrophonePermission()) {
-      await rejectIncoming(reason: 'no_mic');
-      return;
+      if (!await _ensureMicrophonePermission()) {
+        await rejectIncoming(reason: 'no_mic');
+        return;
+      }
+
+      _emit(
+        _snapshot.copyWith(
+          phase: VoiceCallPhase.connecting,
+          statusMessage: _connectingStatusHint(),
+        ),
+      );
+      _startConnectingTimeout();
+      final sent = _sendSignal({
+        'type': 'call_accept',
+        'call_id': callId,
+        'chat_id': chatId,
+      });
+      if (!sent) {
+        _cancelConnectingTimeout();
+        _emitFailed('Нет соединения с сервером. Проверьте интернет.');
+      }
+    } catch (e, st) {
+      if (kDebugMode) print('VoiceCall acceptIncoming: $e\n$st');
+      _cancelConnectingTimeout();
+      await _tearDownMedia();
+      _emitFailed('Не удалось принять звонок: ${_shortError(e)}');
     }
-
-    _emit(
-      _snapshot.copyWith(
-        phase: VoiceCallPhase.connecting,
-        statusMessage: _connectingStatusHint(),
-      ),
-    );
-    _startConnectingTimeout();
-    _sendSignal({
-      'type': 'call_accept',
-      'call_id': callId,
-      'chat_id': chatId,
-    });
   }
 
   Future<void> rejectIncoming({String reason = 'declined'}) async {
