@@ -1,22 +1,10 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, getMe, getWebSocketToken, refreshSession, logout, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, unlockPrivateAccess, saveFcmToken } from '../controllers/auth/index.js';
+import { register, login, getMe, getWebSocketToken, refreshSession, logout, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, saveFcmToken } from '../controllers/auth/index.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage } from '../utils/uploadImage.js';
 
 const router = express.Router();
-
-// Rate limiting для эндпоинта ввода приватного кода (анти-брутфорс)
-const unlockLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
-  max: 10, // до 10 попыток
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Слишком много попыток, попробуйте позже' },
-  keyGenerator: (req) => {
-    return req.user?.userId?.toString() || req.ip;
-  },
-});
 
 // Лимит на сохранение FCM-токена (защита от спама)
 const fcmTokenLimiter = rateLimit({
@@ -70,7 +58,6 @@ router.get('/users', authenticateToken, getUsersLimiter, getAllUsers); // GET /a
 router.get('/users/:userId', authenticateToken, getUserByIdLimiter, getUserById); // GET /auth/users/:userId - профиль пользователя
 router.delete('/user/:userId', authenticateToken, sensitiveActionLimiter, deleteAccount); // DELETE /auth/user/:userId
 router.put('/user/:userId/password', authenticateToken, sensitiveActionLimiter, changePassword); // PUT /auth/user/:userId/password
-router.post('/unlock-private', authenticateToken, unlockLimiter, unlockPrivateAccess); // POST /auth/unlock-private - получить токен с privateAccess=true
 router.post('/fcm-token', authenticateToken, fcmTokenLimiter, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
 router.post('/logout', authenticateToken, logout); // POST /auth/logout - отзыв refresh-сессий
 

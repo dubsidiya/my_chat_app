@@ -11,7 +11,6 @@ export {
   refreshSession,
   register,
   saveFcmToken,
-  unlockPrivateAccess,
   updateProfile,
   uploadAvatar,
 } from '../authController.js';
