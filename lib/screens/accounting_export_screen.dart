@@ -171,6 +171,24 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     return false;
   }
 
+  bool _countsAsPeriodDebt(Map<String, dynamic> l) {
+    if (_isNonBillableLesson(l)) return false;
+    return l['isPaid'] != true;
+  }
+
+  double _periodDebtSum(Iterable<Map<String, dynamic>> lessons) {
+    var sum = 0.0;
+    for (final l in lessons) {
+      if (!_countsAsPeriodDebt(l)) continue;
+      sum += _asDouble(l['unpaidAmount']);
+    }
+    return sum;
+  }
+
+  int _periodDebtCount(Iterable<Map<String, dynamic>> lessons) {
+    return lessons.where(_countsAsPeriodDebt).length;
+  }
+
   Widget _lessonTile(Map<String, dynamic> l) {
     final scheme = Theme.of(context).colorScheme;
     final date = (l['lessonDate'] ?? '').toString();
@@ -862,11 +880,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                       double unpaidSum = 0;
                       for (final s in students) {
                         final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-                        for (final l in lessons) {
-                          if (l['isPaid'] == true) continue;
-                          unpaidCount += 1;
-                          unpaidSum += _asDouble(l['unpaidAmount']);
-                        }
+                        unpaidCount += _periodDebtCount(lessons);
+                        unpaidSum += _periodDebtSum(lessons);
                       }
 
                       return ExpansionTile(
@@ -886,11 +901,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                             final studentId = _parseStudentId(s['studentId']);
                             final isBankTransferStudent = studentId != null && bankTransferStudentIds.contains(studentId);
                             final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-                            final unpaidCount = lessons.where((x) => x['isPaid'] != true).length;
-                            final unpaidSum = lessons.fold<double>(
-                              0,
-                              (acc, x) => acc + _asDouble(x['unpaidAmount']),
-                            );
+                            final unpaidCount = _periodDebtCount(lessons);
+                            final unpaidSum = _periodDebtSum(lessons);
                             final overallDebt = _asDouble(s['overallDebtAsOfTo']);
                             final overallPrepaid = _asDouble(s['overallPrepaidAsOfTo']);
                             return ExpansionTile(

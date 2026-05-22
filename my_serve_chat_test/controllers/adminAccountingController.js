@@ -4,6 +4,8 @@ import { closedOriginLessonIds } from '../utils/makeupDebts.js';
 import {
   buildAccountingExport,
   queryAccountingTransactions,
+  isLessonChargeable,
+  defaultLessonCoverage,
 } from '../services/accounting/buildAccountingExport.js';
 import { buildAccountingWorkbookBuffer } from '../services/accounting/buildAccountingWorkbook.js';
 
@@ -202,6 +204,10 @@ export const exportAccounting = async (req, res) => {
       let debt = 0;
 
       for (const lesson of lessons) {
+        if (!isLessonChargeable(lesson)) {
+          coverageByLessonId.set(lesson.id, { paid: 0, unpaid: 0 });
+          continue;
+        }
         const price = toNumber(lesson.price);
         const paid = Math.max(0, Math.min(credit, price));
         const unpaid = Math.max(0, price - paid);
@@ -241,7 +247,7 @@ export const exportAccounting = async (req, res) => {
       let unallocated = remainingUnallocatedCreditByStudent.get(sid) || 0;
       if (unallocated <= 0) continue;
       for (const lesson of lessons) {
-        const cov = coverageByLessonId.get(lesson.id) || { paid: 0, unpaid: toNumber(lesson.price) };
+        const cov = coverageByLessonId.get(lesson.id) ?? defaultLessonCoverage(lesson);
         if (cov.unpaid <= 0) continue;
         const paidExtra = Math.max(0, Math.min(unallocated, cov.unpaid));
         if (paidExtra <= 0) continue;
@@ -269,7 +275,7 @@ export const exportAccounting = async (req, res) => {
       let debt = 0;
       const lessons = lessonsByStudent.get(sid) || [];
       for (const lesson of lessons) {
-        const cov = coverageByLessonId.get(lesson.id) || { paid: 0, unpaid: toNumber(lesson.price) };
+        const cov = coverageByLessonId.get(lesson.id) ?? defaultLessonCoverage(lesson);
         debt += cov.unpaid;
       }
       debtByStudent.set(sid, debt);
@@ -283,7 +289,7 @@ export const exportAccounting = async (req, res) => {
       const d = toIsoDate(l.lesson_date);
       if (d < from || d > to) continue;
       if (bankTransferOnly && !studentIdsBankTransfer.has(l.student_id)) continue;
-      const cov = coverageByLessonId.get(l.id) || { paid: 0, unpaid: toNumber(l.price) };
+      const cov = coverageByLessonId.get(l.id) ?? defaultLessonCoverage(l);
       const st = studentById.get(l.student_id);
       const row = {
         lessonId: l.id,
