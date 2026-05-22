@@ -681,13 +681,14 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text(
-                                    '${lesson.price.toStringAsFixed(0)} ₽',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                  if (lesson.isChargeable)
+                                    Text(
+                                      '${lesson.price.toStringAsFixed(0)} ₽',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 2),
+                                  if (lesson.isChargeable) const SizedBox(height: 2),
                                   IconButton(
                                     icon: const Icon(Icons.delete, color: Colors.red),
                                     onPressed: () => _deleteLesson(lesson),

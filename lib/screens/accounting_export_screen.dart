@@ -164,6 +164,13 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     );
   }
 
+  bool _isNonBillableLesson(Map<String, dynamic> l) {
+    final status = (l['status'] ?? 'attended').toString();
+    if (status == 'missed') return true;
+    if (status == 'cancel_same_day' && l['isChargeable'] != true) return true;
+    return false;
+  }
+
   Widget _lessonTile(Map<String, dynamic> l) {
     final scheme = Theme.of(context).colorScheme;
     final date = (l['lessonDate'] ?? '').toString();
@@ -172,8 +179,16 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final paid = _money0(l['paidAmount']);
     final unpaid = _money0(l['unpaidAmount']);
     final isPaid = l['isPaid'] == true;
-    final color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
-    final bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
+    final isNonBillable = _isNonBillableLesson(l);
+    final Color color;
+    final Color bg;
+    if (isNonBillable) {
+      color = Colors.grey.shade600;
+      bg = Colors.grey.withAlpha(16);
+    } else {
+      color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
+      bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
+    }
     final status = (l['status'] ?? 'attended').toString();
     final originLessonDate = (l['originLessonDate'] ?? '').toString();
     String statusLabel;
@@ -217,11 +232,13 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                   [date, if (time.isNotEmpty) time].join(' '),
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
-                  style: TextStyle(color: scheme.onSurface.withValues(alpha:0.75)),
-                ),
+                if (!isNonBillable) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
+                    style: TextStyle(color: scheme.onSurface.withValues(alpha:0.75)),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   status == 'makeup' && originLessonDate.isNotEmpty
@@ -244,7 +261,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              isPaid ? 'Оплачено' : 'Долг',
+              isNonBillable ? 'Без оплаты' : (isPaid ? 'Оплачено' : 'Долг'),
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
             ),
           ),
