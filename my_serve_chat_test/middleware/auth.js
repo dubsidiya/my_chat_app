@@ -115,9 +115,10 @@ export const generateWebSocketToken = (userId, username, tokenVersion = 0) => {
   );
 };
 
-// Middleware: доступ только к приватным разделам
+// Middleware: доступ к приватным разделам (отчёты, учёт занятий и т.д.)
+// Суперпользователь проходит всегда — env SUPERUSER_* даёт полный доступ.
 export const requirePrivateAccess = (req, res, next) => {
-  if (req.user?.privateAccess === true) {
+  if (req.user?.privateAccess === true || isSuperuser(req.user)) {
     return next();
   }
   return res.status(403).json({ message: 'Требуется приватный доступ' });
