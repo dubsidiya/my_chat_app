@@ -286,7 +286,7 @@ export const login = async (req, res) => {
     const isPasswordHashed = user.password && user.password.startsWith('$2');
     
     let passwordMatch = false;
-    
+    //
     if (isPasswordHashed) {
       // Пароль уже хеширован - используем bcrypt.compare
       passwordMatch = await bcrypt.compare(password, user.password);
