@@ -347,6 +347,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     setState(() {
       final s = _slots.removeAt(index);
       s.dispose();
+      if (_slots.isEmpty) {
+        _slots.add(_SlotDraft());
+      }
     });
   }
 
@@ -473,9 +476,15 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         return null;
       }
 
-      if (slot.studentIds[0] == null) {
+      if (!slot.studentIds.any((id) => id != null)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: выберите ученика 1'), backgroundColor: Colors.orange),
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(
+              'Слот ${i + 1}: выберите хотя бы одного ученика или удалите занятие',
+            ),
+            backgroundColor: Colors.orange,
+          ),
         );
         return null;
       }
@@ -662,12 +671,11 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                                   style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
-                              if (_slots.length > 1)
-                                IconButton(
-                                  onPressed: _isLoading ? null : () => _removeSlot(index),
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  tooltip: 'Удалить',
-                                ),
+                              IconButton(
+                                onPressed: _isLoading ? null : () => _removeSlot(index),
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                tooltip: 'Удалить',
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -715,11 +723,11 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                             if (childIndex > 0) const SizedBox(height: 10),
                             _StudentPickerRow(
                               label: childIndex == 0
-                                  ? 'Ребёнок 1 *'
+                                  ? 'Ребёнок 1'
                                   : 'Ребёнок ${childIndex + 1} (опционально)',
                               students: _students,
                               value: slot.studentIds[childIndex],
-                              allowEmpty: childIndex > 0,
+                              allowEmpty: true,
                               onChanged: (v) async {
                                 setState(() {
                                   slot.studentIds[childIndex] = v;
