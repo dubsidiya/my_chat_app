@@ -5,7 +5,7 @@
   "packages": [
     {
       "name": "my_chat_app",
-      "version": "1.0.0+1",
+      "version": "1.0.0+2",
       "dependencies": [
         "cached_network_image",
         "cryptography",
@@ -96,11 +96,12 @@
     },
     {
       "name": "flutter_webrtc",
-      "version": "0.12.12+hotfix.1",
+      "version": "1.4.1",
       "dependencies": [
         "collection",
         "dart_webrtc",
         "flutter",
+        "logger",
         "path_provider",
         "web",
         "webrtc_interface"
@@ -581,6 +582,14 @@
       "name": "webrtc_interface",
       "version": "1.5.1",
       "dependencies": []
+    },
+    {
+      "name": "logger",
+      "version": "2.7.0",
+      "dependencies": [
+        "clock",
+        "meta"
+      ]
     },
     {
       "name": "dart_webrtc",

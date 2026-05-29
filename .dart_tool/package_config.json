@@ -327,7 +327,7 @@
     },
     {
       "name": "flutter_webrtc",
-      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/flutter_webrtc-0.12.12+hotfix.1",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.1",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
@@ -474,6 +474,12 @@
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/lints-2.1.1",
       "packageUri": "lib/",
       "languageVersion": "3.0"
+    },
+    {
+      "name": "logger",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/logger-2.7.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.17"
     },
     {
       "name": "logging",
