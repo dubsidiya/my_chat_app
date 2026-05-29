@@ -6,6 +6,7 @@ import '../models/link_preview.dart';
 import '../models/message.dart';
 import '../services/link_preview_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 import '../utils/file_name_display.dart';
 import 'e2ee_image.dart';
 import 'link_preview_card.dart';
@@ -17,6 +18,13 @@ class ChatMessageTile extends StatelessWidget {
   final Message msg;
   final bool isMine;
   final bool isHighlighted;
+
+  /// Группировка подряд идущих сообщений одного автора (стиль Telegram):
+  /// имя/аватар показываются только на краях группы, а отступы внутри группы
+  /// меньше, чтобы лента не выглядела «кирпичами».
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
+
   final ColorScheme scheme;
   final Color accent1;
   final Color accent2;
@@ -46,6 +54,8 @@ class ChatMessageTile extends StatelessWidget {
     required this.msg,
     required this.isMine,
     required this.isHighlighted,
+    this.isFirstInGroup = true,
+    this.isLastInGroup = true,
     required this.scheme,
     required this.accent1,
     required this.accent2,
@@ -71,12 +81,24 @@ class ChatMessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Скругления с учётом группировки: «хвост» — только у последнего пузыря
+    // группы, внутренние стыки — слегка скруглены, внешняя сторона — полная.
+    const fullR = Radius.circular(AppRadius.lg);
+    const smallR = Radius.circular(AppRadius.xs);
+    const tailR = Radius.circular(6);
+    final tailTop = isFirstInGroup ? fullR : smallR;
+    final tailBottom = isLastInGroup ? tailR : smallR;
     return RepaintBoundary(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        margin: EdgeInsets.only(
+          left: 8,
+          right: 8,
+          top: isFirstInGroup ? 8 : 2,
+          bottom: isLastInGroup ? 8 : 2,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: isHighlighted ? accent1.withValues(alpha: 0.08) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -86,35 +108,38 @@ class ChatMessageTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isMine) ...[
-              GestureDetector(
-                onTap: onOpenSenderProfile,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    gradient: (msg.senderAvatarUrl == null || msg.senderAvatarUrl!.trim().isEmpty)
-                        ? LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [accent3, accent2],
-                          )
-                        : null,
-                    shape: BoxShape.circle,
+              if (isLastInGroup)
+                GestureDetector(
+                  onTap: onOpenSenderProfile,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      gradient: (msg.senderAvatarUrl == null || msg.senderAvatarUrl!.trim().isEmpty)
+                          ? LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [accent3, accent2],
+                            )
+                          : null,
+                      shape: BoxShape.circle,
+                    ),
+                    child: ClipOval(
+                      child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
+                          ? CachedNetworkImage(
+                              imageUrl: msg.senderAvatarUrl!,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => otherAvatarPlaceholder,
+                              errorWidget: (_, __, ___) => otherAvatarPlaceholder,
+                            )
+                          : otherAvatarPlaceholder,
+                    ),
                   ),
-                  child: ClipOval(
-                    child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
-                        ? CachedNetworkImage(
-                            imageUrl: msg.senderAvatarUrl!,
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => otherAvatarPlaceholder,
-                            errorWidget: (_, __, ___) => otherAvatarPlaceholder,
-                          )
-                        : otherAvatarPlaceholder,
-                  ),
-                ),
-              ),
+                )
+              else
+                const SizedBox(width: 32),
               const SizedBox(width: 8),
             ],
             Flexible(
@@ -133,12 +158,29 @@ class ChatMessageTile extends StatelessWidget {
                         : null,
                     color: isMine ? null : AppColors.cardElevatedDark,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(18),
-                      topRight: const Radius.circular(18),
-                      bottomLeft: Radius.circular(isMine ? 18 : 6),
-                      bottomRight: Radius.circular(isMine ? 6 : 18),
+                      topLeft: isMine ? fullR : tailTop,
+                      topRight: isMine ? tailTop : fullR,
+                      bottomLeft: isMine ? fullR : tailBottom,
+                      bottomRight: isMine ? tailBottom : fullR,
                     ),
-                    border: isMine ? null : Border.all(color: scheme.outline.withValues(alpha: 0.15), width: 1),
+                    border: Border.all(
+                      color: isMine
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : scheme.outline.withValues(alpha: 0.18),
+                      width: 1,
+                    ),
+                    // Лёгкое неоновое свечение только под своими пузырями —
+                    // дозированный «кибер»-акцент, не перегружающий список.
+                    boxShadow: isMine
+                        ? [
+                            BoxShadow(
+                              color: accent2.withValues(alpha: 0.30),
+                              blurRadius: 18,
+                              spreadRadius: -6,
+                              offset: const Offset(0, 6),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,14 +188,14 @@ class ChatMessageTile extends StatelessWidget {
                       if (msg.isPinned) ...[
                         Row(
                           children: [
-                            Icon(Icons.push_pin, size: 14, color: isMine ? Colors.white70 : Colors.amber.shade700),
+                            Icon(Icons.push_pin, size: 14, color: isMine ? Colors.white70 : AppColors.warningDark),
                             const SizedBox(width: 4),
                             Text(
                               'Закреплено',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontStyle: FontStyle.italic,
-                                color: isMine ? Colors.white70 : Colors.amber.shade700,
+                                color: isMine ? Colors.white70 : AppColors.warningDark,
                               ),
                             ),
                           ],
@@ -228,7 +270,7 @@ class ChatMessageTile extends StatelessWidget {
                           ),
                         ),
                       ],
-                      if (!isMine) ...[
+                      if (!isMine && isFirstInGroup) ...[
                         GestureDetector(
                           onTap: onOpenSenderProfile,
                           child: Text(
@@ -490,10 +532,16 @@ class ChatMessageTile extends StatelessWidget {
                             return GestureDetector(
                               onTap: onShowReactionPicker,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: isMine ? Colors.white.withValues(alpha: 0.2) : AppColors.primary.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: isMine ? Colors.white.withValues(alpha: 0.2) : AppColors.primary.withValues(alpha: 0.18),
+                                  borderRadius: AppRadius.pillAll,
+                                  border: Border.all(
+                                    color: isMine
+                                        ? Colors.white.withValues(alpha: 0.28)
+                                        : AppColors.primaryGlow.withValues(alpha: 0.30),
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -546,23 +594,26 @@ class ChatMessageTile extends StatelessWidget {
             ),
             if (isMine) ...[
               const SizedBox(width: 8),
-              Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(shape: BoxShape.circle),
-                child: ClipOval(
-                  child: myAvatarUrl != null && myAvatarUrl!.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: myAvatarUrl!,
-                          fit: BoxFit.cover,
-                          width: 32,
-                          height: 32,
-                          placeholder: (_, __) => myAvatarPlaceholder,
-                          errorWidget: (_, __, ___) => myAvatarPlaceholder,
-                        )
-                      : myAvatarPlaceholder,
-                ),
-              ),
+              if (isLastInGroup)
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(shape: BoxShape.circle),
+                  child: ClipOval(
+                    child: myAvatarUrl != null && myAvatarUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: myAvatarUrl!,
+                            fit: BoxFit.cover,
+                            width: 32,
+                            height: 32,
+                            placeholder: (_, __) => myAvatarPlaceholder,
+                            errorWidget: (_, __, ___) => myAvatarPlaceholder,
+                          )
+                        : myAvatarPlaceholder,
+                  ),
+                )
+              else
+                const SizedBox(width: 32),
             ],
           ],
         ),

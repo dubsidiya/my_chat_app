@@ -24,6 +24,14 @@ class _AppPalette {
   final Color accent;
   final Color primaryDeep;
 
+  // Кибер-акцент (неоновый бирюзовый) — вторичный цвет дуотон-схемы
+  // «ультрафиолет + неон». Используется дозировано: фокус полей, статус online,
+  // подсветка отправки. Даёт ~20% «киберпанк»-настроения поверх готики.
+  final Color cyberAccent;
+
+  // Индикатор присутствия (online).
+  final Color onlineColor;
+
   // Текст
   final Color onSurfaceDark;
   final Color onSurfaceVariantDark;
@@ -49,6 +57,8 @@ class _AppPalette {
     required this.primaryGlow,
     required this.accent,
     required this.primaryDeep,
+    required this.cyberAccent,
+    required this.onlineColor,
     required this.onSurfaceDark,
     required this.onSurfaceVariantDark,
     required this.errorColor,
@@ -63,28 +73,32 @@ class _AppPalette {
 // ============================================================================
 const _AppPalette _paletteUltravioletDark = _AppPalette(
   brightness: Brightness.dark,
-  backgroundDark: Color(0xFF0D0221),
-  surfaceDark: Color(0xFF1a0a2e),
-  cardDark: Color(0xFF1e1035),
-  cardElevatedDark: Color(0xFF2d1b4e),
-  borderDark: Color(0xFF3d2a6e),
+  // Глубокий «почти чёрный» фиолет — больше готической глубины и контраста.
+  backgroundDark: Color(0xFF08010F),
+  surfaceDark: Color(0xFF150827),
+  cardDark: Color(0xFF1B0E33),
+  cardElevatedDark: Color(0xFF2A1750),
+  borderDark: Color(0xFF3D2A6E),
   primary: Color(0xFF9D4EDD),
   primaryGlow: Color(0xFFC77DFF),
   accent: Color(0xFFE0AAFF),
   primaryDeep: Color(0xFF7B2CBF),
-  onSurfaceDark: Color(0xFFE8E0F0),
+  // Неоновый бирюзовый — кибер-акцент дуотона.
+  cyberAccent: Color(0xFF2DE2E6),
+  onlineColor: Color(0xFF36F1B3),
+  onSurfaceDark: Color(0xFFEDE6F7),
   onSurfaceVariantDark: Color(0xFF9D8FB5),
-  errorColor: Color(0xFFE57373),
-  successColor: Color(0xFF81C784),
+  errorColor: Color(0xFFFF6B81),
+  successColor: Color(0xFF36F1B3),
   warningColor: Color(0xFFFFB74D),
   homeBodyGradient: LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     stops: [0.0, 0.45, 1.0],
     colors: [
-      Color(0xFF0D0221),
-      Color(0xFF120A24),
-      Color(0xFF1a0a2e),
+      Color(0xFF08010F),
+      Color(0xFF120824),
+      Color(0xFF1A0A2E),
     ],
   ),
 );
@@ -116,6 +130,9 @@ const _AppPalette _paletteAuroraLight = _AppPalette(
   accent: Color(0xFFB69DF8),
   // Deep — для градиентов «primary→primaryDeep».
   primaryDeep: Color(0xFF5A2EAA),
+  // Кибер-акцент в светлой теме — насыщенный бирюзовый, читаемый на белом.
+  cyberAccent: Color(0xFF0E9AA7),
+  onlineColor: Color(0xFF0E9F6E),
   // Текст: почти-чёрный с тёплым оттенком, чтобы не выглядел резко.
   onSurfaceDark: Color(0xFF1F1B2E),
   // Вторичный текст: чёткий, но мягкий.
@@ -179,6 +196,19 @@ class AppColors {
   static Color get primaryGlow => _p.primaryGlow;
   static Color get accent => _p.accent;
   static Color get primaryDeep => _p.primaryDeep;
+
+  /// Кибер-акцент (неоновый бирюзовый) — вторичный цвет дуотона.
+  static Color get cyberAccent => _p.cyberAccent;
+
+  /// Цвет индикатора присутствия (online).
+  static Color get online => _p.onlineColor;
+
+  /// Градиент основного действия: ультрафиолет → неон (для CTA, кнопки «send»).
+  static LinearGradient get cyberGradient => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [_p.primary, _p.cyberAccent],
+      );
 
   // --- Текст --------------------------------------------------------------
   static Color get onSurfaceDark => _p.onSurfaceDark;
@@ -279,6 +309,18 @@ class AppColors {
         blurRadius: 12,
         spreadRadius: 0,
         offset: Offset.zero,
+      ),
+    ];
+  }
+
+  /// Неоновое кибер-свечение (бирюзовый) — для фокуса и активных состояний.
+  static List<BoxShadow> get cyberGlow {
+    return [
+      BoxShadow(
+        color: _p.cyberAccent.withValues(alpha: isLight ? 0.22 : 0.42),
+        blurRadius: 16,
+        spreadRadius: -2,
+        offset: const Offset(0, 4),
       ),
     ];
   }

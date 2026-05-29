@@ -1152,6 +1152,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
                                           final isHighlighted =
                                               _highlightMessageId == msg.id;
+
+                                          // Группировка подряд идущих сообщений
+                                          // одного автора (как в Telegram):
+                                          // аватар/имя/«хвост» только на краях.
+                                          String? senderAt(int i) {
+                                            if (i < 0 ||
+                                                i >= _listEntries.length) {
+                                              return null;
+                                            }
+                                            final e = _listEntries[i];
+                                            if (e is _MessageEntry) {
+                                              return _messages[e.index].userId;
+                                            }
+                                            return null;
+                                          }
+
+                                          final isFirstInGroup =
+                                              senderAt(index - 1) != msg.userId;
+                                          final isLastInGroup =
+                                              senderAt(index + 1) != msg.userId;
                                           final messageBody = Slidable(
                                             key: _keyForMessage(msg.id),
                                             startActionPane: ActionPane(
@@ -1203,6 +1223,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               msg: msg,
                                               isMine: isMine,
                                               isHighlighted: isHighlighted,
+                                              isFirstInGroup: isFirstInGroup,
+                                              isLastInGroup: isLastInGroup,
                                               scheme: scheme,
                                               accent1: _accent1,
                                               accent2: _accent2,

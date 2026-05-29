@@ -627,13 +627,20 @@ class _HomeScreenState extends State<HomeScreen> {
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+        padding: const EdgeInsets.only(right: 22),
         decoration: BoxDecoration(
-          color: Colors.red.shade400,
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              AppColors.errorDark.withValues(alpha: 0.0),
+              AppColors.errorDark.withValues(alpha: 0.85),
+            ],
+          ),
           borderRadius: BorderRadius.circular(16),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        child: const Icon(Icons.delete, color: Colors.white, size: 28),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
       ),
       confirmDismiss: (direction) async {
         final messenger = ScaffoldMessenger.of(context);
@@ -797,17 +804,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 8),
                     if (unread > 0)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        constraints: const BoxConstraints(minWidth: 22),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(10),
+                          gradient: LinearGradient(
+                            colors: [AppColors.primary, AppColors.primaryGlow],
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryGlow.withValues(alpha: 0.45),
+                              blurRadius: 10,
+                              spreadRadius: -2,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Text(
                           unread > 99 ? '99+' : unread.toString(),
-                          style: TextStyle(
-                            color: scheme.onPrimary,
+                          style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       )

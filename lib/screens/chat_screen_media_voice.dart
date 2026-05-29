@@ -605,6 +605,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       showPlaying: showPlaying,
       position: pos,
       totalDuration: dur,
+      seed: msg.id.hashCode,
       onPlayPause: () => _toggleVoicePlayback(msg),
       onPositionDrag: isCurrent
           ? (v) {

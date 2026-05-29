@@ -157,8 +157,35 @@ class _StartupLoadingScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppColors.cyberGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryGlow.withValues(alpha: 0.55),
+                      blurRadius: 36,
+                      spreadRadius: 2,
+                    ),
+                    BoxShadow(
+                      color: AppColors.cyberAccent.withValues(alpha: 0.35),
+                      blurRadius: 48,
+                      spreadRadius: -6,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.forum_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 32),
               CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGlow),
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.cyberAccent),
+                strokeWidth: 3,
               ),
               const SizedBox(height: 16),
               Text(

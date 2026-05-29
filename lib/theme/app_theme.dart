@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
+import 'app_dimens.dart';
 import 'theme_variant.dart';
 
 /// Строит [ThemeData] для указанного варианта темы.
@@ -287,7 +288,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.primaryGlow, width: 1.5),
+        borderSide: BorderSide(color: AppColors.cyberAccent, width: 1.6),
       ),
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -374,6 +375,38 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       checkColor: WidgetStateProperty.all(Colors.white),
       side: BorderSide(color: outline.withValues(alpha: 0.6), width: 1.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    ),
+    // Курсор и выделение текста подсвечиваются кибер-акцентом (неон).
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: AppColors.cyberAccent,
+      selectionColor: AppColors.cyberAccent.withValues(alpha: isLight ? 0.22 : 0.32),
+      selectionHandleColor: AppColors.cyberAccent,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.mdAll),
+        textStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+      ),
+    ),
+    tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 400),
+      decoration: BoxDecoration(
+        color: AppColors.cardElevatedDark,
+        borderRadius: AppRadius.smAll,
+        border: Border.all(color: outline.withValues(alpha: 0.4)),
+      ),
+      textStyle: TextStyle(
+        color: scheme.onSurface,
+        fontSize: 12.5,
+        fontWeight: FontWeight.w500,
+      ),
     ),
   );
 }

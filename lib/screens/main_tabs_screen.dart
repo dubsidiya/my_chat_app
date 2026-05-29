@@ -72,31 +72,40 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   Widget _buildUpdateBanner(BuildContext context) {
     return Material(
-      color: AppColors.primary.withValues(alpha: 0.95),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              const Icon(Icons.info_outline, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  VersionCheckService.webUpdateBannerText,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [AppColors.primaryDeep, AppColors.primary],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    VersionCheckService.webUpdateBannerText,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () => reloadPage(),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => reloadPage(),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: const Text('Обновить'),
                 ),
-                child: const Text('Обновить'),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 
 class ChatInputBar extends StatelessWidget {
   final ColorScheme scheme;
@@ -67,56 +68,58 @@ class ChatInputBar extends StatelessWidget {
       backgroundColor: scheme.surface,
       builder: (context) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.attach_file_rounded, color: accent2),
-                title: const Text('Файл'),
-                subtitle: const Text('Документ, архив или другой файл'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onPickFile();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.image_rounded, color: accent1),
-                title: const Text('Фото из галереи'),
-                subtitle: const Text('Выбрать изображение из устройства'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onPickImage();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.photo_camera_rounded, color: accent1),
-                title: const Text('Камера'),
-                subtitle: const Text('Сделать новое фото'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onPickCamera();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.video_library_rounded, color: accent1),
-                title: const Text('Видео из галереи'),
-                subtitle: const Text('Выбрать видео из устройства'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onPickVideo();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.videocam_rounded, color: accent1),
-                title: const Text('Снять видео'),
-                subtitle: const Text('Записать видео с камеры'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  onPickVideoFromCamera();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(Icons.attach_file_rounded, color: accent2),
+                  title: const Text('Файл'),
+                  subtitle: const Text('Документ, архив или другой файл'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPickFile();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.image_rounded, color: accent1),
+                  title: const Text('Фото из галереи'),
+                  subtitle: const Text('Выбрать изображение из устройства'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPickImage();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.photo_camera_rounded, color: accent1),
+                  title: const Text('Камера'),
+                  subtitle: const Text('Сделать новое фото'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPickCamera();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.video_library_rounded, color: accent1),
+                  title: const Text('Видео из галереи'),
+                  subtitle: const Text('Выбрать видео из устройства'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPickVideo();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.videocam_rounded, color: accent1),
+                  title: const Text('Снять видео'),
+                  subtitle: const Text('Записать видео с камеры'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPickVideoFromCamera();
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -225,11 +228,15 @@ class ChatInputBar extends StatelessWidget {
           children: [
             Container(
               decoration: BoxDecoration(
-                color: accent2.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.cyberAccent.withValues(alpha: 0.12),
+                borderRadius: AppRadius.mdAll,
+                border: Border.all(
+                  color: AppColors.cyberAccent.withValues(alpha: 0.28),
+                  width: 1,
+                ),
               ),
               child: IconButton(
-                icon: Icon(Icons.add_rounded, color: accent2, size: 22),
+                icon: Icon(Icons.add_rounded, color: AppColors.cyberAccent, size: 22),
                 onPressed: canOpenAttachmentMenu
                     ? () => _showAttachmentSheet(context)
                     : null,
@@ -241,8 +248,8 @@ class ChatInputBar extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
+                  borderRadius: AppRadius.pillAll,
+                  border: Border.all(color: scheme.outline.withValues(alpha: 0.22)),
                 ),
                 child: Row(
                   children: [
@@ -318,12 +325,16 @@ class ChatInputBar extends StatelessWidget {
             else
               Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [accent1, accent2],
-                  ),
+                  gradient: AppColors.cyberGradient,
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.cyberAccent.withValues(alpha: 0.45),
+                      blurRadius: 14,
+                      spreadRadius: -2,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
