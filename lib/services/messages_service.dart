@@ -486,9 +486,16 @@ class MessagesService {
     }
   }
 
-  Future<void> deleteMessage(String messageId, String userId) async {
+  /// [scope] — `for_me` (только у себя, личные чаты) или `for_everyone` (у всех, только свои).
+  Future<void> deleteMessage(
+    String messageId,
+    String userId, {
+    String scope = 'for_everyone',
+  }) async {
     try {
-      final url = Uri.parse('$baseUrl/messages/message/$messageId?userId=$userId');
+      final url = Uri.parse(
+        '$baseUrl/messages/message/$messageId?scope=${Uri.encodeQueryComponent(scope)}',
+      );
       
       final headers = await _getAuthHeaders();
       final response = await timedDelete(

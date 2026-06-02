@@ -22,6 +22,12 @@ import {
   searchMessagesForChat,
 } from '../repositories/messages/messagesReadRepository.js';
 import { validateAroundQuery, validateSearchQuery } from '../validators/messages/queryValidator.js';
+import {
+  ensureMessageUserDeletionsTable,
+  hideMessageForUser,
+  isDirectChat,
+  notHiddenForUserSql,
+} from '../services/messages/messageUserDeletions.js';
 
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
@@ -69,6 +75,7 @@ export const getChatMedia = async (req, res) => {
 
     const { ensureUserBlocksTable } = await import('./moderationController.js');
     await ensureUserBlocksTable();
+    await ensureMessageUserDeletionsTable();
 
     let beforeIdNum = null;
     if (before !== undefined && before !== null && String(before).trim().length > 0) {
@@ -121,6 +128,7 @@ export const getChatMedia = async (req, res) => {
           WHERE ub.blocker_id = $${currentUserArgPos}
             AND ub.blocked_id = m.user_id
         )
+        ${notHiddenForUserSql('m', `$${currentUserArgPos}`)}
       ORDER BY m.id DESC
       LIMIT $${limitArgPos}
       `,
@@ -168,6 +176,7 @@ export const getMessages = async (req, res) => {
 
     const { ensureUserBlocksTable } = await import('./moderationController.js');
     await ensureUserBlocksTable();
+    await ensureMessageUserDeletionsTable();
 
     let result;
     let totalCountResult;
@@ -205,6 +214,7 @@ export const getMessages = async (req, res) => {
         LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1 AND messages.id < $2
         AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = messages.user_id)
+        ${notHiddenForUserSql('messages', '$4')}
         ORDER BY messages.id DESC
         LIMIT $3
       `, [chatIdNum, beforeIdNum, limit + 1, currentUserId]);
@@ -225,7 +235,8 @@ export const getMessages = async (req, res) => {
            AND NOT EXISTS (
              SELECT 1 FROM user_blocks ub
              WHERE ub.blocker_id = $2 AND ub.blocked_id = messages.user_id
-           )`,
+           )
+           ${notHiddenForUserSql('messages', '$2')}`,
         [chatIdNum, currentUserId]
       );
     } else {
@@ -238,7 +249,8 @@ export const getMessages = async (req, res) => {
            AND NOT EXISTS (
              SELECT 1 FROM user_blocks ub
              WHERE ub.blocker_id = $2 AND ub.blocked_id = messages.user_id
-           )`,
+           )
+           ${notHiddenForUserSql('messages', '$2')}`,
         [chatIdNum, currentUserId]
       );
       
@@ -271,6 +283,7 @@ export const getMessages = async (req, res) => {
         LEFT JOIN pinned_messages ON pinned_messages.message_id = messages.id AND pinned_messages.chat_id = $1
         WHERE messages.chat_id = $1
         AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = messages.user_id)
+        ${notHiddenForUserSql('messages', '$4')}
         ORDER BY messages.created_at ASC
         LIMIT $2 OFFSET $3
       `, [chatIdNum, limit, actualOffset, currentUserId]);
@@ -300,6 +313,7 @@ export const getMessages = async (req, res) => {
                SELECT 1 FROM user_blocks ub
                WHERE ub.blocker_id = $3 AND ub.blocked_id = messages.user_id
              )
+             ${notHiddenForUserSql('messages', '$3')}
            LIMIT 1`,
           [chatIdNum, minId, currentUserId]
         );
@@ -353,6 +367,8 @@ export const searchMessages = async (req, res) => {
     }
     const chatIdNum = membership.chatIdNum;
 
+    await ensureMessageUserDeletionsTable();
+
     // Отдаём последние сообщения с полным content; клиент расшифровывает и фильтрует по q (E2EE)
     const result = await searchMessagesForChat(pool, { chatIdNum, userId, limit, before });
 
@@ -398,6 +414,7 @@ export const getMessagesAround = async (req, res) => {
 
     const { ensureUserBlocksTable } = await import('./moderationController.js');
     await ensureUserBlocksTable();
+    await ensureMessageUserDeletionsTable();
 
     // Проверяем, что сообщение принадлежит чату
     const msgCheck = await isMessageInChat(pool, { messageId, chatIdNum });
@@ -1130,28 +1147,27 @@ export const editMessage = async (req, res) => {
 };
 
 // Удаление одного сообщения
+// scope=for_me — скрыть только у текущего пользователя (личные чаты; чужие сообщения тоже)
+// scope=for_everyone — удалить у всех (личные: только автор; группы: только автор, как раньше)
 export const deleteMessage = async (req, res) => {
   const messageId = req.params.messageId;
-  // userId берем из токена (безопасно)
   const userId = req.user.userId;
+  const scopeRaw = (req.query.scope || 'for_everyone').toString().toLowerCase();
+  const scope = scopeRaw === 'for_me' ? 'for_me' : 'for_everyone';
 
   if (!messageId) {
     return res.status(400).json({ message: 'Укажите ID сообщения' });
   }
 
   try {
-    // Проверяем, существует ли сообщение и получаем информацию о нем, включая image_url
     const messageCheck = await pool.query(
       `SELECT 
         messages.id,
         messages.chat_id,
         messages.user_id,
-        messages.content,
-        messages.created_at,
         messages.image_url,
         messages.original_image_url,
-        messages.file_url,
-        messages.message_type
+        messages.file_url
       FROM messages
       WHERE messages.id = $1`,
       [messageId]
@@ -1163,75 +1179,73 @@ export const deleteMessage = async (req, res) => {
 
     const message = messageCheck.rows[0];
     const chatId = message.chat_id;
+    const direct = await isDirectChat(pool, chatId);
 
-    // Проверяем, существует ли чат
     const chatCheck = await pool.query(
       'SELECT id FROM chats WHERE id = $1',
       [chatId]
     );
-
     if (chatCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Чат не найден' });
     }
 
-    // Проверяем права: только автор сообщения может его удалить
-    const messageUserId = message.user_id.toString();
-    const requestUserId = userId.toString();
-
-    if (messageUserId !== requestUserId) {
-      return res.status(403).json({ 
-        message: 'Вы можете удалять только свои сообщения' 
-      });
-    }
-
-    // Проверяем, является ли пользователь участником чата
     const memberCheck = await pool.query(
       'SELECT 1 FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
-
     if (memberCheck.rows.length === 0) {
-      return res.status(403).json({ 
-        message: 'Вы не являетесь участником этого чата' 
+      return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
+    }
+
+    const messageUserId = message.user_id.toString();
+    const requestUserId = userId.toString();
+    const isAuthor = messageUserId === requestUserId;
+
+    if (scope === 'for_me') {
+      if (!direct) {
+        return res.status(400).json({
+          message: 'Удаление «только у меня» доступно только в личных чатах',
+        });
+      }
+      await hideMessageForUser(pool, messageId, userId);
+      return res.status(200).json({
+        message: 'Сообщение удалено у вас',
+        messageId: messageId.toString(),
+        scope: 'for_me',
       });
     }
 
-    // Удаляем изображения из Яндекс Облака, если они есть
+    // for_everyone
+    if (!isAuthor) {
+      return res.status(403).json({
+        message: 'Удалить у всех можно только свои сообщения',
+      });
+    }
+
     if (message.image_url) {
       try {
         await deleteImage(message.image_url);
-        console.log('Compressed image deleted from Yandex Cloud:', message.image_url);
       } catch (deleteError) {
         console.error('Ошибка удаления сжатого изображения из облака:', deleteError);
-        // Продолжаем удаление сообщения, даже если изображение не удалилось
       }
     }
-    
-    // ✅ Удаляем оригинальное изображение, если оно есть
     if (message.original_image_url) {
       try {
         await deleteImage(message.original_image_url);
-        console.log('Original image deleted from Yandex Cloud:', message.original_image_url);
       } catch (deleteError) {
         console.error('Ошибка удаления оригинального изображения из облака:', deleteError);
-        // Продолжаем удаление сообщения, даже если изображение не удалилось
       }
     }
-
-    // ✅ Удаляем файл-attachment, если он есть
     if (message.file_url) {
       try {
         await deleteCloudFile(message.file_url);
-        console.log('File deleted from Yandex Cloud:', message.file_url);
       } catch (deleteError) {
         console.error('Ошибка удаления файла из облака:', deleteError);
       }
     }
 
-    // Удаляем сообщение
     await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
 
-    // Отправляем уведомление через WebSocket всем участникам чата об удалении
     try {
       const clients = getWebSocketClients();
       const members = await pool.query(
@@ -1244,39 +1258,30 @@ export const deleteMessage = async (req, res) => {
         message_id: messageId.toString(),
         chat_id: chatId.toString(),
         user_id: userId.toString(),
+        scope: 'for_everyone',
       };
 
-      console.log('Sending WebSocket delete notification to chat:', chatId);
-      console.log('Delete notification:', wsMessage);
-
       const wsMessageString = JSON.stringify(wsMessage);
-      
-      let sentCount = 0;
-      members.rows.forEach(row => {
+      members.rows.forEach((row) => {
         const userIdStr = row.user_id.toString();
         const client = clients.get(userIdStr);
-        if (client && client.readyState === 1) { // WebSocket.OPEN
+        if (client && client.readyState === 1) {
           try {
             client.send(wsMessageString);
-            sentCount++;
-            console.log(`Delete notification sent to user ${userIdStr}`);
           } catch (sendError) {
             console.error(`Error sending delete notification to user ${userIdStr}:`, sendError);
           }
         }
       });
-      
-      console.log(`Delete notification sent to ${sentCount} out of ${members.rows.length} members`);
     } catch (wsError) {
       console.error('Ошибка отправки уведомления об удалении через WebSocket:', wsError);
-      // Не прерываем выполнение, сообщение уже удалено из БД
     }
 
-    res.status(200).json({ 
-      message: 'Сообщение успешно удалено',
-      messageId: messageId
+    res.status(200).json({
+      message: 'Сообщение удалено у всех',
+      messageId: messageId.toString(),
+      scope: 'for_everyone',
     });
-
   } catch (error) {
     console.error('Ошибка удаления сообщения:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

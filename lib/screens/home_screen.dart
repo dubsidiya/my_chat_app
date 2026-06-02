@@ -663,6 +663,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (confirmed != true) return false;
         try {
           await _chatsService.deleteChat(chat.id, widget.userId);
+          await LocalMessagesService.clearChat(chat.id);
           return true;
         } catch (e) {
           if (kDebugMode) print('Ошибка удаления чата: $e');

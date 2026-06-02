@@ -196,6 +196,9 @@ export const getChatsList = async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    const { ensureMessageUserDeletionsTable } = await import('../services/messages/messageUserDeletions.js');
+    await ensureMessageUserDeletionsTable();
+
     const hasFolderId = await chatUsersFolderIdColumnExists();
     const hasFoldersTable = await chatFoldersTableExists();
     const hasLegacyFolder = await chatUsersFolderColumnExists();
@@ -250,6 +253,10 @@ export const getChatsList = async (req, res) => {
         FROM messages m
         JOIN users u ON u.id = m.user_id
         JOIN user_chats uc ON uc.id = m.chat_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM message_user_deletions d
+          WHERE d.message_id = m.id AND d.user_id = $1
+        )
         ORDER BY m.chat_id, m.id DESC
       ),
       unread_counts AS (
@@ -262,6 +269,10 @@ export const getChatsList = async (req, res) => {
           ON mr.message_id = m.id AND mr.user_id = $1
         WHERE m.user_id <> $1
           AND mr.message_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM message_user_deletions d
+            WHERE d.message_id = m.id AND d.user_id = $1
+          )
         GROUP BY m.chat_id
       )
       SELECT
@@ -586,7 +597,7 @@ export const deleteChat = async (req, res) => {
 
     // Проверяем, существует ли чат
     const chatCheck = await pool.query(
-      'SELECT id, created_by FROM chats WHERE id = $1',
+      'SELECT id, created_by, is_group FROM chats WHERE id = $1',
       [chatId]
     );
 
@@ -594,10 +605,12 @@ export const deleteChat = async (req, res) => {
       return res.status(404).json({ message: "Чат не найден" });
     }
 
-    // Удалять чат может owner
-    const canDelete = await isOwner(chatId, userId);
-    if (!canDelete) {
-      return res.status(403).json({ message: "Только владелец (owner) может удалить чат" });
+    const isDirectChat = chatCheck.rows[0].is_group === false;
+    if (!isDirectChat) {
+      const canDelete = await isOwner(chatId, userId);
+      if (!canDelete) {
+        return res.status(403).json({ message: "Только владелец (owner) может удалить чат" });
+      }
     }
 
     // Проверяем, является ли пользователь участником чата

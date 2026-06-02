@@ -1,3 +1,5 @@
+import { notHiddenForUserSql } from '../../services/messages/messageUserDeletions.js';
+
 export const searchMessagesForChat = async (db, { chatIdNum, userId, limit, before }) => {
   const params = [chatIdNum, userId, limit];
   let beforeClause = '';
@@ -23,6 +25,7 @@ export const searchMessagesForChat = async (db, { chatIdNum, userId, limit, befo
     JOIN users u ON u.id = m.user_id
     LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = $2
     WHERE m.chat_id = $1
+      ${notHiddenForUserSql('m', '$2')}
       ${beforeClause}
     ORDER BY m.id DESC
     LIMIT $3
@@ -65,6 +68,7 @@ export const getAroundOlderMessages = async (db, { chatIdNum, messageId, limit, 
     LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
     WHERE m.chat_id = $1 AND m.id < $2
     AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
+    ${notHiddenForUserSql('m', '$4')}
     ORDER BY m.id DESC
     LIMIT $3
     `,
@@ -99,6 +103,7 @@ export const getAroundNewerMessages = async (db, { chatIdNum, messageId, limit, 
     LEFT JOIN pinned_messages pm ON pm.message_id = m.id AND pm.chat_id = $1
     WHERE m.chat_id = $1 AND m.id >= $2
     AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $4 AND ub.blocked_id = m.user_id)
+    ${notHiddenForUserSql('m', '$4')}
     ORDER BY m.id ASC
     LIMIT $3
     `,

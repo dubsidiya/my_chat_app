@@ -175,7 +175,7 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
                     onTap: () => Navigator.pop(context, 'block'),
                   ),
                 ],
-                if (isMine) ...[
+                if (widget.isGroup ? isMine : true) ...[
                   Divider(
                     height: 1,
                     color: scheme.outline.withValues(alpha: 0.20),
@@ -610,31 +610,69 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
   Future<void> _showDeleteMessageDialog(Message message) async {
     if (!mounted) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить сообщение?'),
-        content: const Text('Вы уверены, что хотите удалить это сообщение?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
+    final isMine =
+        message.userId.toString() == widget.userId.toString();
 
-    if (confirmed != true || !mounted) return;
+    final String? scope;
+    if (!widget.isGroup) {
+      scope = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Удалить сообщение?'),
+          content: Text(
+            isMine
+                ? 'Удалить только у вас или у обоих собеседников?'
+                : 'Сообщение исчезнет только в вашей переписке.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'for_me'),
+              child: const Text('Удалить у меня'),
+            ),
+            if (isMine)
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, 'for_everyone'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Удалить у всех'),
+              ),
+          ],
+        ),
+      );
+    } else {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Удалить сообщение?'),
+          content: const Text(
+            'Вы уверены, что хотите удалить это сообщение у всех участников?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Удалить'),
+            ),
+          ],
+        ),
+      );
+      scope = confirmed == true ? 'for_everyone' : null;
+    }
+
+    if (scope == null || !mounted) return;
 
     try {
       await _messagesService.deleteMessage(
         message.id.toString(),
         widget.userId,
+        scope: scope,
       );
       await LocalMessagesService.removeMessage(widget.chatId, message.id);
       if (mounted) {
@@ -643,9 +681,13 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
           _pinnedMessages.removeWhere((m) => m.id == message.id);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Сообщение удалено'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              scope == 'for_me'
+                  ? 'Сообщение удалено у вас'
+                  : 'Сообщение удалено у всех',
+            ),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
