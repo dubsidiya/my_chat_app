@@ -15,7 +15,7 @@
 
 - **Бэкенд:** `GET /version` — отдаёт `minVersion`, `latestVersion`, `forceUpdate`, `message`, ссылки на магазины. Параметры задаются через переменные окружения (см. `my_serve_chat_test/.env.example`, блок «Проверка версии приложения»).
 - **Flutter:** сервис `lib/services/version_check_service.dart` — запрашивает `/version`, сравнивает с текущей версией из `package_info_plus`. На **web** показывает инструкцию по обновлению страницы и кнопку перезагрузки; на iOS/Android — кнопки в магазин.
-- **Вызов:** в `lib/screens/main_tabs_screen.dart` при входе вызываются `VersionCheckService.check()` и `showDialogIfNeeded()`; при наличии обновления на web показывается баннер сверху.
+- **Вызов в UI:** сейчас не подключено (сервис `version_check_service.dart` и `GET /version` на бэкенде остаются для возможного использования).
 
 ## Как настроить после публикации в сторе
 

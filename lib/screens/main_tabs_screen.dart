@@ -1,12 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-
 import '../services/push_notification_service.dart';
-import '../services/version_check_service.dart';
 import '../theme/app_colors.dart';
-import '../utils/reload_util.dart';
 import 'home_screen.dart';
 import '../widgets/voice_call_host.dart';
 
@@ -25,8 +21,6 @@ class MainTabsScreen extends StatefulWidget {
 }
 
 class _MainTabsScreenState extends State<MainTabsScreen> {
-  VersionCheckInfo? _versionCheckInfo;
-
   @override
   void initState() {
     super.initState();
@@ -34,79 +28,20 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
       unawaited(PushNotificationService.requestPermissionIfNeeded());
       PushNotificationService.sendTokenToBackendIfNeeded();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final info = await VersionCheckService.check();
-      if (!mounted) return;
-      setState(() => _versionCheckInfo = info);
-      await VersionCheckService.showDialogIfNeeded(context, info);
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final showUpdateBanner = kIsWeb &&
-        _versionCheckInfo != null &&
-        _versionCheckInfo!.result != VersionCheckResult.upToDate;
-
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: Column(
-        children: [
-          if (showUpdateBanner) _buildUpdateBanner(context),
-          Expanded(
-            child: VoiceCallHost(
-              userId: widget.userId,
-              child: HomeScreen(
-                userId: widget.userId,
-                userEmail: widget.userEmail,
-                displayName: widget.displayName,
-                avatarUrl: widget.avatarUrl,
-                isSuperuser: widget.isSuperuser,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUpdateBanner(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [AppColors.primaryDeep, AppColors.primary],
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    VersionCheckService.webUpdateBannerText,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () => reloadPage(),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  child: const Text('Обновить'),
-                ),
-              ],
-            ),
-          ),
+      body: VoiceCallHost(
+        userId: widget.userId,
+        child: HomeScreen(
+          userId: widget.userId,
+          userEmail: widget.userEmail,
+          displayName: widget.displayName,
+          avatarUrl: widget.avatarUrl,
+          isSuperuser: widget.isSuperuser,
         ),
       ),
     );
