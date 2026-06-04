@@ -292,7 +292,7 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
               ),
             const SizedBox(height: 8),
             Text(
-              'Ячейка: сколько занятий за весь выбранный период приходится на этот день недели и время. Темнее — больше.',
+              'Ячейка: сколько занятий за весь выбранный период приходится на этот день недели и время.',
               style: TextStyle(
                 fontSize: 12,
                 color: scheme.onSurface.withValues(alpha: 0.65),
