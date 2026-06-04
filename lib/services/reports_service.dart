@@ -3,6 +3,7 @@ import 'dart:math';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import '../models/report.dart';
+import '../models/report_author_option.dart';
 import '../models/monthly_salary_report.dart';
 import '../models/report_audit_event.dart';
 import 'storage_service.dart';
@@ -68,12 +69,47 @@ class ReportsService {
     }
   }
 
+  /// Авторы отчётов для фильтра по преподавателю (суперпользователь).
+  Future<List<ReportAuthorOption>> getReportAuthors({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final query = <String, String>{};
+    if (dateFrom != null) query['date_from'] = _dateToIso(dateFrom);
+    if (dateTo != null) query['date_to'] = _dateToIso(dateTo);
+    final uri = Uri.parse('$baseUrl/reports/list/teachers')
+        .replace(queryParameters: query.isEmpty ? null : query);
+    final response = await timedGet(
+      uri,
+      headers: headers,
+      timeout: const Duration(seconds: 15),
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data
+          .whereType<Map>()
+          .map((json) => ReportAuthorOption.fromJson(
+                json.map((k, v) => MapEntry(k.toString(), v)),
+              ))
+          .toList();
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    throw Exception(
+      _extractErrorMessage(response.body, 'Не удалось загрузить преподавателей'),
+    );
+  }
+
   /// Список всех отчётов для бухгалтера/суперпользователя (кто сдал, фильтры).
   /// Параметры: dateFrom/dateTo — границы по дате отчёта, isLate — только поздние/только вовремя/null — все.
+  /// [createdBy] — id преподавателя; null — все.
   Future<List<Report>> getAllReportsList({
     DateTime? dateFrom,
     DateTime? dateTo,
     bool? isLate,
+    int? createdBy,
   }) async {
     final headers = await _getAuthHeaders();
     final query = <String, String>{};
@@ -81,6 +117,7 @@ class ReportsService {
     if (dateTo != null) query['date_to'] = _dateToIso(dateTo);
     if (isLate == true) query['is_late'] = 'true';
     if (isLate == false) query['is_late'] = 'false';
+    if (createdBy != null) query['created_by'] = createdBy.toString();
 
     final uri = Uri.parse('$baseUrl/reports/list').replace(queryParameters: query.isEmpty ? null : query);
     final response = await timedGet(

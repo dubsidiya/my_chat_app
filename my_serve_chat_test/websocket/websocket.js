@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { WebSocketServer } from 'ws';
 import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
@@ -55,6 +56,36 @@ function sendToUserSockets(userId, payload) {
       ws.send(data);
     }
   }
+}
+
+/** All sockets for user except one (e.g. other tabs/devices). */
+function sendToUserSocketsExcept(userId, excludeConnId, payload) {
+  const sockets = getUserSockets(userId);
+  if (!sockets || sockets.size === 0) return;
+  const exclude = excludeConnId?.toString();
+  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  for (const ws of sockets) {
+    if (ws?.readyState === WS_OPEN && ws.connId !== exclude) {
+      ws.send(data);
+    }
+  }
+}
+
+/** Single WS connection for this user (media leg); falls back to all if conn gone. */
+function sendToUserMediaSocket(userId, connId, payload) {
+  const sockets = getUserSockets(userId);
+  if (!sockets || sockets.size === 0) return;
+  const targetConn = connId?.toString();
+  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  if (targetConn) {
+    for (const ws of sockets) {
+      if (ws?.readyState === WS_OPEN && ws.connId === targetConn) {
+        ws.send(data);
+        return;
+      }
+    }
+  }
+  sendToUserSockets(userId, payload);
 }
 
 class WsRateLimiter {
@@ -220,6 +251,7 @@ export function setupWebSocket(server) {
     if (process.env.NODE_ENV === 'development') {
       console.log(`WebSocket connected: userId=${userId}, email=${userEmail}`);
     }
+    ws.connId = crypto.randomUUID();
     addClientSocket(userId, ws);
     ws.userId = userId;
     ws.userEmail = userEmail;
@@ -244,7 +276,10 @@ export function setupWebSocket(server) {
             userId,
             userEmail,
             pool,
+            ws,
             sendToUserSockets,
+            sendToUserSocketsExcept,
+            sendToUserMediaSocket,
             callLimiter,
           });
           return;

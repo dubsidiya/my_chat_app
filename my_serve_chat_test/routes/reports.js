@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken, requirePrivateAccess, requireSuperuser } from '../middleware/auth.js';
 import {
   getAllReports,
+  getReportAuthors,
   getReportsList,
   getReport,
   getReportAudit,
@@ -18,6 +19,7 @@ const router = express.Router();
 router.use(authenticateToken, requirePrivateAccess);
 
 router.get('/salary', getMonthlySalaryReport);
+router.get('/list/teachers', requireSuperuser, getReportAuthors);
 router.get('/list', requireSuperuser, getReportsList);
 router.get('/', getAllReports);
 router.get('/:id/audit', getReportAudit);

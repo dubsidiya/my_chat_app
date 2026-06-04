@@ -5,7 +5,8 @@
 
 import { sendIncomingCallPushToUser } from '../utils/pushNotifications.js';
 
-const activeCalls = new Map(); // callId -> { chatId, callerId, calleeId, state }
+/** @typedef {{ chatId: string, callerId: string, calleeId: string, state: string, createdAt: number, mediaConnId?: Record<string, string> }} ActiveCall */
+const activeCalls = new Map(); // callId -> ActiveCall
 const userActiveCallId = new Map(); // userId -> callId
 
 const CALL_TTL_MS = 5 * 60 * 1000;
@@ -88,6 +89,42 @@ function relayToPeer(sendToUserSockets, call, fromUserId, payload) {
   sendToUserSockets(target, payload);
 }
 
+function getWsConnId(ws) {
+  return ws?.connId?.toString() || null;
+}
+
+function bindMediaConn(call, userId, connId) {
+  if (!connId) return false;
+  const uid = userId?.toString();
+  if (!uid) return false;
+  if (!call.mediaConnId) call.mediaConnId = {};
+  const prev = call.mediaConnId[uid];
+  if (prev && prev !== connId) return false;
+  call.mediaConnId[uid] = connId;
+  return true;
+}
+
+function mediaConnMatches(call, userId, connId) {
+  if (!connId) return false;
+  const bound = call.mediaConnId?.[userId?.toString()];
+  return !bound || bound === connId;
+}
+
+function relayToPeerMedia(call, fromUserId, payload, sendToUserMediaSocket, sendToUserSockets) {
+  const target = peerIdFor(call, fromUserId);
+  const mediaConn = call.mediaConnId?.[target];
+  if (mediaConn) {
+    sendToUserMediaSocket(target, mediaConn, payload);
+  } else {
+    sendToUserSockets(target, payload);
+  }
+}
+
+function broadcastToBoth(call, payload, sendToUserSockets) {
+  sendToUserSockets(call.callerId, payload);
+  sendToUserSockets(call.calleeId, payload);
+}
+
 function cleanupStaleCallsForUser(userId) {
   const uid = userId?.toString();
   if (!uid) return;
@@ -138,7 +175,7 @@ export function releaseCallsForUser(userId, sendToUserSockets) {
 
 /**
  * @param {object} data - parsed WS JSON
- * @param {{ userId: string, userEmail: string, pool: import('pg').Pool, sendToUserSockets: Function, callLimiter: { allow: (key: string) => boolean } }} ctx
+ * @param {{ userId: string, userEmail: string, pool: import('pg').Pool, ws: import('ws').WebSocket, sendToUserSockets: Function, sendToUserSocketsExcept: Function, sendToUserMediaSocket: Function, callLimiter: { allow: (key: string) => boolean } }} ctx
  * @returns {boolean} true if handled (call-related message)
  */
 export async function handleCallSignaling(data, ctx) {
@@ -147,7 +184,17 @@ export async function handleCallSignaling(data, ctx) {
     return false;
   }
 
-  const { userId, userEmail, pool, sendToUserSockets, callLimiter } = ctx;
+  const {
+    userId,
+    userEmail,
+    pool,
+    ws,
+    sendToUserSockets,
+    sendToUserSocketsExcept,
+    sendToUserMediaSocket,
+    callLimiter,
+  } = ctx;
+  const myConnId = getWsConnId(ws);
   if (!callLimiter.allow(`call:${userId}`)) {
     return true;
   }
@@ -197,13 +244,16 @@ export async function handleCallSignaling(data, ctx) {
     }
 
     const now = Date.now();
-    activeCalls.set(callId, {
+    const callRecord = {
       chatId: dm.chatIdNum.toString(),
       callerId: userId.toString(),
       calleeId: dm.peerId,
       state: 'ringing',
       createdAt: now,
-    });
+      mediaConnId: {},
+    };
+    bindMediaConn(callRecord, userId, myConnId);
+    activeCalls.set(callId, callRecord);
     userActiveCallId.set(userId.toString(), callId);
     userActiveCallId.set(dm.peerId, callId);
 
@@ -300,23 +350,40 @@ export async function handleCallSignaling(data, ctx) {
       sendCallError(sendToUserSockets, userId, { code: 'only_callee_can_accept', call_id: callId });
       return true;
     }
+    if (!bindMediaConn(call, userId, myConnId)) {
+      sendCallError(sendToUserSockets, userId, { code: 'busy', call_id: callId });
+      return true;
+    }
     call.state = 'accepted';
-    relayToPeer(sendToUserSockets, call, userId, { type: 'call_accept', ...base });
+    relayToPeerMedia(
+      call,
+      userId,
+      { type: 'call_accept', ...base },
+      sendToUserMediaSocket,
+      sendToUserSockets
+    );
+    if (myConnId) {
+      sendToUserSocketsExcept(userId, myConnId, {
+        type: 'call_answered_elsewhere',
+        ...base,
+      });
+    }
     return true;
   }
 
   if (type === 'call_reject') {
-    relayToPeer(sendToUserSockets, call, userId, {
+    const rejectPayload = {
       type: 'call_reject',
       ...base,
       reason: (data.reason ?? 'declined').toString().slice(0, 64),
-    });
+    };
+    broadcastToBoth(call, rejectPayload, sendToUserSockets);
     cleanupCall(callId);
     return true;
   }
 
   if (type === 'call_hangup') {
-    relayToPeer(sendToUserSockets, call, userId, { type: 'call_hangup', ...base });
+    broadcastToBoth(call, { type: 'call_hangup', ...base }, sendToUserSockets);
     cleanupCall(callId);
     return true;
   }
@@ -325,6 +392,9 @@ export async function handleCallSignaling(data, ctx) {
     // Offer/answer допустимы только после call_accept (state=accepted).
     // Принять SDP в ringing — узкое окно гонок и потенциальный вектор подмены.
     if (call.state !== 'accepted') {
+      return true;
+    }
+    if (!mediaConnMatches(call, userId, myConnId)) {
       return true;
     }
     const sdp = data.sdp;
@@ -339,15 +409,30 @@ export async function handleCallSignaling(data, ctx) {
     if (sdpBody.length > 48_000) {
       return true;
     }
-    relayToPeer(sendToUserSockets, call, userId, {
-      type,
-      ...base,
-      sdp: { type: sdpType, sdp: sdpBody },
-    });
+    if (type === 'call_offer') {
+      bindMediaConn(call, userId, myConnId);
+    }
+    relayToPeerMedia(
+      call,
+      userId,
+      {
+        type,
+        ...base,
+        sdp: { type: sdpType, sdp: sdpBody },
+      },
+      sendToUserMediaSocket,
+      sendToUserSockets
+    );
     return true;
   }
 
   if (type === 'call_ice') {
+    if (call.state !== 'accepted') {
+      return true;
+    }
+    if (!mediaConnMatches(call, userId, myConnId)) {
+      return true;
+    }
     const candidate = data.candidate;
     if (!candidate || typeof candidate !== 'object') {
       return true;
@@ -356,11 +441,17 @@ export async function handleCallSignaling(data, ctx) {
     if (candStr.length > 16_000) {
       return true;
     }
-    relayToPeer(sendToUserSockets, call, userId, {
-      type: 'call_ice',
-      ...base,
-      candidate,
-    });
+    relayToPeerMedia(
+      call,
+      userId,
+      {
+        type: 'call_ice',
+        ...base,
+        candidate,
+      },
+      sendToUserMediaSocket,
+      sendToUserSockets
+    );
     return true;
   }
 

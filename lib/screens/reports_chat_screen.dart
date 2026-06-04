@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../models/report.dart';
+import '../models/report_author_option.dart';
 import '../services/reports_service.dart';
 import '../utils/network_error_helper.dart';
 import 'report_text_view_screen.dart';
@@ -34,6 +37,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   DateTime _filterDateTo = DateTime.now();
   /// null = все, true = только поздние, false = только вовремя
   bool? _filterOnlyLate;
+  /// null = все преподаватели
+  int? _filterTeacherId;
+  List<ReportAuthorOption> _teacherOptions = [];
+  bool _teachersLoading = false;
 
   /// Напоминание: вчера не было отчёта (только свой режим, не бухгалтер).
   bool _yesterdayReminder = false;
@@ -81,14 +88,39 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     _yesterdayReminder = !has;
   }
 
-  Future<void> _loadReportsList() async {
+  Future<void> _loadTeacherOptions() async {
+    if (!mounted) return;
+    setState(() => _teachersLoading = true);
+    try {
+      final teachers = await _reportsService.getReportAuthors(
+        dateFrom: _filterDateFrom,
+        dateTo: _filterDateTo,
+      );
+      if (!mounted) return;
+      setState(() {
+        _teacherOptions = teachers;
+        if (_filterTeacherId != null &&
+            !teachers.any((t) => t.id == _filterTeacherId)) {
+          _filterTeacherId = null;
+        }
+      });
+    } catch (e) {
+      if (kDebugMode) print('Ошибка загрузки преподавателей: $e');
+    } finally {
+      if (mounted) setState(() => _teachersLoading = false);
+    }
+  }
+
+  Future<void> _loadReportsList({bool refreshTeachers = false}) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
+      if (refreshTeachers) await _loadTeacherOptions();
       final reports = await _reportsService.getAllReportsList(
         dateFrom: _filterDateFrom,
         dateTo: _filterDateTo,
         isLate: _filterOnlyLate,
+        createdBy: _filterTeacherId,
       );
       if (mounted) {
         setState(() {
@@ -445,7 +477,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                   final all = selected.first;
                   setState(() => _allReportsMode = all);
                   if (all) {
-                    _loadReportsList();
+                    _filterTeacherId = null;
+                    unawaited(_loadTeacherOptions());
+                    _loadReportsList(refreshTeachers: false);
                   } else {
                     _loadReports();
                   }
@@ -471,7 +505,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               child: InkWell(
                                 onTap: () async {
                                   final d = await showDatePicker(context: context, initialDate: _filterDateFrom, firstDate: DateTime(2020), lastDate: DateTime.now());
-                                  if (d != null && mounted) setState(() { _filterDateFrom = d; });
+                                  if (d != null && mounted) {
+                                    setState(() => _filterDateFrom = d);
+                                    unawaited(_loadTeacherOptions());
+                                  }
                                 },
                                 borderRadius: BorderRadius.circular(10),
                                 child: Padding(
@@ -485,7 +522,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               child: InkWell(
                                 onTap: () async {
                                   final d = await showDatePicker(context: context, initialDate: _filterDateTo, firstDate: DateTime(2020), lastDate: DateTime.now());
-                                  if (d != null && mounted) setState(() { _filterDateTo = d; });
+                                  if (d != null && mounted) {
+                                    setState(() => _filterDateTo = d);
+                                    unawaited(_loadTeacherOptions());
+                                  }
                                 },
                                 borderRadius: BorderRadius.circular(10),
                                 child: Padding(
@@ -495,6 +535,45 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int?>(
+                          initialValue: _filterTeacherId,
+                          decoration: InputDecoration(
+                            labelText: 'Преподаватель',
+                            isDense: true,
+                            suffixIcon: _teachersLoading
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Все преподаватели'),
+                            ),
+                            ..._teacherOptions.map(
+                              (t) => DropdownMenuItem<int?>(
+                                value: t.id,
+                                child: Text(
+                                  t.label,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: _teachersLoading
+                              ? null
+                              : (v) {
+                                  setState(() => _filterTeacherId = v);
+                                  if (!_isLoading) unawaited(_loadReportsList());
+                                },
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -513,7 +592,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             ),
                             const SizedBox(width: 8),
                             FilledButton.icon(
-                              onPressed: _isLoading ? null : () => _loadReportsList(),
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => _loadReportsList(refreshTeachers: true),
                               icon: _isLoading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.search_rounded, size: 20),
                               label: const Text('Показать'),
                             ),
@@ -808,11 +889,12 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (report.createdByEmail != null && report.createdByEmail!.isNotEmpty) ...[
+                                    if (_filterTeacherId == null &&
+                                        report.createdByLabel != null) ...[
                                       Padding(
                                         padding: const EdgeInsets.only(bottom: 4),
                                         child: Text(
-                                          'Кто сдал: ${report.createdByEmail}',
+                                          'Кто сдал: ${report.createdByLabel}',
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,

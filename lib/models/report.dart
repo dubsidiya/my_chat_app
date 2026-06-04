@@ -11,6 +11,8 @@ class Report {
   final int? createdBy;
   /// Email создателя отчёта (для списка «все отчёты»).
   final String? createdByEmail;
+  /// ФИО / display_name создателя (приоритет над email в UI «Кто сдал»).
+  final String? createdByDisplayName;
 
   Report({
     required this.id,
@@ -23,7 +25,17 @@ class Report {
     this.lessons,
     this.createdBy,
     this.createdByEmail,
+    this.createdByDisplayName,
   });
+
+  /// Подпись «кто сдал»: display_name, иначе email.
+  String? get createdByLabel {
+    final name = createdByDisplayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final email = createdByEmail?.trim();
+    if (email != null && email.isNotEmpty) return email;
+    return null;
+  }
 
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
@@ -61,6 +73,7 @@ class Report {
       lessons: lessonsParsed,
       createdBy: _parseInt(json['created_by']),
       createdByEmail: json['created_by_email']?.toString(),
+      createdByDisplayName: json['created_by_display_name']?.toString(),
     );
   }
 

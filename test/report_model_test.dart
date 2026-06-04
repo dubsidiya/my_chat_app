@@ -99,6 +99,21 @@ void main() {
       });
       expect(r.createdBy, 10);
       expect(r.createdByEmail, 'teacher@example.com');
+      expect(r.createdByLabel, 'teacher@example.com');
+    });
+
+    test('createdByLabel предпочитает display_name над email', () {
+      final r = Report.fromJson({
+        'id': 6,
+        'report_date': '2025-03-11',
+        'content': 'x',
+        'is_late': false,
+        'created_at': '2025-03-11T10:00:00Z',
+        'created_by': 11,
+        'created_by_email': 'login@mail.ru',
+        'created_by_display_name': 'Иванов Иван',
+      });
+      expect(r.createdByLabel, 'Иванов Иван');
     });
   });
 }

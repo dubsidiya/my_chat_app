@@ -100,6 +100,8 @@ class VoiceCallService {
   bool _hasTurnServer = false;
   /// После сбойного createPeerConnection повторный getUserMedia на Android падает (баг плагина).
   bool _webRtcMediaBroken = false;
+  /// Этот клиент ведёт медиа-ногу звонка (invite/accept с этой вкладки/устройства).
+  bool _ownsCallMedia = false;
 
   VoiceCallSnapshot get snapshot => _snapshot;
   MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
@@ -122,6 +124,7 @@ class VoiceCallService {
     _idleResetTimer = null;
     _lastMicAccess = null;
     _webRtcMediaBroken = false;
+    _ownsCallMedia = false;
     unawaited(_tearDownMedia());
     _emit(const VoiceCallSnapshot(phase: VoiceCallPhase.idle));
   }
@@ -167,6 +170,7 @@ class VoiceCallService {
       }
 
       final callId = _newCallId();
+      _ownsCallMedia = true;
       _emit(
         VoiceCallSnapshot(
           phase: VoiceCallPhase.outgoing,
@@ -189,6 +193,7 @@ class VoiceCallService {
       });
       if (!sent) {
         _cancelOutgoingTimeout();
+        _ownsCallMedia = false;
         await _tearDownMedia();
         _emitFailed('Нет соединения с сервером');
         return false;
@@ -197,6 +202,7 @@ class VoiceCallService {
     } catch (e, st) {
       if (kDebugMode) print('VoiceCall startOutgoingCall: $e\n$st');
       _cancelOutgoingTimeout();
+      _ownsCallMedia = false;
       await _tearDownMedia();
       _emitFailed('Не удалось начать звонок: ${_shortError(e)}');
       return false;
@@ -279,6 +285,7 @@ class VoiceCallService {
         ),
       );
       _startConnectingTimeout();
+      _ownsCallMedia = true;
       final sent = _sendSignal({
         'type': 'call_accept',
         'call_id': callId,
@@ -286,6 +293,7 @@ class VoiceCallService {
       });
       if (!sent) {
         _cancelConnectingTimeout();
+        _ownsCallMedia = false;
         _emitFailed('Нет соединения с сервером. Проверьте интернет.');
       }
     } catch (e, st) {
@@ -338,6 +346,7 @@ class VoiceCallService {
         'chat_id': chatId,
       });
     }
+    _ownsCallMedia = false;
     await _tearDownMedia();
     _emit(
       const VoiceCallSnapshot(
@@ -450,7 +459,30 @@ class VoiceCallService {
       case 'call_error':
         _onError(event);
         break;
+      case 'call_answered_elsewhere':
+        _onAnsweredElsewhere(event);
+        break;
     }
+  }
+
+  /// Другая вкладка/устройство того же аккаунта приняла входящий звонок.
+  void _onAnsweredElsewhere(Map event) {
+    if (!_matchesActiveCall(event)) return;
+    if (_ownsCallMedia) return;
+    _cancelOutgoingTimeout();
+    _cancelConnectingTimeout();
+    unawaited(_tearDownMedia());
+    _emit(
+      VoiceCallSnapshot(
+        phase: VoiceCallPhase.ended,
+        callId: _snapshot.callId,
+        chatId: _snapshot.chatId,
+        peerUserId: _snapshot.peerUserId,
+        peerLabel: _snapshot.peerLabel,
+        statusMessage: 'Звонок принят на другом устройстве',
+      ),
+    );
+    _scheduleIdleReset();
   }
 
   void _onInvite(Map event) {
@@ -514,6 +546,7 @@ class VoiceCallService {
 
   Future<void> _onAccept(Map event) async {
     if (!_matchesActiveCall(event)) return;
+    if (!_ownsCallMedia) return;
     if (_snapshot.phase != VoiceCallPhase.outgoing) return;
     _cancelOutgoingTimeout();
     _emit(
@@ -597,6 +630,7 @@ class VoiceCallService {
 
   Future<void> _onOffer(Map event) async {
     if (!_matchesActiveCall(event)) return;
+    if (!_ownsCallMedia) return;
     final sdpMap = event['sdp'];
     if (sdpMap is! Map) return;
     try {
@@ -632,6 +666,7 @@ class VoiceCallService {
 
   Future<void> _onAnswer(Map event) async {
     if (!_matchesActiveCall(event)) return;
+    if (!_ownsCallMedia) return;
     if (_pc == null) return;
     final sdpMap = event['sdp'];
     if (sdpMap is! Map) return;
@@ -648,6 +683,7 @@ class VoiceCallService {
 
   Future<void> _onIce(Map event) async {
     if (!_matchesActiveCall(event)) return;
+    if (!_ownsCallMedia) return;
     if (_pc == null) return;
     final candidate = event['candidate'];
     if (candidate is! Map) return;
@@ -1358,6 +1394,7 @@ class VoiceCallService {
       _idleResetTimer = null;
       if (_snapshot.phase == VoiceCallPhase.ended ||
           _snapshot.phase == VoiceCallPhase.failed) {
+        _ownsCallMedia = false;
         _emit(const VoiceCallSnapshot(phase: VoiceCallPhase.idle));
       }
     });

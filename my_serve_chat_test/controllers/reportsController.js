@@ -24,6 +24,7 @@ import {
   findMonthlyLessonCountsByPrice,
   findMonthlyNoReportAmount,
   findMonthlyTotals,
+  findReportAuthors,
   findReportByIdForViewer,
   findReportLessons,
   findReportsList,
@@ -192,7 +193,7 @@ export const getAllReports = async (req, res) => {
 
 /**
  * Список всех отчётов для бухгалтера/суперпользователя: кто сдал, какие поздние, фильтры по дате.
- * GET /reports/list?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&is_late=true|false
+ * GET /reports/list?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&is_late=true|false&created_by=USER_ID
  * Только суперпользователь.
  */
 export const getReportsList = async (req, res) => {
@@ -200,8 +201,18 @@ export const getReportsList = async (req, res) => {
     const dateFrom = req.query.date_from;
     const dateTo = req.query.date_to;
     const isLate = req.query.is_late; // 'true' | 'false' | не задан
+    const createdByRaw = req.query.created_by;
+    const createdBy =
+      createdByRaw != null && String(createdByRaw).trim() !== ''
+        ? parsePositiveInt(createdByRaw)
+        : null;
 
-    const result = await findReportsList(pool, { dateFrom, dateTo, isLate });
+    const result = await findReportsList(pool, {
+      dateFrom,
+      dateTo,
+      isLate,
+      createdBy: createdBy ?? undefined,
+    });
 
     const rows = result.rows.map((row) => ({
       id: row.id,
@@ -210,6 +221,7 @@ export const getReportsList = async (req, res) => {
       is_late: row.is_late,
       created_by: row.created_by,
       created_by_email: row.created_by_email || '',
+      created_by_display_name: row.created_by_display_name || '',
       created_at: row.created_at,
       updated_at: row.updated_at,
       lessons_count: row.lessons_count ?? 0,
@@ -219,6 +231,27 @@ export const getReportsList = async (req, res) => {
   } catch (error) {
     console.error('getReportsList:', error);
     res.status(500).json({ message: 'Ошибка получения списка отчётов' });
+  }
+};
+
+/** GET /reports/list/teachers?date_from=&date_to= — авторы с отчётами в периоде (суперпользователь). */
+export const getReportAuthors = async (req, res) => {
+  try {
+    const result = await findReportAuthors(pool, {
+      dateFrom: req.query.date_from,
+      dateTo: req.query.date_to,
+    });
+    res.json(
+      result.rows.map((row) => ({
+        id: row.id,
+        email: row.email || '',
+        display_name: row.display_name || '',
+        label: row.accounting_name || row.email || '',
+      }))
+    );
+  } catch (error) {
+    console.error('getReportAuthors:', error);
+    res.status(500).json({ message: 'Ошибка получения списка преподавателей' });
   }
 };
 

@@ -1,3 +1,5 @@
+import { sqlUserAccountingNameOrEmpty } from '../../utils/userAccountingDisplaySql.js';
+
 export const findAllReportsByUser = async (db, userId) => {
   return db.query(
     `SELECT r.*, COUNT(rl.lesson_id) as lessons_count
@@ -10,10 +12,43 @@ export const findAllReportsByUser = async (db, userId) => {
   );
 };
 
-export const findReportsList = async (db, { dateFrom, dateTo, isLate }) => {
+export const findReportAuthors = async (db, { dateFrom, dateTo } = {}) => {
+  const subConditions = ['r.created_by = u.id'];
+  const params = [];
+  let idx = 1;
+
+  if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+    subConditions.push(`r.report_date >= $${idx}::date`);
+    params.push(dateFrom);
+    idx++;
+  }
+  if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+    subConditions.push(`r.report_date <= $${idx}::date`);
+    params.push(dateTo);
+    idx++;
+  }
+
+  const subWhere = subConditions.join(' AND ');
+  return db.query(
+    `SELECT DISTINCT u.id, u.email, u.display_name,
+            ${sqlUserAccountingName('u')} AS accounting_name
+     FROM users u
+     WHERE EXISTS (SELECT 1 FROM reports r WHERE ${subWhere})
+     ORDER BY accounting_name ASC`,
+    params
+  );
+};
+
+export const findReportsList = async (db, { dateFrom, dateTo, isLate, createdBy }) => {
   const conditions = [];
   const params = [];
   let idx = 1;
+
+  if (createdBy != null && Number.isFinite(createdBy)) {
+    conditions.push(`r.created_by = $${idx}`);
+    params.push(createdBy);
+    idx++;
+  }
 
   if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
     conditions.push(`r.report_date >= $${idx}::date`);
@@ -34,12 +69,13 @@ export const findReportsList = async (db, { dateFrom, dateTo, isLate }) => {
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db.query(
     `SELECT r.*, u.email AS created_by_email,
+            ${sqlUserAccountingNameOrEmpty('u')} AS created_by_display_name,
             COUNT(rl.lesson_id)::int AS lessons_count
      FROM reports r
      LEFT JOIN users u ON r.created_by = u.id
      LEFT JOIN report_lessons rl ON r.id = rl.report_id
      ${whereClause}
-     GROUP BY r.id, u.email
+     GROUP BY r.id, u.email, u.display_name
      ORDER BY r.report_date DESC, r.created_at DESC`,
     params
   );
