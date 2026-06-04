@@ -8,6 +8,7 @@ import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
 import 'accounting_export_screen.dart';
 import 'lessons_calendar_screen.dart';
+import 'teacher_schedule_heatmap_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String userId;
@@ -408,6 +409,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           MaterialPageRoute(builder: (_) => const AccountingExportScreen()),
                         );
                         break;
+                      case 'teacher_schedule':
+                        await Navigator.push<void>(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const TeacherScheduleHeatmapScreen(),
+                          ),
+                        );
+                        break;
                       case 'refresh':
                         await _loadStudents();
                         break;
@@ -447,6 +456,17 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         ],
                       ),
                     ),
+                    if (_isSuperuser)
+                      const PopupMenuItem<String>(
+                        value: 'teacher_schedule',
+                        child: Row(
+                          children: [
+                            Icon(Icons.grid_on_rounded, color: Colors.indigo),
+                            SizedBox(width: 10),
+                            Text('График работы преподавателя'),
+                          ],
+                        ),
+                      ),
                     const PopupMenuItem<String>(
                       value: 'export',
                       child: Row(
