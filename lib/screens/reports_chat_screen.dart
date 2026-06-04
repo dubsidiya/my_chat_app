@@ -88,7 +88,35 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     _yesterdayReminder = !has;
   }
 
-  Future<void> _loadTeacherOptions() async {
+  void _applyTeacherOptions(List<ReportAuthorOption> teachers) {
+    if (!mounted) return;
+    setState(() {
+      _teacherOptions = teachers;
+      if (_filterTeacherId != null &&
+          !teachers.any((t) => t.id == _filterTeacherId)) {
+        _filterTeacherId = null;
+      }
+    });
+  }
+
+  /// Если API преподавателей недоступен — собираем уникальных авторов из уже загруженных отчётов.
+  void _mergeTeachersFromReports(List<Report> reports) {
+    final byId = <int, ReportAuthorOption>{
+      for (final t in _teacherOptions) t.id: t,
+    };
+    for (final r in reports) {
+      final id = r.createdBy;
+      final label = r.createdByLabel;
+      if (id == null || label == null || label.isEmpty) continue;
+      byId[id] = ReportAuthorOption(id: id, label: label);
+    }
+    if (byId.isEmpty) return;
+    final merged = byId.values.toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
+    _applyTeacherOptions(merged);
+  }
+
+  Future<void> _loadTeacherOptions({bool showErrors = false}) async {
     if (!mounted) return;
     setState(() => _teachersLoading = true);
     try {
@@ -97,15 +125,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         dateTo: _filterDateTo,
       );
       if (!mounted) return;
-      setState(() {
-        _teacherOptions = teachers;
-        if (_filterTeacherId != null &&
-            !teachers.any((t) => t.id == _filterTeacherId)) {
-          _filterTeacherId = null;
-        }
-      });
+      _applyTeacherOptions(teachers);
     } catch (e) {
       if (kDebugMode) print('Ошибка загрузки преподавателей: $e');
+      if (showErrors && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(networkErrorMessage(e)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _teachersLoading = false);
     }
@@ -115,7 +145,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      if (refreshTeachers) await _loadTeacherOptions();
+      if (refreshTeachers) await _loadTeacherOptions(showErrors: true);
       final reports = await _reportsService.getAllReportsList(
         dateFrom: _filterDateFrom,
         dateTo: _filterDateTo,
@@ -127,6 +157,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           _reports = reports;
           _syncYesterdayReminder();
         });
+        if (_teacherOptions.isEmpty && reports.isNotEmpty) {
+          _mergeTeachersFromReports(reports);
+        }
       }
     } catch (e) {
       if (kDebugMode) print('Ошибка загрузки списка отчётов: $e');
@@ -424,7 +457,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
             ),
             child: IconButton(
               icon: Icon(Icons.refresh_rounded, color: _accent1),
-              onPressed: _allReportsMode ? _loadReportsList : _loadReports,
+              onPressed: _allReportsMode
+                  ? () => _loadReportsList(refreshTeachers: true)
+                  : _loadReports,
               tooltip: 'Обновить',
             ),
           ),
@@ -537,8 +572,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<int?>(
-                          initialValue: _filterTeacherId,
+                        InputDecorator(
                           decoration: InputDecoration(
                             labelText: 'Преподаватель',
                             isDense: true,
@@ -551,29 +585,54 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     ),
                                   )
+                                : (_teacherOptions.isEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.refresh_rounded, size: 20),
+                                        tooltip: 'Обновить список',
+                                        onPressed: _teachersLoading
+                                            ? null
+                                            : () => _loadTeacherOptions(showErrors: true),
+                                      )
+                                    : null),
+                            helperText: _teacherOptions.isEmpty
+                                ? 'Нажмите «Показать» или ↻ — список появится после загрузки отчётов'
                                 : null,
                           ),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('Все преподаватели'),
-                            ),
-                            ..._teacherOptions.map(
-                              (t) => DropdownMenuItem<int?>(
-                                value: t.id,
-                                child: Text(
-                                  t.label,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int?>(
+                              key: ValueKey(
+                                'teachers-${_teacherOptions.length}-'
+                                '${_filterDateFrom.millisecondsSinceEpoch}-'
+                                '${_filterDateTo.millisecondsSinceEpoch}',
                               ),
+                              isExpanded: true,
+                              value: _filterTeacherId,
+                              hint: const Text('Все преподаватели'),
+                              items: [
+                                const DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text('Все преподаватели'),
+                                ),
+                                ..._teacherOptions.map(
+                                  (t) => DropdownMenuItem<int?>(
+                                    value: t.id,
+                                    child: Text(
+                                      t.label,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: _teachersLoading
+                                  ? null
+                                  : (v) {
+                                      setState(() => _filterTeacherId = v);
+                                      if (!_isLoading) {
+                                        unawaited(_loadReportsList());
+                                      }
+                                    },
                             ),
-                          ],
-                          onChanged: _teachersLoading
-                              ? null
-                              : (v) {
-                                  setState(() => _filterTeacherId = v);
-                                  if (!_isLoading) unawaited(_loadReportsList());
-                                },
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Row(

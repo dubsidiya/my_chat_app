@@ -86,13 +86,27 @@ class ReportsService {
       timeout: const Duration(seconds: 15),
     );
     if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data
-          .whereType<Map>()
-          .map((json) => ReportAuthorOption.fromJson(
-                json.map((k, v) => MapEntry(k.toString(), v)),
-              ))
-          .toList();
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) return [];
+      final out = <ReportAuthorOption>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        try {
+          out.add(
+            ReportAuthorOption.fromJson(
+              item.map((k, v) => MapEntry(k.toString(), v)),
+            ),
+          );
+        } catch (_) {
+          /* skip malformed row */
+        }
+      }
+      return out;
+    }
+    if (response.statusCode == 404) {
+      throw Exception(
+        'Сервер не поддерживает список преподавателей. Обновите backend (GET /reports/list/teachers).',
+      );
     }
     if (response.statusCode == 403) {
       throw Exception('Требуется доступ суперпользователя');
