@@ -1,11 +1,20 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
+import 'webrtc_web_secure_context.dart';
+
 /// Проверка, можно ли безопасно использовать WebRTC на этом устройстве.
 class WebRtcDeviceSupport {
   WebRtcDeviceSupport._();
 
   static const MethodChannel _channel = MethodChannel('reollity/device');
+
+  /// Браузер разрешает getUserMedia/WebRTC только в secure context (HTTPS / localhost).
+  static bool get webCallsAllowed => !kIsWeb || isWebSecureContext();
+
+  static const String insecureWebContextMessage =
+      'Голосовые звонки в браузере работают только по HTTPS '
+      '(или на localhost при разработке).';
 
   static bool? _cachedUnsupportedSimulator;
 

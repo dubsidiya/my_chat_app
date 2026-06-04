@@ -36,7 +36,7 @@ dependencies:
   cryptography: ^2.7.0       # E2EE: X25519, AES-GCM, HKDF
   video_player: ^2.11.1
   video_thumbnail: ^0.5.6
-  flutter_webrtc: ^1.4.1   # iOS bundles libwebrtc m144; older 0.12.x shipped m125 which Apple flags (ITMS-90338)
+  flutter_webrtc: ^1.4.1   # iOS: WebRTC-SDK 144.x — перед App Store: bash tool/patch_ios_webrtc_sdk.sh (см. docs/IOS_APP_STORE_WEBRTC.md)
   permission_handler: ^11.4.0
 
 dev_dependencies:

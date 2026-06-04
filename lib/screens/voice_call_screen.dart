@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -168,9 +169,12 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Нужен микрофон'),
-          content: const Text(
-            'Разрешите доступ к микрофону в Настройках → Reollity → Микрофон, '
-            'затем повторите звонок.',
+          content: Text(
+            kIsWeb
+                ? 'Разрешите микрофон для этого сайта в настройках браузера '
+                    '(иконка замка в адресной строке), затем повторите звонок.'
+                : 'Разрешите доступ к микрофону в Настройках → Reollity → Микрофон, '
+                    'затем повторите звонок.',
           ),
           actions: [
             TextButton(
@@ -198,6 +202,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   }
 
   void _applySpeakerphone(bool enabled) {
+    if (kIsWeb) return;
     try {
       Helper.setSpeakerphoneOn(enabled);
     } catch (_) {}
@@ -216,7 +221,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _durationTicker = null;
     _ringerTicker?.cancel();
     _ringerTicker = null;
-    _applySpeakerphone(false);
+    if (!kIsWeb) _applySpeakerphone(false);
     _remoteRenderer?.srcObject = null;
     _remoteRenderer?.dispose();
     super.dispose();
@@ -318,13 +323,15 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                 : Icons.mic_rounded,
                             onTap: () => unawaited(_calls.toggleMute()),
                           ),
-                          const SizedBox(width: 24),
-                          _mediaToggleButton(
-                            icon: _speakerOn
-                                ? Icons.volume_up_rounded
-                                : Icons.phone_in_talk_rounded,
-                            onTap: _toggleSpeaker,
-                          ),
+                          if (!kIsWeb) ...[
+                            const SizedBox(width: 24),
+                            _mediaToggleButton(
+                              icon: _speakerOn
+                                  ? Icons.volume_up_rounded
+                                  : Icons.phone_in_talk_rounded,
+                              onTap: _toggleSpeaker,
+                            ),
+                          ],
                         ],
                       ),
                     ),

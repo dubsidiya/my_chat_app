@@ -132,8 +132,8 @@ class VoiceCallService {
     required String peerLabel,
   }) async {
     try {
-      if (kIsWeb) {
-        _emitFailed('Голосовые звонки пока только в мобильном приложении');
+      if (!WebRtcDeviceSupport.webCallsAllowed) {
+        _emitFailed(WebRtcDeviceSupport.insecureWebContextMessage);
         return false;
       }
       if (await WebRtcDeviceSupport.isUnsupportedSimulator()) {
@@ -246,6 +246,11 @@ class VoiceCallService {
     // Ловим всё локально и переводим звонок в failed с понятным текстом.
     try {
       if (_snapshot.phase != VoiceCallPhase.incoming) return;
+      if (!WebRtcDeviceSupport.webCallsAllowed) {
+        _emitFailed(WebRtcDeviceSupport.insecureWebContextMessage);
+        await rejectIncoming(reason: 'media_error');
+        return;
+      }
       if (await WebRtcDeviceSupport.isUnsupportedSimulator()) {
         _emitFailed(WebRtcDeviceSupport.unsupportedSimulatorMessage);
         await rejectIncoming(reason: 'media_error');
@@ -1100,7 +1105,10 @@ class VoiceCallService {
         return true;
       case MicrophoneAccess.permanentlyDenied:
         _emitFailed(
-          'Нет доступа к микрофону. Разрешите в Настройках → Reollity → Микрофон.',
+          kIsWeb
+              ? 'Нет доступа к микрофону. Разрешите микрофон для этого сайта '
+                  'в настройках браузера (иконка замка в адресной строке).'
+              : 'Нет доступа к микрофону. Разрешите в Настройках → Reollity → Микрофон.',
         );
         return false;
       case MicrophoneAccess.denied:

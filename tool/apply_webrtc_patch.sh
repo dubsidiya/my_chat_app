@@ -8,9 +8,14 @@ if [[ ! -f "$PATCH" ]]; then
   echo "Missing $PATCH" >&2
   exit 1
 fi
-PKG_DIR="$(find "${PUB_CACHE:-$HOME/.pub-cache}/hosted" -maxdepth 2 -type d -name 'flutter_webrtc-*' 2>/dev/null | head -1)"
-if [[ -z "$PKG_DIR" ]]; then
-  echo "flutter_webrtc not in pub-cache; run flutter pub get first" >&2
+LOCK_VER="$(grep -A8 '  flutter_webrtc:$' "$ROOT/pubspec.lock" | grep 'version:' | head -1 | sed 's/.*version: "\(.*\)".*/\1/' || true)"
+if [[ -z "$LOCK_VER" ]]; then
+  echo "flutter_webrtc not in pubspec.lock; run flutter pub get first" >&2
+  exit 1
+fi
+PKG_DIR="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev/flutter_webrtc-${LOCK_VER}"
+if [[ ! -d "$PKG_DIR" ]]; then
+  echo "Missing $PKG_DIR; run flutter pub get first" >&2
   exit 1
 fi
 PCO="$PKG_DIR/android/src/main/java/com/cloudwebrtc/webrtc/PeerConnectionObserver.java"
@@ -28,6 +33,10 @@ android_patched() {
 ios_patched() {
   local f="$1"
   [[ -f "$f" ]] || return 0
+  # Upstream 1.4.x: nil sink guard in postEvent; optional eventChannel teardown patch.
+  if grep -q 'postEvent: sink is nil' "$f" 2>/dev/null; then
+    return 0
+  fi
   grep -q 'FlutterEventSink copiedSink' "$f" && grep -q 'setStreamHandler:nil' "$f"
 }
 
@@ -88,9 +97,9 @@ for ios_file in \
 done
 
 if android_patched && ios_patched "$PKG_DIR/ios/Classes/FlutterWebRTCPlugin.m"; then
-  echo "Patch already applied at $PKG_DIR"
+  echo "Patch OK at $PKG_DIR"
 elif android_patched; then
-  echo "Android patch OK; iOS patch applied at $PKG_DIR"
+  echo "Android patch OK at $PKG_DIR (iOS uses upstream guards or manual patch)"
 else
   echo "Patch incomplete; check $PKG_DIR" >&2
   exit 1

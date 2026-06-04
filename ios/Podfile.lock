@@ -74,7 +74,7 @@ PODS:
     - Flutter
   - flutter_webrtc (1.4.0):
     - Flutter
-    - WebRTC-SDK (= 144.7559.01)
+    - WebRTC-SDK (= 144.7559.04)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -168,7 +168,7 @@ PODS:
   - video_thumbnail (0.0.1):
     - Flutter
     - libwebp
-  - WebRTC-SDK (144.7559.01)
+  - WebRTC-SDK (144.7559.04)
 
 DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
@@ -267,7 +267,7 @@ SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
-  flutter_webrtc: ec91d94b484ad49cf191ef93413f64a40ffd3b4c
+  flutter_webrtc: 3cea548ace6c8cdefc98a898fe0c177d680080b7
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
@@ -286,8 +286,8 @@ SPEC CHECKSUMS:
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
   video_thumbnail: b637e0ad5f588ca9945f6e2c927f73a69a661140
-  WebRTC-SDK: ab9b5319e458c2bfebdc92b3600740da35d5630d
+  WebRTC-SDK: ac5965a3cc2c258973466e3b1739ab0308bab0d0
 
-PODFILE CHECKSUM: ba87b2ebcb8b694add217634683af4e17d2801b1
+PODFILE CHECKSUM: 89b1f99dc512ad621c4261b4004ffc6798e452cb
 
 COCOAPODS: 1.16.2

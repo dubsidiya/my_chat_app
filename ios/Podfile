@@ -1,6 +1,10 @@
 # Uncomment this line to define a global platform for your project
 platform :ios, '13.0'
 
+# WebRTC-SDK specs (flutter_webrtc); required for pod update to 144.7559.x
+source 'https://cdn.cocoapods.org/'
+source 'https://github.com/webrtc-sdk/Specs.git'
+
 # Workaround for Xcode "Unable to load contents of file list ... .xcfilelist".
 # Disables input/output xcfilelists in CocoaPods script phases.
 install! 'cocoapods', :disable_input_output_paths => true
@@ -69,6 +73,11 @@ post_install do |installer|
       # permission_handler: микрофон для WebRTC-звонков
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
+
+      # flutter_webrtc: WebRTC.xcframework after m104 — see plugin README
+      if target.name == 'flutter_webrtc' || target.name == 'WebRTC-SDK'
+        config.build_settings['ONLY_ACTIVE_ARCH'] = 'YES'
+      end
     end
   end
 
