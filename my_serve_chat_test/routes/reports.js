@@ -12,6 +12,10 @@ import {
   deleteReport,
   setReportNotLate
 } from '../controllers/reports/index.js';
+import {
+  getMyTeacherBalance,
+  getMyTeacherBalanceTransactions,
+} from '../controllers/teacherBalanceController.js';
 
 const router = express.Router();
 
@@ -19,6 +23,8 @@ const router = express.Router();
 router.use(authenticateToken, requirePrivateAccess);
 
 router.get('/salary', getMonthlySalaryReport);
+router.get('/balance/transactions', getMyTeacherBalanceTransactions);
+router.get('/balance', getMyTeacherBalance);
 router.get('/list/teachers', requireSuperuser, getReportAuthors);
 router.get('/list', requireSuperuser, getReportsList);
 router.get('/', getAllReports);

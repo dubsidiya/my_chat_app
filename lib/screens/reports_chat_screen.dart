@@ -11,6 +11,7 @@ import '../utils/network_error_helper.dart';
 import 'report_text_view_screen.dart';
 import 'report_builder_screen.dart';
 import 'monthly_salary_screen.dart';
+import 'teacher_balance_screen.dart';
 
 class ReportsChatScreen extends StatefulWidget {
   final String userId;
@@ -435,6 +436,25 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                 );
               },
               tooltip: 'Зарплата за месяц',
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              color: _accent1.withValues(alpha:0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.account_balance_wallet_rounded, color: _accent1),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const TeacherBalanceScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Рабочий баланс',
             ),
           ),
           Container(

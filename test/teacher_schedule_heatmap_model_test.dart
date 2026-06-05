@@ -20,5 +20,7 @@ void main() {
     expect(h.countAt(1, '10:00'), 3);
     expect(h.countAt(2, '10:00'), 0);
     expect(h.totalLessons, 4);
+    expect(h.slotsForWeekday(1).map((c) => c.timeSlot).toList(), ['10:00']);
+    expect(h.slotsForWeekday(2), isEmpty);
   });
 }

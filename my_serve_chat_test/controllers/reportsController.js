@@ -35,6 +35,11 @@ import {
   validateMonthlySalaryQuery,
   validateReportInput,
 } from '../validators/reports/reportValidator.js';
+import {
+  deleteLessonIncomeForLessons,
+  deleteLessonIncomeForReport,
+  syncReportLessonIncome,
+} from '../services/accounting/teacherBalanceService.js';
 
 const isoDate = (value) => String(value || '').slice(0, 10);
 
@@ -605,6 +610,8 @@ export const createReport = async (req, res) => {
       },
     });
 
+    await syncReportLessonIncome(client, report.id, userId);
+
     await client.query('COMMIT');
     return res.status(201).json(report);
   } catch (error) {
@@ -718,6 +725,7 @@ export const updateReport = async (req, res) => {
 
     // Удаляем старые транзакции и занятия (только свои)
     if (oldLessonIds.length > 0) {
+      await deleteLessonIncomeForLessons(client, oldLessonIds);
       await client.query(
         'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
         [reportOwnerId, oldLessonIds]
@@ -905,6 +913,8 @@ export const updateReport = async (req, res) => {
       },
     });
 
+    await syncReportLessonIncome(client, reportId, userId);
+
     await client.query('COMMIT');
     return res.json(report);
   } catch (error) {
@@ -971,7 +981,9 @@ export const deleteReport = async (req, res) => {
     );
     const lessonIds = lessonsResult.rows.map((r) => r.lesson_id);
 
+    await deleteLessonIncomeForReport(client, reportId);
     if (lessonIds.length > 0) {
+      await deleteLessonIncomeForLessons(client, lessonIds);
       await client.query(
         'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
         [reportOwnerId, lessonIds]
@@ -1037,6 +1049,17 @@ export const setReportNotLate = async (req, res) => {
       entityId: reportId,
       payload: { report_date: result.rows[0].report_date },
     });
+    const syncClient = await pool.connect();
+    try {
+      await syncClient.query('BEGIN');
+      await syncReportLessonIncome(syncClient, reportId, req.user.userId);
+      await syncClient.query('COMMIT');
+    } catch (syncErr) {
+      try { await syncClient.query('ROLLBACK'); } catch (_) {}
+      console.error('syncReportLessonIncome after set-not-late:', syncErr);
+    } finally {
+      syncClient.release();
+    }
     return res.json(result.rows[0]);
   } catch (error) {
     console.error('setReportNotLate:', error);

@@ -10,12 +10,22 @@ import {
   getTeacherScheduleTeachers,
 } from '../controllers/teacherScheduleController.js';
 import { adminResetUserPassword } from '../controllers/auth/index.js';
+import {
+  getTeacherBalanceAdmin,
+  listTeacherBalancesAdmin,
+  postTeacherBalanceTransactionAdmin,
+  syncTeacherBalancesAdmin,
+} from '../controllers/teacherBalanceController.js';
 
 const router = express.Router();
 
 // Админские маршруты: суперпользователь (privateAccess не требуется)
 router.use(authenticateToken, requireSuperuser);
 
+router.get('/accounting/teacher-balances', listTeacherBalancesAdmin);
+router.get('/accounting/teacher-balances/:teacherId', getTeacherBalanceAdmin);
+router.post('/accounting/teacher-balances/:teacherId/transactions', postTeacherBalanceTransactionAdmin);
+router.post('/accounting/teacher-balances/sync', syncTeacherBalancesAdmin);
 router.get('/accounting/teacher-schedule/teachers', getTeacherScheduleTeachers);
 router.get('/accounting/teacher-schedule', getTeacherScheduleHeatmap);
 router.get('/accounting/export', exportAccounting);

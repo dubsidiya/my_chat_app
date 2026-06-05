@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../models/monthly_salary_report.dart';
 import '../services/reports_service.dart';
+import '../services/teacher_balance_service.dart';
 
 class MonthlySalaryScreen extends StatefulWidget {
   const MonthlySalaryScreen({super.key});
@@ -13,7 +14,9 @@ class MonthlySalaryScreen extends StatefulWidget {
 
 class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
   final ReportsService _reportsService = ReportsService();
+  final TeacherBalanceService _balanceService = TeacherBalanceService();
   MonthlySalaryReport? _report;
+  double? _workBalance;
   bool _isLoading = false;
   DateTime _selected = DateTime.now();
   static Color get _accent1 => AppColors.primary;
@@ -42,8 +45,18 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
       setState(() {
         _selected = DateTime(picked.year, picked.month);
         _report = null;
+        _workBalance = null;
       });
       _load();
+    }
+  }
+
+  Future<double?> _loadWorkBalance() async {
+    try {
+      final b = await _balanceService.getMyBalance();
+      return b.balance;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -51,11 +64,16 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final r = await _reportsService.getMonthlySalaryReport(
-        _selected.year,
-        _selected.month,
-      );
-      if (mounted) setState(() => _report = r);
+      final results = await Future.wait([
+        _reportsService.getMonthlySalaryReport(_selected.year, _selected.month),
+        _loadWorkBalance(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _report = results[0] as MonthlySalaryReport;
+          _workBalance = results[1] as double?;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -227,7 +245,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
               child: Column(
                 children: [
                   Text(
-                    'Итог:',
+                    'Зарплата за месяц (50%)',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -244,6 +262,42 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                       letterSpacing: 0.5,
                     ),
                   ),
+                  if (_workBalance != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Divider(
+                        color: scheme.outline.withValues(alpha: 0.2),
+                        height: 1,
+                      ),
+                    ),
+                    Text(
+                      'Рабочий баланс',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _formatMoney(_workBalance!),
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: _workBalance! >= 0
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'С учётом всех начислений и выплат',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -6,9 +6,8 @@ import '../services/students_service.dart';
 import '../services/storage_service.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
-import 'accounting_export_screen.dart';
 import 'lessons_calendar_screen.dart';
-import 'teacher_schedule_heatmap_screen.dart';
+import 'accounting_hub_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String userId;
@@ -403,18 +402,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           MaterialPageRoute<void>(builder: (_) => const LessonsCalendarScreen()),
                         );
                         break;
-                      case 'export':
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AccountingExportScreen()),
-                        );
-                        break;
-                      case 'teacher_schedule':
+                      case 'accounting':
                         await Navigator.push<void>(
                           context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const TeacherScheduleHeatmapScreen(),
-                          ),
+                          MaterialPageRoute<void>(builder: (_) => const AccountingHubScreen()),
                         );
                         break;
                       case 'refresh':
@@ -458,25 +449,15 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                     if (_isSuperuser)
                       const PopupMenuItem<String>(
-                        value: 'teacher_schedule',
+                        value: 'accounting',
                         child: Row(
                           children: [
-                            Icon(Icons.grid_on_rounded, color: Colors.indigo),
+                            Icon(Icons.business_center_rounded, color: Colors.deepPurple),
                             SizedBox(width: 10),
-                            Text('График работы преподавателя'),
+                            Text('Бухгалтерия'),
                           ],
                         ),
                       ),
-                    const PopupMenuItem<String>(
-                      value: 'export',
-                      child: Row(
-                        children: [
-                          Icon(Icons.receipt_long_rounded, color: Colors.deepPurple),
-                          SizedBox(width: 10),
-                          Text('Выгрузка (бухгалтерия)'),
-                        ],
-                      ),
-                    ),
                     PopupMenuItem<String>(
                       value: 'refresh',
                       child: Row(

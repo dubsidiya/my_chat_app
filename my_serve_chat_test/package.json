@@ -14,6 +14,7 @@
     "smoke:routes:access": "node scripts/smoke-routes-access.js",
     "smoke:reports:permissions": "node scripts/smoke-reports-permissions.js",
     "smoke:reports:regressions": "node scripts/smoke-reports-regressions.js",
+    "smoke:teacher-balance": "node scripts/smoke-teacher-balance.js",
     "smoke:call:signaling": "node scripts/smoke-call-signaling.js",
     "smoke:all": "npm run smoke:accounting && npm run smoke:accounting:edge && npm run smoke:accounting:xlsx && npm run smoke:accounting:hidden-quality && npm run smoke:audit:hardening && npm run smoke:routes:access && npm run smoke:reports:permissions && npm run smoke:reports:regressions",
     "migrate-passwords": "node migrate_passwords.js",

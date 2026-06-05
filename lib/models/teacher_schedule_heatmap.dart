@@ -64,6 +64,15 @@ class TeacherScheduleHeatmap {
     return 0;
   }
 
+  /// Только слоты с занятиями в этот день недели (без пустых строк из других дней).
+  List<TeacherScheduleCell> slotsForWeekday(int weekday) {
+    final list = cells
+        .where((c) => c.weekday == weekday && c.count > 0 && c.timeSlot.isNotEmpty)
+        .toList()
+      ..sort((a, b) => a.timeSlot.compareTo(b.timeSlot));
+    return list;
+  }
+
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
     if (v is int) return v;

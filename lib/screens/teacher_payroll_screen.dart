@@ -1,0 +1,436 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+
+import '../models/teacher_balance.dart';
+import '../services/teacher_balance_service.dart';
+import '../theme/app_colors.dart';
+import '../utils/network_error_helper.dart';
+
+/// Управление выплатами преподавателям (только суперпользователь).
+class TeacherPayrollScreen extends StatefulWidget {
+  const TeacherPayrollScreen({super.key});
+
+  @override
+  State<TeacherPayrollScreen> createState() => _TeacherPayrollScreenState();
+}
+
+class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
+  final TeacherBalanceService _service = TeacherBalanceService();
+  final TextEditingController _searchController = TextEditingController();
+
+  List<TeacherBalanceListItem> _teachers = [];
+  bool _loading = false;
+  String? _error;
+  String _query = '';
+
+  final DateTime _syncFrom = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  final DateTime _syncTo = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final list = await _service.listTeachers();
+      if (!mounted) return;
+      setState(() => _teachers = list);
+    } catch (e) {
+      if (mounted) setState(() => _error = networkErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _money(num v) => '${NumberFormat('#,##0', 'ru_RU').format(v.round())} ₽';
+  String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
+
+  List<TeacherBalanceListItem> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _teachers;
+    return _teachers.where((t) => t.label.toLowerCase().contains(q)).toList();
+  }
+
+  Future<void> _syncBalances() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _service.syncBalances(from: _fmt(_syncFrom), to: _fmt(_syncTo));
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Начисления с отчётов синхронизированы')),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(networkErrorMessage(e)), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _openTeacher(TeacherBalanceListItem item) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => _TeacherPayrollDetailScreen(
+          teacherId: item.teacherId,
+          teacherLabel: item.label,
+        ),
+      ),
+    );
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final filtered = _filtered;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Выплаты преподавателям'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sync_rounded),
+            tooltip: 'Синхронизировать начисления',
+            onPressed: _showSyncDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _loading ? null : _load,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Поиск преподавателя',
+                prefixIcon: const Icon(Icons.search_rounded),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(_error!, style: TextStyle(color: scheme.error)),
+            ),
+          Expanded(
+            child: _loading && _teachers.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : filtered.isEmpty
+                    ? Center(child: Text('Преподаватели не найдены', style: TextStyle(color: scheme.onSurfaceVariant)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, i) {
+                          final t = filtered[i];
+                          final color = t.balance >= 0 ? Colors.green.shade700 : Colors.red.shade700;
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              title: Text(t.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              subtitle: const Text('Рабочий баланс'),
+                              trailing: Text(
+                                _money(t.balance),
+                                style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16),
+                              ),
+                              onTap: () => _openTeacher(t),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSyncDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Синхронизация начислений'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Пересчитать начисления 50% с отчётов и занятий без отчёта за период.',
+            ),
+            const SizedBox(height: 12),
+            Text('С: ${DateFormat('dd.MM.yyyy').format(_syncFrom)}'),
+            Text('По: ${DateFormat('dd.MM.yyyy').format(_syncTo)}'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _syncBalances();
+            },
+            child: const Text('Синхронизировать'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherPayrollDetailScreen extends StatefulWidget {
+  final int teacherId;
+  final String teacherLabel;
+
+  const _TeacherPayrollDetailScreen({
+    required this.teacherId,
+    required this.teacherLabel,
+  });
+
+  @override
+  State<_TeacherPayrollDetailScreen> createState() => _TeacherPayrollDetailScreenState();
+}
+
+class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen> {
+  final TeacherBalanceService _service = TeacherBalanceService();
+  double _balance = 0;
+  List<TeacherBalanceTransaction> _transactions = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final data = await _service.getTeacherDetail(widget.teacherId);
+      if (!mounted) return;
+      setState(() {
+        _balance = data.summary.balance;
+        _transactions = data.transactions;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(networkErrorMessage(e)), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _money(num v) => '${NumberFormat('#,##0', 'ru_RU').format(v.round())} ₽';
+
+  Future<void> _addTransaction(String type, String title) async {
+    final amountCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: amountCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+                decoration: InputDecoration(
+                  labelText: type == 'adjustment' ? 'Сумма (+ или −)' : 'Сумма',
+                  hintText: '10000',
+                ),
+                validator: (v) {
+                  final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+                  if (n == null || n == 0) return 'Укажите сумму';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: descCtrl,
+                decoration: const InputDecoration(labelText: 'Комментарий'),
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Укажите комментарий' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    final amount = double.parse(amountCtrl.text.replaceAll(',', '.'));
+    final desc = descCtrl.text.trim();
+    amountCtrl.dispose();
+    descCtrl.dispose();
+
+    try {
+      await _service.postTransaction(
+        teacherId: widget.teacherId,
+        type: type,
+        amount: amount,
+        description: desc,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Операция сохранена')),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(networkErrorMessage(e)), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final balanceColor = _balance >= 0 ? Colors.green.shade700 : Colors.red.shade700;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.teacherLabel)),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showActionSheet(),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Операция'),
+      ),
+      body: _loading && _transactions.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Баланс', style: TextStyle(color: scheme.onSurfaceVariant)),
+                        const SizedBox(height: 6),
+                        Text(
+                          _money(_balance),
+                          style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: balanceColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('История', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  if (_transactions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: Text('Операций нет', style: TextStyle(color: scheme.onSurfaceVariant))),
+                    )
+                  else
+                    ..._transactions.map((tx) {
+                      final dt = tx.createdAt;
+                      final color = tx.amount >= 0 ? Colors.green.shade700 : Colors.red.shade700;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(tx.typeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (tx.description.isNotEmpty) Text(tx.description),
+                              if (dt != null) Text(DateFormat('dd.MM.yyyy HH:mm').format(dt)),
+                            ],
+                          ),
+                          trailing: Text(
+                            '${tx.amount > 0 ? '+' : ''}${_money(tx.amount)}',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: color),
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Future<void> _showActionSheet() async {
+    final type = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_rounded),
+              title: const Text('Выплатить зарплату'),
+              onTap: () => Navigator.pop(ctx, 'salary'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.savings_rounded),
+              title: const Text('Выдать аванс'),
+              onTap: () => Navigator.pop(ctx, 'advance'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.emoji_events_rounded),
+              title: const Text('Начислить премию'),
+              onTap: () => Navigator.pop(ctx, 'premium'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.tune_rounded),
+              title: const Text('Корректировка баланса'),
+              onTap: () => Navigator.pop(ctx, 'adjustment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (type == null || !mounted) return;
+    final titles = {
+      'salary': 'Выплата зарплаты',
+      'advance': 'Выдача аванса',
+      'premium': 'Премия',
+      'adjustment': 'Корректировка',
+    };
+    await _addTransaction(type, titles[type] ?? 'Операция');
+  }
+}

@@ -9,6 +9,10 @@ import {
   hashIdempotencyPayload,
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
+import {
+  deleteLessonIncomeForLesson,
+  syncNoReportLessonIncome,
+} from '../services/accounting/teacherBalanceService.js';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
 
@@ -387,6 +391,8 @@ export const createLesson = async (req, res) => {
       },
     });
 
+    await syncNoReportLessonIncome(client, lesson.id, userId);
+
     await client.query('COMMIT');
     return res.status(201).json(lesson);
   } catch (error) {
@@ -451,6 +457,7 @@ export const deleteLesson = async (req, res) => {
 
     // Удаляем все транзакции, связанные с занятием.
     // Это важно для суперпользователя, чтобы не оставлять "висячие" lesson-списания.
+    await deleteLessonIncomeForLesson(client, id);
     await client.query('DELETE FROM transactions WHERE lesson_id = $1', [id]);
 
     // Удаляем занятие (с тем же ограничением прав, что и на этапе проверки).

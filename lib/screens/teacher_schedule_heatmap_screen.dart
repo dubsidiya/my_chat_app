@@ -285,14 +285,15 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                 ),
               )
             else
-              _HeatmapGrid(
+              _WeekdayColumnsGrid(
                 heatmap: heat,
                 weekdayLabels: _weekdayLabels,
                 cellColor: _cellColor,
               ),
             const SizedBox(height: 8),
             Text(
-              'Ячейка: сколько занятий за весь выбранный период приходится на этот день недели и время.',
+              'В каждом столбце дня — только реальные времена этого дня (без пустых «чужих» слотов). '
+              'Число — занятий за весь период в это время.',
               style: TextStyle(
                 fontSize: 12,
                 color: scheme.onSurface.withValues(alpha: 0.65),
@@ -306,19 +307,16 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
   }
 }
 
-class _HeatmapGrid extends StatelessWidget {
+class _WeekdayColumnsGrid extends StatelessWidget {
   final TeacherScheduleHeatmap heatmap;
   final List<String> weekdayLabels;
   final Color Function(BuildContext context, int count, int max) cellColor;
 
-  const _HeatmapGrid({
+  const _WeekdayColumnsGrid({
     required this.heatmap,
     required this.weekdayLabels,
     required this.cellColor,
   });
-
-  static const double _timeColWidth = 52;
-  static const double _cellSize = 44;
 
   @override
   Widget build(BuildContext context) {
@@ -326,82 +324,93 @@ class _HeatmapGrid extends StatelessWidget {
     final max = heatmap.maxCount;
 
     return Card(
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Column(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const SizedBox(width: _timeColWidth),
-                ...List.generate(7, (i) {
-                  return SizedBox(
-                    width: _cellSize,
-                    child: Center(
-                      child: Text(
-                        weekdayLabels[i],
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-            ...heatmap.timeSlots.map((time) {
-              return Row(
-                children: [
-                  SizedBox(
-                    width: _timeColWidth,
-                    child: Text(
-                      time,
+          children: List.generate(7, (i) {
+            final weekday = i + 1;
+            final slots = heatmap.slotsForWeekday(weekday);
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      weekdayLabels[i],
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurface.withValues(alpha: 0.75),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface.withValues(alpha: 0.85),
                       ),
                     ),
-                  ),
-                  ...List.generate(7, (i) {
-                    final weekday = i + 1;
-                    final count = heatmap.countAt(weekday, time);
-                    return Tooltip(
-                      message: '${weekdayLabels[i]} $time — $count занятий',
-                      child: Container(
-                        width: _cellSize,
-                        height: _cellSize,
-                        margin: const EdgeInsets.all(2),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: cellColor(context, count, max),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: scheme.outline.withValues(alpha: 0.15),
-                          ),
-                        ),
+                    const SizedBox(height: 8),
+                    if (slots.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
-                          count > 0 ? '$count' : '',
+                          '—',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: count > 0
-                                ? (count >= max * 0.55
-                                    ? Colors.white
-                                    : scheme.onSurface)
-                                : Colors.transparent,
+                            color: scheme.onSurface.withValues(alpha: 0.35),
                           ),
                         ),
-                      ),
-                    );
-                  }),
-                ],
-              );
-            }),
-          ],
+                      )
+                    else
+                      ...slots.map((slot) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Tooltip(
+                            message:
+                                '${weekdayLabels[i]} ${slot.timeSlot} — ${slot.count} занятий',
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cellColor(context, slot.count, max),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: scheme.outline.withValues(alpha: 0.15),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    slot.timeSlot,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: slot.count >= max * 0.55
+                                          ? Colors.white.withValues(alpha: 0.95)
+                                          : scheme.onSurface.withValues(alpha: 0.8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${slot.count}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: slot.count >= max * 0.55
+                                          ? Colors.white
+                                          : scheme.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            );
+          }),
         ),
       ),
     );
