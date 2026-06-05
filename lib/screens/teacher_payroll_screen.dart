@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../models/teacher_balance.dart';
+import '../services/storage_service.dart';
 import '../services/teacher_balance_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/network_error_helper.dart';
@@ -23,14 +24,25 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
   bool _loading = false;
   String? _error;
   String _query = '';
+  String? _userId;
+  Set<int> _hiddenTeacherIds = {};
+  bool _showHidden = false;
 
-  final DateTime _syncFrom = DateTime(DateTime.now().year, DateTime.now().month, 1);
-  final DateTime _syncTo = DateTime.now();
+  static final DateTime _syncFrom = DateTime(2026, 6, 1);
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    final userData = await StorageService.getUserData();
+    _userId = userData?['userId'];
+    if (_userId != null) {
+      _hiddenTeacherIds = await StorageService.getHiddenPayrollTeacherIds(_userId!);
+    }
+    await _load();
   }
 
   @override
@@ -56,18 +68,58 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
   }
 
   String _money(num v) => '${NumberFormat('#,##0', 'ru_RU').format(v.round())} ₽';
-  String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
   List<TeacherBalanceListItem> get _filtered {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _teachers;
-    return _teachers.where((t) => t.label.toLowerCase().contains(q)).toList();
+    return _teachers.where((t) {
+      final isHidden = _hiddenTeacherIds.contains(t.teacherId);
+      if (_showHidden) {
+        if (!isHidden) return false;
+      } else if (isHidden) {
+        return false;
+      }
+      if (q.isNotEmpty && !t.label.toLowerCase().contains(q)) return false;
+      return true;
+    }).toList();
+  }
+
+  int get _hiddenCount =>
+      _teachers.where((t) => _hiddenTeacherIds.contains(t.teacherId)).length;
+
+  Future<void> _hideTeacher(TeacherBalanceListItem teacher) async {
+    final uid = _userId;
+    if (uid == null) return;
+    await StorageService.hidePayrollTeacher(uid, teacher.teacherId);
+    if (!mounted) return;
+    setState(() => _hiddenTeacherIds = {..._hiddenTeacherIds, teacher.teacherId});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('«${teacher.label}» скрыт из списка'),
+        action: SnackBarAction(
+          label: 'Отмена',
+          onPressed: () => _unhideTeacher(teacher, silent: true),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unhideTeacher(TeacherBalanceListItem teacher, {bool silent = false}) async {
+    final uid = _userId;
+    if (uid == null) return;
+    await StorageService.unhidePayrollTeacher(uid, teacher.teacherId);
+    if (!mounted) return;
+    setState(() => _hiddenTeacherIds = {..._hiddenTeacherIds}..remove(teacher.teacherId));
+    if (!silent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('«${teacher.label}» снова в списке')),
+      );
+    }
   }
 
   Future<void> _syncBalances() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _service.syncBalances(from: _fmt(_syncFrom), to: _fmt(_syncTo));
+      await _service.syncBalances();
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(content: Text('Начисления с отчётов синхронизированы')),
@@ -103,6 +155,12 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
       appBar: AppBar(
         title: const Text('Выплаты преподавателям'),
         actions: [
+          if (_hiddenCount > 0)
+            IconButton(
+              icon: Icon(_showHidden ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+              tooltip: _showHidden ? 'Скрыть список тестовых' : 'Показать скрытых ($_hiddenCount)',
+              onPressed: () => setState(() => _showHidden = !_showHidden),
+            ),
           IconButton(
             icon: const Icon(Icons.sync_rounded),
             tooltip: 'Синхронизировать начисления',
@@ -138,21 +196,47 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
             child: _loading && _teachers.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : filtered.isEmpty
-                    ? Center(child: Text('Преподаватели не найдены', style: TextStyle(color: scheme.onSurfaceVariant)))
+                    ? Center(
+                        child: Text(
+                          _showHidden ? 'Скрытых преподавателей нет' : 'Преподаватели не найдены',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         itemCount: filtered.length,
                         itemBuilder: (context, i) {
                           final t = filtered[i];
                           final color = t.balance >= 0 ? Colors.green.shade700 : Colors.red.shade700;
+                          final isHidden = _hiddenTeacherIds.contains(t.teacherId);
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
                               title: Text(t.label, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: const Text('Рабочий баланс'),
-                              trailing: Text(
-                                _money(t.balance),
-                                style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16),
+                              subtitle: Text(isHidden ? 'Скрыт · рабочий баланс' : 'Рабочий баланс'),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _money(t.balance),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: color,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: Icon(
+                                      isHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                                      size: 22,
+                                    ),
+                                    tooltip: isHidden ? 'Показать в списке' : 'Скрыть',
+                                    onPressed: () => isHidden
+                                        ? _unhideTeacher(t)
+                                        : _hideTeacher(t),
+                                  ),
+                                ],
                               ),
                               onTap: () => _openTeacher(t),
                             ),
@@ -179,7 +263,7 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
             ),
             const SizedBox(height: 12),
             Text('С: ${DateFormat('dd.MM.yyyy').format(_syncFrom)}'),
-            Text('По: ${DateFormat('dd.MM.yyyy').format(_syncTo)}'),
+            Text('По: ${DateFormat('dd.MM.yyyy').format(DateTime.now())}'),
           ],
         ),
         actions: [

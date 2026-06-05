@@ -7,11 +7,11 @@ import {
   listTeacherBalanceTransactions,
   listTeachersWithBalances,
   syncTeacherBalancesForPeriod,
+  TEACHER_BALANCE_SYNC_FROM,
   TEACHER_BALANCE_TYPE_LABELS,
+  teacherBalanceSyncToToday,
 } from '../services/accounting/teacherBalanceService.js';
 import { sqlUserAccountingName } from '../utils/userAccountingDisplaySql.js';
-
-const isValidISODate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 const mapTransactionRow = (row) => ({
   id: row.id,
@@ -151,18 +151,15 @@ export const postTeacherBalanceTransactionAdmin = async (req, res) => {
   }
 };
 
-/** POST /admin/accounting/teacher-balances/sync?from=&to= */
+/** POST /admin/accounting/teacher-balances/sync — всегда 01.06.2026 … сегодня */
 export const syncTeacherBalancesAdmin = async (req, res) => {
   if (!isSuperuser(req.user)) {
     return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
   }
-  const from = req.query.from || req.body?.from;
-  const to = req.query.to || req.body?.to;
-  if (!isValidISODate(from) || !isValidISODate(to)) {
-    return res.status(400).json({ message: 'Укажите from и to в формате YYYY-MM-DD' });
-  }
+  const from = TEACHER_BALANCE_SYNC_FROM;
+  const to = teacherBalanceSyncToToday();
   if (from > to) {
-    return res.status(400).json({ message: 'from не может быть позже to' });
+    return res.status(400).json({ message: 'Дата начала синхронизации позже текущего дня' });
   }
   const client = await pool.connect();
   try {

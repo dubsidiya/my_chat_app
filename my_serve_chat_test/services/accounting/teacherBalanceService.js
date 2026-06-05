@@ -9,6 +9,23 @@ const toNumber = (v) => {
 
 const roundMoney = (v) => Math.round(toNumber(v));
 
+/** Начало периода начислений на рабочий баланс (фиксировано). */
+export const TEACHER_BALANCE_SYNC_FROM = '2026-06-01';
+
+const isoDateOnly = (value) => {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const s = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+};
+
+export const isOnOrAfterTeacherBalanceSyncStart = (dateValue) => {
+  const d = isoDateOnly(dateValue);
+  return d != null && d >= TEACHER_BALANCE_SYNC_FROM;
+};
+
+export const teacherBalanceSyncToToday = () => new Date().toISOString().slice(0, 10);
+
 export const computeReportIncomeAmount = async (db, reportId) => {
   const reportRes = await db.query(
     'SELECT id, created_by, report_date, is_late FROM reports WHERE id = $1',
@@ -16,6 +33,15 @@ export const computeReportIncomeAmount = async (db, reportId) => {
   );
   if (reportRes.rows.length === 0) return null;
   const report = reportRes.rows[0];
+  if (!isOnOrAfterTeacherBalanceSyncStart(report.report_date)) {
+    return {
+      teacherId: report.created_by,
+      amount: 0,
+      reportDate: report.report_date,
+      isLate: false,
+      beforeSyncStart: true,
+    };
+  }
   if (report.is_late === true) {
     return { teacherId: report.created_by, amount: 0, reportDate: report.report_date, isLate: true };
   }
@@ -46,6 +72,9 @@ export const computeLessonIncomeAmount = async (db, lessonId) => {
   );
   if (lessonRes.rows.length === 0) return null;
   const lesson = lessonRes.rows[0];
+  if (!isOnOrAfterTeacherBalanceSyncStart(lesson.lesson_date)) {
+    return { teacherId: lesson.created_by, amount: 0, lessonDate: lesson.lesson_date, beforeSyncStart: true };
+  }
   if (lesson.in_report) return null;
   if (lesson.is_chargeable === false) {
     return { teacherId: lesson.created_by, amount: 0, lessonDate: lesson.lesson_date };
@@ -215,8 +244,35 @@ export const createTeacherBalanceTransaction = async (client, {
   return { row: result.rows[0] };
 };
 
+/** Удалить начисления до даты старта или по удалённым отчётам/занятиям. */
+export const purgeLessonIncomeBeforeSyncStart = async (client) => {
+  await client.query(
+    `DELETE FROM teacher_balance_transactions t
+     WHERE t.type = 'lesson_income'
+       AND (
+         (t.report_id IS NOT NULL AND EXISTS (
+           SELECT 1 FROM reports r
+           WHERE r.id = t.report_id AND r.report_date < $1::date
+         ))
+         OR (t.lesson_id IS NOT NULL AND EXISTS (
+           SELECT 1 FROM lessons l
+           WHERE l.id = t.lesson_id AND l.lesson_date < $1::date
+         ))
+         OR (t.report_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM reports r WHERE r.id = t.report_id
+         ))
+         OR (t.lesson_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM lessons l WHERE l.id = t.lesson_id
+         ))
+       )`,
+    [TEACHER_BALANCE_SYNC_FROM]
+  );
+};
+
 /** Массовая синхронизация начислений с отчётов и занятий без отчёта за период. */
 export const syncTeacherBalancesForPeriod = async (client, { from, to, actorUserId = null }) => {
+  await purgeLessonIncomeBeforeSyncStart(client);
+
   const reportsRes = await client.query(
     `SELECT id FROM reports
      WHERE report_date >= $1::date AND report_date <= $2::date

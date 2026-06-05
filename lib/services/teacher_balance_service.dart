@@ -137,9 +137,10 @@ class TeacherBalanceService {
     throw Exception(data?['message'] ?? 'Не удалось создать операцию');
   }
 
-  Future<void> syncBalances({required String from, required String to}) async {
+  /// Синхронизация начислений: на сервере всегда 01.06.2026 … сегодня.
+  Future<void> syncBalances() async {
     final response = await timedPost(
-      Uri.parse('$baseUrl/admin/accounting/teacher-balances/sync?from=$from&to=$to'),
+      Uri.parse('$baseUrl/admin/accounting/teacher-balances/sync'),
       headers: await _headers(),
       body: jsonEncode({}),
     );

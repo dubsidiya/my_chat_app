@@ -29,7 +29,6 @@ import {
   findReportLessons,
   findReportsList,
   findUserEmailById,
-  markReportAsNotLate,
 } from '../repositories/reports/reportsRepository.js';
 import {
   validateMonthlySalaryQuery,
@@ -1037,33 +1036,34 @@ export const setReportNotLate = async (req, res) => {
   if (!Number.isFinite(reportId)) {
     return res.status(400).json({ message: 'Некорректный id отчёта' });
   }
+  const client = await pool.connect();
   try {
-    const result = await markReportAsNotLate(pool, reportId);
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE reports SET is_late = false WHERE id = $1 RETURNING *`,
+      [reportId]
+    );
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчёт не найден' });
     }
+    await syncReportLessonIncome(client, reportId, req.user.userId);
     await logAccountingEvent({
+      client,
       userId: req.user.userId,
       eventType: 'report_set_not_late',
       entityType: 'report',
       entityId: reportId,
       payload: { report_date: result.rows[0].report_date },
     });
-    const syncClient = await pool.connect();
-    try {
-      await syncClient.query('BEGIN');
-      await syncReportLessonIncome(syncClient, reportId, req.user.userId);
-      await syncClient.query('COMMIT');
-    } catch (syncErr) {
-      try { await syncClient.query('ROLLBACK'); } catch (_) {}
-      console.error('syncReportLessonIncome after set-not-late:', syncErr);
-    } finally {
-      syncClient.release();
-    }
+    await client.query('COMMIT');
     return res.json(result.rows[0]);
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('setReportNotLate:', error);
     return res.status(500).json({ message: 'Ошибка при снятии пометки «поздний отчёт»' });
+  } finally {
+    client.release();
   }
 };
 

@@ -109,12 +109,6 @@ class _TeacherBalanceScreenState extends State<TeacherBalanceScreen> {
                             color: _amountColor(_balance, scheme),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Начисляется 50% от дохода по проведённым занятиям. '
-                          'Выплаты и авансы списываются бухгалтерией.',
-                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant, height: 1.35),
-                        ),
                       ],
                     ),
                   ),

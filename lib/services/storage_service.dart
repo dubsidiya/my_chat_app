@@ -17,6 +17,7 @@ class StorageService {
   static const String _chatOrderPrefix = 'chat_order_';
   static const String _eulaAcceptedPrefix = 'eula_accepted_';
   static const String _hiddenStudentsPrefix = 'hidden_students_';
+  static const String _hiddenPayrollTeachersPrefix = 'hidden_payroll_teachers_';
   static const String _themeVariantKey = 'theme_variant';
 
   static const FlutterSecureStorage _secure = FlutterSecureStorage();
@@ -392,6 +393,53 @@ class StorageService {
     final ids = await getHiddenStudentIds(userId);
     ids.remove(studentId);
     await setHiddenStudentIds(userId, ids);
+  }
+
+  /// Скрытые преподаватели в «Выплаты преподавателям» (локально, по userId бухгалтерии).
+  static Future<Set<int>> getHiddenPayrollTeacherIds(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_hiddenPayrollTeachersPrefix$userId');
+      if (raw == null || raw.isEmpty) return <int>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <int>{};
+      return decoded
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .where((id) => id > 0)
+          .toSet();
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.getHiddenPayrollTeacherIds error: $e');
+      }
+      return <int>{};
+    }
+  }
+
+  static Future<void> setHiddenPayrollTeacherIds(String userId, Set<int> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = ids.where((id) => id > 0).toSet().toList()..sort();
+      await prefs.setString('$_hiddenPayrollTeachersPrefix$userId', jsonEncode(normalized));
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.setHiddenPayrollTeacherIds error: $e');
+      }
+    }
+  }
+
+  static Future<void> hidePayrollTeacher(String userId, int teacherId) async {
+    final ids = await getHiddenPayrollTeacherIds(userId);
+    ids.add(teacherId);
+    await setHiddenPayrollTeacherIds(userId, ids);
+  }
+
+  static Future<void> unhidePayrollTeacher(String userId, int teacherId) async {
+    final ids = await getHiddenPayrollTeacherIds(userId);
+    ids.remove(teacherId);
+    await setHiddenPayrollTeacherIds(userId, ids);
   }
 }
 
