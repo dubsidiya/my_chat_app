@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../models/report.dart';
 import '../models/teacher_balance.dart';
+import '../services/reports_service.dart';
 import '../services/storage_service.dart';
 import '../services/teacher_balance_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/network_error_helper.dart';
+import '../widgets/teacher_balance_transaction_tile.dart';
+import 'report_builder_screen.dart';
 
 /// Управление выплатами преподавателям (только суперпользователь).
 class TeacherPayrollScreen extends StatefulWidget {
@@ -316,6 +320,7 @@ class _TeacherPayrollDetailScreen extends StatefulWidget {
 
 class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen> {
   final TeacherBalanceService _service = TeacherBalanceService();
+  final ReportsService _reportsService = ReportsService();
   double _balance = 0;
   List<TeacherBalanceTransaction> _transactions = [];
   bool _loading = false;
@@ -347,6 +352,30 @@ class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen
 
   String _money(num v) => '${NumberFormat('#,##0', 'ru_RU').format(v.round())} ₽';
 
+  Future<void> _openReport(int reportId) async {
+    try {
+      final Report report = await _reportsService.getReport(reportId);
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ReportBuilderScreen(reportId: report.id),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(networkErrorMessage(e)), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  static double? _parseAmount(String raw) {
+    final cleaned = raw.trim().replaceAll(',', '.');
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
   Future<void> _addTransaction(String type, String title) async {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
@@ -363,15 +392,26 @@ class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen
             children: [
               TextFormField(
                 controller: amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                    type == 'adjustment' ? RegExp(r'[\d.,\-]') : RegExp(r'[\d.,]'),
+                  ),
+                ],
                 decoration: InputDecoration(
                   labelText: type == 'adjustment' ? 'Сумма (+ или −)' : 'Сумма',
-                  hintText: '10000',
+                  hintText: type == 'adjustment' ? '-5000' : '10000',
                 ),
                 validator: (v) {
-                  final n = double.tryParse((v ?? '').replaceAll(',', '.'));
-                  if (n == null || n == 0) return 'Укажите сумму';
+                  final n = _parseAmount(v ?? '');
+                  if (n == null || n == 0) {
+                    return type == 'adjustment'
+                        ? 'Укажите сумму, например -5000'
+                        : 'Укажите сумму';
+                  }
                   return null;
                 },
               ),
@@ -399,7 +439,7 @@ class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen
 
     if (ok != true || !mounted) return;
 
-    final amount = double.parse(amountCtrl.text.replaceAll(',', '.'));
+    final amount = _parseAmount(amountCtrl.text)!;
     final desc = descCtrl.text.trim();
     amountCtrl.dispose();
     descCtrl.dispose();
@@ -470,27 +510,13 @@ class _TeacherPayrollDetailScreenState extends State<_TeacherPayrollDetailScreen
                       child: Center(child: Text('Операций нет', style: TextStyle(color: scheme.onSurfaceVariant))),
                     )
                   else
-                    ..._transactions.map((tx) {
-                      final dt = tx.createdAt;
-                      final color = tx.amount >= 0 ? Colors.green.shade700 : Colors.red.shade700;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text(tx.typeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (tx.description.isNotEmpty) Text(tx.description),
-                              if (dt != null) Text(DateFormat('dd.MM.yyyy HH:mm').format(dt)),
-                            ],
-                          ),
-                          trailing: Text(
-                            '${tx.amount > 0 ? '+' : ''}${_money(tx.amount)}',
-                            style: TextStyle(fontWeight: FontWeight.bold, color: color),
-                          ),
-                        ),
-                      );
-                    }),
+                    ..._transactions.map(
+                      (tx) => TeacherBalanceTransactionTile(
+                        transaction: tx,
+                        formatMoney: _money,
+                        onOpenReport: (reportId) => _openReport(reportId),
+                      ),
+                    ),
                 ],
               ),
             ),

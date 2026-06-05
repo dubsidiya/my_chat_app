@@ -25,6 +25,7 @@ const mapTransactionRow = (row) => ({
   created_by: row.created_by,
   created_by_name: row.created_by_name || '',
   created_at: row.created_at,
+  accrual_date: row.accrual_date || null,
 });
 
 /** GET /reports/balance — рабочий баланс текущего преподавателя */

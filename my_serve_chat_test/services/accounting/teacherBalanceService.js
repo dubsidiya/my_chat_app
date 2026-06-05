@@ -9,6 +9,13 @@ const toNumber = (v) => {
 
 const roundMoney = (v) => Math.round(toNumber(v));
 
+const formatAccrualLabel = (dateValue) => {
+  const d = isoDateOnly(dateValue);
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  return `за ${day}.${m}.${y}`;
+};
+
 /** Начало периода начислений на рабочий баланс (фиксировано). */
 export const TEACHER_BALANCE_SYNC_FROM = '2026-06-01';
 
@@ -116,9 +123,7 @@ export const syncReportLessonIncome = async (client, reportId, actorUserId = nul
   if (!computed) return;
   await deleteLessonIncomeForReport(client, reportId);
   if (computed.amount <= 0) return;
-  const desc = computed.isLate
-    ? null
-    : `Начисление 50% с отчёта за ${computed.reportDate}`;
+  const desc = formatAccrualLabel(computed.reportDate);
   await client.query(
     `INSERT INTO teacher_balance_transactions
        (teacher_id, amount, type, description, report_id, created_by)
@@ -139,7 +144,7 @@ export const syncNoReportLessonIncome = async (client, lessonId, actorUserId = n
     [
       computed.teacherId,
       computed.amount,
-      `Начисление 50% с занятия ${computed.lessonDate}`,
+      formatAccrualLabel(computed.lessonDate),
       lessonId,
       actorUserId,
     ]
@@ -162,9 +167,12 @@ export const listTeacherBalanceTransactions = async (db, teacherId, { limit = 50
   const res = await db.query(
     `SELECT t.id, t.teacher_id, t.amount, t.type, t.description,
             t.report_id, t.lesson_id, t.created_by, t.created_at,
-            ${sqlUserAccountingName('u')} AS created_by_name
+            ${sqlUserAccountingName('u')} AS created_by_name,
+            COALESCE(to_char(r.report_date, 'YYYY-MM-DD'), to_char(l.lesson_date, 'YYYY-MM-DD')) AS accrual_date
      FROM teacher_balance_transactions t
      LEFT JOIN users u ON u.id = t.created_by
+     LEFT JOIN reports r ON r.id = t.report_id
+     LEFT JOIN lessons l ON l.id = t.lesson_id
      WHERE t.teacher_id = $1
      ORDER BY t.created_at DESC, t.id DESC
      LIMIT $2 OFFSET $3`,

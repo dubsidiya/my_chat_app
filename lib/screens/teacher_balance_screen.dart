@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/teacher_balance.dart';
+import '../models/report.dart';
+import '../services/reports_service.dart';
 import '../services/teacher_balance_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/network_error_helper.dart';
+import '../widgets/teacher_balance_transaction_tile.dart';
+import 'report_text_view_screen.dart';
 
 /// Рабочий баланс преподавателя: начисления с занятий, выплаты, премии.
 class TeacherBalanceScreen extends StatefulWidget {
@@ -16,6 +20,7 @@ class TeacherBalanceScreen extends StatefulWidget {
 
 class _TeacherBalanceScreenState extends State<TeacherBalanceScreen> {
   final TeacherBalanceService _service = TeacherBalanceService();
+  final ReportsService _reportsService = ReportsService();
   double _balance = 0;
   List<TeacherBalanceTransaction> _transactions = [];
   bool _loading = false;
@@ -54,6 +59,27 @@ class _TeacherBalanceScreenState extends State<TeacherBalanceScreen> {
     if (amount > 0) return Colors.green.shade700;
     if (amount < 0) return Colors.red.shade700;
     return scheme.onSurfaceVariant;
+  }
+
+  Future<void> _openReport(int reportId) async {
+    try {
+      final Report report = await _reportsService.getReport(reportId);
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ReportTextViewScreen(report: report),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(networkErrorMessage(e)),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -129,36 +155,17 @@ class _TeacherBalanceScreenState extends State<TeacherBalanceScreen> {
                       ),
                     )
                   else
-                    ..._transactions.map((tx) => _txTile(tx, scheme)),
+                    ..._transactions.map(
+                      (tx) => TeacherBalanceTransactionTile(
+                        transaction: tx,
+                        formatMoney: _money,
+                        onOpenReport: tx.reportId != null ? _openReport : null,
+                      ),
+                    ),
                 ],
               ),
             ),
     );
   }
 
-  Widget _txTile(TeacherBalanceTransaction tx, ColorScheme scheme) {
-    final dt = tx.createdAt;
-    final dateStr = dt != null ? DateFormat('dd.MM.yyyy HH:mm').format(dt) : '';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        title: Text(tx.typeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (tx.description.isNotEmpty) Text(tx.description),
-            if (dateStr.isNotEmpty)
-              Text(dateStr, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-          ],
-        ),
-        trailing: Text(
-          '${tx.isCredit ? '+' : ''}${_money(tx.amount)}',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: _amountColor(tx.amount, scheme),
-          ),
-        ),
-      ),
-    );
-  }
 }

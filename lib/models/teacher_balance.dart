@@ -30,6 +30,8 @@ class TeacherBalanceTransaction {
   final int? createdBy;
   final String createdByName;
   final DateTime? createdAt;
+  /// Дата занятия/отчёта (YYYY-MM-DD), для начислений с занятий.
+  final String? accrualDate;
 
   const TeacherBalanceTransaction({
     required this.id,
@@ -43,6 +45,7 @@ class TeacherBalanceTransaction {
     this.createdBy,
     this.createdByName = '',
     this.createdAt,
+    this.accrualDate,
   });
 
   factory TeacherBalanceTransaction.fromJson(Map<String, dynamic> json) {
@@ -65,10 +68,31 @@ class TeacherBalanceTransaction {
       createdBy: _parseInt(json['created_by']),
       createdByName: json['created_by_name']?.toString() ?? '',
       createdAt: createdAt,
+      accrualDate: json['accrual_date']?.toString(),
     );
   }
 
   bool get isCredit => amount > 0;
+
+  bool get isLessonIncome => type == 'lesson_income';
+
+  /// «за 05.06.2026» — из accrual_date или из description.
+  String? get accrualDayLabel {
+    final iso = accrualDate;
+    if (iso != null && iso.length >= 10) {
+      final parts = iso.substring(0, 10).split('-');
+      if (parts.length == 3) {
+        return 'за ${parts[2]}.${parts[1]}.${parts[0]}';
+      }
+    }
+    final d = description.trim();
+    if (d.startsWith('за ')) return d;
+    final m = RegExp(r'(\d{4})-(\d{2})-(\d{2})').firstMatch(d);
+    if (m != null) {
+      return 'за ${m.group(3)}.${m.group(2)}.${m.group(1)}';
+    }
+    return d.isNotEmpty ? d : null;
+  }
 }
 
 class TeacherBalanceListItem {
