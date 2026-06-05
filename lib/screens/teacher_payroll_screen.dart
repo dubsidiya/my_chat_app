@@ -38,10 +38,15 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
 
   Future<void> _initAndLoad() async {
     final userData = await StorageService.getUserData();
-    _userId = userData?['userId'];
-    if (_userId != null) {
-      _hiddenTeacherIds = await StorageService.getHiddenPayrollTeacherIds(_userId!);
-    }
+    final userId = userData?['id'];
+    final hidden = userId != null
+        ? await StorageService.getHiddenPayrollTeacherIds(userId)
+        : <int>{};
+    if (!mounted) return;
+    setState(() {
+      _userId = userId;
+      _hiddenTeacherIds = hidden;
+    });
     await _load();
   }
 
@@ -88,7 +93,16 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
 
   Future<void> _hideTeacher(TeacherBalanceListItem teacher) async {
     final uid = _userId;
-    if (uid == null) return;
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось сохранить: войдите в аккаунт заново'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     await StorageService.hidePayrollTeacher(uid, teacher.teacherId);
     if (!mounted) return;
     setState(() => _hiddenTeacherIds = {..._hiddenTeacherIds, teacher.teacherId});
@@ -227,14 +241,20 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                     icon: Icon(
                                       isHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
                                       size: 22,
                                     ),
                                     tooltip: isHidden ? 'Показать в списке' : 'Скрыть',
-                                    onPressed: () => isHidden
-                                        ? _unhideTeacher(t)
-                                        : _hideTeacher(t),
+                                    onPressed: () {
+                                      if (isHidden) {
+                                        _unhideTeacher(t);
+                                      } else {
+                                        _hideTeacher(t);
+                                      }
+                                    },
                                   ),
                                 ],
                               ),
