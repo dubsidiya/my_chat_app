@@ -13,7 +13,7 @@ bash "$ROOT/tool/patch_ios_webrtc_sdk.sh"
 echo "== CocoaPods (WebRTC-SDK from webrtc-sdk/Specs) =="
 cd ios
 pod install --repo-update
-pod update WebRTC-SDK
+pod update WebRTC-SDK --no-repo-update
 cd "$ROOT"
 
 echo "== scan WebRTC symbols (informational) =="

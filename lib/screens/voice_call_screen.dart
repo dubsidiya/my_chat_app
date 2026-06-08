@@ -26,6 +26,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   Timer? _ringerTicker;
   DateTime? _connectedAt;
   Duration _callDuration = Duration.zero;
+
   /// По умолчанию разговорный динамик (как обычный телефонный звонок), не громкая связь.
   bool _speakerOn = false;
   bool _autoCloseScheduled = false;
@@ -169,12 +170,12 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Нужен микрофон'),
-          content: Text(
+          content: const Text(
             kIsWeb
                 ? 'Разрешите микрофон для этого сайта в настройках браузера '
-                    '(иконка замка в адресной строке), затем повторите звонок.'
+                      '(иконка замка в адресной строке), затем повторите звонок.'
                 : 'Разрешите доступ к микрофону в Настройках → Reollity → Микрофон, '
-                    'затем повторите звонок.',
+                      'затем повторите звонок.',
           ),
           actions: [
             TextButton(
@@ -261,7 +262,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     opacity: 0.01,
                     child: RTCVideoView(
                       _remoteRenderer!,
-                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                     ),
                   ),
                 ),
@@ -271,7 +273,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
-                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurface),
+                      icon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: scheme.onSurface,
+                      ),
                       tooltip: 'Свернуть',
                       onPressed: _minimizeCall,
                     ),

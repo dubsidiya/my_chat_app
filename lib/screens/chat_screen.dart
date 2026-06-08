@@ -277,8 +277,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     _listEntriesCacheKey = key;
     final list = <_ListEntry>[];
-    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty)
+    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) {
       list.add(_LoadMoreEntry());
+    }
     if (_isLoadingMore) list.add(_LoadingEntry());
     String? lastDateKey;
     for (int i = 0; i < _messages.length; i++) {
@@ -665,8 +666,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
     } catch (e) {
       // Не критично — presence/typing просто будет без имён
-      if (kDebugMode)
+      if (kDebugMode) {
         print('Ошибка загрузки участников (для presence/typing): $e');
+      }
     }
   }
 
@@ -679,8 +681,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Message _mergeMessageKeepContent(Message existing, Message incoming) {
     if (incoming.content.isNotEmpty ||
         (incoming.imageUrl ?? '').isNotEmpty ||
-        (incoming.fileUrl ?? '').isNotEmpty)
+        (incoming.fileUrl ?? '').isNotEmpty) {
       return incoming;
+    }
     return Message(
       id: incoming.id,
       chatId: incoming.chatId,
@@ -1184,11 +1187,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                         msg,
                                                       ),
                                                   backgroundColor: _accent1
-                                                      .withValues(
-                                                        alpha: 0.85,
-                                                      ),
-                                                  foregroundColor:
-                                                      Colors.white,
+                                                      .withValues(alpha: 0.85),
+                                                  foregroundColor: Colors.white,
                                                   icon: Icons.reply_rounded,
                                                   label: 'Ответить',
                                                 ),
@@ -1206,9 +1206,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                               msg,
                                                             ),
                                                         backgroundColor:
-                                                            Colors
-                                                                .red
-                                                                .shade400,
+                                                            Colors.red.shade400,
                                                         foregroundColor:
                                                             Colors.white,
                                                         icon: Icons
@@ -1231,8 +1229,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               accent3: _accent3,
                                               myUserId: widget.userId,
                                               myAvatarUrl: widget.myAvatarUrl,
-                                              chatId: widget.chatId
-                                                  .toString(),
+                                              chatId: widget.chatId.toString(),
                                               myAvatarPlaceholder:
                                                   _myAvatarPlaceholderWidget,
                                               otherAvatarPlaceholder:
@@ -1278,8 +1275,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           return FadeScaleIn(
                                             key: ValueKey('fade_${msg.id}'),
                                             onComplete: () =>
-                                                _messageIdsWithoutFade
-                                                    .add(msg.id),
+                                                _messageIdsWithoutFade.add(
+                                                  msg.id,
+                                                ),
                                             child: messageBody,
                                           );
                                         },
@@ -1605,12 +1603,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     final sending =
                                         tempMessages.length - queued - errors;
                                     final parts = <String>[];
-                                    if (queued > 0)
+                                    if (queued > 0) {
                                       parts.add('в очереди: $queued');
-                                    if (sending > 0)
+                                    }
+                                    if (sending > 0) {
                                       parts.add('отправляется: $sending');
-                                    if (errors > 0)
+                                    }
+                                    if (errors > 0) {
                                       parts.add('ошибка: $errors');
+                                    }
                                     final details = parts.isEmpty
                                         ? 'сообщений: ${tempMessages.length}'
                                         : parts.join(', ');

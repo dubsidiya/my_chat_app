@@ -161,8 +161,9 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
             final currentChatId = widget.chatId.toString();
 
             if (chatId == currentChatId && deletedMessageId != null) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Message deleted notification: $deletedMessageId');
+              }
               if (mounted) {
                 setState(() {
                   _messages.removeWhere(
@@ -171,10 +172,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                   _pinnedMessages.removeWhere(
                     (m) => m.id.toString() == deletedMessageId,
                   );
-                  if (kDebugMode)
+                  if (kDebugMode) {
                     print(
                       'Message removed from list. Remaining messages: ${_messages.length}',
                     );
+                  }
                 });
 
                 // ✅ Удаляем сообщение из кэша
@@ -423,9 +425,7 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
 
           // Только события сообщений (не presence/call/typing и т.д.)
           final typeStr = messageType?.toString();
-          if (typeStr != null &&
-              typeStr.isNotEmpty &&
-              typeStr != 'message') {
+          if (typeStr != null && typeStr.isNotEmpty && typeStr != 'message') {
             return;
           }
 
@@ -436,10 +436,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
           final currentChatId = widget.chatId.toString();
           final messageId = data['id']?.toString();
 
-          if (kDebugMode)
+          if (kDebugMode) {
             print(
               'WebSocket chat_id: $chatId, current chat_id: $currentChatId',
             );
+          }
 
           if (messageId == null || messageId.isEmpty) {
             return;
@@ -463,8 +464,9 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                   ),
                 );
               }
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Parsed message: ${message.id} - ${message.content}');
+              }
               if (mounted) {
                 final shouldKeepAtBottom = _isNearBottom();
                 var didAppendMessage = false;
@@ -490,14 +492,16 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
 
                   if (tempIndex != -1) {
                     // ✅ Заменяем временное сообщение на реальное (но не перезаписываем контент пустым — на части устройств WS приходит с пустым content)
-                    if (kDebugMode)
+                    if (kDebugMode) {
                       print(
                         '✅ WebSocket: Replacing temp message at index $tempIndex with real message ${message.id}',
                       );
-                    if (kDebugMode)
+                    }
+                    if (kDebugMode) {
                       print(
                         '   Temp: ${_messages[tempIndex].id}, Real: ${message.id}',
                       );
+                    }
                     final existing = _messages[tempIndex];
                     final merged = _mergeMessageKeepContent(existing, message);
 
@@ -515,10 +519,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                         tempId,
                       ),
                     );
-                    if (kDebugMode)
+                    if (kDebugMode) {
                       print(
                         '✅ WebSocket: Message updated in UI. Total: ${_messages.length}',
                       );
+                    }
                   } else {
                     // Проверяем, нет ли уже такого сообщения (избегаем дубликатов)
                     final exists = _messages.any((m) => m.id == message.id);
@@ -542,10 +547,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
 
                       if (hasMatchingTemp) {
                         // ✅ Есть временное сообщение - не добавляем дубликат, оно будет заменено выше
-                        if (kDebugMode)
+                        if (kDebugMode) {
                           print(
                             '⚠️ WebSocket: Found matching temp message, skipping duplicate add',
                           );
+                        }
                       } else {
                         // ⚠️ Защита: на части устройств/сетей может прийти WS-эвент с пустым content для СВОЕГО сообщения.
                         // В этом случае не добавляем "пустышку" — своё сообщение корректно придёт из HTTP-ответа и/или будет заменено.
@@ -592,10 +598,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                             );
                             return;
                           }
-                          if (kDebugMode)
+                          if (kDebugMode) {
                             print(
                               '⚠️ WebSocket: Skip empty self message (id=${message.id})',
                             );
+                          }
                           return;
                         }
 
@@ -607,10 +614,11 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                         _messages = newMessages;
                         didAppendMessage = true;
                         if (kDebugMode) {
-                          if (kDebugMode)
+                          if (kDebugMode) {
                             print(
                               '✅ WebSocket: Message added to list. Total: ${_messages.length}',
                             );
+                          }
                         }
                         // Звук/вибрация при новом сообщении от другого пользователя
                         if (message.userId != widget.userId.toString()) {
@@ -631,15 +639,17 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                         final newMessages = List<Message>.from(_messages);
                         newMessages[existingIndex] = merged;
                         _messages = newMessages;
-                        if (kDebugMode)
+                        if (kDebugMode) {
                           print(
                             '✅ WebSocket: Message updated at index $existingIndex. Total: ${_messages.length}',
                           );
+                        }
                       } else {
-                        if (kDebugMode)
+                        if (kDebugMode) {
                           print(
                             '⚠️ WebSocket: Message exists check failed, but index not found',
                           );
+                        }
                       }
                     }
                   }
@@ -649,15 +659,17 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                 }
               }
             } catch (parseError) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Error parsing Message from WebSocket data: $parseError');
+              }
               if (kDebugMode) print('Data: $data');
             }
           } else {
-            if (kDebugMode)
+            if (kDebugMode) {
               print(
                 'Message is for different chat: $chatId (current: $currentChatId)',
               );
+            }
           }
         } catch (e) {
           if (kDebugMode) print('Error processing WebSocket message: $e');

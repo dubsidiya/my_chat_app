@@ -64,8 +64,9 @@ extension _ChatScreenSendPart on _ChatScreenState {
     final replyToMessageId = _replyToMessage?.id;
     final replyToMessage = _replyToMessage;
 
-    if (kDebugMode)
+    if (kDebugMode) {
       print('🔍 Text: "$text", hasImage: $hasImage, hasFile: $hasFile');
+    }
 
     if (text.isEmpty && !hasImage && !hasFile) {
       if (kDebugMode) print('⚠️ Text is empty and no attachments, returning');
@@ -308,12 +309,14 @@ extension _ChatScreenSendPart on _ChatScreenState {
       // Собственное новое сообщение всегда показываем внизу. На web пересчёт layout
       // может занимать несколько кадров, поэтому ниже используем retry-скролл.
       if (mounted) {
-        if (kDebugMode)
+        if (kDebugMode) {
           print(
             '🔍 Adding temp message to UI: id=$tempMessageId, content=$text',
           );
-        if (kDebugMode)
+        }
+        if (kDebugMode) {
           print('🔍 Current messages count before: ${_messages.length}');
+        }
         setState(() {
           // ✅ Создаем новый список для гарантированного обновления UI
           final newMessages = List<Message>.from(_messages);
@@ -326,12 +329,14 @@ extension _ChatScreenSendPart on _ChatScreenState {
           // Очищаем поле ответа
           _replyToMessage = null;
         });
-        if (kDebugMode)
+        if (kDebugMode) {
           print('✅ Temp message added to UI. New count: ${_messages.length}');
-        if (kDebugMode)
+        }
+        if (kDebugMode) {
           print(
             '✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}',
           );
+        }
         _scrollToBottomWithRetry(
           attempts: 4,
           delay: const Duration(milliseconds: 60),
@@ -346,10 +351,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
         // ✅ Отправляем сообщение и получаем ответ от сервера
         if (kDebugMode) {
           // ignore: avoid_print
-          if (kDebugMode)
+          if (kDebugMode) {
             print(
               'sendMessage: chatId=${widget.chatId}, replyTo=$replyToMessageId',
             );
+          }
         }
         final sentMessage = await _messagesService.sendMessage(
           widget.chatId,
@@ -366,10 +372,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
           fileSize: fileSize,
           fileMime: fileMime,
         );
-        if (kDebugMode)
+        if (kDebugMode) {
           print(
             '🔍 sendMessage service returned: ${sentMessage != null ? "message with id=${sentMessage.id}" : "null"}',
           );
+        }
 
         if (mounted) {
           _controller.clear();
@@ -393,38 +400,46 @@ extension _ChatScreenSendPart on _ChatScreenState {
 
           // ✅ Если получили сообщение от сервера, обновляем временное сообщение
           if (sentMessage != null) {
-            if (kDebugMode)
+            if (kDebugMode) {
               print(
                 '✅ Received message from server: id=${sentMessage.id}, content=${sentMessage.content}',
               );
-            if (kDebugMode)
+            }
+            if (kDebugMode) {
               print('🔍 Looking for temp message with id: $tempMessageId');
-            if (kDebugMode)
+            }
+            if (kDebugMode) {
               print('🔍 Current messages count: ${_messages.length}');
-            if (kDebugMode)
+            }
+            if (kDebugMode) {
               print(
                 '🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}',
               );
+            }
 
             // ✅ Обновляем сразу, без WidgetsBinding, чтобы не потерять сообщение
             final tempIndex = _messages.indexWhere(
               (m) => m.id == tempMessageId,
             );
-            if (kDebugMode)
+            if (kDebugMode) {
               print('🔍 Looking for temp message with id: $tempMessageId');
-            if (kDebugMode)
+            }
+            if (kDebugMode) {
               print('🔍 Current messages count: ${_messages.length}');
-            if (kDebugMode)
+            }
+            if (kDebugMode) {
               print(
                 '🔍 Current message IDs: ${_messages.map((m) => m.id).toList()}',
               );
+            }
             if (kDebugMode) print('🔍 Temp message found at index: $tempIndex');
 
             if (tempIndex != -1) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print(
                   '✅ Replacing temp message at index $tempIndex with real message ${sentMessage.id}',
                 );
+              }
               setState(() {
                 // ✅ Создаем новый список для принудительного обновления UI
                 final newMessages = List<Message>.from(_messages);
@@ -450,22 +465,25 @@ extension _ChatScreenSendPart on _ChatScreenState {
                   ),
                 );
               });
-              if (kDebugMode)
+              if (kDebugMode) {
                 print(
                   '✅ Message updated in UI (new list created). Total messages: ${_messages.length}',
                 );
-              if (kDebugMode)
+              }
+              if (kDebugMode) {
                 print(
                   '✅ Message IDs after update: ${_messages.map((m) => m.id).toList()}',
                 );
+              }
             } else {
               // Если временное сообщение не найдено, проверяем, нет ли уже такого сообщения
               final existingIndex = _messages.indexWhere(
                 (m) => m.id == sentMessage.id,
               );
               if (existingIndex != -1) {
-                if (kDebugMode)
+                if (kDebugMode) {
                   print('⚠️ Message already exists at index $existingIndex');
+                }
                 // Обновляем сообщение на текущей позиции, без перемещения
                 setState(() {
                   final newMessages = List<Message>.from(_messages);
@@ -492,13 +510,15 @@ extension _ChatScreenSendPart on _ChatScreenState {
                     ),
                   );
                 });
-                if (kDebugMode)
+                if (kDebugMode) {
                   print('✅ Message updated in place at index $existingIndex');
+                }
               } else {
-                if (kDebugMode)
+                if (kDebugMode) {
                   print(
                     '⚠️ Temp message not found and message not in list, adding it',
                   );
+                }
                 setState(() {
                   // ✅ Создаем новый список для принудительного обновления UI
                   final newMessages = List<Message>.from(_messages);
@@ -526,10 +546,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
                     ),
                   );
                 });
-                if (kDebugMode)
+                if (kDebugMode) {
                   print(
                     '✅ Message added to end. Total: ${_messages.length} (new list created)',
                   );
+                }
               }
             }
 
@@ -544,8 +565,9 @@ extension _ChatScreenSendPart on _ChatScreenState {
 
             // Кэш обновляется в MessagesService на raw-ответе сервера, чтобы не сохранять plaintext E2EE.
           } else {
-            if (kDebugMode)
+            if (kDebugMode) {
               print('⚠️ No message received from server response');
+            }
           }
 
           // ✅ Fallback: Если через 3 секунды временное сообщение все еще есть,
@@ -553,10 +575,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
           // (сообщение уже обновлено из ответа сервера выше)
           Future.delayed(const Duration(seconds: 3), () {
             if (mounted && _messages.any((m) => m.id == tempMessageId)) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print(
                   '⚠️ Temp message still exists after 3s, but should be replaced by WebSocket or server response',
                 );
+              }
             }
           });
         }

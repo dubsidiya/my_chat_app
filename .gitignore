@@ -65,6 +65,9 @@ docs/tutorial/
 # Продуктовый аудит (локальный чеклист для починок, не коммитить)
 docs/PRODUCT_AUDIT_2026-05.md
 
+# Промт для Cursor Agent (релизный прогон, локально, не коммитить)
+docs/RELEASE_AGENT_PROMPT.md
+
 # Резервные копии
 *.backup
 *.bak

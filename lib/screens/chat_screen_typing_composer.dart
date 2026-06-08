@@ -150,8 +150,9 @@ extension _ChatScreenTypingComposerPart on _ChatScreenState {
     if (cursor < 0 || cursor > text.length) cursor = text.length;
     if (_mentionStart < 0 ||
         _mentionStart >= text.length ||
-        _mentionStart > cursor)
+        _mentionStart > cursor) {
       return;
+    }
     final before = text.substring(0, _mentionStart);
     final after = text.substring(cursor);
     final insert = '@$handle ';
@@ -398,5 +399,4 @@ extension _ChatScreenTypingComposerPart on _ChatScreenState {
 
     return 'Вы: ${widget.displayName ?? widget.userEmail}';
   }
-
 }

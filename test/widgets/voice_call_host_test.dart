@@ -16,10 +16,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           navigatorKey: navigatorKey,
-          home: Scaffold(
+          home: const Scaffold(
             body: VoiceCallHost(
               userId: '42',
-              child: const Center(child: Text('chats')),
+              child: Center(child: Text('chats')),
             ),
           ),
         ),
@@ -39,10 +39,16 @@ void main() {
       await tester.pumpAndSettle();
 
       final snap = VoiceCallService.instance.snapshot;
-      expect(snap.phase, VoiceCallPhase.incoming,
-          reason: 'phase=${snap.phase} status=${snap.statusMessage}');
-      expect(navigatorKey.currentState?.canPop() ?? false, isTrue,
-          reason: 'call route must be on root navigator');
+      expect(
+        snap.phase,
+        VoiceCallPhase.incoming,
+        reason: 'phase=${snap.phase} status=${snap.statusMessage}',
+      );
+      expect(
+        navigatorKey.currentState?.canPop() ?? false,
+        isTrue,
+        reason: 'call route must be on root navigator',
+      );
       expect(find.byType(VoiceCallScreen), findsOneWidget);
       expect(find.text('Принять'), findsOneWidget);
       expect(find.text('Отклонить'), findsOneWidget);

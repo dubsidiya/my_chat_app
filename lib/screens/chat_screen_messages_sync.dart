@@ -10,7 +10,9 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
   }) async {
     if (_isWaitingForE2eeKey) return;
     _isWaitingForE2eeKey = true;
-    if (mounted) setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
+    if (mounted) {
+      setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
+    }
     _showE2eeWaitingSnack();
     final obtained = await E2eeService.waitForChatKeyFromServer(
       chatIdStr,
@@ -34,7 +36,9 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     int? keyVersion,
   }) async {
     if (_isWaitingForE2eeKey) return;
-    if (mounted) setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
+    if (mounted) {
+      setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
+    }
     await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
     unawaited(
       _retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion),
@@ -179,8 +183,9 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         if (shouldAutoScrollToBottom) {
           _scrollToBottomWithRetry();
         }
-        if (kDebugMode)
+        if (kDebugMode) {
           print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
+        }
       }
     } catch (e) {
       if (kDebugMode) print('⚠️ Ошибка загрузки из кэша: $e');
@@ -253,11 +258,15 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
             ) !=
             null;
         if (hasKey) {
-          if (mounted) setState(() => _e2eeKeyState = _ChatScreenState._e2eeReady);
+          if (mounted) {
+            setState(() => _e2eeKeyState = _ChatScreenState._e2eeReady);
+          }
           await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
           await E2eeService.processPendingKeyRequests(chatIdStr);
         } else {
-          if (mounted) setState(() => _e2eeKeyState = _ChatScreenState._e2eeMissing);
+          if (mounted) {
+            setState(() => _e2eeKeyState = _ChatScreenState._e2eeMissing);
+          }
           await E2eeService.requestChatKey(
             chatIdStr,
             keyVersion: requiredKeyVersion,

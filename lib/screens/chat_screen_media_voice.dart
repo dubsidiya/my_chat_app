@@ -12,6 +12,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       if (kIsWeb) {
         final bytes = await picked.readAsBytes();
         if (bytes.isEmpty) return;
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageName = picked.name;
@@ -22,6 +23,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
           _selectedFileSize = null;
         });
       } else {
+        if (!mounted) return;
         setState(() {
           _selectedImagePath = picked.path;
           _selectedImageBytes = null;
@@ -76,6 +78,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       if (kIsWeb) {
         final bytes = await picked.readAsBytes();
         if (bytes.isEmpty) return;
+        if (!mounted) return;
         setState(() {
           _selectedFileBytes = bytes;
           _selectedFilePath = null;
@@ -87,6 +90,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
         });
       } else {
         final length = await picked.length();
+        if (!mounted) return;
         setState(() {
           _selectedFilePath = picked.path;
           _selectedFileBytes = null;
@@ -138,6 +142,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
+      if (!mounted) return;
       setState(() {
         _selectedFileName = file.name;
         _selectedFileSize = file.size;
@@ -175,6 +180,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       final bytes = await fileItem.readAsBytes();
       final fileName = fileItem.name;
       if (bytes.isEmpty) return;
+      if (!mounted) return;
       final parts = fileName.toLowerCase().split('.');
       final ext = parts.length > 1 ? parts.last : '';
       final imageExtensions = [
@@ -414,8 +420,8 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     HapticFeedback.mediumImpact();
 
     final hasPermission = await _voiceRecorder.hasPermission();
+    if (!mounted) return;
     if (!hasPermission) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           duration: Duration(seconds: 3),
@@ -428,19 +434,39 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     }
 
     final dir = await getTemporaryDirectory();
+    if (!mounted) return;
     final path =
         '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
     _voiceRecordTempPath = path;
 
-    await _voiceRecorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
-        numChannels: 1,
-      ),
-      path: path,
-    );
+    try {
+      await _voiceRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+    } catch (e) {
+      _voiceRecordTempPath = null;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось начать запись: $e'),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) {
+      try {
+        await _voiceRecorder.stop();
+      } catch (_) {}
+      return;
+    }
 
     _voiceRecordTimer?.cancel();
     setState(() {
