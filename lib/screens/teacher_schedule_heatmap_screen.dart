@@ -290,16 +290,6 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                 weekdayLabels: _weekdayLabels,
                 cellColor: _cellColor,
               ),
-            const SizedBox(height: 8),
-            Text(
-              'В каждом столбце дня — только реальные времена этого дня (без пустых «чужих» слотов). '
-              'Число — занятий за весь период в это время.',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurface.withValues(alpha: 0.65),
-                height: 1.35,
-              ),
-            ),
           ],
         ],
       ),
