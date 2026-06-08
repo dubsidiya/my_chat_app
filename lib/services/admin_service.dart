@@ -5,6 +5,8 @@ import '../utils/timed_http.dart';
 import 'storage_service.dart';
 import '../models/report_author_option.dart';
 import '../models/teacher_schedule_heatmap.dart';
+import '../models/teacher_schedule_overview.dart';
+import '../models/teacher_placement_plan.dart';
 
 class AdminService {
   final String baseUrl = ApiConfig.baseUrl;
@@ -189,6 +191,97 @@ class AdminService {
       throw Exception('Требуется доступ суперпользователя');
     }
     throw Exception(_extractMessage(response, 'Не удалось загрузить график'));
+  }
+
+  /// Планировщик: куда поставить ребёнка по дням/времени (1–5 преподавателей, суперпользователь).
+  Future<TeacherPlacementPlan> getTeacherPlacementPlan({
+    required DateTime from,
+    required DateTime to,
+    required List<int> teacherIds,
+  }) async {
+    if (teacherIds.isEmpty) {
+      throw Exception('Выберите хотя бы одного преподавателя');
+    }
+    if (teacherIds.length > 5) {
+      throw Exception('Не более 5 преподавателей');
+    }
+    final headers = await _getAuthHeaders();
+    final ids = teacherIds.join(',');
+    final uri = Uri.parse(
+      '$baseUrl/admin/accounting/teacher-schedule/placement?from=${_dateToIso(from)}&to=${_dateToIso(to)}&teacher_ids=$ids',
+    );
+    final response = await timedGet(uri, headers: headers, timeout: const Duration(seconds: 40));
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is Map<String, dynamic>) {
+        return TeacherPlacementPlan.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return TeacherPlacementPlan.fromJson(decoded.cast<String, dynamic>());
+      }
+      throw Exception('Некорректный ответ сервера');
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    throw Exception(_extractMessage(response, 'Не удалось загрузить планировщик'));
+  }
+
+  /// Сводная теплокарта 1–5 преподавателей (суперпользователь).
+  Future<TeacherScheduleOverview> getTeacherScheduleOverview({
+    required DateTime from,
+    required DateTime to,
+    required List<int> teacherIds,
+  }) async {
+    if (teacherIds.isEmpty) {
+      throw Exception('Выберите хотя бы одного преподавателя');
+    }
+    if (teacherIds.length > 5) {
+      throw Exception('Не более 5 преподавателей');
+    }
+    final headers = await _getAuthHeaders();
+    final ids = teacherIds.join(',');
+    final uri = Uri.parse(
+      '$baseUrl/admin/accounting/teacher-schedule/overview?from=${_dateToIso(from)}&to=${_dateToIso(to)}&teacher_ids=$ids',
+    );
+    final response = await timedGet(uri, headers: headers, timeout: const Duration(seconds: 35));
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is Map<String, dynamic>) {
+        return TeacherScheduleOverview.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return TeacherScheduleOverview.fromJson(decoded.cast<String, dynamic>());
+      }
+      throw Exception('Некорректный ответ сервера');
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    throw Exception(_extractMessage(response, 'Не удалось загрузить сводный график'));
+  }
+
+  /// Сводка nagavisor1.0 (суперпользователь).
+  Future<Map<String, dynamic>> getNagavisor({
+    required int teacherId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final headers = await _getAuthHeaders();
+    final uri = Uri.parse(
+      '$baseUrl/admin/accounting/nagavisor?teacher_id=$teacherId&from=${_dateToIso(from)}&to=${_dateToIso(to)}',
+    );
+    final response = await timedGet(uri, headers: headers, timeout: const Duration(seconds: 45));
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+      throw Exception('Некорректный ответ сервера');
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Требуется доступ суперпользователя');
+    }
+    throw Exception(_extractMessage(response, 'Не удалось загрузить карточку преподавателя'));
   }
 
   String _extractMessage(dynamic response, String fallback) {

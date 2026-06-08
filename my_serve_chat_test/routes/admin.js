@@ -7,8 +7,11 @@ import {
 } from '../controllers/adminAccountingController.js';
 import {
   getTeacherScheduleHeatmap,
+  getTeacherPlacementPlan,
+  getTeacherScheduleOverview,
   getTeacherScheduleTeachers,
 } from '../controllers/teacherScheduleController.js';
+import { getNagavisor } from '../controllers/nagavisorController.js';
 import { adminResetUserPassword } from '../controllers/auth/index.js';
 import {
   getTeacherBalanceAdmin,
@@ -28,6 +31,9 @@ router.post('/accounting/teacher-balances/:teacherId/transactions', postTeacherB
 router.post('/accounting/teacher-balances/sync', syncTeacherBalancesAdmin);
 router.get('/accounting/teacher-schedule/teachers', getTeacherScheduleTeachers);
 router.get('/accounting/teacher-schedule', getTeacherScheduleHeatmap);
+router.get('/accounting/teacher-schedule/overview', getTeacherScheduleOverview);
+router.get('/accounting/teacher-schedule/placement', getTeacherPlacementPlan);
+router.get('/accounting/nagavisor', getNagavisor);
 router.get('/accounting/export', exportAccounting);
 router.get('/accounting/transactions-export', exportAccountingTransactions);
 router.get('/accounting/export-xlsx', exportAccountingXlsx);

@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../utils/network_error_helper.dart';
 import '../widgets/teacher_balance_transaction_tile.dart';
 import 'report_builder_screen.dart';
+import 'nagavisor_screen.dart';
 
 /// Управление выплатами преподавателям (только суперпользователь).
 class TeacherPayrollScreen extends StatefulWidget {
@@ -243,7 +244,23 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
                                       fontSize: 16,
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                    icon: Icon(Icons.person_search_rounded, size: 22, color: AppColors.primary),
+                                    tooltip: 'nagavisor1.0',
+                                    onPressed: () {
+                                      Navigator.push<void>(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => NagavisorScreen(
+                                            teacherId: t.teacherId,
+                                            teacherLabel: t.label,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                                   IconButton(
                                     visualDensity: VisualDensity.compact,
                                     constraints: const BoxConstraints(minWidth: 36, minHeight: 36),

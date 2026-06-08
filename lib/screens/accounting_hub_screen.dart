@@ -4,6 +4,8 @@ import '../theme/app_colors.dart';
 import 'accounting_export_screen.dart';
 import 'teacher_payroll_screen.dart';
 import 'teacher_schedule_heatmap_screen.dart';
+import 'teacher_schedule_overview_screen.dart';
+import 'nagavisor_picker_screen.dart';
 
 /// Раздел бухгалтерии (только суперпользователь): выплаты, график, выгрузки.
 class AccountingHubScreen extends StatelessWidget {
@@ -28,6 +30,16 @@ class AccountingHubScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _HubTile(
+            icon: Icons.person_search_rounded,
+            color: Colors.teal.shade700,
+            title: 'nagavisor1.0',
+            subtitle: 'Качество, график, выплаты, отчёты и ученики в одной карточке',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const NagavisorPickerScreen()),
+            ),
+          ),
+          _HubTile(
             icon: Icons.payments_rounded,
             color: Colors.green.shade700,
             title: 'Выплаты преподавателям',
@@ -45,6 +57,16 @@ class AccountingHubScreen extends StatelessWidget {
             onTap: () => Navigator.push<void>(
               context,
               MaterialPageRoute<void>(builder: (_) => const TeacherScheduleHeatmapScreen()),
+            ),
+          ),
+          _HubTile(
+            icon: Icons.compare_arrows_rounded,
+            color: Colors.orange.shade800,
+            title: 'Планировщик загрузки',
+            subtitle: 'Куда поставить ребёнка: дни и время по каждому преподавателю',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const TeacherScheduleOverviewScreen()),
             ),
           ),
           _HubTile(

@@ -8,6 +8,8 @@ import '../models/teacher_schedule_heatmap.dart';
 import '../services/admin_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/network_error_helper.dart';
+import 'nagavisor_screen.dart';
+import 'teacher_schedule_overview_screen.dart';
 
 /// Теплокарта занятий преподавателя по дням недели и времени (только суперпользователь).
 class TeacherScheduleHeatmapScreen extends StatefulWidget {
@@ -245,6 +247,51 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                       label: const Text('Показать график'),
                     ),
                   ),
+                  if (_teacherId != null) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => TeacherScheduleOverviewScreen(
+                                initialTeacherIds: [_teacherId!],
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.compare_arrows_rounded),
+                        label: const Text('Планировщик загрузки'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          final tid = _teacherId!;
+                          final label = _teachers
+                                  .where((t) => t.id == tid)
+                                  .map((t) => t.label)
+                                  .firstOrNull ??
+                              'Преподаватель';
+                          Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => NagavisorScreen(
+                                teacherId: tid,
+                                teacherLabel: label,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.person_search_rounded),
+                        label: const Text('nagavisor1.0'),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
