@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Плейсхолдер-скелетон при загрузке изображения: серый прямоугольник с лёгкой пульсацией.
-/// Использовать в [CachedNetworkImage.placeholder].
+import '../theme/app_colors.dart';
+
+/// Плейсхолдер-скелетон при загрузке контента: подложка с бегущим
+/// shimmer-бликом в фирменном фиолетовом оттенке.
+/// Использовать в [CachedNetworkImage.placeholder] и списках-скелетонах.
 class SkeletonPlaceholder extends StatefulWidget {
   final double? width;
   final double? height;
@@ -21,18 +24,14 @@ class SkeletonPlaceholder extends StatefulWidget {
 class _SkeletonPlaceholderState extends State<SkeletonPlaceholder>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.35, end: 0.65).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
   }
 
   @override
@@ -44,16 +43,28 @@ class _SkeletonPlaceholderState extends State<SkeletonPlaceholder>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = scheme.surfaceContainerHighest;
+    final base = scheme.surfaceContainerHighest.withValues(alpha: 0.55);
+    final highlight = AppColors.primaryGlow.withValues(
+      alpha: AppColors.isLight ? 0.14 : 0.18,
+    );
     return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
+      animation: _controller,
+      builder: (context, _) {
+        // Блик пробегает слева направо; стопы за пределами [0,1] обрезаются,
+        // что и создаёт эффект «выезда» полосы из-за края.
+        final t = -0.4 + _controller.value * 1.8;
         return Container(
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
             borderRadius: widget.borderRadius ?? BorderRadius.circular(8),
-            color: color.withValues(alpha: _animation.value),
+            color: base,
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [base, highlight, base],
+              stops: [t - 0.25, t, t + 0.25],
+            ),
           ),
         );
       },

@@ -13,6 +13,8 @@ import '../services/voice_call_service.dart';
 import '../services/e2ee_service.dart';
 import '../services/local_messages_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/glow_empty_state.dart';
+import '../widgets/skeleton_placeholder.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
@@ -617,6 +619,68 @@ class _HomeScreenState extends State<HomeScreen> {
     StorageService.saveChatOrder(widget.userId, _chatOrder);
   }
 
+  /// Скелетон списка чатов на время загрузки — повторяет геометрию
+  /// реальных карточек, чтобы переход к контенту был бесшовным.
+  Widget _buildChatsLoadingSkeleton(ColorScheme scheme) {
+    // Немного разные ширины полосок, чтобы список выглядел «живым».
+    const nameWidths = [150.0, 110.0, 170.0, 130.0, 150.0, 100.0, 160.0, 120.0];
+    const previewWidths = [220.0, 180.0, 240.0, 160.0, 200.0, 230.0, 170.0, 210.0];
+    return IgnorePointer(
+      child: ListView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: 8,
+        itemBuilder: (context, index) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.30),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.16),
+              ),
+            ),
+            child: Row(
+              children: [
+                SkeletonPlaceholder(
+                  width: 52,
+                  height: 52,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonPlaceholder(
+                        width: nameWidths[index % nameWidths.length],
+                        height: 14,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      const SizedBox(height: 10),
+                      SkeletonPlaceholder(
+                        width: previewWidths[index % previewWidths.length],
+                        height: 12,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SkeletonPlaceholder(
+                  width: 32,
+                  height: 10,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildChatTile(BuildContext context, Chat chat) {
     final scheme = Theme.of(context).colorScheme;
     final lastTime = _formatLastMessageTime(chat.lastMessageAt);
@@ -654,7 +718,10 @@ class _HomeScreenState extends State<HomeScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.errorDark,
+                  foregroundColor: Colors.white,
+                ),
                 child: const Text('Удалить'),
               ),
             ],
@@ -1625,22 +1692,39 @@ class _HomeScreenState extends State<HomeScreen> {
           child: GestureDetector(
             onTap: _openProfile,
             child: Center(
+              // Градиентное кольцо вокруг аватара — фирменный дуотон
+              // «ультрафиолет → неон».
               child: Container(
                 width: 40,
                 height: 40,
+                padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: scheme.outline.withValues(alpha: 0.35), width: 1),
+                  gradient: AppColors.cyberGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryGlow.withValues(alpha: 0.30),
+                      blurRadius: 10,
+                      spreadRadius: -2,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: ClipOval(
-                  child: _avatarUrl != null && _avatarUrl!.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: _avatarUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => _avatarInitial(initial),
-                          errorWidget: (_, __, ___) => _avatarInitial(initial),
-                        )
-                      : _avatarInitial(initial),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.backgroundDark, width: 1.5),
+                  ),
+                  child: ClipOval(
+                    child: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: _avatarUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => _avatarInitial(initial),
+                            errorWidget: (_, __, ___) => _avatarInitial(initial),
+                          )
+                        : _avatarInitial(initial),
+                  ),
                 ),
               ),
             ),
@@ -1685,29 +1769,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: SafeArea(
           child: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primaryGlow,
-                    ),
-                    strokeWidth: 3,
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Загрузка чатов...',
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
-              ),
-            )
+          ? _buildChatsLoadingSkeleton(scheme)
           : _loadError != null && _chats.isEmpty
               ? Center(
                   child: Padding(
@@ -1835,54 +1897,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          if (_chats.isEmpty)
-                                            Icon(
-                                              Icons.chat_bubble_outline_rounded,
-                                              size: 56,
-                                              color: scheme.primary.withValues(alpha: 0.5),
-                                            ),
-                                          if (_chats.isEmpty) const SizedBox(height: 16),
-                                          Text(
-                                            _chats.isEmpty
-                                                ? 'Нет чатов'
-                                                : 'По запросу ничего не найдено',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              color: scheme.onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
                                           if (_chats.isEmpty) ...[
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Создайте чат кнопкой + или обновите список',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                                              ),
-                                              textAlign: TextAlign.center,
+                                            const GlowEmptyState(
+                                              icon: Icons.chat_bubble_outline_rounded,
+                                              title: 'Нет чатов',
+                                              subtitle: 'Создайте чат кнопкой + или обновите список',
                                             ),
-                                            const SizedBox(height: 20),
+                                            const SizedBox(height: 24),
                                             OutlinedButton.icon(
                                               onPressed: _showCreateChatDialog,
                                               icon: const Icon(Icons.add_rounded, size: 20),
                                               label: const Text('Создать чат'),
                                               style: OutlinedButton.styleFrom(
                                                 foregroundColor: AppColors.primary,
+                                                side: BorderSide(
+                                                  color: AppColors.primary.withValues(alpha: 0.45),
+                                                ),
                                               ),
                                             ),
                                           ] else ...[
-                                            const SizedBox(height: 12),
-                                            Text(
-                                              'Очистите поиск, чтобы увидеть все чаты',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                                              ),
-                                              textAlign: TextAlign.center,
+                                            const GlowEmptyState(
+                                              icon: Icons.search_off_rounded,
+                                              title: 'По запросу ничего не найдено',
+                                              subtitle: 'Очистите поиск, чтобы увидеть все чаты',
                                             ),
-                                            const SizedBox(height: 16),
+                                            const SizedBox(height: 20),
                                             OutlinedButton.icon(
                                               onPressed: () {
                                                 _searchDebounce?.cancel();
@@ -1896,6 +1935,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                               label: const Text('Показать все чаты'),
                                               style: OutlinedButton.styleFrom(
                                                 foregroundColor: AppColors.primary,
+                                                side: BorderSide(
+                                                  color: AppColors.primary.withValues(alpha: 0.45),
+                                                ),
                                               ),
                                             ),
                                           ],

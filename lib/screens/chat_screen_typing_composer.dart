@@ -374,6 +374,18 @@ extension _ChatScreenTypingComposerPart on _ChatScreenState {
     );
   }
 
+  /// Кто-то (кроме меня) печатает прямо сейчас — для анимации статуса.
+  bool get _isAnyoneTypingNow {
+    final now = DateTime.now();
+    return _typingUntilByUserId.entries.any(
+      (e) => e.value.isAfter(now) && e.key != widget.userId.toString(),
+    );
+  }
+
+  /// Количество участников онлайн, не считая себя.
+  int get _onlineOthersCount =>
+      _onlineUserIds.where((id) => id != widget.userId.toString()).length;
+
   String _buildChatStatusLine() {
     final now = DateTime.now();
     final typingIds = _typingUntilByUserId.entries

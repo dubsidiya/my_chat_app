@@ -40,6 +40,7 @@ import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/fade_scale_in.dart';
+import '../widgets/typing_dots.dart';
 import 'add_members_dialog.dart';
 import 'chat_members_dialog.dart';
 import 'chat_gallery_screen.dart';
@@ -847,34 +848,115 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final scheme = Theme.of(context).colorScheme;
     final pinnedHeight = _getPinnedMessagesHeight();
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
+    final isTyping = _isAnyoneTypingNow;
+    final onlineOthers = _onlineOthersCount;
     return Scaffold(
-      backgroundColor: scaffoldBg,
+      backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
-        backgroundColor: scaffoldBg,
+        backgroundColor: AppColors.backgroundDark,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        titleSpacing: 0,
+        title: Row(
           children: [
-            Text(
-              _chatTitle,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [_accent1, AppColors.primaryDeep],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: _accent2.withValues(alpha: 0.30),
+                    blurRadius: 10,
+                    spreadRadius: -2,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: widget.isGroup
+                  ? const Icon(Icons.group_rounded,
+                      color: Colors.white, size: 20)
+                  : Center(
+                      child: Text(
+                        _chatTitle.trim().isNotEmpty
+                            ? _chatTitle.trim()[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _chatTitle,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      letterSpacing: -0.1,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isTyping) ...[
+                        TypingDots(color: AppColors.cyberAccent),
+                        const SizedBox(width: 6),
+                      ] else if (onlineOthers > 0) ...[
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: AppColors.online,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.online.withValues(alpha: 0.55),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Flexible(
+                        child: Text(
+                          _buildChatStatusLine(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight:
+                                isTyping ? FontWeight.w600 : FontWeight.w400,
+                            color: isTyping
+                                ? AppColors.cyberAccent
+                                : onlineOthers > 0
+                                    ? AppColors.online.withValues(alpha: 0.95)
+                                    : scheme.onSurface.withValues(alpha: 0.65),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            Text(
-              _buildChatStatusLine(),
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurface.withValues(alpha: 0.65),
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+            const SizedBox(width: 8),
           ],
         ),
         actions: [
@@ -1063,8 +1145,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           const SizedBox(width: 6),
         ],
       ),
-      body: Material(
-        color: scaffoldBg,
+      body: Container(
+        decoration: BoxDecoration(gradient: AppColors.homeBodyGradient),
         child: DropTarget(
           onDragDone: _handleFilesDropped,
           child: Stack(
@@ -1073,7 +1155,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 children: [
                   Expanded(
                     child: Container(
-                      color: scaffoldBg,
+                      color: Colors.transparent,
                       child: _isLoading
                           ? Center(
                               child: Column(
@@ -1206,7 +1288,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                               msg,
                                                             ),
                                                         backgroundColor:
-                                                            Colors.red.shade400,
+                                                            AppColors.errorDark
+                                                                .withValues(
+                                                                  alpha: 0.9,
+                                                                ),
                                                         foregroundColor:
                                                             Colors.white,
                                                         icon: Icons
@@ -1296,25 +1381,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.97,
-                                          ),
+                                          color: AppColors.cardElevatedDark
+                                              .withValues(alpha: 0.97),
                                           borderRadius: BorderRadius.circular(
                                             16,
                                           ),
                                           border: Border.all(
                                             color: _accent1.withValues(
-                                              alpha: 0.18,
+                                              alpha: 0.28,
                                             ),
                                             width: 1.2,
                                           ),
                                           boxShadow: [
                                             BoxShadow(
                                               color: Colors.black.withValues(
-                                                alpha: 0.06,
+                                                alpha: 0.10,
                                               ),
                                               blurRadius: 10,
                                               offset: const Offset(0, 4),
+                                            ),
+                                            BoxShadow(
+                                              color: _accent2.withValues(
+                                                alpha: 0.14,
+                                              ),
+                                              blurRadius: 18,
+                                              spreadRadius: -4,
+                                              offset: const Offset(0, 6),
                                             ),
                                           ],
                                         ),
@@ -1344,10 +1436,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                     'Закреплено',
                                                     style: TextStyle(
                                                       fontWeight:
-                                                          FontWeight.w500,
+                                                          FontWeight.w600,
                                                       fontSize: 11,
-                                                      color:
-                                                          Colors.grey.shade700,
+                                                      color: scheme
+                                                          .onSurfaceVariant,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 4),
@@ -1541,7 +1633,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ),
                   Container(
                     decoration: BoxDecoration(
-                      color: scaffoldBg,
+                      // Полупрозрачная подложка: градиент фона мягко
+                      // просвечивает под композером.
+                      color: scaffoldBg.withValues(
+                        alpha: AppColors.isLight ? 0.78 : 0.62,
+                      ),
                       border: Border(
                         top: BorderSide(
                           color: AppColors.borderDark.withValues(alpha: 0.5),
@@ -1573,10 +1669,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.12),
+                                  color: AppColors.warningDark.withValues(
+                                    alpha: 0.12,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: Colors.orange.withValues(
+                                    color: AppColors.warningDark.withValues(
                                       alpha: 0.35,
                                     ),
                                   ),
@@ -1624,7 +1722,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             Icon(
                                               Icons.cloud_off_rounded,
                                               size: 18,
-                                              color: Colors.orange.shade700,
+                                              color: AppColors.warningDark,
                                             ),
                                             const SizedBox(width: 8),
                                             Expanded(
@@ -1632,7 +1730,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                 'Черновики отправки — $details',
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.orange.shade900,
+                                                  color: scheme.onSurface
+                                                      .withValues(alpha: 0.85),
                                                   fontWeight: FontWeight.w500,
                                                 ),
                                               ),
@@ -1727,7 +1826,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                   Icons
                                                       .insert_drive_file_rounded,
                                                   size: 14,
-                                                  color: Colors.grey.shade600,
+                                                  color:
+                                                      scheme.onSurfaceVariant,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Expanded(
@@ -1737,8 +1837,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                     ),
                                                     style: TextStyle(
                                                       fontSize: 12,
-                                                      color:
-                                                          Colors.grey.shade600,
+                                                      color: scheme
+                                                          .onSurfaceVariant,
                                                       fontStyle:
                                                           FontStyle.italic,
                                                     ),
@@ -1755,14 +1855,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                 Icon(
                                                   Icons.image,
                                                   size: 14,
-                                                  color: Colors.grey.shade600,
+                                                  color:
+                                                      scheme.onSurfaceVariant,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
                                                   'Фото',
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: Colors.grey.shade600,
+                                                    color:
+                                                        scheme.onSurfaceVariant,
                                                     fontStyle: FontStyle.italic,
                                                   ),
                                                 ),
@@ -1776,7 +1878,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                   : _replyToMessage!.content,
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: Colors.grey.shade700,
+                                                color: scheme.onSurface
+                                                    .withValues(alpha: 0.75),
                                               ),
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
