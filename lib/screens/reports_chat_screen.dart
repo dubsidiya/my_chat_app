@@ -8,6 +8,7 @@ import '../models/report.dart';
 import '../models/report_author_option.dart';
 import '../services/reports_service.dart';
 import '../utils/network_error_helper.dart';
+import '../widgets/report_teacher_filter_picker_sheet.dart';
 import 'report_text_view_screen.dart';
 import 'report_builder_screen.dart';
 import 'monthly_salary_screen.dart';
@@ -98,6 +99,64 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         _filterTeacherId = null;
       }
     });
+  }
+
+  String _teacherFilterDisplayLabel() {
+    if (_filterTeacherId == null) return 'Все преподаватели';
+    return _teacherOptions
+            .where((t) => t.id == _filterTeacherId)
+            .map((t) => t.label)
+            .firstOrNull ??
+        'Преподаватель #$_filterTeacherId';
+  }
+
+  void _onTeacherFilterSelected(ReportTeacherFilterOption pick) {
+    if (pick.id == _filterTeacherId) return;
+    setState(() => _filterTeacherId = pick.id);
+    unawaited(_loadReportsList());
+  }
+
+  Future<void> _openTeacherFilterPicker() async {
+    if (_teachersLoading) return;
+    final pick = await showModalBottomSheet<ReportTeacherFilterOption>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => ReportTeacherFilterPickerSheet(
+        teachers: _teacherOptions,
+        selectedId: _filterTeacherId,
+      ),
+    );
+    if (!mounted || pick == null) return;
+    _onTeacherFilterSelected(pick);
+  }
+
+  Widget? _teacherFilterSuffixIcon() {
+    if (_teachersLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_filterTeacherId != null) {
+      return IconButton(
+        icon: const Icon(Icons.close_rounded, size: 20),
+        tooltip: 'Все преподаватели',
+        onPressed: () => _onTeacherFilterSelected(ReportTeacherFilterOption.all),
+      );
+    }
+    if (_teacherOptions.isEmpty) {
+      return IconButton(
+        icon: const Icon(Icons.refresh_rounded, size: 20),
+        tooltip: 'Обновить список',
+        onPressed: () => _loadTeacherOptions(showErrors: true),
+      );
+    }
+    return const Icon(Icons.arrow_drop_down_rounded);
   }
 
   /// Если API преподавателей недоступен — собираем уникальных авторов из уже загруженных отчётов.
@@ -596,61 +655,25 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           decoration: InputDecoration(
                             labelText: 'Преподаватель',
                             isDense: true,
-                            suffixIcon: _teachersLoading
-                                ? const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                  )
-                                : (_teacherOptions.isEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.refresh_rounded, size: 20),
-                                        tooltip: 'Обновить список',
-                                        onPressed: _teachersLoading
-                                            ? null
-                                            : () => _loadTeacherOptions(showErrors: true),
-                                      )
-                                    : null),
+                            suffixIcon: _teacherFilterSuffixIcon(),
                             helperText: _teacherOptions.isEmpty
                                 ? 'Нажмите «Показать» или ↻ — список появится после загрузки отчётов'
-                                : null,
+                                : 'Нажмите, чтобы выбрать и искать по имени',
                           ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<int?>(
-                              key: ValueKey(
-                                'teachers-${_teacherOptions.length}-'
-                                '${_filterDateFrom.millisecondsSinceEpoch}-'
-                                '${_filterDateTo.millisecondsSinceEpoch}',
+                          child: InkWell(
+                            onTap: _openTeacherFilterPicker,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                _teacherFilterDisplayLabel(),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: _filterTeacherId == null
+                                      ? scheme.onSurface.withValues(alpha: 0.55)
+                                      : scheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              isExpanded: true,
-                              value: _filterTeacherId,
-                              hint: const Text('Все преподаватели'),
-                              items: [
-                                const DropdownMenuItem<int?>(
-                                  value: null,
-                                  child: Text('Все преподаватели'),
-                                ),
-                                ..._teacherOptions.map(
-                                  (t) => DropdownMenuItem<int?>(
-                                    value: t.id,
-                                    child: Text(
-                                      t.label,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged: _teachersLoading
-                                  ? null
-                                  : (v) {
-                                      setState(() => _filterTeacherId = v);
-                                      if (!_isLoading) {
-                                        unawaited(_loadReportsList());
-                                      }
-                                    },
                             ),
                           ),
                         ),
@@ -1162,4 +1185,3 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     );
   }
 }
-
