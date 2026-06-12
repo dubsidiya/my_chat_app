@@ -281,6 +281,19 @@ export const exportAccounting = async (req, res) => {
       debtByStudent.set(sid, debt);
     }
 
+    // Долг по кошельку (ученик+преподаватель) после обоих проходов FIFO.
+    // Нужен, чтобы в дереве показывать предоплату/долг именно у того преподавателя,
+    // на которого вносился депозит, а не дублировать общий остаток у всех.
+    const debtByWallet = new Map();
+    for (const [key, lessons] of lessonsByWallet.entries()) {
+      let debt = 0;
+      for (const lesson of lessons) {
+        const cov = coverageByLessonId.get(lesson.id) ?? defaultLessonCoverage(lesson);
+        debt += cov.unpaid;
+      }
+      debtByWallet.set(key, debt);
+    }
+
     // Формируем плоский список уроков за период + агрегаты по преподавателям
     const lessonsInPeriod = [];
     const teacherAgg = new Map(); // teacherId -> {teacherId, teacherUsername, lessonsCount, amount, paid, unpaid}
@@ -380,11 +393,14 @@ export const exportAccounting = async (req, res) => {
       const sid = row.student_id;
       if (!tNode.students.has(sid)) {
         const st = studentById.get(sid);
+        const wKey = walletKey(sid, row.teacher_id);
         tNode.students.set(sid, {
           studentId: sid,
           studentName: st?.name || '',
           overallDebtAsOfTo: debtByStudent.get(sid) || 0,
           overallPrepaidAsOfTo: remainingCreditByStudent.get(sid) || 0,
+          walletDebtAsOfTo: debtByWallet.get(wKey) || 0,
+          walletPrepaidAsOfTo: remainingCreditByWallet.get(wKey) || 0,
           lessons: [],
         });
       }
@@ -396,11 +412,14 @@ export const exportAccounting = async (req, res) => {
       if (!tNode.students.has(l.studentId)) {
         const sid = l.studentId;
         const st = studentById.get(sid);
+        const wKey = walletKey(sid, tid);
         tNode.students.set(sid, {
           studentId: sid,
           studentName: l.studentName || st?.name || '',
           overallDebtAsOfTo: debtByStudent.get(sid) || 0,
           overallPrepaidAsOfTo: remainingCreditByStudent.get(sid) || 0,
+          walletDebtAsOfTo: debtByWallet.get(wKey) || 0,
+          walletPrepaidAsOfTo: remainingCreditByWallet.get(wKey) || 0,
           lessons: [],
         });
       }

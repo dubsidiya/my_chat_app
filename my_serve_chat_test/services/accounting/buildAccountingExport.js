@@ -255,6 +255,18 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     debtByStudent.set(sid, debt);
   }
 
+  // Долг по кошельку (ученик+преподаватель) после обоих проходов FIFO —
+  // чтобы предоплату/долг можно было показать у конкретного преподавателя.
+  const debtByWallet = new Map();
+  for (const [key, lessons] of lessonsByWallet.entries()) {
+    let debt = 0;
+    for (const lesson of lessons) {
+      const cov = coverageByLessonId.get(lesson.id) ?? defaultLessonCoverage(lesson);
+      debt += cov.unpaid;
+    }
+    debtByWallet.set(key, debt);
+  }
+
   const lessonsInPeriod = [];
   const teacherAgg = new Map();
   // Полная статистика по преподу (всегда без bank_transfer_only фильтра — это про "сколько провёл и сколько висит").
@@ -366,6 +378,53 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     debtAsOfTo: debtByStudent.get(s.id) || 0,
     prepaidAsOfTo: remainingCreditByStudent.get(s.id) || 0,
   }));
+
+  // Кошельки: предоплата/долг по паре ученик×преподаватель.
+  // Депозит, внесённый на конкретного преподавателя, виден именно у него,
+  // а не дублируется у всех преподавателей ученика.
+  const walletsOut = [];
+  for (const s of studentsFiltered) {
+    const sid = s.id;
+    const teacherIds = teachersByStudent.get(sid) || new Set();
+    for (const tid of teacherIds) {
+      const key = walletKey(sid, tid);
+      const prepaid = remainingCreditByWallet.get(key) || 0;
+      const debt = debtByWallet.get(key) || 0;
+      const deposits = depositsInPeriodByWallet.get(key) || 0;
+      const hasLessons = lessonsByWallet.has(key);
+      if (prepaid === 0 && debt === 0 && deposits === 0 && !hasLessons) continue;
+      walletsOut.push({
+        studentId: sid,
+        studentName: s.name || '',
+        payByBankTransfer: s.pay_by_bank_transfer === true,
+        teacherId: tid,
+        teacherUsername: teacherById.get(tid) || '',
+        depositsInPeriod: deposits,
+        debtAsOfTo: debt,
+        prepaidAsOfTo: prepaid,
+      });
+    }
+    // Неадресный (legacy) остаток ученика — без привязки к преподавателю.
+    const unallocated = remainingUnallocatedCreditByStudent.get(sid) || 0;
+    if (unallocated > 0) {
+      walletsOut.push({
+        studentId: sid,
+        studentName: s.name || '',
+        payByBankTransfer: s.pay_by_bank_transfer === true,
+        teacherId: null,
+        teacherUsername: '',
+        depositsInPeriod: unallocatedDepositsInPeriodByStudent.get(sid) || 0,
+        debtAsOfTo: 0,
+        prepaidAsOfTo: unallocated,
+        unallocated: true,
+      });
+    }
+  }
+  walletsOut.sort(
+    (a, b) =>
+      (a.teacherUsername || '').localeCompare(b.teacherUsername || '') ||
+      (a.studentName || '').localeCompare(b.studentName || '')
+  );
 
   const teacherOut = [...teacherAgg.values()]
     .map((t) => ({
@@ -555,6 +614,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     salaries: salariesOut,
     salariesTotals,
     students: studentsOut,
+    wallets: walletsOut,
     lessons: lessonsInPeriod,
     teacherById: Object.fromEntries(teacherById),
   };

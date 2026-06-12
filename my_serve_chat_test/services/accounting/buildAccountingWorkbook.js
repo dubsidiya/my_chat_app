@@ -265,6 +265,82 @@ const writeStudentsSheet = (sheet, payload) => {
   };
 };
 
+const writeWalletsSheet = (sheet, payload) => {
+  sheet.columns = [
+    { header: 'Преподаватель', key: 'teacher', width: 30 },
+    { header: 'Ученик', key: 'student', width: 28 },
+    { header: 'Способ оплаты', key: 'payType', width: 16 },
+    { header: 'Пополнено за период', key: 'deposits', width: 20, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Долг на конец', key: 'debt', width: 18, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Предоплата', key: 'prepaid', width: 18, style: { numFmt: MONEY_FORMAT } },
+  ];
+
+  styleHeaderRow(sheet.getRow(1));
+
+  const wallets = payload.wallets || [];
+
+  if (wallets.length === 0) {
+    const row = sheet.addRow({ teacher: 'Нет данных по кошелькам в выбранном периоде' });
+    sheet.mergeCells(`A${row.number}:F${row.number}`);
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  for (const w of wallets) {
+    const teacherLabel = w.teacherId == null
+      ? 'Без привязки к преподавателю'
+      : (w.teacherUsername || `#${w.teacherId}`);
+    const row = sheet.addRow({
+      teacher: teacherLabel,
+      student: w.studentName || '—',
+      payType: w.payByBankTransfer ? 'Расчётный счёт' : 'Наличные',
+      deposits: w.depositsInPeriod || 0,
+      debt: w.debtAsOfTo || 0,
+      prepaid: w.prepaidAsOfTo || 0,
+    });
+    if ((w.debtAsOfTo || 0) > 0) {
+      row.getCell('debt').font = { color: { argb: COLORS.debtText }, bold: true };
+    }
+    if ((w.prepaidAsOfTo || 0) > 0) {
+      row.getCell('prepaid').font = { color: { argb: COLORS.okText } };
+    }
+    if (w.teacherId == null) {
+      row.getCell('teacher').font = { italic: true, color: { argb: 'FF6B7280' } };
+    }
+    row.eachCell((cell) => setBorder(cell));
+  }
+
+  if (wallets.length > 0) {
+    const totalsRow = sheet.addRow({
+      teacher: 'ИТОГО',
+      student: '',
+      payType: '',
+      deposits: wallets.reduce((acc, w) => acc + (w.depositsInPeriod || 0), 0),
+      debt: wallets.reduce((acc, w) => acc + (w.debtAsOfTo || 0), 0),
+      prepaid: wallets.reduce((acc, w) => acc + (w.prepaidAsOfTo || 0), 0),
+    });
+    styleTotalsRow(totalsRow);
+  }
+
+  if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
+
+  sheet.addRow([]);
+  const explainRow = sheet.addRow([
+    'Предоплата и долг показаны по паре «преподаватель × ученик»: '
+      + 'остаток виден у того преподавателя, на которого вносили депозит. '
+      + '«Без привязки» — старые пополнения без выбранного преподавателя.',
+  ]);
+  sheet.mergeCells(`A${explainRow.number}:F${explainRow.number}`);
+  explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
+  explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: sheet.columnCount },
+  };
+};
+
 const writeLessonsSheet = (sheet, payload) => {
   sheet.columns = [
     { header: 'Дата', key: 'date', width: 12, style: { numFmt: DATE_FORMAT } },
@@ -740,6 +816,10 @@ export const buildAccountingWorkbookBuffer = async (payload, transactions) => {
   );
   writeTeachersSheet(wb.addWorksheet('Преподаватели', { properties: { tabColor: { argb: 'FF22C55E' } } }), payload);
   writeStudentsSheet(wb.addWorksheet('Ученики', { properties: { tabColor: { argb: 'FFF59E0B' } } }), payload);
+  writeWalletsSheet(
+    wb.addWorksheet('Предоплата по преподам', { properties: { tabColor: { argb: 'FF0EA5E9' } } }),
+    payload
+  );
   writeLessonsSheet(wb.addWorksheet('Занятия', { properties: { tabColor: { argb: 'FF06B6D4' } } }), payload);
   writeTransactionsSheet(
     wb.addWorksheet('Транзакции', { properties: { tabColor: { argb: 'FFB91C1C' } } }),

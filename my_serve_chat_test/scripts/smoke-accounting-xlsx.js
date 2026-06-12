@@ -77,10 +77,20 @@ const run = async () => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(okRes.body);
   const sheetNames = wb.worksheets.map((s) => s.name);
-  const expected = ['Сводка', 'Зарплаты', 'КПД', 'Преподаватели', 'Ученики', 'Занятия', 'Транзакции'];
+  const expected = ['Сводка', 'Зарплаты', 'КПД', 'Преподаватели', 'Ученики', 'Предоплата по преподам', 'Занятия', 'Транзакции'];
   for (const name of expected) {
     assert(sheetNames.includes(name), `В книге нет листа "${name}". Есть: ${sheetNames.join(', ')}`);
   }
+
+  // Лист "Предоплата по преподам": заголовки на русском и предоплата по кошельку.
+  const walletsSheet = wb.getWorksheet('Предоплата по преподам');
+  const walletHeader = walletsSheet.getRow(1).values.filter(Boolean).map(String);
+  assert(
+    walletHeader.includes('Преподаватель') &&
+      walletHeader.includes('Ученик') &&
+      walletHeader.includes('Предоплата'),
+    `Заголовки "Предоплата по преподам" неверные: ${walletHeader.join(' | ')}`
+  );
 
   // Заголовки таблиц на русском — проверим лист "Преподаватели".
   const teachersSheet = wb.getWorksheet('Преподаватели');

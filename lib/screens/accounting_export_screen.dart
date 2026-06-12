@@ -903,8 +903,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                             final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
                             final unpaidCount = _periodDebtCount(lessons);
                             final unpaidSum = _periodDebtSum(lessons);
-                            final overallDebt = _asDouble(s['overallDebtAsOfTo']);
-                            final overallPrepaid = _asDouble(s['overallPrepaidAsOfTo']);
+                            final walletDebt = _asDouble(s['walletDebtAsOfTo'] ?? s['overallDebtAsOfTo']);
+                            final walletPrepaid = _asDouble(s['walletPrepaidAsOfTo'] ?? s['overallPrepaidAsOfTo']);
                             return ExpansionTile(
                               tilePadding: const EdgeInsets.only(left: 4, right: 4),
                               childrenPadding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
@@ -955,16 +955,16 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                                         label: 'расчётный счёт',
                                         color: Colors.indigo.shade700,
                                       ),
-                                    if (overallDebt > 0)
+                                    if (walletDebt > 0)
                                       _chip(
                                         icon: Icons.account_balance_wallet_rounded,
-                                        label: 'общий долг: ₽${overallDebt.toStringAsFixed(0)}',
+                                        label: 'долг у этого препода: ₽${walletDebt.toStringAsFixed(0)}',
                                         color: Colors.red.shade700,
                                       )
-                                    else if (overallPrepaid > 0)
+                                    else if (walletPrepaid > 0)
                                       _chip(
                                         icon: Icons.account_balance_wallet_rounded,
-                                        label: 'предоплата: ₽${overallPrepaid.toStringAsFixed(0)}',
+                                        label: 'предоплата: ₽${walletPrepaid.toStringAsFixed(0)}',
                                         color: Colors.green.shade700,
                                       ),
                                     if (studentId != null)
