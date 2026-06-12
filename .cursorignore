@@ -1,3 +1,42 @@
-# Не анализировать node_modules
+# Generated / cache — не тянуть в контекст и индекс
+**/.dart_tool/
+**/.gradle/
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
+**/dist/
+**/ephemeral/
+**/Pods/
+**/.symlinks/
 node_modules/
 **/node_modules/
+
+# Lock-файлы (шум при поиске; исходники в pubspec/package.json)
+**/Podfile.lock
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+pubspec.lock
+
+# Бинарники и ассеты
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+**/*.ico
+**/*.pdf
+**/*.mp4
+**/*.mov
+**/*.zip
+**/*.apk
+**/*.aab
+**/*.ipa
+**/*.dSYM/**
+
+# Локальные дампы и секреты
+**/.env
+**/.env.*
+**/neon_dump_*.sql
+my_serve_chat_test/neon_dump_*.sql

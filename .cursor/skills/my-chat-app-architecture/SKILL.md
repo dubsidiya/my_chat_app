@@ -6,6 +6,7 @@ description: >-
   behavior. Use when the user asks how the app is structured, where logic lives,
   which service touches the API, or when starting any feature/bugfix across
   client and server without re-explaining the whole project.
+disable-model-invocation: true
 ---
 
 # My Chat App — архитектура репозитория

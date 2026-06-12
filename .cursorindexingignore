@@ -1,0 +1,20 @@
+# Только индекс codebase — agent по-прежнему может открыть файл через @ или Read
+
+# Бэклоги и туториалы (редко нужны для правок кода)
+docs/tutorial/
+docs/IDEAS_BACKLOG*.md
+docs/FEATURES_IDEAS.md
+docs/FEATURE_SUGGESTIONS.md
+docs/FEATURE_RECOMMENDATIONS.md
+docs/PRODUCT_AUDIT*.md
+docs/TUTORIAL_INDEX.md
+docs/DART_FLUTTER_TUTORIAL.md
+
+# Скриншоты и одноразовые release-скрипты
+app_store_screenshots/
+scripts/resize_*screenshot*
+scripts/ipad_screenshots_*
+scripts/resize_screenshots*
+
+# Coverage-отчёты
+coverage/

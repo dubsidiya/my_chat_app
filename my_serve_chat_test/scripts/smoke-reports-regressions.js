@@ -6,6 +6,7 @@
  * 2) deleteLesson is blocked for lessons linked to report_lessons
  * 3) invalid IDs for report/lesson mutations are rejected with 400
  * 4) text report create does not silently skip unknown students (returns 400)
+ * 5) structured report slots are stored sorted by lesson time
  *
  * Run:
  *   node scripts/smoke-reports-regressions.js
@@ -190,6 +191,52 @@ const run = async () => {
     );
     const afterCount = await countReportsOnDate(ownerUserId, textDate);
     assert(afterCount === beforeCount, 'Неуспешный text create не должен оставлять запись reports');
+
+    // 0.2) Slots sent out of chronological order must be stored sorted by time.
+    const sortDate = await pickFreeReportDate(ownerUserId, todayIso, 0, 60);
+    assert(sortDate, 'Не найдена свободная дата для проверки сортировки слотов');
+    const createSortRes = makeRes();
+    await createReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        body: {
+          report_date: sortDate,
+          slots: [
+            {
+              timeStart: '14:00',
+              timeEnd: '15:00',
+              students: [{ studentId: ownerStudentId, price: 1500, status: 'attended' }],
+            },
+            {
+              timeStart: '12:00',
+              timeEnd: '13:00',
+              students: [{ studentId: ownerStudentId, price: 1500, status: 'attended' }],
+            },
+          ],
+        },
+        headers: { 'idempotency-key': `smoke-regression-sort-${Date.now()}` },
+      },
+      createSortRes
+    );
+    assert(createSortRes.statusCode === 201, `createReport(sort slots) статус ${createSortRes.statusCode}`);
+    const reportIdSort = Number(createSortRes.body?.id);
+    assert(Number.isFinite(reportIdSort), 'createReport(sort slots) не вернул report.id');
+    const contentLines = String(createSortRes.body?.content || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => /^\d{1,2}:\d{2}-\d{1,2}:\d{2}\s/.test(line));
+    assert(contentLines.length === 2, 'Ожидалось 2 строки занятий в content');
+    assert(contentLines[0].startsWith('12:00-'), `Первое занятие должно быть 12:00, получено: ${contentLines[0]}`);
+    assert(contentLines[1].startsWith('14:00-'), `Второе занятие должно быть 14:00, получено: ${contentLines[1]}`);
+    const cleanupSort = makeRes();
+    await deleteReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportIdSort) },
+      },
+      cleanupSort
+    );
+    assert(cleanupSort.statusCode === 200, `cleanup sort report статус ${cleanupSort.statusCode}`);
 
     // 1.0) Создание отчёта сразу на прошлую дату — is_late=true при create.
     const createPastRes = makeRes();

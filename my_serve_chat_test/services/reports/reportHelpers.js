@@ -86,15 +86,25 @@ export const buildReportContentFromSlots = (reportDate, slots, studentIdToName) 
   return lines.join('\n').trim();
 };
 
+export const sortSlotsByTime = (slots) => {
+  if (!Array.isArray(slots)) return [];
+  return [...slots].sort((a, b) => {
+    const byStart = toMinutes(a.timeStart) - toMinutes(b.timeStart);
+    if (byStart !== 0) return byStart;
+    return toMinutes(a.timeEnd) - toMinutes(b.timeEnd);
+  });
+};
+
 export const normalizeSlots = (rawSlots) => {
   if (!Array.isArray(rawSlots)) return [];
-  return rawSlots
+  const normalized = rawSlots
     .map((s) => ({
       timeStart: typeof s?.timeStart === 'string' ? s.timeStart.trim() : '',
       timeEnd: typeof s?.timeEnd === 'string' ? s.timeEnd.trim() : '',
       students: Array.isArray(s?.students) ? s.students : [],
     }))
     .filter((s) => s.timeStart && s.timeEnd);
+  return sortSlotsByTime(normalized);
 };
 
 export const validateSlots = (slots) => {

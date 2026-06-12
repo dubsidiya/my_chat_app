@@ -173,6 +173,15 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         // если слотов нет — оставим один пустой
         if (slotDrafts.isEmpty) {
           slotDrafts.add(_SlotDraft());
+        } else {
+          slotDrafts.sort((a, b) {
+            final aStart = a.startController.text.trim();
+            final bStart = b.startController.text.trim();
+            if (aStart.isEmpty && bStart.isEmpty) return 0;
+            if (aStart.isEmpty) return 1;
+            if (bStart.isEmpty) return -1;
+            return _toMinutes(aStart).compareTo(_toMinutes(bStart));
+          });
         }
 
         if (!mounted) return;
@@ -533,6 +542,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       out.add(ReportStructuredSlot(timeStart: start, timeEnd: end, students: rowStudents));
     }
 
+    out.sort((a, b) => _toMinutes(a.timeStart).compareTo(_toMinutes(b.timeStart)));
     return out;
   }
 
