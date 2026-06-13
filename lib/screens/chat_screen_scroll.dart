@@ -47,41 +47,66 @@ extension _ChatScreenScrollPart on _ChatScreenState {
 
   /// Первичное открытие чата: держим низ, пока медиа и layout не стабилизируются.
   void _completeInitialOpenScroll() {
+    final generation = ++_initialScrollSettleGeneration;
     _scrollToBottomUntilSettled(
+      generation: generation,
       onFinished: () {
-        if (mounted) {
-          _didInitialOpenScrollToBottom = true;
-        }
+        if (!mounted || generation != _initialScrollSettleGeneration) return;
+        _didInitialOpenScrollToBottom = true;
       },
     );
   }
 
+  void _cancelInitialScrollSettling({bool markComplete = true}) {
+    _initialScrollSettleGeneration++;
+    if (markComplete && mounted) {
+      _didInitialOpenScrollToBottom = true;
+    }
+  }
+
   void _scrollToBottomUntilSettled({
+    required int generation,
     int maxAttempts = 24,
     Duration delay = const Duration(milliseconds: 100),
     VoidCallback? onFinished,
   }) {
+    void finish() {
+      if (generation != _initialScrollSettleGeneration) return;
+      onFinished?.call();
+    }
+
     void tryScroll(int attempt, double? previousMaxExtent) {
-      if (!mounted) return;
+      if (!mounted || generation != _initialScrollSettleGeneration) return;
       if (attempt >= maxAttempts) {
-        onFinished?.call();
+        finish();
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted || generation != _initialScrollSettleGeneration) return;
         if (_scrollController.hasClients && _messages.isNotEmpty) {
+          final nearBottom = _isNearBottom();
+          if (ChatScrollPolicy.shouldAbortInitialScrollSettling(
+            attempt: attempt,
+            isNearBottom: nearBottom,
+          )) {
+            finish();
+            return;
+          }
+
           final maxScroll = _scrollController.position.maxScrollExtent;
-          _scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
           if (ChatScrollPolicy.shouldStopInitialScrollSettling(
             attempt: attempt,
             maxAttempts: maxAttempts,
             previousMaxScrollExtent: previousMaxExtent,
             currentMaxScrollExtent: maxScroll,
-            isNearBottom: _isNearBottom(),
+            isNearBottom: nearBottom,
           )) {
-            onFinished?.call();
+            _scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
+            finish();
             return;
           }
+
+          _scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
           Future.delayed(delay, () => tryScroll(attempt + 1, maxScroll));
         } else {
           Future.delayed(delay, () => tryScroll(attempt + 1, previousMaxExtent));
@@ -172,6 +197,15 @@ extension _ChatScreenScrollPart on _ChatScreenState {
 
 
   void _onScroll() {
+    if (!_didInitialOpenScrollToBottom &&
+        _scrollController.hasClients &&
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 1,
+          isNearBottom: _isNearBottom(),
+        )) {
+      _cancelInitialScrollSettling();
+    }
+
     // Пока список скрыт спиннером или не завершён первичный скролл к низу,
     // не подгружаем старые сообщения — иначе чат «прыгает» в середину истории.
     if (!ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(

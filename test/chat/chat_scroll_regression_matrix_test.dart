@@ -191,16 +191,13 @@ void main() {
       );
     });
 
-    test('settle не останавливается если не у низа даже при stable extent', () {
+    test('abort initial scroll when user leaves bottom', () {
       expect(
-        ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: 5,
-          maxAttempts: 24,
-          previousMaxScrollExtent: 900,
-          currentMaxScrollExtent: 900,
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 2,
           isNearBottom: false,
         ),
-        isFalse,
+        isTrue,
       );
     });
   });

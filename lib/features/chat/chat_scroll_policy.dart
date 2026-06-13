@@ -66,6 +66,14 @@ class ChatScrollPolicy {
     return false;
   }
 
+  /// Пользователь ушёл от низа — прекращаем первичный автоскролл, не перетягивать вниз.
+  static bool shouldAbortInitialScrollSettling({
+    required int attempt,
+    required bool isNearBottom,
+  }) {
+    return attempt > 0 && !isNearBottom;
+  }
+
   /// Первичный скролл после `_isLoading = false`, когда сообщения уже есть.
   static bool shouldRunInitialScrollAfterLoad({
     required bool shouldAutoScrollToBottom,

@@ -25,7 +25,12 @@ void main() {
   group('Chat open scroll widget regression', () {
     testWidgets('открытие: скролл только после окончания loading', (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(home: ChatScrollHarness(autoStartOpen: false)),
+        MaterialApp(
+          home: ChatScrollHarness(
+            autoStartOpen: false,
+            initialItemHeights: List<double>.filled(12, 120),
+          ),
+        ),
       );
 
       var state = _harnessState(tester);
@@ -151,6 +156,33 @@ void main() {
       expect(state.didInitialOpenScrollToBottom, isTrue);
       expect(state.scrollController.hasClients, isFalse);
       expect(find.text('empty'), findsOneWidget);
+    });
+
+    testWidgets('листание вверх во время settling не сбрасывает вниз', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScrollHarness(
+            autoStartOpen: false,
+            initialItemHeights: List<double>.filled(12, 120),
+          ),
+        ),
+      );
+
+      final state = _harnessState(tester);
+      await state.simulateOpenChat();
+      await tester.pump();
+
+      state.scrollController.jumpTo(0);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(state.isNearBottom, isFalse);
+      expect(
+        state.scrollController.position.pixels,
+        lessThan(state.scrollController.position.maxScrollExtent * 0.2),
+      );
+      expect(state.didInitialOpenScrollToBottom, isTrue);
     });
 
     testWidgets('скролл во время loading — no-op (нет clients)', (tester) async {

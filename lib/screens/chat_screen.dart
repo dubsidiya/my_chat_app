@@ -170,6 +170,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isLoading = false;
   bool _isLoadingMore = false;
   bool _didInitialOpenScrollToBottom = false;
+  int _initialScrollSettleGeneration = 0;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   bool _isWaitingForE2eeKey = false;

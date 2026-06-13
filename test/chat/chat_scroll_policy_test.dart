@@ -121,5 +121,29 @@ void main() {
         isFalse,
       );
     });
+
+    test('shouldAbortInitialScrollSettling если пользователь ушёл от низа', () {
+      expect(
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 0,
+          isNearBottom: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 1,
+          isNearBottom: false,
+        ),
+        isTrue,
+      );
+      expect(
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 1,
+          isNearBottom: true,
+        ),
+        isFalse,
+      );
+    });
   });
 }

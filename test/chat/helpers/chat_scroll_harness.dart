@@ -34,6 +34,7 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   bool isLoadingMore = false;
   bool hasMoreMessages = true;
   int loadMoreCalls = 0;
+  int _initialScrollSettleGeneration = 0;
   late List<double> itemHeights;
 
   @override
@@ -109,20 +110,81 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   }
 
   void _completeInitialOpenScroll() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (scrollController.hasClients && itemHeights.isNotEmpty) {
-        scrollController.jumpTo(
-          scrollController.position.maxScrollExtent.clamp(0.0, double.infinity),
-        );
-      }
+    final generation = ++_initialScrollSettleGeneration;
+    _scrollToBottomUntilSettled(generation: generation);
+  }
+
+  void _cancelInitialScrollSettling() {
+    _initialScrollSettleGeneration++;
+    didInitialOpenScrollToBottom = true;
+    setState(() {});
+  }
+
+  void _scrollToBottomUntilSettled({
+    required int generation,
+    int maxAttempts = 12,
+  }) {
+    void finish() {
+      if (generation != _initialScrollSettleGeneration || !mounted) return;
       didInitialOpenScrollToBottom = true;
       setState(() {});
-    });
+    }
+
+    void tryScroll(int attempt, double? previousMaxExtent) {
+      if (!mounted || generation != _initialScrollSettleGeneration) return;
+      if (attempt >= maxAttempts) {
+        finish();
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || generation != _initialScrollSettleGeneration) return;
+        if (!scrollController.hasClients || itemHeights.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            tryScroll(attempt + 1, previousMaxExtent);
+          });
+          return;
+        }
+
+        final nearBottom = isNearBottom;
+        if (ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: attempt,
+          isNearBottom: nearBottom,
+        )) {
+          finish();
+          return;
+        }
+
+        final maxScroll = scrollController.position.maxScrollExtent;
+        if (ChatScrollPolicy.shouldStopInitialScrollSettling(
+          attempt: attempt,
+          maxAttempts: maxAttempts,
+          previousMaxScrollExtent: previousMaxExtent,
+          currentMaxScrollExtent: maxScroll,
+          isNearBottom: nearBottom,
+        )) {
+          scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
+          finish();
+          return;
+        }
+
+        scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
+        tryScroll(attempt + 1, maxScroll);
+      });
+    }
+
+    tryScroll(0, null);
   }
 
   void _onScroll() {
     if (!scrollController.hasClients) return;
+    if (!didInitialOpenScrollToBottom &&
+        ChatScrollPolicy.shouldAbortInitialScrollSettling(
+          attempt: 1,
+          isNearBottom: isNearBottom,
+        )) {
+      _cancelInitialScrollSettling();
+    }
+
     if (!ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
       isLoading: isLoading,
       didInitialOpenScrollToBottom: didInitialOpenScrollToBottom,
