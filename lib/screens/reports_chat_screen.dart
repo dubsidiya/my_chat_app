@@ -41,6 +41,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   bool? _filterOnlyLate;
   /// null = все преподаватели
   int? _filterTeacherId;
+
+  /// Локальный фильтр: показывать только отчёты с отменами в день проведения.
+  bool _filterCancelSameDay = false;
+  /// Локальный фильтр: показывать только отчёты с пропусками.
+  bool _filterMissed = false;
   List<ReportAuthorOption> _teacherOptions = [];
   bool _teachersLoading = false;
 
@@ -50,6 +55,19 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
   static Color get _accent1 => AppColors.primary;
   static Color get _accent2 => AppColors.primaryGlow;
+
+  bool get _hasCancelFilter => _filterCancelSameDay || _filterMissed;
+
+  /// Отчёты после применения локального фильтра «отмены/пропуски».
+  /// Если выбраны оба чипа — показываем отчёты, где есть хотя бы одно из событий.
+  List<Report> get _visibleReports {
+    if (!_hasCancelFilter) return _reports;
+    return _reports.where((r) {
+      if (_filterCancelSameDay && r.hasCancelSameDay) return true;
+      if (_filterMissed && r.hasMissed) return true;
+      return false;
+    }).toList();
+  }
 
   bool _canEditReport(Report report) {
     if (widget.isSuperuser) return true;
@@ -880,6 +898,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
           const Divider(height: 1),
           ],
+          _buildCancelFilterBar(context),
           // Список отчетов
           Expanded(
             child: _isLoading && _reports.isEmpty
@@ -889,7 +908,9 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                       strokeWidth: 3,
                     ),
                   )
-                : _reports.isEmpty
+                : (_hasCancelFilter && _reports.isNotEmpty && _visibleReports.isEmpty)
+                    ? _buildNoMatchesPlaceholder(context)
+                    : _reports.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
@@ -936,14 +957,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                           ),
                         ),
                       )
-                    : RefreshIndicator(
+                    : Builder(
+                        builder: (context) {
+                          final visible = _visibleReports;
+                          return RefreshIndicator(
                         onRefresh: _onRefresh,
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           cacheExtent: 400,
-                          itemCount: _reports.length,
+                          itemCount: visible.length,
                           itemBuilder: (context, index) {
-                            final report = _reports[index];
+                            final report = visible[index];
                             final canEdit = _canEditReport(report);
                             return RepaintBoundary(
                               key: ValueKey('report_${report.id}'),
@@ -1122,6 +1146,26 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                           ),
                                         ),
                                       ),
+                                    if (report.hasCancelSameDay || report.hasMissed)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 4,
+                                          children: [
+                                            if (report.hasCancelSameDay)
+                                              _statusBadge(
+                                                'Отмен в день: ${report.cancelSameDayCount}',
+                                                Colors.red,
+                                              ),
+                                            if (report.hasMissed)
+                                              _statusBadge(
+                                                'Пропусков: ${report.missedCount}',
+                                                Colors.orange,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
                                   ],
                                 ),
                                 trailing: PopupMenuButton(
@@ -1178,9 +1222,130 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             );
                           },
                         ),
+                      );
+                        },
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _statusBadge(String text, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: color.shade700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelFilterBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(
+              Icons.filter_alt_rounded,
+              size: 18,
+              color: scheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                FilterChip(
+                  selected: _filterCancelSameDay,
+                  label: const Text('Отмены в день'),
+                  avatar: Icon(
+                    Icons.event_busy_rounded,
+                    size: 18,
+                    color: _filterCancelSameDay ? Colors.red.shade700 : null,
+                  ),
+                  onSelected: (v) => setState(() => _filterCancelSameDay = v),
+                ),
+                FilterChip(
+                  selected: _filterMissed,
+                  label: const Text('Пропуски'),
+                  avatar: Icon(
+                    Icons.cancel_schedule_send_rounded,
+                    size: 18,
+                    color: _filterMissed ? Colors.orange.shade800 : null,
+                  ),
+                  onSelected: (v) => setState(() => _filterMissed = v),
+                ),
+              ],
+            ),
+          ),
+          if (_hasCancelFilter)
+            TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => setState(() {
+                _filterCancelSameDay = false;
+                _filterMissed = false;
+              }),
+              child: const Text('Сброс'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoMatchesPlaceholder(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final parts = <String>[
+      if (_filterCancelSameDay) 'отмен в день проведения',
+      if (_filterMissed) 'пропусков',
+    ];
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.event_available_rounded,
+              size: 64,
+              color: _accent1.withValues(alpha: 0.6),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Ничего не найдено',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurface.withValues(alpha: 0.75),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Среди загруженных отчётов нет ${parts.join(' или ')}.',
+              style: TextStyle(
+                fontSize: 14,
+                color: scheme.onSurface.withValues(alpha: 0.6),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

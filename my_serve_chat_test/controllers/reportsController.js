@@ -229,6 +229,8 @@ export const getReportsList = async (req, res) => {
       created_at: row.created_at,
       updated_at: row.updated_at,
       lessons_count: row.lessons_count ?? 0,
+      cancel_same_day_count: row.cancel_same_day_count ?? 0,
+      missed_count: row.missed_count ?? 0,
     }));
 
     res.json(rows);

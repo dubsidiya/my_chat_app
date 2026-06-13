@@ -6,6 +6,10 @@ class Report {
   final DateTime createdAt;
   final DateTime? updatedAt;
   final int? lessonsCount;
+  /// Сколько занятий со статусом «отмена в день проведения» (cancel_same_day).
+  final int? cancelSameDayCount;
+  /// Сколько занятий со статусом «пропуск» (missed).
+  final int? missedCount;
   final List<Map<String, dynamic>>? lessons;
   /// ID пользователя, создавшего отчёт (для списка «все отчёты»).
   final int? createdBy;
@@ -22,6 +26,8 @@ class Report {
     required this.createdAt,
     this.updatedAt,
     this.lessonsCount,
+    this.cancelSameDayCount,
+    this.missedCount,
     this.lessons,
     this.createdBy,
     this.createdByEmail,
@@ -70,6 +76,8 @@ class Report {
       lessonsCount: json['lessons_count'] != null
           ? _parseInt(json['lessons_count'])
           : null,
+      cancelSameDayCount: _parseInt(json['cancel_same_day_count']),
+      missedCount: _parseInt(json['missed_count']),
       lessons: lessonsParsed,
       createdBy: _parseInt(json['created_by']),
       createdByEmail: json['created_by_email']?.toString(),
@@ -78,5 +86,11 @@ class Report {
   }
 
   bool get isEdited => updatedAt != null && updatedAt!.isAfter(createdAt);
+
+  /// Есть ли в отчёте отмены в день проведения.
+  bool get hasCancelSameDay => (cancelSameDayCount ?? 0) > 0;
+
+  /// Есть ли в отчёте пропуски.
+  bool get hasMissed => (missedCount ?? 0) > 0;
 }
 
