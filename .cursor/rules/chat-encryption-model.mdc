@@ -1,0 +1,56 @@
+---
+description: Текущая модель шифрования чата — не настоящий E2EE; legacy-имена в коде
+alwaysApply: true
+---
+
+# Шифрование чата — не считать «E2EE работает нормально»
+
+## Главное для агента
+
+В коде и API всё ещё называется **E2EE** (`E2eeService`, `/e2ee/*`, `E2eeImage`), но **в production это не end-to-end encryption**.
+
+**Не опирайся на:**
+- `docs/E2EE_SYSTEM_GUIDE.md` как на актуальную модель (описывает legacy X25519/`chat_keys`);
+- `docs/E2EE_METADATA_THREAT_MODEL.md` без оговорок;
+- UX-потоки «запросить ключ у собеседника», `waitForChatKeyFromServer`, WS `e2ee_request_key` как на основной путь для **новых** чатов.
+
+**Актуальный источник правды:** `docs/LOGIC_AUDIT_2026-06-02.md` → раздел «Шифрование сообщений — не E2EE».
+
+## Текущая модель (новые чаты)
+
+1. При создании чата сервер генерирует AES-ключ → `chats.shared_chat_key` (**plaintext base64 в БД**).
+2. Участник получает ключ через **`GET /e2ee/chat/:chatId/shared-key`** → `{ chatKey }`.
+3. Клиент в `E2eeService.getChatKey()` **сначала** вызывает `_fetchSharedChatKey()` (`lib/services/e2ee_service.dart` ~205–208), затем legacy fallback.
+
+Это **client-side encryption + server-held symmetric key**: ciphertext в БД, но **сервер/админ БД может прочитать всё**.
+
+## Legacy (старые чаты)
+
+- Таблица `chat_keys`, обёртка через X25519, `GET /e2ee/chat-key/:chatId`, WS key request/share.
+- Используется как **fallback**, если `shared_chat_key` пустой.
+- Часто источник «E2EE не работает» / зависаний / 429 — **не чинить как true E2EE**, если задача про обычные новые чаты.
+
+## Как дебажить «проблемы с E2EE»
+
+Порядок проверки:
+
+1. Есть ли `shared_chat_key` у чата в БД / ответ `shared-key` API.
+2. Создание чата (`chatsController.js` — генерация ключа при insert).
+3. Локальный кэш `flutter_secure_storage` (`e2ee_chat_key_*`) — stale key после reinstall.
+4. Расшифровка сообщений: `messages_decrypt.dart`, `key_version`.
+5. Legacy key exchange — **только** если shared-key недоступен.
+
+Не предлагать «усилить E2EE» или «допилить key rotation» без явного запроса пользователя на security roadmap.
+
+## Именование в задачах
+
+- Писать: **«шифрование чата (server-held key)»** или **«legacy E2EE-путь»**.
+- Не писать: «E2EE работает», «сервер не видит plaintext», «ключ только у клиентов».
+
+## Связанные файлы
+
+| Слой | Файлы |
+|------|--------|
+| Клиент | `lib/services/e2ee_service.dart`, `lib/services/messages/messages_decrypt.dart`, `lib/widgets/e2ee_image.dart`, `lib/screens/chat_screen_messages_sync.dart` (_e2eeKeyState) |
+| Сервер | `my_serve_chat_test/controllers/e2eeController.js`, `my_serve_chat_test/controllers/chatsController.js`, `my_serve_chat_test/routes/e2ee.js` |
+| Миграция | `my_serve_chat_test/migrations/add_chat_shared_key.sql` |

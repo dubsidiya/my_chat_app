@@ -180,9 +180,6 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           _messages = [...cachedMessages, ...uniqueTempMessages];
           _markMessagesSeen(_messages.map((m) => m.id));
         });
-        if (shouldAutoScrollToBottom) {
-          _scrollToBottomWithRetry();
-        }
         if (kDebugMode) {
           print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
         }
@@ -226,11 +223,6 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           _markMessagesSeen(_messages.map((m) => m.id));
         });
 
-        // Прокручиваем вниз (к новым сообщениям) после загрузки.
-        if (shouldAutoScrollToBottom) {
-          _scrollToBottomWithRetry();
-          _didInitialOpenScrollToBottom = true;
-        }
         // E2EE: считаем требуемую (самую новую в истории) версию ключа.
         final newestMessageKeyVersion = result.messages.fold<int>(
           1,
@@ -307,6 +299,17 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+        if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
+          shouldAutoScrollToBottom: shouldAutoScrollToBottom,
+          messageCount: _messages.length,
+        )) {
+          _completeInitialOpenScroll();
+        } else if (ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
+          shouldAutoScrollToBottom: shouldAutoScrollToBottom,
+          messageCount: _messages.length,
+        )) {
+          _didInitialOpenScrollToBottom = true;
+        }
       }
     }
   }

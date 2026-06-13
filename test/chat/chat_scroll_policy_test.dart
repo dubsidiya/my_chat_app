@@ -49,5 +49,77 @@ void main() {
         isFalse,
       );
     });
+
+    test('не подгружает историю до завершения первичного скролла', () {
+      expect(
+        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+          isLoading: false,
+          didInitialOpenScrollToBottom: false,
+          pixels: 0,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+          isLoading: true,
+          didInitialOpenScrollToBottom: true,
+          pixels: 0,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+          isLoading: false,
+          didInitialOpenScrollToBottom: true,
+          pixels: 100,
+        ),
+        isTrue,
+      );
+    });
+
+    test('стабильность maxScrollExtent для остановки первичного скролла', () {
+      expect(
+        ChatScrollPolicy.isScrollExtentStable(
+          previousMaxScrollExtent: null,
+          currentMaxScrollExtent: 500,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatScrollPolicy.isScrollExtentStable(
+          previousMaxScrollExtent: 500,
+          currentMaxScrollExtent: 500.5,
+        ),
+        isTrue,
+      );
+      expect(
+        ChatScrollPolicy.isScrollExtentStable(
+          previousMaxScrollExtent: 500,
+          currentMaxScrollExtent: 520,
+        ),
+        isFalse,
+      );
+    });
+
+    test('shouldStopInitialScrollSettling и initial open helpers', () {
+      expect(
+        ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
+          shouldAutoScrollToBottom: true,
+          messageCount: 3,
+        ),
+        isTrue,
+      );
+      expect(
+        ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
+          shouldAutoScrollToBottom: true,
+          messageCount: 0,
+        ),
+        isTrue,
+      );
+      expect(
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: false),
+        isFalse,
+      );
+    });
   });
 }

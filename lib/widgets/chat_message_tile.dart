@@ -294,12 +294,12 @@ class ChatMessageTile extends StatelessWidget {
                                 memCacheWidth: 500,
                                 placeholder: (context, __) => const SkeletonPlaceholder(
                                   width: 250,
-                                  height: 200,
+                                  height: 400,
                                   borderRadius: BorderRadius.all(Radius.circular(8)),
                                 ),
                                 errorWidget: (_, __, ___) => Container(
                                   width: 250,
-                                  height: 200,
+                                  height: 400,
                                   color: scheme.surfaceContainerHighest,
                                   child: Icon(
                                     Icons.broken_image_rounded,
