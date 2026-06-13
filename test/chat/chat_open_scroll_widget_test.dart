@@ -8,17 +8,17 @@ ChatScrollHarnessState _harnessState(WidgetTester tester) {
   return tester.state<ChatScrollHarnessState>(find.byType(ChatScrollHarness));
 }
 
-Future<void> pumpUntilInitialScrollComplete(
+Future<void> pumpUntilInitialOpenComplete(
   WidgetTester tester, {
   int maxFrames = 120,
 }) async {
   for (var i = 0; i < maxFrames; i++) {
     await tester.pump();
-    if (_harnessState(tester).didInitialOpenScrollToBottom) {
+    if (_harnessState(tester).initialOpenComplete) {
       return;
     }
   }
-  fail('Initial scroll did not complete within $maxFrames frames');
+  fail('Initial open did not complete within $maxFrames frames');
 }
 
 void main() {
@@ -38,15 +38,16 @@ void main() {
       expect(state.scrollController.hasClients, isFalse);
 
       await state.simulateOpenChat();
-      await pumpUntilInitialScrollComplete(tester);
+      await pumpUntilInitialOpenComplete(tester);
 
       state = _harnessState(tester);
       expect(state.isLoading, isFalse);
-      expect(state.didInitialOpenScrollToBottom, isTrue);
+      expect(state.initialOpenComplete, isTrue);
+      expect(state.stickToBottom, isTrue);
       expect(state.isNearBottom, isTrue);
     });
 
-    testWidgets('до первичного скролла load-more не вызывается при pixels=0', (tester) async {
+    testWidgets('до первичного открытия load-more не вызывается при pixels=0', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: ChatScrollHarness(
@@ -64,7 +65,7 @@ void main() {
       expect(state.loadMoreCalls, 0);
     });
 
-    testWidgets('после первичного скролла load-more срабатывает у верха', (tester) async {
+    testWidgets('после первичного открытия load-more срабатывает у верха', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
@@ -72,7 +73,7 @@ void main() {
           ),
         ),
       );
-      await pumpUntilInitialScrollComplete(tester);
+      await pumpUntilInitialOpenComplete(tester);
 
       final state = _harnessState(tester);
       expect(state.isNearBottom, isTrue);
@@ -93,7 +94,7 @@ void main() {
           ),
         ),
       );
-      await pumpUntilInitialScrollComplete(tester);
+      await pumpUntilInitialOpenComplete(tester);
 
       final state = _harnessState(tester);
       final maxBefore = state.scrollController.position.maxScrollExtent;
@@ -113,28 +114,30 @@ void main() {
       expect(state.scrollController.position.pixels, closeTo(expected, 1.0));
     });
 
-    testWidgets('рост высоты медиа: policy требует повторного скролла при изменении extent', (
-      tester,
-    ) async {
-      const before = 1000.0;
-      const after = 1300.0;
+    testWidgets('рост контента у низа: reanchor только при stickToBottom', (tester) async {
       expect(
-        ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: 2,
-          maxAttempts: 24,
-          previousMaxScrollExtent: before,
-          currentMaxScrollExtent: after,
-          isNearBottom: true,
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: true,
+          pixels: 998,
+          maxScrollExtent: 1000,
         ),
         isFalse,
       );
       expect(
-        ChatScrollPolicy.preserveViewportAfterPrepend(
-          currentScrollPosition: 860,
-          maxScrollExtentBefore: before,
-          maxScrollExtentAfter: after,
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: true,
+          pixels: 865,
+          maxScrollExtent: 1000,
         ),
-        1160,
+        isTrue,
+      );
+      expect(
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: false,
+          pixels: 865,
+          maxScrollExtent: 1000,
+        ),
+        isFalse,
       );
     });
 
@@ -153,12 +156,12 @@ void main() {
       await state.simulateOpenChat();
       await tester.pumpAndSettle();
 
-      expect(state.didInitialOpenScrollToBottom, isTrue);
+      expect(state.initialOpenComplete, isTrue);
       expect(state.scrollController.hasClients, isFalse);
       expect(find.text('empty'), findsOneWidget);
     });
 
-    testWidgets('листание вверх во время settling не сбрасывает вниз', (tester) async {
+    testWidgets('листание вверх отклеивает от низа и не сбрасывает вниз', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
@@ -170,19 +173,20 @@ void main() {
 
       final state = _harnessState(tester);
       await state.simulateOpenChat();
-      await tester.pump();
+      await pumpUntilInitialOpenComplete(tester);
 
       state.scrollController.jumpTo(0);
-      await tester.pump();
+      state.simulateUserScrollUp();
       await tester.pump();
       await tester.pump();
 
+      expect(state.stickToBottom, isFalse);
       expect(state.isNearBottom, isFalse);
       expect(
         state.scrollController.position.pixels,
         lessThan(state.scrollController.position.maxScrollExtent * 0.2),
       );
-      expect(state.didInitialOpenScrollToBottom, isTrue);
+      expect(state.initialOpenComplete, isTrue);
     });
 
     testWidgets('скролл во время loading — no-op (нет clients)', (tester) async {
@@ -195,7 +199,7 @@ void main() {
       final state = _harnessState(tester);
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          shouldAutoScrollToBottom: true,
+          stickToBottom: true,
           messageCount: state.itemHeights.length,
         ),
         isTrue,

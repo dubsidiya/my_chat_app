@@ -3,22 +3,22 @@ import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 
 void main() {
   group('ChatScrollPolicy', () {
-    test('вход в чат -> всегда автоскролл вниз при первом открытии', () {
-      final shouldScroll = ChatScrollPolicy.shouldAutoScrollToBottom(
-        didInitialOpenScrollToBottom: false,
-        isNearBottom: false,
+    test('stickToBottom=true -> автоскролл разрешён', () {
+      expect(
+        ChatScrollPolicy.shouldAutoScroll(stickToBottom: true),
+        isTrue,
       );
-
-      expect(shouldScroll, isTrue);
+      expect(
+        ChatScrollPolicy.shouldAutoScroll(stickToBottom: false),
+        isFalse,
+      );
     });
 
-    test('после первого открытия не скроллит, если пользователь далеко от низа', () {
-      final shouldScroll = ChatScrollPolicy.shouldAutoScrollToBottom(
-        didInitialOpenScrollToBottom: true,
-        isNearBottom: false,
+    test('после отклеивания от низа reload не скроллит', () {
+      expect(
+        ChatScrollPolicy.shouldAutoScrollAfterReload(stickToBottom: false),
+        isFalse,
       );
-
-      expect(shouldScroll, isFalse);
     });
 
     test('pagination вверх без скачков: сохраняется видимая позиция', () {
@@ -50,11 +50,11 @@ void main() {
       );
     });
 
-    test('не подгружает историю до завершения первичного скролла', () {
+    test('не подгружает историю до завершения первичного открытия', () {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: false,
-          didInitialOpenScrollToBottom: false,
+          initialOpenComplete: false,
           pixels: 0,
         ),
         isFalse,
@@ -62,7 +62,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: true,
-          didInitialOpenScrollToBottom: true,
+          initialOpenComplete: true,
           pixels: 0,
         ),
         isFalse,
@@ -70,78 +70,48 @@ void main() {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: false,
-          didInitialOpenScrollToBottom: true,
+          initialOpenComplete: true,
           pixels: 100,
         ),
         isTrue,
       );
     });
 
-    test('стабильность maxScrollExtent для остановки первичного скролла', () {
+    test('reanchor при росте контента у низа', () {
       expect(
-        ChatScrollPolicy.isScrollExtentStable(
-          previousMaxScrollExtent: null,
-          currentMaxScrollExtent: 500,
-        ),
-        isFalse,
-      );
-      expect(
-        ChatScrollPolicy.isScrollExtentStable(
-          previousMaxScrollExtent: 500,
-          currentMaxScrollExtent: 500.5,
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: true,
+          pixels: 865,
+          maxScrollExtent: 1000,
         ),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.isScrollExtentStable(
-          previousMaxScrollExtent: 500,
-          currentMaxScrollExtent: 520,
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: false,
+          pixels: 850,
+          maxScrollExtent: 1000,
         ),
         isFalse,
       );
     });
 
-    test('shouldStopInitialScrollSettling и initial open helpers', () {
+    test('initial open helpers', () {
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          shouldAutoScrollToBottom: true,
+          stickToBottom: true,
           messageCount: 3,
         ),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
-          shouldAutoScrollToBottom: true,
+        ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
           messageCount: 0,
         ),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: false),
-        isFalse,
-      );
-    });
-
-    test('shouldAbortInitialScrollSettling если пользователь ушёл от низа', () {
-      expect(
-        ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: 0,
-          isNearBottom: false,
-        ),
-        isFalse,
-      );
-      expect(
-        ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: 1,
-          isNearBottom: false,
-        ),
-        isTrue,
-      );
-      expect(
-        ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: 1,
-          isNearBottom: true,
-        ),
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: false),
         isFalse,
       );
     });

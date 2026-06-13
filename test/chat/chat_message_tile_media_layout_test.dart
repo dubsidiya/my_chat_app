@@ -62,11 +62,11 @@ void main() {
 
     test('incoming message policy: near-bottom only', () {
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: true),
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: true),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: false),
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: false),
         isFalse,
       );
     });

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -169,8 +170,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<Message> _messages = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
-  bool _didInitialOpenScrollToBottom = false;
-  int _initialScrollSettleGeneration = 0;
+  bool _stickToBottom = true;
+  bool _initialOpenComplete = false;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
   bool _isWaitingForE2eeKey = false;
@@ -570,6 +571,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     });
 
+    _scrollController.addListener(_onScroll);
+
     // Инициализируем WebSocket асинхронно
     _initWebSocket();
 
@@ -618,12 +621,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
       if (toAdd.isEmpty) return;
       final fromOthers = toAdd.any((m) => m.userId != widget.userId);
-      final shouldKeepAtBottom = _isNearBottom();
+      final shouldScroll = ChatScrollPolicy.shouldScrollOnIncomingMessages(
+        stickToBottom: _stickToBottom,
+      );
       setState(() {
         _messages = List<Message>.from(_messages)..addAll(toAdd);
       });
       if (fromOthers) NotificationFeedbackService.onNewMessage();
-      if (shouldKeepAtBottom) _scrollToBottom();
+      if (shouldScroll) _scrollToBottom();
     } catch (_) {}
   }
 
@@ -1190,12 +1195,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   // Отступ сверху для закрепленных сообщений
                                   Padding(
                                     padding: EdgeInsets.only(top: pinnedHeight),
-                                    child: RefreshIndicator(
-                                      onRefresh: () async {
-                                        await _loadMessages();
-                                      },
-                                      color: _accent1,
-                                      child: ListView.builder(
+                                    child: NotificationListener<UserScrollNotification>(
+                                      onNotification:
+                                          _handleUserScrollNotification,
+                                      child: RefreshIndicator(
+                                        onRefresh: () async {
+                                          await _loadMessages();
+                                        },
+                                        color: _accent1,
+                                        child: ListView.builder(
                                         key: ValueKey(
                                           'messages_list_${widget.chatId}',
                                         ),
@@ -1369,6 +1377,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         },
                                       ),
                                     ),
+                                  ),
                                   ),
                                   // ✅ Закрепленные сообщения - всегда видны вверху
                                   if (_pinnedMessages.isNotEmpty)

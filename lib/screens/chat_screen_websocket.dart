@@ -468,7 +468,10 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                 print('Parsed message: ${message.id} - ${message.content}');
               }
               if (mounted) {
-                final shouldKeepAtBottom = _isNearBottom();
+                final shouldScroll =
+                    ChatScrollPolicy.shouldScrollOnIncomingMessages(
+                  stickToBottom: _stickToBottom,
+                );
                 var didAppendMessage = false;
                 setState(() {
                   // ✅ Проверяем, есть ли временное сообщение от текущего пользователя
@@ -654,7 +657,7 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                     }
                   }
                 });
-                if (didAppendMessage && shouldKeepAtBottom) {
+                if (didAppendMessage && shouldScroll) {
                   _scrollToBottom();
                 }
               }
@@ -694,9 +697,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
 
     // ✅ Подписываемся на realtime события этого чата
     _subscribeToChatRealtime();
-
-    // Добавляем listener для автоматической подгрузки при скролле вверх
-    _scrollController.addListener(_onScroll);
   }
 
   bool _sendWsJson(Map<String, dynamic> payload) {

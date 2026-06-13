@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 
 /// Минимальный стенд, повторяющий production-flow открытия чата и скролла.
@@ -7,18 +8,12 @@ class ChatScrollHarness extends StatefulWidget {
     super.key,
     this.initialItemHeights = const [56, 56, 56, 200, 56, 56],
     this.autoStartOpen = true,
-    this.simulateDelayedMediaIndex,
-    this.simulateDelayedMediaHeight = 400,
-    this.delayedMediaAfterFrames = 2,
     this.hasMoreMessages = true,
     this.onLoadMore,
   });
 
   final List<double> initialItemHeights;
   final bool autoStartOpen;
-  final int? simulateDelayedMediaIndex;
-  final double simulateDelayedMediaHeight;
-  final int delayedMediaAfterFrames;
   final bool hasMoreMessages;
   final VoidCallback? onLoadMore;
 
@@ -30,11 +25,11 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   final ScrollController scrollController = ScrollController();
 
   bool isLoading = true;
-  bool didInitialOpenScrollToBottom = false;
+  bool stickToBottom = true;
+  bool initialOpenComplete = false;
   bool isLoadingMore = false;
   bool hasMoreMessages = true;
   int loadMoreCalls = 0;
-  int _initialScrollSettleGeneration = 0;
   late List<double> itemHeights;
 
   @override
@@ -55,17 +50,18 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     super.dispose();
   }
 
-  /// Для widget-тестов: показать список без завершённого первичного скролла.
   void showListWithoutInitialScroll() {
     setState(() {
       isLoading = false;
-      didInitialOpenScrollToBottom = false;
+      stickToBottom = true;
+      initialOpenComplete = false;
     });
   }
 
   Future<void> simulateOpenChat() async {
     isLoading = true;
-    didInitialOpenScrollToBottom = false;
+    stickToBottom = true;
+    initialOpenComplete = false;
     loadMoreCalls = 0;
     setState(() {});
 
@@ -73,122 +69,90 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     setState(() {});
 
     if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-      shouldAutoScrollToBottom: true,
+      stickToBottom: stickToBottom,
       messageCount: itemHeights.length,
     )) {
       _completeInitialOpenScroll();
-    } else if (ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
-      shouldAutoScrollToBottom: true,
+    } else if (ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
       messageCount: itemHeights.length,
     )) {
-      didInitialOpenScrollToBottom = true;
-      setState(() {});
-    }
-
-    final delayedIndex = widget.simulateDelayedMediaIndex;
-    if (delayedIndex != null) {
-      var framesLeft = widget.delayedMediaAfterFrames;
-      void scheduleMediaExpand() {
-        if (framesLeft <= 0) {
-          if (delayedIndex < 0 || delayedIndex >= itemHeights.length) return;
-          setState(() {
-            itemHeights[delayedIndex] = widget.simulateDelayedMediaHeight;
-          });
-          if (!didInitialOpenScrollToBottom) {
-            _completeInitialOpenScroll();
-          }
-          return;
-        }
-        framesLeft -= 1;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          scheduleMediaExpand();
-        });
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) => scheduleMediaExpand());
+      _markInitialOpenComplete();
     }
   }
 
-  void _completeInitialOpenScroll() {
-    final generation = ++_initialScrollSettleGeneration;
-    _scrollToBottomUntilSettled(generation: generation);
-  }
-
-  void _cancelInitialScrollSettling() {
-    _initialScrollSettleGeneration++;
-    didInitialOpenScrollToBottom = true;
+  void _markInitialOpenComplete() {
+    initialOpenComplete = true;
     setState(() {});
   }
 
-  void _scrollToBottomUntilSettled({
-    required int generation,
-    int maxAttempts = 12,
-  }) {
-    void finish() {
-      if (generation != _initialScrollSettleGeneration || !mounted) return;
-      didInitialOpenScrollToBottom = true;
-      setState(() {});
-    }
+  void _completeInitialOpenScroll() {
+    _scrollToBottomAfterLayout(
+      attempts: 3,
+      onFinished: _markInitialOpenComplete,
+    );
+  }
 
-    void tryScroll(int attempt, double? previousMaxExtent) {
-      if (!mounted || generation != _initialScrollSettleGeneration) return;
-      if (attempt >= maxAttempts) {
-        finish();
+  void _scrollToBottomAfterLayout({
+    int attempts = 3,
+    VoidCallback? onFinished,
+  }) {
+    void tryScroll(int left) {
+      if (!mounted || left <= 0 || !stickToBottom) {
+        onFinished?.call();
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || generation != _initialScrollSettleGeneration) return;
-        if (!scrollController.hasClients || itemHeights.isEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            tryScroll(attempt + 1, previousMaxExtent);
-          });
+        if (!mounted || !stickToBottom) {
+          onFinished?.call();
           return;
         }
-
-        final nearBottom = isNearBottom;
-        if (ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: attempt,
-          isNearBottom: nearBottom,
-        )) {
-          finish();
-          return;
-        }
-
-        final maxScroll = scrollController.position.maxScrollExtent;
-        if (ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: attempt,
-          maxAttempts: maxAttempts,
-          previousMaxScrollExtent: previousMaxExtent,
-          currentMaxScrollExtent: maxScroll,
-          isNearBottom: nearBottom,
-        )) {
+        if (scrollController.hasClients && itemHeights.isNotEmpty) {
+          final maxScroll = scrollController.position.maxScrollExtent;
           scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
-          finish();
-          return;
         }
-
-        scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
-        tryScroll(attempt + 1, maxScroll);
+        tryScroll(left - 1);
       });
     }
 
-    tryScroll(0, null);
+    tryScroll(attempts);
+  }
+
+  void simulateUserScrollUp() {
+    stickToBottom = false;
+    _markInitialOpenComplete();
+    setState(() {});
+  }
+
+  bool handleUserScrollNotification(UserScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final direction = notification.direction;
+    if (direction == ScrollDirection.reverse) {
+      stickToBottom = false;
+      _markInitialOpenComplete();
+    } else if (direction == ScrollDirection.forward &&
+        scrollController.hasClients &&
+        isNearBottom) {
+      stickToBottom = true;
+    }
+    return false;
   }
 
   void _onScroll() {
     if (!scrollController.hasClients) return;
-    if (!didInitialOpenScrollToBottom &&
-        ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: 1,
-          isNearBottom: isNearBottom,
-        )) {
-      _cancelInitialScrollSettling();
+
+    final position = scrollController.position;
+    if (ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+      stickToBottom: stickToBottom,
+      pixels: position.pixels,
+      maxScrollExtent: position.maxScrollExtent,
+    )) {
+      position.jumpTo(position.maxScrollExtent);
     }
 
     if (!ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
       isLoading: isLoading,
-      didInitialOpenScrollToBottom: didInitialOpenScrollToBottom,
-      pixels: scrollController.position.pixels,
+      initialOpenComplete: initialOpenComplete,
+      pixels: position.pixels,
     )) {
       return;
     }
@@ -223,7 +187,7 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   }
 
   bool get isNearBottom {
-    if (!scrollController.hasClients) return true;
+    if (!scrollController.hasClients) return false;
     return ChatScrollPolicy.isNearBottom(
       pixels: scrollController.position.pixels,
       maxScrollExtent: scrollController.position.maxScrollExtent,
@@ -237,24 +201,27 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
           ? const Center(child: CircularProgressIndicator())
           : itemHeights.isEmpty
           ? const Center(child: Text('empty'))
-          : ListView.builder(
-              controller: scrollController,
-              itemCount: itemHeights.length,
-              itemBuilder: (context, index) {
-                return SizedBox(
-                  key: ValueKey('item-$index-${itemHeights[index]}'),
-                  height: itemHeights[index],
-                  child: ColoredBox(
-                    color: index.isEven
-                        ? Colors.blue.withValues(alpha: 0.15)
-                        : Colors.green.withValues(alpha: 0.15),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('message $index'),
+          : NotificationListener<UserScrollNotification>(
+              onNotification: handleUserScrollNotification,
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: itemHeights.length,
+                itemBuilder: (context, index) {
+                  return SizedBox(
+                    key: ValueKey('item-$index-${itemHeights[index]}'),
+                    height: itemHeights[index],
+                    child: ColoredBox(
+                      color: index.isEven
+                          ? Colors.blue.withValues(alpha: 0.15)
+                          : Colors.green.withValues(alpha: 0.15),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('message $index'),
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
     );
   }

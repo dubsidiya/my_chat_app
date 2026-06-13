@@ -10,35 +10,27 @@ const chatScrollScenarioCatalog = <ChatScrollScenario>[
   ChatScrollScenario('open_first_time', 'Первое открытие чата -> автоскролл вниз'),
   ChatScrollScenario(
     'open_while_reading_history',
-    'Пользователь далеко от низа -> reload не скроллит',
+    'Пользователь читает историю -> reload не скроллит',
   ),
   ChatScrollScenario(
     'open_load_more_blocked',
-    'До первичного скролла load-more не срабатывает при pixels=0',
+    'До первичного открытия load-more не срабатывает при pixels=0',
   ),
   ChatScrollScenario(
     'open_load_more_allowed',
-    'После первичного скролла load-more у верха списка',
+    'После первичного открытия load-more у верха списка',
   ),
   ChatScrollScenario(
     'prepend_preserve_viewport',
     'Подгрузка старых сообщений сохраняет видимую область',
   ),
   ChatScrollScenario(
-    'incoming_near_bottom',
-    'Входящее сообщение при нахождении у низа -> скролл',
+    'incoming_stuck_to_bottom',
+    'Входящее сообщение при stickToBottom -> скрoll',
   ),
   ChatScrollScenario(
-    'incoming_far_from_bottom',
+    'incoming_reading_history',
     'Входящее сообщение при чтении истории -> без скролла',
-  ),
-  ChatScrollScenario(
-    'settle_stop_on_stable_extent',
-    'Первичный скролл останавливается при стабильном maxScrollExtent',
-  ),
-  ChatScrollScenario(
-    'settle_stop_on_max_attempts',
-    'Первичный скролл останавливается по лимиту попыток',
   ),
   ChatScrollScenario('empty_chat_open', 'Пустой чат сразу завершает первичное открытие'),
   ChatScrollScenario(
@@ -52,5 +44,9 @@ const chatScrollScenarioCatalog = <ChatScrollScenario>[
   ChatScrollScenario(
     'refresh_reading_history',
     'Pull-to-refresh в середине истории -> без автоскролла',
+  ),
+  ChatScrollScenario(
+    'reanchor_content_growth',
+    'Рост контента у низа -> reanchor только при stickToBottom',
   ),
 ];

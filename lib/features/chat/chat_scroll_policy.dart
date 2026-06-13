@@ -1,12 +1,8 @@
 class ChatScrollPolicy {
   const ChatScrollPolicy._();
 
-  static bool shouldAutoScrollToBottom({
-    required bool didInitialOpenScrollToBottom,
-    required bool isNearBottom,
-  }) {
-    return !didInitialOpenScrollToBottom || isNearBottom;
-  }
+  /// Автоскролл только когда пользователь «приклеен» к низу чата.
+  static bool shouldAutoScroll({required bool stickToBottom}) => stickToBottom;
 
   static bool isNearBottom({
     required double pixels,
@@ -24,85 +20,59 @@ class ChatScrollPolicy {
     return currentScrollPosition + (maxScrollExtentAfter - maxScrollExtentBefore);
   }
 
-  /// Подгрузка старых сообщений только после первичного скролла к низу при открытии.
+  /// Подгрузка старых сообщений только после первичного открытия чата.
   static bool shouldTriggerLoadMoreOnScroll({
     required bool isLoading,
-    required bool didInitialOpenScrollToBottom,
+    required bool initialOpenComplete,
     required double pixels,
     double loadMoreThreshold = 300,
   }) {
     if (isLoading) return false;
-    if (!didInitialOpenScrollToBottom) return false;
+    if (!initialOpenComplete) return false;
     return pixels <= loadMoreThreshold;
   }
 
-  static bool isScrollExtentStable({
-    required double? previousMaxScrollExtent,
-    required double currentMaxScrollExtent,
-    double epsilon = 1.0,
+  /// Контент вырос (медиа, layout) — держим низ только если приклеены и уже у низа.
+  static bool shouldReanchorToBottomOnContentGrowth({
+    required bool stickToBottom,
+    required double pixels,
+    required double maxScrollExtent,
+    double threshold = 140,
+    double jumpEpsilon = 2,
   }) {
-    if (previousMaxScrollExtent == null) return false;
-    return (currentMaxScrollExtent - previousMaxScrollExtent).abs() < epsilon;
-  }
-
-  /// Остановка цикла `_scrollToBottomUntilSettled` при открытии чата.
-  static bool shouldStopInitialScrollSettling({
-    required int attempt,
-    required int maxAttempts,
-    required double? previousMaxScrollExtent,
-    required double currentMaxScrollExtent,
-    required bool isNearBottom,
-    int minAttemptsBeforeStableStop = 2,
-  }) {
-    if (attempt >= maxAttempts) return true;
-    if (attempt >= minAttemptsBeforeStableStop &&
-        isNearBottom &&
-        isScrollExtentStable(
-          previousMaxScrollExtent: previousMaxScrollExtent,
-          currentMaxScrollExtent: currentMaxScrollExtent,
-        )) {
-      return true;
+    if (!stickToBottom) return false;
+    if (!isNearBottom(
+      pixels: pixels,
+      maxScrollExtent: maxScrollExtent,
+      threshold: threshold,
+    )) {
+      return false;
     }
-    return false;
-  }
-
-  /// Пользователь ушёл от низа — прекращаем первичный автоскролл, не перетягивать вниз.
-  static bool shouldAbortInitialScrollSettling({
-    required int attempt,
-    required bool isNearBottom,
-  }) {
-    return attempt > 0 && !isNearBottom;
+    return (maxScrollExtent - pixels) > jumpEpsilon;
   }
 
   /// Первичный скролл после `_isLoading = false`, когда сообщения уже есть.
   static bool shouldRunInitialScrollAfterLoad({
-    required bool shouldAutoScrollToBottom,
+    required bool stickToBottom,
     required int messageCount,
   }) {
-    return shouldAutoScrollToBottom && messageCount > 0;
+    return stickToBottom && messageCount > 0;
   }
 
   /// Пустой чат: не ждём layout, сразу завершаем первичное открытие.
-  static bool shouldMarkInitialScrollCompleteImmediately({
-    required bool shouldAutoScrollToBottom,
+  static bool shouldMarkInitialOpenCompleteImmediately({
     required int messageCount,
   }) {
-    return shouldAutoScrollToBottom && messageCount == 0;
+    return messageCount == 0;
   }
 
-  /// Poll/WebSocket: автоскролл только если пользователь у низа.
-  static bool shouldScrollOnIncomingMessages({required bool isNearBottom}) {
-    return isNearBottom;
+  /// Poll/WebSocket: автоскролл только если пользователь приклеен к низу.
+  static bool shouldScrollOnIncomingMessages({required bool stickToBottom}) {
+    return stickToBottom;
   }
 
-  /// Pull-to-refresh / reload: автоскролл как при первом открытии или у низа.
-  static bool shouldAutoScrollAfterReload({
-    required bool didInitialOpenScrollToBottom,
-    required bool isNearBottom,
-  }) {
-    return shouldAutoScrollToBottom(
-      didInitialOpenScrollToBottom: didInitialOpenScrollToBottom,
-      isNearBottom: isNearBottom,
-    );
+  /// Pull-to-refresh / reload: автоскролл только если приклеены к низу.
+  static bool shouldAutoScrollAfterReload({required bool stickToBottom}) {
+    return stickToBottom;
   }
 }

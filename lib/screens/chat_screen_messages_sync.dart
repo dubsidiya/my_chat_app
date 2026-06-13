@@ -137,10 +137,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
 
   Future<void> _loadMessages() async {
     if (!mounted) return;
-    final shouldAutoScrollToBottom = ChatScrollPolicy.shouldAutoScrollToBottom(
-      didInitialOpenScrollToBottom: _didInitialOpenScrollToBottom,
-      isNearBottom: _isNearBottom(),
-    );
+    final stickToBottom = _stickToBottom;
 
     setState(() {
       _isLoading = true;
@@ -300,15 +297,14 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       if (mounted) {
         setState(() => _isLoading = false);
         if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          shouldAutoScrollToBottom: shouldAutoScrollToBottom,
+          stickToBottom: stickToBottom,
           messageCount: _messages.length,
         )) {
           _completeInitialOpenScroll();
-        } else if (ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
-          shouldAutoScrollToBottom: shouldAutoScrollToBottom,
+        } else if (ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
           messageCount: _messages.length,
         )) {
-          _didInitialOpenScrollToBottom = true;
+          _markInitialOpenComplete();
         }
       }
     }

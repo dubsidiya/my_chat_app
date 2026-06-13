@@ -11,11 +11,11 @@ void main() {
       });
     }
 
-    test('open_first_time: shouldAutoScrollToBottom=true', () {
+    test('open_first_time: stickToBottom=true -> scroll', () {
       expect(
-        ChatScrollPolicy.shouldAutoScrollToBottom(
-          didInitialOpenScrollToBottom: false,
-          isNearBottom: false,
+        ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
+          stickToBottom: true,
+          messageCount: 5,
         ),
         isTrue,
       );
@@ -23,30 +23,27 @@ void main() {
 
     test('open_while_reading_history: reload без автоскролла', () {
       expect(
-        ChatScrollPolicy.shouldAutoScrollAfterReload(
-          didInitialOpenScrollToBottom: true,
-          isNearBottom: false,
-        ),
+        ChatScrollPolicy.shouldAutoScrollAfterReload(stickToBottom: false),
         isFalse,
       );
     });
 
-    test('open_load_more_blocked при pixels=0 до первичного скролла', () {
+    test('open_load_more_blocked при pixels=0 до первичного открытия', () {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: false,
-          didInitialOpenScrollToBottom: false,
+          initialOpenComplete: false,
           pixels: 0,
         ),
         isFalse,
       );
     });
 
-    test('open_load_more_allowed у верха после первичного скролла', () {
+    test('open_load_more_allowed у верха после первичного открытия', () {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: false,
-          didInitialOpenScrollToBottom: true,
+          initialOpenComplete: true,
           pixels: 250,
         ),
         isTrue,
@@ -54,7 +51,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: false,
-          didInitialOpenScrollToBottom: true,
+          initialOpenComplete: true,
           pixels: 301,
         ),
         isFalse,
@@ -72,57 +69,30 @@ void main() {
       );
     });
 
-    test('incoming_near_bottom', () {
+    test('incoming_stuck_to_bottom', () {
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: true),
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: true),
         isTrue,
       );
     });
 
-    test('incoming_far_from_bottom', () {
+    test('incoming_reading_history', () {
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(isNearBottom: false),
+        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: false),
         isFalse,
-      );
-    });
-
-    test('settle_stop_on_stable_extent', () {
-      expect(
-        ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: 2,
-          maxAttempts: 24,
-          previousMaxScrollExtent: 1500,
-          currentMaxScrollExtent: 1500,
-          isNearBottom: true,
-        ),
-        isTrue,
-      );
-    });
-
-    test('settle_stop_on_max_attempts', () {
-      expect(
-        ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: 24,
-          maxAttempts: 24,
-          previousMaxScrollExtent: 1000,
-          currentMaxScrollExtent: 2000,
-          isNearBottom: false,
-        ),
-        isTrue,
       );
     });
 
     test('empty_chat_open', () {
       expect(
-        ChatScrollPolicy.shouldMarkInitialScrollCompleteImmediately(
-          shouldAutoScrollToBottom: true,
+        ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
           messageCount: 0,
         ),
         isTrue,
       );
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          shouldAutoScrollToBottom: true,
+          stickToBottom: true,
           messageCount: 0,
         ),
         isFalse,
@@ -133,7 +103,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
           isLoading: true,
-          didInitialOpenScrollToBottom: true,
+          initialOpenComplete: true,
           pixels: 0,
         ),
         isFalse,
@@ -142,20 +112,14 @@ void main() {
 
     test('refresh_near_bottom', () {
       expect(
-        ChatScrollPolicy.shouldAutoScrollAfterReload(
-          didInitialOpenScrollToBottom: true,
-          isNearBottom: true,
-        ),
+        ChatScrollPolicy.shouldAutoScrollAfterReload(stickToBottom: true),
         isTrue,
       );
     });
 
     test('refresh_reading_history', () {
       expect(
-        ChatScrollPolicy.shouldAutoScrollAfterReload(
-          didInitialOpenScrollToBottom: true,
-          isNearBottom: false,
-        ),
+        ChatScrollPolicy.shouldAutoScrollAfterReload(stickToBottom: false),
         isFalse,
       );
     });
@@ -178,26 +142,22 @@ void main() {
       );
     });
 
-    test('settle не останавливается слишком рано при растущем layout', () {
+    test('reanchor only when stuck and near bottom', () {
       expect(
-        ChatScrollPolicy.shouldStopInitialScrollSettling(
-          attempt: 2,
-          maxAttempts: 24,
-          previousMaxScrollExtent: 1000,
-          currentMaxScrollExtent: 1300,
-          isNearBottom: true,
-        ),
-        isFalse,
-      );
-    });
-
-    test('abort initial scroll when user leaves bottom', () {
-      expect(
-        ChatScrollPolicy.shouldAbortInitialScrollSettling(
-          attempt: 2,
-          isNearBottom: false,
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: true,
+          pixels: 1160,
+          maxScrollExtent: 1300,
         ),
         isTrue,
+      );
+      expect(
+        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
+          stickToBottom: false,
+          pixels: 1000,
+          maxScrollExtent: 1300,
+        ),
+        isFalse,
       );
     });
   });

@@ -554,12 +554,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
               }
             }
 
-            if (_isNearBottom(threshold: 500)) {
-              _scrollToBottomWithRetry(
-                attempts: 2,
-                delay: const Duration(milliseconds: 60),
-              );
-            }
+            _enableStickToBottom();
+            _scrollToBottomWithRetry(
+              attempts: 2,
+              delay: const Duration(milliseconds: 60),
+            );
 
             // Принудительные обновления UI больше не нужны — список обновляется напрямую
 
