@@ -43,6 +43,18 @@ void main() {
       }).isLate, false);
     });
 
+    test('formationDateLabel uses local created_at time', () {
+      final report = Report.fromJson({
+        'id': 1,
+        'report_date': '2025-03-01',
+        'content': 'x',
+        'is_late': false,
+        'created_at': '2025-03-02T10:00:00Z',
+      });
+      expect(report.formationDateLabel, isNotEmpty);
+      expect(report.reportDayLabel, '01.03.2025');
+    });
+
     test('isEdited когда updated_at после created_at', () {
       final r = Report.fromJson({
         'id': 1,

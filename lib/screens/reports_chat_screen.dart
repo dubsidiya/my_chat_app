@@ -1005,7 +1005,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   ),
                                 ),
                                 title: Text(
-                                  DateFormat('dd.MM.yyyy').format(report.reportDate),
+                                  'Отчёт за ${report.reportDayLabel}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
@@ -1015,6 +1015,16 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        'Сформирован: ${report.formationDateLabel}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: scheme.onSurface.withValues(alpha: 0.65),
+                                        ),
+                                      ),
+                                    ),
                                     if (_filterTeacherId == null &&
                                         report.createdByLabel != null) ...[
                                       Padding(

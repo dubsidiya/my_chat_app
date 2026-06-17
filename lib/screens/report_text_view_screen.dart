@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import '../models/report.dart';
 import 'report_audit_screen.dart';
 
@@ -52,10 +51,17 @@ class ReportTextViewScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            DateFormat('dd.MM.yyyy').format(report.reportDate),
+            'Отчёт за ${report.reportDayLabel}',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: scheme.onSurface,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Сформирован: ${report.formationDateLabel}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.72),
                 ),
           ),
           const SizedBox(height: 10),

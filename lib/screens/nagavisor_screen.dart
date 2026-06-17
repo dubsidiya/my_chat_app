@@ -418,11 +418,12 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
                           title: Text(
-                            DateFormat('dd.MM.yyyy').format(r.reportDate.toLocal()),
+                            'Отчёт за ${r.reportDayLabel}',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
                             [
+                              'Сформирован: ${r.formationDateLabel}',
                               if (r.isLate) 'Поздний',
                               if (r.isEdited) 'Редактировался',
                               if (r.lessonsCount != null) '${r.lessonsCount} занятий',

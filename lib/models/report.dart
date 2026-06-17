@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class Report {
   final int id;
   final DateTime reportDate;
@@ -33,6 +35,17 @@ class Report {
     this.createdByEmail,
     this.createdByDisplayName,
   });
+
+  static final DateFormat _reportDayFormat = DateFormat('dd.MM.yyyy');
+  static final DateFormat _formationFormat = DateFormat('dd.MM.yyyy HH:mm');
+
+  /// Календарный день отчёта (занятия).
+  String get reportDayLabel =>
+      _reportDayFormat.format(reportDate.toLocal());
+
+  /// Локальное время сдачи отчёта на сервер (дата формирования).
+  String get formationDateLabel =>
+      _formationFormat.format(createdAt.toLocal());
 
   /// Подпись «кто сдал»: display_name, иначе email.
   String? get createdByLabel {
