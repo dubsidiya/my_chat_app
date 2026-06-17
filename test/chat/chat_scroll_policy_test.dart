@@ -100,6 +100,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
           stickToBottom: true,
+          initialOpenComplete: false,
           messageCount: 3,
         ),
         isTrue,

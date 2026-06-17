@@ -1195,7 +1195,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   // Отступ сверху для закрепленных сообщений
                                   Padding(
                                     padding: EdgeInsets.only(top: pinnedHeight),
-                                    child: NotificationListener<UserScrollNotification>(
+                                    child: NotificationListener<ScrollMetricsNotification>(
+                                      onNotification:
+                                          _handleScrollMetricsNotification,
+                                      child: NotificationListener<UserScrollNotification>(
                                       onNotification:
                                           _handleUserScrollNotification,
                                       child: RefreshIndicator(
@@ -1379,6 +1382,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
                                   ),
+                                  ),
                                   // ✅ Закрепленные сообщения - всегда видны вверху
                                   if (_pinnedMessages.isNotEmpty)
                                     Positioned(
@@ -1511,35 +1515,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                     child: Material(
                                                       color: Colors.transparent,
                                                       child: InkWell(
-                                                        onTap: () {
-                                                          final messageIndex =
-                                                              _messages
-                                                                  .indexWhere(
-                                                                    (m) =>
-                                                                        m.id ==
-                                                                        pinned
-                                                                            .id,
-                                                                  );
-                                                          if (messageIndex !=
-                                                                  -1 &&
-                                                              _scrollController
-                                                                  .hasClients) {
-                                                            final targetPosition =
-                                                                (messageIndex *
-                                                                    100.0) +
-                                                                pinnedHeight;
-                                                            _scrollController.animateTo(
-                                                              targetPosition,
-                                                              duration:
-                                                                  const Duration(
-                                                                    milliseconds:
-                                                                        300,
-                                                                  ),
-                                                              curve: Curves
-                                                                  .easeInOut,
-                                                            );
-                                                          }
-                                                        },
+                                                        onTap: () =>
+                                                            _goToPinnedMessage(
+                                                              pinned,
+                                                            ),
                                                         borderRadius:
                                                             BorderRadius.circular(
                                                               6,

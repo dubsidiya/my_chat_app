@@ -49,4 +49,12 @@ const chatScrollScenarioCatalog = <ChatScrollScenario>[
     'reanchor_content_growth',
     'Рост контента у низа -> reanchor только при stickToBottom',
   ),
+  ChatScrollScenario(
+    'reanchor_content_growth_stuck',
+    'Рост контента у низа при stickToBottom -> возврат к самому низу (widget)',
+  ),
+  ChatScrollScenario(
+    'reanchor_content_growth_reading',
+    'Рост контента у низа при чтении истории -> без рывка вниз (widget)',
+  ),
 ];

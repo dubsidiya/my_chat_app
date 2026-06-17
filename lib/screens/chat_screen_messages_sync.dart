@@ -298,6 +298,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         setState(() => _isLoading = false);
         if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
           stickToBottom: stickToBottom,
+          initialOpenComplete: _initialOpenComplete,
           messageCount: _messages.length,
         )) {
           _completeInitialOpenScroll();
@@ -305,6 +306,12 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           messageCount: _messages.length,
         )) {
           _markInitialOpenComplete();
+        } else if (ChatScrollPolicy.shouldAutoScrollAfterReload(
+          stickToBottom: _stickToBottom,
+        )) {
+          // Reload (E2EE/pull-to-refresh) пока пользователь у низа — возвращаем
+          // к низу; при чтении истории остаёмся на месте.
+          _scrollToBottom();
         }
       }
     }

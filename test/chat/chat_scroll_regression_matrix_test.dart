@@ -15,6 +15,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
           stickToBottom: true,
+          initialOpenComplete: false,
           messageCount: 5,
         ),
         isTrue,
@@ -93,6 +94,7 @@ void main() {
       expect(
         ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
           stickToBottom: true,
+          initialOpenComplete: true,
           messageCount: 0,
         ),
         isFalse,

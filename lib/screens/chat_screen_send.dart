@@ -337,10 +337,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
             '✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}',
           );
         }
-        _scrollToBottomWithRetry(
-          attempts: 4,
-          delay: const Duration(milliseconds: 60),
-        );
+        _stickAndPinToBottom();
 
         // ✅ НЕ сохраняем временное сообщение в кэш сразу
         // Оно будет сохранено только после получения реального ответа от сервера
@@ -554,11 +551,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
               }
             }
 
-            _enableStickToBottom();
-            _scrollToBottomWithRetry(
-              attempts: 2,
-              delay: const Duration(milliseconds: 60),
-            );
+            _stickAndPinToBottom();
 
             // Принудительные обновления UI больше не нужны — список обновляется напрямую
 

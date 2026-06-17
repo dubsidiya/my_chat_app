@@ -51,12 +51,13 @@ class ChatScrollPolicy {
     return (maxScrollExtent - pixels) > jumpEpsilon;
   }
 
-  /// Первичный скролл после `_isLoading = false`, когда сообщения уже есть.
+  /// Первичный скролл после `_isLoading = false`, один раз за сессию чата.
   static bool shouldRunInitialScrollAfterLoad({
     required bool stickToBottom,
+    required bool initialOpenComplete,
     required int messageCount,
   }) {
-    return stickToBottom && messageCount > 0;
+    return stickToBottom && !initialOpenComplete && messageCount > 0;
   }
 
   /// Пустой чат: не ждём layout, сразу завершаем первичное открытие.

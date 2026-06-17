@@ -70,6 +70,7 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
 
     if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
       stickToBottom: stickToBottom,
+      initialOpenComplete: initialOpenComplete,
       messageCount: itemHeights.length,
     )) {
       _completeInitialOpenScroll();
@@ -86,6 +87,7 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   }
 
   void _completeInitialOpenScroll() {
+    if (initialOpenComplete) return;
     _scrollToBottomAfterLayout(
       attempts: 3,
       onFinished: _markInitialOpenComplete,
@@ -117,6 +119,28 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     tryScroll(attempts);
   }
 
+  Future<void> simulateE2eeReload() async {
+    final stick = stickToBottom;
+    isLoading = true;
+    setState(() {});
+
+    isLoading = false;
+    setState(() {});
+
+    if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
+      stickToBottom: stick,
+      initialOpenComplete: initialOpenComplete,
+      messageCount: itemHeights.length,
+    )) {
+      _completeInitialOpenScroll();
+    }
+  }
+
+  void growItemAt(int index, double newHeight) {
+    if (index < 0 || index >= itemHeights.length) return;
+    setState(() => itemHeights[index] = newHeight);
+  }
+
   void simulateUserScrollUp() {
     stickToBottom = false;
     _markInitialOpenComplete();
@@ -137,16 +161,39 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     return false;
   }
 
+  /// Размеры контента изменились без скролла (рост фото/текста) — держим низ,
+  /// пока пользователь «прилип». Зеркалит production `_handleScrollMetricsNotification`.
+  bool handleScrollMetricsNotification(ScrollMetricsNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (stickToBottom) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pinToBottomNow());
+    }
+    return false;
+  }
+
+  void _pinToBottomNow() {
+    if (!mounted || !stickToBottom) return;
+    if (!scrollController.hasClients || itemHeights.isEmpty) return;
+    final position = scrollController.position;
+    final max = position.maxScrollExtent;
+    if (max > 0 && (max - position.pixels) > 2) {
+      scrollController.jumpTo(max);
+    }
+  }
+
   void _onScroll() {
     if (!scrollController.hasClients) return;
 
     final position = scrollController.position;
-    if (ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-      stickToBottom: stickToBottom,
-      pixels: position.pixels,
-      maxScrollExtent: position.maxScrollExtent,
-    )) {
-      position.jumpTo(position.maxScrollExtent);
+
+    if (initialOpenComplete &&
+        stickToBottom &&
+        !ChatScrollPolicy.isNearBottom(
+          pixels: position.pixels,
+          maxScrollExtent: position.maxScrollExtent,
+        )) {
+      stickToBottom = false;
     }
 
     if (!ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
@@ -201,7 +248,9 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
           ? const Center(child: CircularProgressIndicator())
           : itemHeights.isEmpty
           ? const Center(child: Text('empty'))
-          : NotificationListener<UserScrollNotification>(
+          : NotificationListener<ScrollMetricsNotification>(
+              onNotification: handleScrollMetricsNotification,
+              child: NotificationListener<UserScrollNotification>(
               onNotification: handleUserScrollNotification,
               child: ListView.builder(
                 controller: scrollController,
@@ -222,6 +271,7 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
                   );
                 },
               ),
+            ),
             ),
     );
   }
