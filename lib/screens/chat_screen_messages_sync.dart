@@ -137,7 +137,8 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
 
   Future<void> _loadMessages() async {
     if (!mounted) return;
-    final stickToBottom = _stickToBottom;
+    // Были ли мы у низа до перезагрузки — чтобы решить, возвращать ли к низу.
+    final wasAtBottom = _isAtBottom();
 
     setState(() {
       _isLoading = true;
@@ -296,23 +297,13 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
-        if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          stickToBottom: stickToBottom,
-          initialOpenComplete: _initialOpenComplete,
-          messageCount: _messages.length,
-        )) {
-          _completeInitialOpenScroll();
-        } else if (ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
-          messageCount: _messages.length,
-        )) {
-          _markInitialOpenComplete();
-        } else if (ChatScrollPolicy.shouldAutoScrollAfterReload(
-          stickToBottom: _stickToBottom,
-        )) {
-          // Reload (E2EE/pull-to-refresh) пока пользователь у низа — возвращаем
-          // к низу; при чтении истории остаёмся на месте.
-          _scrollToBottom();
-        }
+        // reverse:true → чат открывается у низа сам, прокрутка не нужна.
+        // После reload (E2EE/pull-to-refresh): если были у низа — останемся у
+        // низа; при чтении истории позиция сохраняется reverse-списком.
+        if (wasAtBottom) _scrollToBottom(animated: false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _markInitialOpenComplete();
+        });
       }
     }
   }
@@ -323,10 +314,6 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     setState(() => _isLoadingMore = true);
 
     try {
-      // Сохраняем текущую позицию скролла и максимальную высоту контента
-      final currentScrollPosition = _scrollController.position.pixels;
-      final maxScrollExtentBefore = _scrollController.position.maxScrollExtent;
-
       // Загружаем старые сообщения
       final result = await _messagesService.fetchMessagesPaginated(
         widget.chatId,
@@ -337,7 +324,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
 
       if (mounted && result.messages.isNotEmpty) {
         setState(() {
-          // Добавляем новые сообщения в начало списка
+          // Добавляем старые сообщения в начало списка
           _messages.insertAll(0, result.messages);
           // Удаляем дубликаты (на случай если сообщение уже есть)
           final seen = <String>{};
@@ -365,30 +352,9 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           _markMessagesSeen(result.messages.map((m) => m.id));
         });
 
-        // Восстанавливаем позицию скролла после добавления сообщений
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients && mounted) {
-            // Вычисляем разницу в высоте контента
-            final maxScrollExtentAfter =
-                _scrollController.position.maxScrollExtent;
-            // Новая позиция = старая позиция + разница в высоте
-            // Это сохраняет видимую позицию пользователя
-            final newScrollPosition =
-                ChatScrollPolicy.preserveViewportAfterPrepend(
-                  currentScrollPosition: currentScrollPosition,
-                  maxScrollExtentBefore: maxScrollExtentBefore,
-                  maxScrollExtentAfter: maxScrollExtentAfter,
-                );
-
-            // Прокручиваем к новой позиции
-            _scrollController.jumpTo(
-              newScrollPosition.clamp(
-                0.0,
-                _scrollController.position.maxScrollExtent,
-              ),
-            );
-          }
-        });
+        // В ListView(reverse: true) старые сообщения добавляются «выше» якоря-низа
+        // и не сдвигают видимую область — позиция сохраняется автоматически,
+        // без ручного пересчёта maxScrollExtent.
       } else if (mounted) {
         // Если нет новых сообщений, значит больше загружать нечего
         setState(() {

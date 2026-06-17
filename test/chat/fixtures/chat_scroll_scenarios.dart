@@ -1,4 +1,5 @@
-/// Табличные сценарии для regression-тестов поведения скролла чата.
+/// Табличные сценарии для regression-тестов поведения скролла чата
+/// (модель `ListView(reverse: true)`: низ = смещение 0).
 class ChatScrollScenario {
   final String id;
   final String description;
@@ -7,54 +8,41 @@ class ChatScrollScenario {
 }
 
 const chatScrollScenarioCatalog = <ChatScrollScenario>[
-  ChatScrollScenario('open_first_time', 'Первое открытие чата -> автоскролл вниз'),
   ChatScrollScenario(
-    'open_while_reading_history',
-    'Пользователь читает историю -> reload не скроллит',
+    'open_at_bottom',
+    'Открытие чата -> сразу у низа (новые сообщения), без скролла',
   ),
   ChatScrollScenario(
     'open_load_more_blocked',
-    'До первичного открытия load-more не срабатывает при pixels=0',
+    'До первичного открытия load-more не срабатывает',
   ),
   ChatScrollScenario(
-    'open_load_more_allowed',
-    'После первичного открытия load-more у верха списка',
+    'load_more_near_top',
+    'У верха (старые сообщения) -> догрузка истории',
   ),
   ChatScrollScenario(
-    'prepend_preserve_viewport',
-    'Подгрузка старых сообщений сохраняет видимую область',
+    'load_more_preserves_position',
+    'Догрузка истории сохраняет видимую область (reverse, без математики)',
   ),
   ChatScrollScenario(
-    'incoming_stuck_to_bottom',
-    'Входящее сообщение при stickToBottom -> скрoll',
+    'incoming_at_bottom',
+    'Входящее при положении у низа -> остаёмся у низа, сообщение видно',
   ),
   ChatScrollScenario(
     'incoming_reading_history',
-    'Входящее сообщение при чтении истории -> без скролла',
+    'Входящее при чтении истории -> не дёргает к низу',
   ),
-  ChatScrollScenario('empty_chat_open', 'Пустой чат сразу завершает первичное открытие'),
+  ChatScrollScenario(
+    'media_growth_at_bottom',
+    'Рост картинки у низа -> остаёмся у низа без «пружины»',
+  ),
+  ChatScrollScenario(
+    'media_growth_top_reading',
+    'Рост картинки сверху при чтении истории -> не дёргает',
+  ),
+  ChatScrollScenario('empty_chat_open', 'Пустой чат -> первичное открытие без скролла'),
   ChatScrollScenario(
     'loading_blocks_load_more',
-    'Во время _isLoading подгрузка истории заблокирована',
-  ),
-  ChatScrollScenario(
-    'refresh_near_bottom',
-    'Pull-to-refresh у низа -> автоскролл после reload',
-  ),
-  ChatScrollScenario(
-    'refresh_reading_history',
-    'Pull-to-refresh в середине истории -> без автоскролла',
-  ),
-  ChatScrollScenario(
-    'reanchor_content_growth',
-    'Рост контента у низа -> reanchor только при stickToBottom',
-  ),
-  ChatScrollScenario(
-    'reanchor_content_growth_stuck',
-    'Рост контента у низа при stickToBottom -> возврат к самому низу (widget)',
-  ),
-  ChatScrollScenario(
-    'reanchor_content_growth_reading',
-    'Рост контента у низа при чтении истории -> без рывка вниз (widget)',
+    'Во время загрузки подгрузка истории заблокирована',
   ),
 ];

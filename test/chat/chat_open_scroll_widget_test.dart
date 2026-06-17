@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 
 import 'helpers/chat_scroll_harness.dart';
 
@@ -22,8 +21,8 @@ Future<void> pumpUntilInitialOpenComplete(
 }
 
 void main() {
-  group('Chat open scroll widget regression', () {
-    testWidgets('открытие: скролл только после окончания loading', (tester) async {
+  group('Chat open scroll (reverse:true) regression', () {
+    testWidgets('открытие: чат сразу у низа (новые сообщения)', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
@@ -35,7 +34,6 @@ void main() {
 
       var state = _harnessState(tester);
       expect(state.isLoading, isTrue);
-      expect(state.scrollController.hasClients, isFalse);
 
       await state.simulateOpenChat();
       await pumpUntilInitialOpenComplete(tester);
@@ -43,11 +41,11 @@ void main() {
       state = _harnessState(tester);
       expect(state.isLoading, isFalse);
       expect(state.initialOpenComplete, isTrue);
-      expect(state.stickToBottom, isTrue);
-      expect(state.isNearBottom, isTrue);
+      expect(state.isAtBottom, isTrue);
+      expect(state.scrollController.position.pixels, closeTo(0, 1));
     });
 
-    testWidgets('до первичного открытия load-more не вызывается при pixels=0', (tester) async {
+    testWidgets('до первичного открытия load-more не вызывается', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: ChatScrollHarness(
@@ -59,13 +57,19 @@ void main() {
 
       final state = _harnessState(tester);
       state.showListWithoutInitialScroll();
-
       await tester.pumpAndSettle();
-      expect(state.scrollController.position.pixels, 0);
+
+      // Даже у верха (в reverse это maxScrollExtent) до открытия — не грузим.
+      if (state.scrollController.hasClients) {
+        state.scrollController.jumpTo(
+          state.scrollController.position.maxScrollExtent,
+        );
+      }
+      await tester.pump();
       expect(state.loadMoreCalls, 0);
     });
 
-    testWidgets('после первичного открытия load-more срабатывает у верха', (tester) async {
+    testWidgets('листание к старым (вверх) у верха вызывает load-more', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
@@ -76,8 +80,12 @@ void main() {
       await pumpUntilInitialOpenComplete(tester);
 
       final state = _harnessState(tester);
-      expect(state.isNearBottom, isTrue);
-      state.scrollController.jumpTo(0);
+      expect(state.isAtBottom, isTrue);
+
+      // Прокрутка к верху (в reverse — к maxScrollExtent = старые сообщения).
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
       await tester.pump();
       await tester.pump();
       await tester.pumpAndSettle();
@@ -86,7 +94,7 @@ void main() {
       expect(state.itemHeights.length, 14);
     });
 
-    testWidgets('prepend сохраняет позицию при подгрузке с верха', (tester) async {
+    testWidgets('догрузка истории сохраняет позицию (reverse, без математики)', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
@@ -97,48 +105,121 @@ void main() {
       await pumpUntilInitialOpenComplete(tester);
 
       final state = _harnessState(tester);
-      final maxBefore = state.scrollController.position.maxScrollExtent;
-
-      state.scrollController.jumpTo(0);
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
       await tester.pump();
+      final pixelsBefore = state.scrollController.position.pixels;
+
       await tester.pump();
       await tester.pumpAndSettle();
 
-      final maxAfter = state.scrollController.position.maxScrollExtent;
-      final expected = ChatScrollPolicy.preserveViewportAfterPrepend(
-        currentScrollPosition: 0,
-        maxScrollExtentBefore: maxBefore,
-        maxScrollExtentAfter: maxAfter,
-      );
-
-      expect(state.scrollController.position.pixels, closeTo(expected, 1.0));
+      // В reverse старые сообщения добавляются «выше» якоря-низа → смещение
+      // (расстояние от низа) сохраняется без ручного пересчёта.
+      expect(state.loadMoreCalls, 1);
+      expect(state.scrollController.position.pixels, closeTo(pixelsBefore, 1.0));
     });
 
-    testWidgets('рост контента у низа: reanchor только при stickToBottom', (tester) async {
-      expect(
-        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-          stickToBottom: true,
-          pixels: 998,
-          maxScrollExtent: 1000,
+    testWidgets('новое сообщение у низа: остаёмся у низа, оно видно', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScrollHarness(
+            autoStartOpen: false,
+            initialItemHeights: List<double>.filled(12, 80),
+          ),
         ),
-        isFalse,
       );
-      expect(
-        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-          stickToBottom: true,
-          pixels: 865,
-          maxScrollExtent: 1000,
+      final state = _harnessState(tester);
+      await state.simulateOpenChat();
+      await pumpUntilInitialOpenComplete(tester);
+      expect(state.isAtBottom, isTrue);
+
+      state.appendNewMessage(80);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      expect(state.isAtBottom, isTrue);
+      expect(state.scrollController.position.pixels, closeTo(0, 1));
+      // Самое новое сообщение отрисовано.
+      expect(find.text('message ${state.itemHeights.length - 1}'), findsOneWidget);
+    });
+
+    testWidgets('новое сообщение при чтении истории НЕ дёргает к низу', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScrollHarness(
+            initialItemHeights: List<double>.filled(14, 120),
+          ),
         ),
-        isTrue,
       );
-      expect(
-        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-          stickToBottom: false,
-          pixels: 865,
-          maxScrollExtent: 1000,
+      await pumpUntilInitialOpenComplete(tester);
+
+      final state = _harnessState(tester);
+      // Уходим вверх к истории.
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
+      await tester.pump();
+      expect(state.isAtBottom, isFalse);
+
+      state.appendNewMessage(80);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      expect(state.isAtBottom, isFalse);
+    });
+
+    testWidgets('рост картинки у низа: без «пружины», остаёмся у низа', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScrollHarness(
+            autoStartOpen: false,
+            initialItemHeights: List<double>.filled(12, 80),
+          ),
         ),
-        isFalse,
       );
+      final state = _harnessState(tester);
+      await state.simulateOpenChat();
+      await pumpUntilInitialOpenComplete(tester);
+      expect(state.isAtBottom, isTrue);
+
+      // Самое новое сообщение (низ) «выросло» — догрузилось фото.
+      state.growItemAt(state.itemHeights.length - 1, 600);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump();
+      }
+
+      // В reverse низ зафиксирован на смещении 0 — никакой обратной связи/прыжков.
+      expect(state.isAtBottom, isTrue);
+      expect(state.scrollController.position.pixels, closeTo(0, 1));
+    });
+
+    testWidgets('рост картинки сверху при чтении истории не дёргает', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScrollHarness(
+            initialItemHeights: [80, 80, 80, ...List<double>.filled(9, 80)],
+          ),
+        ),
+      );
+      await pumpUntilInitialOpenComplete(tester);
+
+      final state = _harnessState(tester);
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
+      await tester.pump();
+      expect(state.isAtBottom, isFalse);
+
+      // Самое старое сообщение (верх) выросло.
+      state.growItemAt(0, 400);
+      for (var i = 0; i < 8; i++) {
+        await tester.pump();
+      }
+
+      expect(state.isAtBottom, isFalse);
     });
 
     testWidgets('пустой чат завершает первичное открытие без скролла', (tester) async {
@@ -157,124 +238,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(state.initialOpenComplete, isTrue);
-      expect(state.scrollController.hasClients, isFalse);
       expect(find.text('empty'), findsOneWidget);
-    });
-
-    testWidgets('листание вверх отклеивает от низа и не сбрасывает вниз', (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChatScrollHarness(
-            autoStartOpen: false,
-            initialItemHeights: List<double>.filled(12, 120),
-          ),
-        ),
-      );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
-      await pumpUntilInitialOpenComplete(tester);
-
-      state.scrollController.jumpTo(0);
-      state.simulateUserScrollUp();
-      await tester.pump();
-      await tester.pump();
-
-      expect(state.stickToBottom, isFalse);
-      expect(state.isNearBottom, isFalse);
-      expect(
-        state.scrollController.position.pixels,
-        lessThan(state.scrollController.position.maxScrollExtent * 0.2),
-      );
-      expect(state.initialOpenComplete, isTrue);
-    });
-
-    testWidgets('stuck + рост контента у низа → reanchor к самому низу', (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChatScrollHarness(
-            autoStartOpen: false,
-            initialItemHeights: List<double>.filled(12, 80),
-          ),
-        ),
-      );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
-      await pumpUntilInitialOpenComplete(tester);
-
-      expect(state.stickToBottom, isTrue);
-      expect(state.isNearBottom, isTrue);
-
-      // Последнее сообщение «выросло» (например, догрузилось фото) — без скролла
-      // пользователя контент стал выше, и низ ушёл из вида.
-      state.growItemAt(state.itemHeights.length - 1, 600);
-      for (var i = 0; i < 8; i++) {
-        await tester.pump();
-      }
-
-      expect(state.stickToBottom, isTrue);
-      expect(state.isNearBottom, isTrue);
-      expect(
-        state.scrollController.position.pixels,
-        closeTo(state.scrollController.position.maxScrollExtent, 2),
-      );
-    });
-
-    testWidgets('reading history + рост контента у низа → НЕ дёргает вниз', (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChatScrollHarness(
-            autoStartOpen: false,
-            initialItemHeights: List<double>.filled(12, 80),
-          ),
-        ),
-      );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
-      await pumpUntilInitialOpenComplete(tester);
-
-      state.scrollController.jumpTo(0);
-      state.simulateUserScrollUp();
-      await tester.pump();
-
-      state.growItemAt(state.itemHeights.length - 1, 600);
-      for (var i = 0; i < 8; i++) {
-        await tester.pump();
-      }
-
-      expect(state.stickToBottom, isFalse);
-      expect(state.isNearBottom, isFalse);
-      expect(state.scrollController.position.pixels, lessThan(200));
-    });
-
-    testWidgets('скролл во время loading — no-op (нет clients)', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: ChatScrollHarness(autoStartOpen: false),
-        ),
-      );
-
-      final state = _harnessState(tester);
-      expect(
-        ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          stickToBottom: true,
-          initialOpenComplete: false,
-          messageCount: state.itemHeights.length,
-        ),
-        isTrue,
-      );
-      expect(state.scrollController.hasClients, isFalse);
     });
   });
 
-  group('Manual iPhone scroll scenarios (automated)', () {
-    testWidgets('1. чат с фото сверху открывается у последних сообщений', (tester) async {
+  group('Manual iPhone scroll scenarios (reverse, automated)', () {
+    testWidgets('1. чат с фото открывается у последних сообщений', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
             autoStartOpen: false,
+            // фото среди старых сверху; новые короткие снизу
             initialItemHeights: [400, 80, 80, ...List<double>.filled(10, 80)],
           ),
         ),
@@ -284,98 +258,91 @@ void main() {
       await state.simulateOpenChat();
       await pumpUntilInitialOpenComplete(tester);
 
-      expect(state.stickToBottom, isTrue);
-      expect(state.isNearBottom, isTrue);
-      expect(
-        state.scrollController.position.pixels,
-        closeTo(state.scrollController.position.maxScrollExtent, 2),
-      );
+      expect(state.isAtBottom, isTrue);
+      expect(state.scrollController.position.pixels, closeTo(0, 1));
     });
 
-    testWidgets('2. листание вверх — фото догружается, позиция не сбрасывается вниз', (tester) async {
+    testWidgets('2. листание вверх — фото сверху догружается, позиция не сбрасывается', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
-            autoStartOpen: false,
             initialItemHeights: [200, 80, 80, ...List<double>.filled(10, 80)],
           ),
         ),
       );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
       await pumpUntilInitialOpenComplete(tester);
 
-      state.scrollController.jumpTo(0);
-      state.simulateUserScrollUp();
+      final state = _harnessState(tester);
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
       await tester.pump();
+      expect(state.isAtBottom, isFalse);
 
-      state.growItemAt(0, 400);
+      state.growItemAt(0, 400); // самое старое (верх) выросло
       for (var i = 0; i < 8; i++) {
         await tester.pump();
       }
 
-      expect(state.stickToBottom, isFalse);
-      expect(state.isNearBottom, isFalse);
-      expect(state.scrollController.position.pixels, lessThan(200));
+      expect(state.isAtBottom, isFalse);
     });
 
-    testWidgets('3. E2EE reload при чтении истории не yank вниз', (tester) async {
+    testWidgets('3. E2EE reload при чтении истории не дёргает к низу', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
-            autoStartOpen: false,
-            initialItemHeights: [400, ...List<double>.filled(11, 80)],
+            initialItemHeights: List<double>.filled(14, 100),
           ),
         ),
       );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
       await pumpUntilInitialOpenComplete(tester);
 
-      state.scrollController.jumpTo(0);
-      state.simulateUserScrollUp();
+      final state = _harnessState(tester);
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent * 0.6,
+      );
       await tester.pump();
-
       final pixelsBeforeReload = state.scrollController.position.pixels;
+      expect(state.isAtBottom, isFalse);
+
       await state.simulateE2eeReload();
       for (var i = 0; i < 8; i++) {
         await tester.pump();
       }
 
-      expect(state.stickToBottom, isFalse);
-      expect(state.scrollController.position.pixels, closeTo(pixelsBeforeReload, 5));
-      expect(state.isNearBottom, isFalse);
+      expect(state.isAtBottom, isFalse);
+      expect(
+        state.scrollController.position.pixels,
+        closeTo(pixelsBeforeReload, 5),
+      );
     });
 
     testWidgets('4. после роста фото скролл остаётся интерактивным', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChatScrollHarness(
-            autoStartOpen: false,
             initialItemHeights: [200, ...List<double>.filled(11, 80)],
           ),
         ),
       );
-
-      final state = _harnessState(tester);
-      await state.simulateOpenChat();
       await pumpUntilInitialOpenComplete(tester);
 
-      state.scrollController.jumpTo(0);
-      state.simulateUserScrollUp();
+      final state = _harnessState(tester);
+      state.scrollController.jumpTo(
+        state.scrollController.position.maxScrollExtent,
+      );
+      await tester.pump();
       state.growItemAt(0, 400);
       await tester.pump();
       await tester.pump();
 
       final before = state.scrollController.position.pixels;
-      await tester.drag(find.byType(ListView), const Offset(0, -180));
+      await tester.drag(find.byType(ListView), const Offset(0, 120));
       await tester.pump();
       await tester.pump();
 
-      expect(state.scrollController.position.pixels, greaterThan(before));
-      expect(state.stickToBottom, isFalse);
+      // Скролл реагирует на жест (позиция изменилась).
+      expect(state.scrollController.position.pixels, isNot(closeTo(before, 0.5)));
     });
   });
 }

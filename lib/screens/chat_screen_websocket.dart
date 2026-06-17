@@ -468,10 +468,7 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                 print('Parsed message: ${message.id} - ${message.content}');
               }
               if (mounted) {
-                final shouldScroll =
-                    ChatScrollPolicy.shouldScrollOnIncomingMessages(
-                  stickToBottom: _stickToBottom,
-                );
+                final atBottom = _isAtBottom();
                 var didAppendMessage = false;
                 setState(() {
                   // ✅ Проверяем, есть ли временное сообщение от текущего пользователя
@@ -657,7 +654,7 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                     }
                   }
                 });
-                if (didAppendMessage && shouldScroll) {
+                if (didAppendMessage && atBottom) {
                   _scrollToBottom();
                 }
               }

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -170,7 +169,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<Message> _messages = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
-  bool _stickToBottom = true;
+  // Чат — это ListView(reverse: true): низ (новые сообщения) = смещение 0.
+  // «Прилипание» к низу обеспечивается самим reverse, отдельный флаг не нужен.
   bool _initialOpenComplete = false;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
@@ -279,24 +279,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return _cachedListEntries!;
     }
     _listEntriesCacheKey = key;
+    // Список строится для ListView(reverse: true): индекс 0 — это НИЗ (самое
+    // новое сообщение), индексы растут вверх к старым. Поэтому идём от новых к
+    // старым; заголовок даты добавляется ПОСЛЕ (выше) сообщений своего дня, а
+    // кнопка догрузки/индикатор — в самый конец (визуально вверху).
     final list = <_ListEntry>[];
-    if (_hasMoreMessages && !_isLoadingMore && _messages.isNotEmpty) {
-      list.add(_LoadMoreEntry());
-    }
-    if (_isLoadingMore) list.add(_LoadingEntry());
-    String? lastDateKey;
-    for (int i = 0; i < _messages.length; i++) {
+    DateTime? runDt; // дата группы сообщений, которую сейчас добавляем
+    String? runDayKey;
+    for (int i = _messages.length - 1; i >= 0; i--) {
       final msg = _messages[i];
       final dt = DateTime.tryParse(msg.createdAt)?.toLocal();
-      if (dt != null) {
-        final key = '${dt.year}-${dt.month}-${dt.day}';
-        if (key != lastDateKey) {
-          lastDateKey = key;
-          final label = _formatDateHeader(dt);
-          list.add(_DateHeaderEntry(label));
-        }
+      final dayKey = dt != null ? '${dt.year}-${dt.month}-${dt.day}' : null;
+      if (runDayKey != null && dayKey != runDayKey && runDt != null) {
+        // День сменился (стали старше) — закрываем предыдущую (более новую)
+        // группу её заголовком, который окажется выше её сообщений.
+        list.add(_DateHeaderEntry(_formatDateHeader(runDt)));
       }
       list.add(_MessageEntry(i));
+      if (dayKey != null) {
+        runDt = dt;
+        runDayKey = dayKey;
+      }
+    }
+    if (runDt != null) {
+      // Заголовок самого старого дня — над всеми его сообщениями (вверху).
+      list.add(_DateHeaderEntry(_formatDateHeader(runDt)));
+    }
+    if (_isLoadingMore) {
+      list.add(_LoadingEntry());
+    } else if (_hasMoreMessages && _messages.isNotEmpty) {
+      list.add(_LoadMoreEntry());
     }
     _cachedListEntries = list;
     return list;
@@ -621,14 +633,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
       if (toAdd.isEmpty) return;
       final fromOthers = toAdd.any((m) => m.userId != widget.userId);
-      final shouldScroll = ChatScrollPolicy.shouldScrollOnIncomingMessages(
-        stickToBottom: _stickToBottom,
-      );
+      final atBottom = _isAtBottom();
       setState(() {
         _messages = List<Message>.from(_messages)..addAll(toAdd);
       });
       if (fromOthers) NotificationFeedbackService.onNewMessage();
-      if (shouldScroll) _scrollToBottom();
+      if (atBottom) _scrollToBottom();
     } catch (_) {}
   }
 
@@ -1195,13 +1205,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   // Отступ сверху для закрепленных сообщений
                                   Padding(
                                     padding: EdgeInsets.only(top: pinnedHeight),
-                                    child: NotificationListener<ScrollMetricsNotification>(
-                                      onNotification:
-                                          _handleScrollMetricsNotification,
-                                      child: NotificationListener<UserScrollNotification>(
-                                      onNotification:
-                                          _handleUserScrollNotification,
-                                      child: RefreshIndicator(
+                                    child: RefreshIndicator(
                                         onRefresh: () async {
                                           await _loadMessages();
                                         },
@@ -1211,8 +1215,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           'messages_list_${widget.chatId}',
                                         ),
                                         controller: _scrollController,
-                                        reverse:
-                                            false, // старые сверху, новые снизу
+                                        // reverse: низ (новые сообщения) = смещение 0.
+                                        // «Прилипание» к низу и сохранение позиции
+                                        // при догрузке истории — бесплатно.
+                                        reverse: true,
                                         physics:
                                             const AlwaysScrollableScrollPhysics(
                                               parent: ClampingScrollPhysics(),
@@ -1265,10 +1271,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             return null;
                                           }
 
+                                          // reverse: индекс+1 — это запись ВЫШЕ
+                                          // (старее), индекс-1 — НИЖЕ (новее).
                                           final isFirstInGroup =
-                                              senderAt(index - 1) != msg.userId;
-                                          final isLastInGroup =
                                               senderAt(index + 1) != msg.userId;
+                                          final isLastInGroup =
+                                              senderAt(index - 1) != msg.userId;
                                           final messageBody = Slidable(
                                             key: _keyForMessage(msg.id),
                                             startActionPane: ActionPane(
@@ -1380,8 +1388,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         },
                                       ),
                                     ),
-                                  ),
-                                  ),
                                   ),
                                   // ✅ Закрепленные сообщения - всегда видны вверху
                                   if (_pinnedMessages.isNotEmpty)

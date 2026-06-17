@@ -2,117 +2,85 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 
 void main() {
-  group('ChatScrollPolicy', () {
-    test('stickToBottom=true -> автоскролл разрешён', () {
-      expect(
-        ChatScrollPolicy.shouldAutoScroll(stickToBottom: true),
-        isTrue,
-      );
-      expect(
-        ChatScrollPolicy.shouldAutoScroll(stickToBottom: false),
-        isFalse,
-      );
+  group('ChatScrollPolicy (reverse:true)', () {
+    test('isAtBottom: низ — это малое смещение (reverse)', () {
+      expect(ChatScrollPolicy.isAtBottom(pixels: 0), isTrue);
+      expect(ChatScrollPolicy.isAtBottom(pixels: 100, threshold: 120), isTrue);
+      expect(ChatScrollPolicy.isAtBottom(pixels: 200, threshold: 120), isFalse);
     });
 
-    test('после отклеивания от низа reload не скроллит', () {
+    test('shouldLoadMoreOnScroll: только у верха и после первичного открытия', () {
+      // У верха (в reverse это близко к maxScrollExtent) после открытия — грузим.
       expect(
-        ChatScrollPolicy.shouldAutoScrollAfterReload(stickToBottom: false),
-        isFalse,
-      );
-    });
-
-    test('pagination вверх без скачков: сохраняется видимая позиция', () {
-      final newPosition = ChatScrollPolicy.preserveViewportAfterPrepend(
-        currentScrollPosition: 420,
-        maxScrollExtentBefore: 1000,
-        maxScrollExtentAfter: 1320,
-      );
-
-      expect(newPosition, 740);
-    });
-
-    test('корректно определяет near-bottom для порогового расстояния', () {
-      expect(
-        ChatScrollPolicy.isNearBottom(
-          pixels: 860,
-          maxScrollExtent: 1000,
-          threshold: 140,
-        ),
-        isTrue,
-      );
-      expect(
-        ChatScrollPolicy.isNearBottom(
-          pixels: 700,
-          maxScrollExtent: 1000,
-          threshold: 140,
-        ),
-        isFalse,
-      );
-    });
-
-    test('не подгружает историю до завершения первичного открытия', () {
-      expect(
-        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
           isLoading: false,
-          initialOpenComplete: false,
+          initialOpenComplete: true,
+          pixels: 950,
+          maxScrollExtent: 1000,
+        ),
+        isTrue,
+      );
+      // У низа (смещение 0) — не грузим.
+      expect(
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
+          isLoading: false,
+          initialOpenComplete: true,
           pixels: 0,
+          maxScrollExtent: 1000,
         ),
         isFalse,
       );
+    });
+
+    test('shouldLoadMoreOnScroll: заблокировано при загрузке и до открытия', () {
       expect(
-        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
           isLoading: true,
           initialOpenComplete: true,
-          pixels: 0,
+          pixels: 1000,
+          maxScrollExtent: 1000,
         ),
         isFalse,
       );
       expect(
-        ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
+          isLoading: false,
+          initialOpenComplete: false,
+          pixels: 1000,
+          maxScrollExtent: 1000,
+        ),
+        isFalse,
+      );
+    });
+
+    test('shouldLoadMoreOnScroll: порог 300px от верха', () {
+      expect(
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
           isLoading: false,
           initialOpenComplete: true,
-          pixels: 100,
-        ),
-        isTrue,
-      );
-    });
-
-    test('reanchor при росте контента у низа', () {
-      expect(
-        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-          stickToBottom: true,
-          pixels: 865,
+          pixels: 700, // 300 до верха
           maxScrollExtent: 1000,
         ),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldReanchorToBottomOnContentGrowth(
-          stickToBottom: false,
-          pixels: 850,
+        ChatScrollPolicy.shouldLoadMoreOnScroll(
+          isLoading: false,
+          initialOpenComplete: true,
+          pixels: 699, // 301 до верха
           maxScrollExtent: 1000,
         ),
         isFalse,
       );
     });
 
-    test('initial open helpers', () {
+    test('shouldAutoScrollOnIncoming: только если пользователь у низа', () {
       expect(
-        ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-          stickToBottom: true,
-          initialOpenComplete: false,
-          messageCount: 3,
-        ),
+        ChatScrollPolicy.shouldAutoScrollOnIncoming(atBottom: true),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
-          messageCount: 0,
-        ),
-        isTrue,
-      );
-      expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: false),
+        ChatScrollPolicy.shouldAutoScrollOnIncoming(atBottom: false),
         isFalse,
       );
     });

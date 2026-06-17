@@ -233,7 +233,6 @@ extension _ChatScreenQueuePart on _ChatScreenState {
       ),
     );
     _controller.clear();
-    _enableStickToBottom();
     _scrollToBottom();
 
     ScaffoldMessenger.of(context).showSnackBar(

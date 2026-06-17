@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 
-/// Минимальный стенд, повторяющий production-flow открытия чата и скролла.
+/// Стенд, повторяющий production-модель скролла чата: `ListView(reverse: true)`.
+/// Низ (новые сообщения) — смещение 0; старые сообщения сверху, ближе к
+/// `maxScrollExtent`. `itemHeights` хранится в порядке старые→новые (как
+/// `_messages`), а в reverse-список мапится index 0 = новое (низ).
 class ChatScrollHarness extends StatefulWidget {
   const ChatScrollHarness({
     super.key,
@@ -12,7 +14,7 @@ class ChatScrollHarness extends StatefulWidget {
     this.onLoadMore,
   });
 
-  final List<double> initialItemHeights;
+  final List<double> initialItemHeights; // старые -> новые
   final bool autoStartOpen;
   final bool hasMoreMessages;
   final VoidCallback? onLoadMore;
@@ -25,17 +27,22 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   final ScrollController scrollController = ScrollController();
 
   bool isLoading = true;
-  bool stickToBottom = true;
   bool initialOpenComplete = false;
   bool isLoadingMore = false;
   bool hasMoreMessages = true;
   int loadMoreCalls = 0;
-  late List<double> itemHeights;
+
+  late List<double> itemHeights; // старые -> новые
+  late List<int> _itemIds; // стабильные ключи
+  int _nextOldId = -1;
+  int _nextNewId = 0;
 
   @override
   void initState() {
     super.initState();
     itemHeights = List<double>.from(widget.initialItemHeights);
+    _itemIds = List<int>.generate(itemHeights.length, (i) => i);
+    _nextNewId = itemHeights.length;
     hasMoreMessages = widget.hasMoreMessages;
     scrollController.addListener(_onScroll);
     if (widget.autoStartOpen) {
@@ -53,14 +60,12 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
   void showListWithoutInitialScroll() {
     setState(() {
       isLoading = false;
-      stickToBottom = true;
       initialOpenComplete = false;
     });
   }
 
   Future<void> simulateOpenChat() async {
     isLoading = true;
-    stickToBottom = true;
     initialOpenComplete = false;
     loadMoreCalls = 0;
     setState(() {});
@@ -68,72 +73,25 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     isLoading = false;
     setState(() {});
 
-    if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-      stickToBottom: stickToBottom,
-      initialOpenComplete: initialOpenComplete,
-      messageCount: itemHeights.length,
-    )) {
-      _completeInitialOpenScroll();
-    } else if (ChatScrollPolicy.shouldMarkInitialOpenCompleteImmediately(
-      messageCount: itemHeights.length,
-    )) {
-      _markInitialOpenComplete();
-    }
+    // reverse:true → список открывается у низа сам, прокрутка не нужна.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => initialOpenComplete = true);
+    });
   }
 
-  void _markInitialOpenComplete() {
-    initialOpenComplete = true;
-    setState(() {});
-  }
-
-  void _completeInitialOpenScroll() {
-    if (initialOpenComplete) return;
-    _scrollToBottomAfterLayout(
-      attempts: 3,
-      onFinished: _markInitialOpenComplete,
-    );
-  }
-
-  void _scrollToBottomAfterLayout({
-    int attempts = 3,
-    VoidCallback? onFinished,
-  }) {
-    void tryScroll(int left) {
-      if (!mounted || left <= 0 || !stickToBottom) {
-        onFinished?.call();
-        return;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !stickToBottom) {
-          onFinished?.call();
-          return;
-        }
-        if (scrollController.hasClients && itemHeights.isNotEmpty) {
-          final maxScroll = scrollController.position.maxScrollExtent;
-          scrollController.jumpTo(maxScroll.clamp(0.0, double.infinity));
-        }
-        tryScroll(left - 1);
-      });
-    }
-
-    tryScroll(attempts);
-  }
-
+  /// Reload (E2EE/pull-to-refresh): позиция сохраняется reverse-списком.
   Future<void> simulateE2eeReload() async {
-    final stick = stickToBottom;
     isLoading = true;
     setState(() {});
-
     isLoading = false;
     setState(() {});
+  }
 
-    if (ChatScrollPolicy.shouldRunInitialScrollAfterLoad(
-      stickToBottom: stick,
-      initialOpenComplete: initialOpenComplete,
-      messageCount: itemHeights.length,
-    )) {
-      _completeInitialOpenScroll();
-    }
+  bool get isAtBottom {
+    if (!scrollController.hasClients) return true;
+    return ChatScrollPolicy.isAtBottom(
+      pixels: scrollController.position.pixels,
+    );
   }
 
   void growItemAt(int index, double newHeight) {
@@ -141,65 +99,22 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     setState(() => itemHeights[index] = newHeight);
   }
 
-  void simulateUserScrollUp() {
-    stickToBottom = false;
-    _markInitialOpenComplete();
-    setState(() {});
-  }
-
-  bool handleUserScrollNotification(UserScrollNotification notification) {
-    if (notification.depth != 0) return false;
-    final direction = notification.direction;
-    if (direction == ScrollDirection.reverse) {
-      stickToBottom = false;
-      _markInitialOpenComplete();
-    } else if (direction == ScrollDirection.forward &&
-        scrollController.hasClients &&
-        isNearBottom) {
-      stickToBottom = true;
-    }
-    return false;
-  }
-
-  /// Размеры контента изменились без скролла (рост фото/текста) — держим низ,
-  /// пока пользователь «прилип». Зеркалит production `_handleScrollMetricsNotification`.
-  bool handleScrollMetricsNotification(ScrollMetricsNotification notification) {
-    if (notification.depth != 0) return false;
-    if (notification.metrics.axis != Axis.vertical) return false;
-    if (stickToBottom) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _pinToBottomNow());
-    }
-    return false;
-  }
-
-  void _pinToBottomNow() {
-    if (!mounted || !stickToBottom) return;
-    if (!scrollController.hasClients || itemHeights.isEmpty) return;
-    final position = scrollController.position;
-    final max = position.maxScrollExtent;
-    if (max > 0 && (max - position.pixels) > 2) {
-      scrollController.jumpTo(max);
-    }
+  /// Новое (самое новое) сообщение — добавляется в конец данных (низ в reverse).
+  void appendNewMessage(double height) {
+    setState(() {
+      itemHeights.add(height);
+      _itemIds.add(_nextNewId++);
+    });
   }
 
   void _onScroll() {
     if (!scrollController.hasClients) return;
-
     final position = scrollController.position;
-
-    if (initialOpenComplete &&
-        stickToBottom &&
-        !ChatScrollPolicy.isNearBottom(
-          pixels: position.pixels,
-          maxScrollExtent: position.maxScrollExtent,
-        )) {
-      stickToBottom = false;
-    }
-
-    if (!ChatScrollPolicy.shouldTriggerLoadMoreOnScroll(
+    if (!ChatScrollPolicy.shouldLoadMoreOnScroll(
       isLoading: isLoading,
       initialOpenComplete: initialOpenComplete,
       pixels: position.pixels,
+      maxScrollExtent: position.maxScrollExtent,
     )) {
       return;
     }
@@ -209,36 +124,15 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
     loadMoreCalls += 1;
     widget.onLoadMore?.call();
 
-    final currentScrollPosition = scrollController.position.pixels;
-    final maxScrollExtentBefore = scrollController.position.maxScrollExtent;
-
     setState(() {
+      // Старые сообщения — в начало данных. В reverse это «выше» якоря-низа,
+      // позиция сохраняется автоматически (без пересчёта maxScrollExtent).
       itemHeights.insert(0, 56);
+      _itemIds.insert(0, _nextOldId--);
       itemHeights.insert(0, 56);
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!scrollController.hasClients || !mounted) return;
-      final maxScrollExtentAfter = scrollController.position.maxScrollExtent;
-      final newScrollPosition = ChatScrollPolicy.preserveViewportAfterPrepend(
-        currentScrollPosition: currentScrollPosition,
-        maxScrollExtentBefore: maxScrollExtentBefore,
-        maxScrollExtentAfter: maxScrollExtentAfter,
-      );
-      scrollController.jumpTo(
-        newScrollPosition.clamp(0.0, scrollController.position.maxScrollExtent),
-      );
+      _itemIds.insert(0, _nextOldId--);
       isLoadingMore = false;
-      setState(() {});
     });
-  }
-
-  bool get isNearBottom {
-    if (!scrollController.hasClients) return false;
-    return ChatScrollPolicy.isNearBottom(
-      pixels: scrollController.position.pixels,
-      maxScrollExtent: scrollController.position.maxScrollExtent,
-    );
   }
 
   @override
@@ -248,30 +142,27 @@ class ChatScrollHarnessState extends State<ChatScrollHarness> {
           ? const Center(child: CircularProgressIndicator())
           : itemHeights.isEmpty
           ? const Center(child: Text('empty'))
-          : NotificationListener<ScrollMetricsNotification>(
-              onNotification: handleScrollMetricsNotification,
-              child: NotificationListener<UserScrollNotification>(
-              onNotification: handleUserScrollNotification,
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: itemHeights.length,
-                itemBuilder: (context, index) {
-                  return SizedBox(
-                    key: ValueKey('item-$index-${itemHeights[index]}'),
-                    height: itemHeights[index],
-                    child: ColoredBox(
-                      color: index.isEven
-                          ? Colors.blue.withValues(alpha: 0.15)
-                          : Colors.green.withValues(alpha: 0.15),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('message $index'),
-                      ),
+          : ListView.builder(
+              controller: scrollController,
+              reverse: true,
+              itemCount: itemHeights.length,
+              itemBuilder: (context, index) {
+                // index 0 = низ = самое новое = последний элемент данных.
+                final dataIndex = itemHeights.length - 1 - index;
+                return SizedBox(
+                  key: ValueKey('item-${_itemIds[dataIndex]}'),
+                  height: itemHeights[dataIndex],
+                  child: ColoredBox(
+                    color: dataIndex.isEven
+                        ? Colors.blue.withValues(alpha: 0.15)
+                        : Colors.green.withValues(alpha: 0.15),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('message $dataIndex'),
                     ),
-                  );
-                },
-              ),
-            ),
+                  ),
+                );
+              },
             ),
     );
   }

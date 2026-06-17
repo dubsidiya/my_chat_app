@@ -337,7 +337,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
             '✅ First message ID: ${_messages.isNotEmpty ? _messages[0].id : "none"}',
           );
         }
-        _stickAndPinToBottom();
+        _scrollToBottom();
 
         // ✅ НЕ сохраняем временное сообщение в кэш сразу
         // Оно будет сохранено только после получения реального ответа от сервера
@@ -551,7 +551,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
               }
             }
 
-            _stickAndPinToBottom();
+            _scrollToBottom();
 
             // Принудительные обновления UI больше не нужны — список обновляется напрямую
 

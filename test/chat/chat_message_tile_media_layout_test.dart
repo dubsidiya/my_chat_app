@@ -60,13 +60,13 @@ void main() {
       expect(skeleton.width, 250);
     });
 
-    test('incoming message policy: near-bottom only', () {
+    test('incoming message policy: автоскролл только у низа', () {
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: true),
+        ChatScrollPolicy.shouldAutoScrollOnIncoming(atBottom: true),
         isTrue,
       );
       expect(
-        ChatScrollPolicy.shouldScrollOnIncomingMessages(stickToBottom: false),
+        ChatScrollPolicy.shouldAutoScrollOnIncoming(atBottom: false),
         isFalse,
       );
     });
