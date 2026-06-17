@@ -43,7 +43,20 @@ void main() {
       }).isLate, false);
     });
 
-    test('formationDateLabel uses local created_at time', () {
+    test('formationDateLabel prefers server formation_label', () {
+      final report = Report.fromJson({
+        'id': 1,
+        'report_date': '2025-03-01T00:00:00.000Z',
+        'content': 'x',
+        'is_late': false,
+        'created_at': '2025-03-02T10:00:00Z',
+        'formation_label': '02.03.2025 13:00',
+      });
+      expect(report.reportDayLabel, '01.03.2025');
+      expect(report.formationDateLabel, '02.03.2025 13:00');
+    });
+
+    test('formationDateLabel uses local created_at time when label missing', () {
       final report = Report.fromJson({
         'id': 1,
         'report_date': '2025-03-01',

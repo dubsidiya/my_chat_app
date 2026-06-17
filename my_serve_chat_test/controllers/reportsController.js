@@ -19,6 +19,10 @@ import {
   validateSlots,
 } from '../services/reports/reportHelpers.js';
 import {
+  serializeReportRow,
+  serializeReportRows,
+} from '../services/reports/reportSerializers.js';
+import {
   findAllReportsByUser,
   findMonthlyBreakdown,
   findMonthlyLessonCountsByPrice,
@@ -26,6 +30,7 @@ import {
   findMonthlyTotals,
   findReportAuthors,
   findReportByIdForViewer,
+  findReportByIdWithLabels,
   findReportLessons,
   findReportsList,
   findUserEmailById,
@@ -188,7 +193,7 @@ export const getAllReports = async (req, res) => {
 
     const result = await findAllReportsByUser(pool, userId);
 
-    res.json(result.rows);
+    res.json(serializeReportRows(result.rows));
   } catch (error) {
     console.error('Ошибка получения отчетов:', error);
     res.status(500).json({ message: 'Ошибка получения отчетов' });
@@ -218,9 +223,10 @@ export const getReportsList = async (req, res) => {
       createdBy: createdBy ?? undefined,
     });
 
-    const rows = result.rows.map((row) => ({
+    const rows = result.rows.map((row) => serializeReportRow({
       id: row.id,
       report_date: row.report_date,
+      report_date_text: row.report_date_text,
       content: row.content,
       is_late: row.is_late,
       created_by: row.created_by,
@@ -228,6 +234,7 @@ export const getReportsList = async (req, res) => {
       created_by_display_name: row.created_by_display_name || '',
       created_at: row.created_at,
       updated_at: row.updated_at,
+      formation_label: row.formation_label,
       lessons_count: row.lessons_count ?? 0,
       cancel_same_day_count: row.cancel_same_day_count ?? 0,
       missed_count: row.missed_count ?? 0,
@@ -351,7 +358,7 @@ export const getReport = async (req, res) => {
       report.created_by_email = u.rows[0]?.email ?? '';
     }
 
-    res.json(report);
+    res.json(serializeReportRow(report));
   } catch (error) {
     console.error('Ошибка получения отчета:', error);
     res.status(500).json({ message: 'Ошибка получения отчета' });
@@ -591,12 +598,19 @@ export const createReport = async (req, res) => {
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
 
+    const enrichedCreate = await findReportByIdWithLabels(client, report.id);
+    const apiReport = serializeReportRow(enrichedCreate.rows[0] ?? report);
+    apiReport.lessons = createdLessons;
+    apiReport.lessons_count = createdLessons.length;
+    apiReport.parsed_count = parsedLessons.length;
+    apiReport.created_count = createdLessons.length;
+
     await completeIdempotent(client, {
       userId,
       scope: 'reports:create',
       key: idempotencyKey,
       responseStatus: 201,
-      responseBody: report,
+      responseBody: apiReport,
     });
     // Аудит на отдельном соединении, чтобы ошибка/отсутствие audit_events не переводило транзакцию в 25P02
     await logAccountingEvent({
@@ -614,7 +628,7 @@ export const createReport = async (req, res) => {
     await syncReportLessonIncome(client, report.id, userId);
 
     await client.query('COMMIT');
-    return res.status(201).json(report);
+    return res.status(201).json(apiReport);
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     if (error?.code === '23505') {
@@ -901,6 +915,13 @@ export const updateReport = async (req, res) => {
     report.lessons_count = createdLessons.length;
     report.parsed_count = parsedLessons.length;
     report.created_count = createdLessons.length;
+
+    const enrichedUpdate = await findReportByIdWithLabels(client, reportId);
+    const apiReport = serializeReportRow(enrichedUpdate.rows[0] ?? report);
+    apiReport.lessons = createdLessons;
+    apiReport.lessons_count = createdLessons.length;
+    apiReport.parsed_count = parsedLessons.length;
+    apiReport.created_count = createdLessons.length;
     // Аудит на отдельном соединении — не трогаем client-транзакцию
     await logAccountingEvent({
       userId,
@@ -917,7 +938,7 @@ export const updateReport = async (req, res) => {
     await syncReportLessonIncome(client, reportId, userId);
 
     await client.query('COMMIT');
-    return res.json(report);
+    return res.json(apiReport);
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     if (error?.code === '23505') {
@@ -1059,7 +1080,8 @@ export const setReportNotLate = async (req, res) => {
       payload: { report_date: result.rows[0].report_date },
     });
     await client.query('COMMIT');
-    return res.json(result.rows[0]);
+    const enriched = await findReportByIdWithLabels(pool, reportId);
+    return res.json(serializeReportRow(enriched.rows[0] ?? result.rows[0]));
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('setReportNotLate:', error);

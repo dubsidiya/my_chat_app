@@ -1,15 +1,23 @@
 import { sqlUserAccountingNameOrEmpty } from '../../utils/userAccountingDisplaySql.js';
+import {
+  sqlFormationLabel,
+  sqlReportDateText,
+} from '../../services/reports/reportSqlFragments.js';
 
 export const findAllReportsByUser = async (db, userId) => {
   return db.query(
-    `SELECT r.*, COUNT(rl.lesson_id) as lessons_count,
+    `SELECT r.*,
+            ${sqlReportDateText('r')},
+            ${sqlFormationLabel('r', 'u')},
+            COUNT(rl.lesson_id) as lessons_count,
             COUNT(rl.lesson_id) FILTER (WHERE l.status = 'cancel_same_day')::int AS cancel_same_day_count,
             COUNT(rl.lesson_id) FILTER (WHERE l.status = 'missed')::int AS missed_count
      FROM reports r
+     JOIN users u ON r.created_by = u.id
      LEFT JOIN report_lessons rl ON r.id = rl.report_id
      LEFT JOIN lessons l ON l.id = rl.lesson_id
      WHERE r.created_by = $1
-     GROUP BY r.id
+     GROUP BY r.id, u.timezone
      ORDER BY r.report_date DESC, r.created_at DESC`,
     [userId]
   );
@@ -72,6 +80,8 @@ export const findReportsList = async (db, { dateFrom, dateTo, isLate, createdBy 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db.query(
     `SELECT r.*, u.email AS created_by_email,
+            ${sqlReportDateText('r')},
+            ${sqlFormationLabel('r', 'u')},
             ${sqlUserAccountingNameOrEmpty('u')} AS created_by_display_name,
             COUNT(rl.lesson_id)::int AS lessons_count,
             COUNT(rl.lesson_id) FILTER (WHERE l.status = 'cancel_same_day')::int AS cancel_same_day_count,
@@ -81,7 +91,7 @@ export const findReportsList = async (db, { dateFrom, dateTo, isLate, createdBy 
      LEFT JOIN report_lessons rl ON r.id = rl.report_id
      LEFT JOIN lessons l ON l.id = rl.lesson_id
      ${whereClause}
-     GROUP BY r.id, u.email, u.display_name
+     GROUP BY r.id, u.email, u.display_name, u.timezone
      ORDER BY r.report_date DESC, r.created_at DESC`,
     params
   );
@@ -149,11 +159,28 @@ export const findMonthlyLessonCountsByPrice = async (db, { userId, firstDay, las
 };
 
 export const findReportByIdForViewer = async (db, { reportId, userId, isSuper }) => {
+  const base = `
+    SELECT r.*,
+           ${sqlReportDateText('r')},
+           ${sqlFormationLabel('r', 'u')}
+    FROM reports r
+    JOIN users u ON r.created_by = u.id
+    WHERE r.id = $1`;
   return db.query(
-    isSuper
-      ? 'SELECT * FROM reports WHERE id = $1'
-      : 'SELECT * FROM reports WHERE id = $1 AND created_by = $2',
+    isSuper ? base : `${base} AND r.created_by = $2`,
     isSuper ? [reportId] : [reportId, userId]
+  );
+};
+
+export const findReportByIdWithLabels = async (db, reportId) => {
+  return db.query(
+    `SELECT r.*,
+            ${sqlReportDateText('r')},
+            ${sqlFormationLabel('r', 'u')}
+     FROM reports r
+     JOIN users u ON r.created_by = u.id
+     WHERE r.id = $1`,
+    [reportId]
   );
 };
 

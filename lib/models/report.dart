@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import '../utils/date_parse.dart';
+
 class Report {
   final int id;
   final DateTime reportDate;
@@ -19,6 +21,8 @@ class Report {
   final String? createdByEmail;
   /// ФИО / display_name создателя (приоритет над email в UI «Кто сдал»).
   final String? createdByDisplayName;
+  /// Время сдачи в TZ преподавателя (с сервера, DD.MM.YYYY HH:mm).
+  final String? formationLabel;
 
   Report({
     required this.id,
@@ -34,18 +38,23 @@ class Report {
     this.createdBy,
     this.createdByEmail,
     this.createdByDisplayName,
+    this.formationLabel,
   });
 
   static final DateFormat _reportDayFormat = DateFormat('dd.MM.yyyy');
   static final DateFormat _formationFormat = DateFormat('dd.MM.yyyy HH:mm');
 
   /// Календарный день отчёта (занятия).
-  String get reportDayLabel =>
-      _reportDayFormat.format(reportDate.toLocal());
+  String get reportDayLabel => _reportDayFormat.format(reportDate);
 
-  /// Локальное время сдачи отчёта на сервер (дата формирования).
-  String get formationDateLabel =>
-      _formationFormat.format(createdAt.toLocal());
+  /// Локальное время сдачи отчёта (TZ преподавателя с сервера, fallback — UTC→local).
+  String get formationDateLabel {
+    final fromServer = formationLabel?.trim();
+    if (fromServer != null && fromServer.isNotEmpty) return fromServer;
+    return _formationFormat.format(
+      serverInstantToLocal(createdAt),
+    );
+  }
 
   /// Подпись «кто сдал»: display_name, иначе email.
   String? get createdByLabel {
@@ -79,12 +88,12 @@ class Report {
 
     return Report(
       id: reportId,
-      reportDate: DateTime.parse(json['report_date'] as String),
+      reportDate: parseCalendarDate(json['report_date']),
       content: json['content'] as String,
       isLate: json['is_late'] == true,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseServerInstant(json['created_at']),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? parseServerInstant(json['updated_at'])
           : null,
       lessonsCount: json['lessons_count'] != null
           ? _parseInt(json['lessons_count'])
@@ -95,6 +104,7 @@ class Report {
       createdBy: _parseInt(json['created_by']),
       createdByEmail: json['created_by_email']?.toString(),
       createdByDisplayName: json['created_by_display_name']?.toString(),
+      formationLabel: json['formation_label']?.toString(),
     );
   }
 
