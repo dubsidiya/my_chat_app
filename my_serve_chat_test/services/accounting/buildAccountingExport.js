@@ -6,6 +6,7 @@ import {
   countMissedOnTypicalDow,
   computeTeacherQuality,
 } from './teacherWorkProfile.js';
+import { SALARY_SHARE, sqlLessonSalaryBase } from './salaryRules.js';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -445,8 +446,10 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     `WITH period_lessons AS (
        SELECT l.id, l.created_by, l.price, l.lesson_date,
               COALESCE(l.is_chargeable, true) AS is_chargeable,
+              ${sqlLessonSalaryBase('l', 's')} AS salary_base,
               r.id AS report_id, r.is_late
        FROM lessons l
+       LEFT JOIN students s ON s.id = l.student_id
        LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
        LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
        WHERE l.lesson_date >= $1::date AND l.lesson_date <= $2::date
@@ -457,6 +460,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
        COUNT(*) FILTER (WHERE is_chargeable)::int AS chargeable_lessons_count,
        COALESCE(SUM(CASE WHEN is_chargeable AND is_late = true THEN price ELSE 0 END), 0) AS late_amount,
        COALESCE(SUM(CASE WHEN is_chargeable AND (report_id IS NULL OR is_late IS DISTINCT FROM true) THEN price ELSE 0 END), 0) AS income_counted,
+       COALESCE(SUM(CASE WHEN is_chargeable AND (report_id IS NULL OR is_late IS DISTINCT FROM true) THEN salary_base ELSE 0 END), 0) AS income_counted_net,
        COALESCE(SUM(CASE WHEN is_chargeable AND report_id IS NULL THEN price ELSE 0 END), 0) AS no_report_amount
      FROM period_lessons
      WHERE created_by IS NOT NULL
@@ -468,15 +472,18 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
   for (const r of salariesRes.rows) {
     const tid = r.teacher_id;
     const income = toNumber(r.income_counted);
+    const incomeNet = toNumber(r.income_counted_net);
+    const bankTransferDeduction = Math.max(0, Math.round(income - incomeNet));
     salaryByTeacher.set(tid, {
       teacherId: tid,
       teacherUsername: teacherById.get(tid) || '',
       totalChargeable: toNumber(r.total_chargeable),
       lateAmount: toNumber(r.late_amount),
       incomeCounted: income,
+      bankTransferDeduction,
       noReportAmount: toNumber(r.no_report_amount),
       chargeableLessonsCount: Number(r.chargeable_lessons_count || 0),
-      salary: Math.round(income * 0.5),
+      salary: Math.round(incomeNet * SALARY_SHARE),
     });
     // Подхватим preподов, у которых не было ни одного занятия в периоде, но они есть в teacherStats.
     if (!teacherStatsMap.has(tid)) {
@@ -492,6 +499,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
         totalChargeable: 0,
         lateAmount: 0,
         incomeCounted: 0,
+        bankTransferDeduction: 0,
         noReportAmount: 0,
         chargeableLessonsCount: 0,
         salary: 0,
@@ -593,11 +601,12 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
       totalChargeable: acc.totalChargeable + s.totalChargeable,
       lateAmount: acc.lateAmount + s.lateAmount,
       incomeCounted: acc.incomeCounted + s.incomeCounted,
+      bankTransferDeduction: acc.bankTransferDeduction + (s.bankTransferDeduction || 0),
       noReportAmount: acc.noReportAmount + s.noReportAmount,
       chargeableLessonsCount: acc.chargeableLessonsCount + s.chargeableLessonsCount,
       salary: acc.salary + s.salary,
     }),
-    { totalChargeable: 0, lateAmount: 0, incomeCounted: 0, noReportAmount: 0, chargeableLessonsCount: 0, salary: 0 }
+    { totalChargeable: 0, lateAmount: 0, incomeCounted: 0, bankTransferDeduction: 0, noReportAmount: 0, chargeableLessonsCount: 0, salary: 0 }
   );
 
   return {

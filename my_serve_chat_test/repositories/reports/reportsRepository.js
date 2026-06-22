@@ -3,6 +3,7 @@ import {
   sqlFormationLabel,
   sqlReportDateText,
 } from '../../services/reports/reportSqlFragments.js';
+import { sqlLessonSalaryBase } from '../../services/accounting/salaryRules.js';
 
 export const findAllReportsByUser = async (db, userId) => {
   return db.query(
@@ -100,8 +101,11 @@ export const findReportsList = async (db, { dateFrom, dateTo, isLate, createdBy 
 export const findMonthlyTotals = async (db, { userId, firstDay, lastDayStr }) => {
   return db.query(
     `WITH month_lessons AS (
-       SELECT l.id, l.lesson_date, l.price, r.id AS report_id, r.is_late
+       SELECT l.id, l.lesson_date, l.price,
+              ${sqlLessonSalaryBase('l', 's')} AS salary_base,
+              r.id AS report_id, r.is_late
        FROM lessons l
+       LEFT JOIN students s ON s.id = l.student_id
        LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
        LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
        WHERE l.created_by = $1
@@ -111,7 +115,8 @@ export const findMonthlyTotals = async (db, { userId, firstDay, lastDayStr }) =>
      SELECT
        COALESCE(SUM(price), 0) AS total_all,
        COALESCE(SUM(CASE WHEN is_late = true THEN price ELSE 0 END), 0) AS late_amount,
-       COALESCE(SUM(CASE WHEN is_late IS DISTINCT FROM true THEN price ELSE 0 END), 0) AS income_counted
+       COALESCE(SUM(CASE WHEN is_late IS DISTINCT FROM true THEN price ELSE 0 END), 0) AS income_counted,
+       COALESCE(SUM(CASE WHEN is_late IS DISTINCT FROM true THEN salary_base ELSE 0 END), 0) AS income_counted_net
      FROM month_lessons`,
     [userId, firstDay, lastDayStr]
   );

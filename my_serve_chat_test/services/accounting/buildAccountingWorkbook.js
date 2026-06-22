@@ -145,6 +145,7 @@ const writeSummarySheet = (sheet, payload) => {
     addSectionRow('Зарплаты за период');
     addKV('Доход в зарплату', salariesTotals.incomeCounted || 0, { format: MONEY_FORMAT });
     addKV('Поздние отчёты (не в доход)', salariesTotals.lateAmount || 0, { format: MONEY_FORMAT });
+    addKV('-300 (расч. счёт)', salariesTotals.bankTransferDeduction || 0, { format: MONEY_FORMAT });
     addKV('Итого зарплат (50%)', salariesTotals.salary || 0, { format: MONEY_FORMAT });
   }
 
@@ -497,6 +498,7 @@ const writeSalariesSheet = (sheet, payload) => {
     { header: 'Из них в поздних отчётах', key: 'lateAmount', width: 22, style: { numFmt: MONEY_FORMAT } },
     { header: 'Без отчёта (входит в доход)', key: 'noReportAmount', width: 24, style: { numFmt: MONEY_FORMAT } },
     { header: 'Доход в зарплату', key: 'incomeCounted', width: 20, style: { numFmt: MONEY_FORMAT } },
+    { header: '- (расч. счёт)', key: 'bankTransferDeduction', width: 22, style: { numFmt: MONEY_FORMAT } },
     { header: 'Зарплата 50%', key: 'salary', width: 18, style: { numFmt: MONEY_FORMAT } },
   ];
 
@@ -510,6 +512,7 @@ const writeSalariesSheet = (sheet, payload) => {
       lateAmount: s.lateAmount,
       noReportAmount: s.noReportAmount,
       incomeCounted: s.incomeCounted,
+      bankTransferDeduction: s.bankTransferDeduction || 0,
       salary: s.salary,
     });
     row.getCell('salary').font = { bold: true, color: { argb: COLORS.okText } };
@@ -528,6 +531,7 @@ const writeSalariesSheet = (sheet, payload) => {
       lateAmount: t.lateAmount || 0,
       noReportAmount: t.noReportAmount || 0,
       incomeCounted: t.incomeCounted || 0,
+      bankTransferDeduction: t.bankTransferDeduction || 0,
       salary: t.salary || 0,
     });
     styleTotalsRow(totalsRow);
@@ -535,7 +539,7 @@ const writeSalariesSheet = (sheet, payload) => {
     const row = sheet.addRow({
       teacher: 'Нет платных занятий в выбранном периоде',
     });
-    sheet.mergeCells(`A${row.number}:G${row.number}`);
+    sheet.mergeCells(`A${row.number}:H${row.number}`);
     row.getCell(1).alignment = { horizontal: 'center' };
     row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
   }
@@ -543,9 +547,10 @@ const writeSalariesSheet = (sheet, payload) => {
   // Подсказка под таблицей, что считается зарплатой.
   sheet.addRow([]);
   const explainRow = sheet.addRow([
-    'Зарплата = 50% от суммы платных занятий (без поздних отчётов). Уроки без отчёта засчитываются в доход.',
+    'Зарплата = 50% от суммы платных занятий (без поздних отчётов). Уроки без отчёта засчитываются в доход. ' +
+      'На расчётный счёт - 300 ₽ ',
   ]);
-  sheet.mergeCells(`A${explainRow.number}:G${explainRow.number}`);
+  sheet.mergeCells(`A${explainRow.number}:H${explainRow.number}`);
   explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
   explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
 

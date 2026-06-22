@@ -290,7 +290,10 @@ export const getMonthlySalaryReport = async (req, res) => {
     const totalAll = Number(row?.total_all ?? 0);
     const lateAmount = Number(row?.late_amount ?? 0);
     const incomeCounted = Number(row?.income_counted ?? 0);
-    const salary = Math.round(incomeCounted * 0.5);
+    // По расчётному счёту с каждого занятия удерживается комиссия до расчёта 50%.
+    const incomeCountedNet = Number(row?.income_counted_net ?? incomeCounted);
+    const bankTransferDeduction = Math.max(0, Math.round(incomeCounted - incomeCountedNet));
+    const salary = Math.round(incomeCountedNet * 0.5);
 
     // Разбивка по отчётам за месяц (дата, поздний/нет, сумма)
     const breakdownResult = await findMonthlyBreakdown(pool, { userId, firstDay, lastDayStr });
@@ -319,6 +322,7 @@ export const getMonthlySalaryReport = async (req, res) => {
       total_all: totalAll,
       late_reports_amount: lateAmount,
       income_counted: incomeCounted,
+      bank_transfer_deduction: bankTransferDeduction,
       salary,
       report_breakdown: reportBreakdown,
       lessons_without_report_amount: lessonsWithoutReportAmount,

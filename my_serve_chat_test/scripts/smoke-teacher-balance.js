@@ -19,6 +19,10 @@ import {
   getMyTeacherBalance,
   postTeacherBalanceTransactionAdmin,
 } from '../controllers/teacherBalanceController.js';
+import {
+  sqlLessonSalaryBase,
+  lessonSalaryBase,
+} from '../services/accounting/salaryRules.js';
 
 const makeRes = () => ({
   statusCode: 200,
@@ -80,16 +84,18 @@ const run = async () => {
     console.warn('smoke-teacher-balance: SKIP admin payout check (нет суперпользователя)');
   }
 
+  // total — база зарплаты (с учётом удержания по расчётному счёту), как в computeReportIncomeAmount.
   const inPeriodReport = await pool.query(
     `SELECT r.id, r.created_by, r.is_late,
-            COALESCE(SUM(CASE WHEN COALESCE(l.is_chargeable, true) THEN l.price ELSE 0 END), 0) AS total
+            COALESCE(SUM(CASE WHEN COALESCE(l.is_chargeable, true) THEN ${sqlLessonSalaryBase('l', 's')} ELSE 0 END), 0) AS total
      FROM reports r
      LEFT JOIN report_lessons rl ON rl.report_id = r.id
      LEFT JOIN lessons l ON l.id = rl.lesson_id
+     LEFT JOIN students s ON s.id = l.student_id
      WHERE r.report_date >= $1::date
        AND r.is_late = false
      GROUP BY r.id
-     HAVING COALESCE(SUM(CASE WHEN COALESCE(l.is_chargeable, true) THEN l.price ELSE 0 END), 0) > 0
+     HAVING COALESCE(SUM(CASE WHEN COALESCE(l.is_chargeable, true) THEN ${sqlLessonSalaryBase('l', 's')} ELSE 0 END), 0) > 0
      ORDER BY r.id DESC
      LIMIT 1`,
     [TEACHER_BALANCE_SYNC_FROM]
@@ -139,11 +145,18 @@ const run = async () => {
   if (noReportLesson.rows.length > 0) {
     const lessonId = noReportLesson.rows[0].id;
     const lessonRow = await pool.query(
-      'SELECT price FROM lessons WHERE id = $1',
+      `SELECT l.price, COALESCE(s.pay_by_bank_transfer, false) AS pay_by_bank_transfer
+       FROM lessons l
+       LEFT JOIN students s ON s.id = l.student_id
+       WHERE l.id = $1`,
       [lessonId]
     );
     const computed = await computeLessonIncomeAmount(pool, lessonId);
-    const expected = Math.round(Number(lessonRow.rows[0].price) * 0.5);
+    const base = lessonSalaryBase(
+      lessonRow.rows[0].price,
+      lessonRow.rows[0].pay_by_bank_transfer === true
+    );
+    const expected = Math.round(base * 0.5);
     assertEq(computed?.amount, expected, 'no-report lesson income 50%');
   }
 

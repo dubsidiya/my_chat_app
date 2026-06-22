@@ -7,6 +7,9 @@ class MonthlySalaryReport {
   final double totalAll;
   final double lateReportsAmount;
   final double incomeCounted;
+
+  /// Удержание по занятиям с оплатой на расчётный счёт (300 ₽/занятие).
+  final double bankTransferDeduction;
   final int salary;
   final List<ReportDayRow> reportBreakdown;
   final double lessonsWithoutReportAmount;
@@ -21,6 +24,7 @@ class MonthlySalaryReport {
     required this.totalAll,
     required this.lateReportsAmount,
     required this.incomeCounted,
+    this.bankTransferDeduction = 0,
     required this.salary,
     required this.reportBreakdown,
     required this.lessonsWithoutReportAmount,
@@ -38,6 +42,7 @@ class MonthlySalaryReport {
       totalAll: _numToDouble(json['total_all']),
       lateReportsAmount: _numToDouble(json['late_reports_amount']),
       incomeCounted: _numToDouble(json['income_counted']),
+      bankTransferDeduction: _numToDouble(json['bank_transfer_deduction']),
       salary: json['salary'] is int ? json['salary'] as int : (_numToDouble(json['salary'])).round(),
       reportBreakdown: list != null
           ? list.map((e) => ReportDayRow.fromJson(e as Map<String, dynamic>)).toList()

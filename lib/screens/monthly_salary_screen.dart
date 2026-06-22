@@ -262,6 +262,17 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                       letterSpacing: 0.5,
                     ),
                   ),
+                  if (r.bankTransferDeduction > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'За вычетом ${_formatMoney(r.bankTransferDeduction)} по расч. счёту (300 ₽/занятие)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
                   if (_workBalance != null) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -311,6 +322,16 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
             _formatMoney(r.incomeCounted),
             subtitle: 'Поздние отчёты не входят в расчёт',
           ),
+          if (r.bankTransferDeduction > 0) ...[
+            const SizedBox(height: 10),
+            _rowCard(
+              scheme,
+              'Удержание (расчётный счёт)',
+              '− ${_formatMoney(r.bankTransferDeduction)}',
+              subtitle: '300 ₽ с занятия на комиссию и налоги',
+              isLate: true,
+            ),
+          ],
           const SizedBox(height: 10),
           _rowCard(
             scheme,

@@ -1,4 +1,9 @@
 import { sqlUserAccountingName } from '../../utils/userAccountingDisplaySql.js';
+import {
+  SALARY_SHARE,
+  sqlLessonSalaryBase,
+  lessonSalaryBase,
+} from './salaryRules.js';
 
 const PAYOUT_TYPES = new Set(['salary', 'advance']);
 
@@ -52,10 +57,12 @@ export const computeReportIncomeAmount = async (db, reportId) => {
   if (report.is_late === true) {
     return { teacherId: report.created_by, amount: 0, reportDate: report.report_date, isLate: true };
   }
+  // База зарплаты: по расчётному счёту с занятия удерживается комиссия (см. salaryRules).
   const sumRes = await db.query(
-    `SELECT COALESCE(SUM(l.price), 0) AS total
+    `SELECT COALESCE(SUM(${sqlLessonSalaryBase('l', 's')}), 0) AS total
      FROM report_lessons rl
      JOIN lessons l ON l.id = rl.lesson_id
+     LEFT JOIN students s ON s.id = l.student_id
      WHERE rl.report_id = $1
        AND COALESCE(l.is_chargeable, true) = true`,
     [reportId]
@@ -63,7 +70,7 @@ export const computeReportIncomeAmount = async (db, reportId) => {
   const total = toNumber(sumRes.rows[0]?.total);
   return {
     teacherId: report.created_by,
-    amount: roundMoney(total * 0.5),
+    amount: roundMoney(total * SALARY_SHARE),
     reportDate: report.report_date,
     isLate: false,
   };
@@ -72,8 +79,10 @@ export const computeReportIncomeAmount = async (db, reportId) => {
 export const computeLessonIncomeAmount = async (db, lessonId) => {
   const lessonRes = await db.query(
     `SELECT l.id, l.created_by, l.lesson_date, l.price, l.is_chargeable,
+            COALESCE(s.pay_by_bank_transfer, false) AS pay_by_bank_transfer,
             EXISTS (SELECT 1 FROM report_lessons rl WHERE rl.lesson_id = l.id) AS in_report
      FROM lessons l
+     LEFT JOIN students s ON s.id = l.student_id
      WHERE l.id = $1`,
     [lessonId]
   );
@@ -86,9 +95,10 @@ export const computeLessonIncomeAmount = async (db, lessonId) => {
   if (lesson.is_chargeable === false) {
     return { teacherId: lesson.created_by, amount: 0, lessonDate: lesson.lesson_date };
   }
+  const base = lessonSalaryBase(lesson.price, lesson.pay_by_bank_transfer === true);
   return {
     teacherId: lesson.created_by,
-    amount: roundMoney(toNumber(lesson.price) * 0.5),
+    amount: roundMoney(base * SALARY_SHARE),
     lessonDate: lesson.lesson_date,
   };
 };
