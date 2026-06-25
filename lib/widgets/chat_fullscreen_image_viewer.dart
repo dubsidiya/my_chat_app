@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'e2ee_image.dart';
+import 'chat_network_image.dart';
 
 /// Полноэкранный просмотр фото в стиле Telegram/WhatsApp: тёмный фон, зум, тап — закрыть.
 class ChatViewerImageItem {
@@ -169,7 +169,7 @@ class _ChatFullscreenImageViewerState extends State<ChatFullscreenImageViewer> {
                           maxScale: 5.0,
                           panEnabled: true,
                           clipBehavior: Clip.none,
-                          child: E2eeImage(
+                          child: ChatNetworkImage(
                             imageUrl: item.imageUrl,
                             chatId: widget.chatId,
                             fit: BoxFit.contain,

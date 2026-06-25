@@ -192,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       children: [
                         Text(
-                          'Reol',
+                          'Reollity',
                           style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.w800,

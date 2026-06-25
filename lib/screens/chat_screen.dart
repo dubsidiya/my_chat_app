@@ -26,7 +26,6 @@ import '../services/notification_feedback_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/voice_call_service.dart';
-import '../services/e2ee_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
@@ -91,12 +90,6 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
-  static const String _e2eeReady = 'ready';
-  static const String _e2eeMissing = 'missing';
-  static const String _e2eeRequesting = 'requesting';
-  static const String _e2eeRetryBackoff = 'retryBackoff';
-  static const String _e2eeFailed = 'failed';
-
   static Color get _accent1 => AppColors.primary;
   static Color get _accent2 => AppColors.primaryGlow;
   static Color get _accent3 => AppColors.accent;
@@ -174,8 +167,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _initialOpenComplete = false;
   bool _hasMoreMessages = true;
   String? _oldestMessageId;
-  bool _isWaitingForE2eeKey = false;
-  String _e2eeKeyState = _e2eeMissing;
   static const int _messagesPerPage = 50;
   String? _selectedImagePath;
   Uint8List? _selectedImageBytes;
@@ -740,9 +731,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       reactions: incoming.reactions ?? existing.reactions,
       isForwarded: incoming.isForwarded,
       originalChatName: incoming.originalChatName ?? existing.originalChatName,
-      keyVersion: incoming.keyVersion > 0
-          ? incoming.keyVersion
-          : existing.keyVersion,
     );
   }
 
@@ -2015,36 +2003,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       constraints: const BoxConstraints(),
                                     ),
                                   ],
-                                ),
-                              ),
-                            if (_e2eeStatusText() != null)
-                              Container(
-                                width: double.infinity,
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.08,
-                                  ),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: scheme.outline.withValues(
-                                      alpha: 0.2,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  _e2eeStatusText()!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: scheme.onSurface.withValues(
-                                      alpha: 0.8,
-                                    ),
-                                    fontWeight: FontWeight.w500,
-                                  ),
                                 ),
                               ),
                             // ✅ Индикатор записи голосового

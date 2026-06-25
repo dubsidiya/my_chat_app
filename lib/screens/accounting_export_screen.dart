@@ -580,7 +580,6 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     final teachers = (_data?['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final students = (_data?['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final tree = (_data?['tree'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final debug = _data?['debug'] as Map<String, dynamic>?;
     final bankTransferStudentIds = students
         .where((s) => s['payByBankTransfer'] == true)
         .map((s) => _parseStudentId(s['id']))
@@ -840,16 +839,9 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     if ((totals['lessonsCount'] ?? 0) == 0) ...[
                       const SizedBox(height: 8),
                       const Text(
-                        'В выбранном периоде занятий не найдено. Попробуй выбрать более широкий период.',
+                        'В выбранном периоде занятий не найдено. Попробуйте выбрать более широкий период.',
                         style: TextStyle(color: Colors.grey),
                       ),
-                      if (debug != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'debug: lessonsUpToTo=${debug['lessonsUpToTo']}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
-                      ],
                     ],
                   ],
                 ),

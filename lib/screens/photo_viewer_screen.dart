@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
-import '../widgets/e2ee_image.dart';
+import '../widgets/chat_network_image.dart';
 
 class PhotoViewerScreen extends StatelessWidget {
   final String imageUrl;
@@ -28,7 +28,7 @@ class PhotoViewerScreen extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.8,
           maxScale: 4.0,
-          child: E2eeImage(
+          child: ChatNetworkImage(
             imageUrl: imageUrl,
             chatId: chatId,
             fit: BoxFit.contain,

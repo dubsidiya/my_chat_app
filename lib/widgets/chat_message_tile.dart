@@ -8,7 +8,7 @@ import '../services/link_preview_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
 import '../utils/file_name_display.dart';
-import 'e2ee_image.dart';
+import 'chat_network_image.dart';
 import 'link_preview_card.dart';
 import 'mention_text.dart';
 import 'skeleton_placeholder.dart';
@@ -287,7 +287,7 @@ class ChatMessageTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 250, maxHeight: 400),
-                              child: E2eeImage(
+                              child: ChatNetworkImage(
                                 imageUrl: msg.imageUrl!,
                                 chatId: chatId,
                                 fit: BoxFit.contain,

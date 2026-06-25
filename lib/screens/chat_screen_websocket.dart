@@ -36,55 +36,10 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
               _lastWsReconnectHandledAt = now;
               _subscribedToChatRealtime = false;
               _subscribeToChatRealtime();
-              final currentChatId = widget.chatId.toString();
-              // После восстановления сокета подбираем отложенные E2EE-запросы.
-              unawaited(E2eeService.processPendingKeyRequests(currentChatId));
-              // Если ключ недоступен/в бэкоффе — мягко перезапускаем цикл запроса.
-              if (_e2eeKeyState != _ChatScreenState._e2eeReady) {
-                unawaited(_ensureE2eeKeyAndReloadIfMissing(currentChatId));
-              }
               // Единая точка ретрая очереди исходящих temp-сообщений.
               unawaited(_retryQueuedMessages());
               // После восстановления сети добираем возможные пропуски в истории.
               unawaited(_pollForNewMessages());
-            }
-            return;
-          }
-
-          // ✅ E2EE: другой участник запросил ключ чата — отдаём ему ключ, если он у нас есть
-          if (messageType == 'e2ee_request_key') {
-            final chatId = data['chatId']?.toString();
-            final requesterUserId = data['userId']?.toString();
-            final keyVersion = data['keyVersion'] is int
-                ? data['keyVersion'] as int
-                : int.tryParse((data['keyVersion'] ?? '').toString());
-            if (chatId != null) {
-              if (requesterUserId != null && requesterUserId.isNotEmpty) {
-                unawaited(
-                  E2eeService.shareChatKeyWithUsers(chatId, [
-                    requesterUserId,
-                  ], keyVersion: keyVersion),
-                );
-              } else {
-                unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
-              }
-            }
-            return;
-          }
-
-          // ✅ E2EE rotation after member leave/remove: leader bootstraps a fresh key for new version.
-          if (messageType == 'e2ee_key_rotated') {
-            final chatId = data['chatId']?.toString();
-            final keyVersion = data['keyVersion'] is int
-                ? data['keyVersion'] as int
-                : int.tryParse((data['keyVersion'] ?? '').toString());
-            final leaderUserId = data['leaderUserId']?.toString();
-            if (chatId == widget.chatId.toString() &&
-                keyVersion != null &&
-                keyVersion > 0) {
-              unawaited(
-                _handleE2eeKeyRotation(chatId!, keyVersion, leaderUserId),
-              );
             }
             return;
           }
@@ -221,7 +176,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                     readAt:
                         data['read_at']?.toString() ??
                         DateTime.now().toIso8601String(),
-                    keyVersion: msg.keyVersion,
                   );
                   _messages[index] = updatedMessage;
 
@@ -267,7 +221,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                       readAt:
                           data['read_at']?.toString() ??
                           DateTime.now().toIso8601String(),
-                      keyVersion: msg.keyVersion,
                     );
                   }
                 }
@@ -276,7 +229,7 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
             return;
           }
 
-          // ✅ Обработка события редактирования сообщения (E2EE: контент с сервера может быть зашифрован)
+          // ✅ Обработка события редактирования сообщения
           if (messageType == 'message_edited') {
             final messageId = data['id']?.toString();
             final chatIdWs = data['chat_id']?.toString();
@@ -314,7 +267,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                   reactions: msg.reactions,
                   isForwarded: msg.isForwarded,
                   originalChatName: msg.originalChatName,
-                  keyVersion: msg.keyVersion,
                 );
                 LocalMessagesService.updateMessage(widget.chatId, updatedRaw);
                 final displayMessage =
@@ -322,15 +274,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                       currentChatId,
                       updatedRaw,
                     );
-                if (E2eeService.isEncrypted(updatedRaw.content) &&
-                    displayMessage.content == '[зашифровано]') {
-                  unawaited(
-                    _ensureE2eeKeyAndReloadIfMissing(
-                      currentChatId,
-                      keyVersion: updatedRaw.keyVersion,
-                    ),
-                  );
-                }
                 if (mounted) {
                   setState(() {
                     _messages[index] = displayMessage;
@@ -409,7 +352,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                     reactions: currentReactions,
                     isForwarded: msg.isForwarded,
                     originalChatName: msg.originalChatName,
-                    keyVersion: msg.keyVersion,
                   );
 
                   // Обновляем в кэше
@@ -455,15 +397,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
                 widget.chatId.toString(),
                 rawMessage,
               );
-              if (E2eeService.isEncrypted(rawMessage.content) &&
-                  message.content == '[зашифровано]') {
-                unawaited(
-                  _ensureE2eeKeyAndReloadIfMissing(
-                    currentChatId,
-                    keyVersion: rawMessage.keyVersion,
-                  ),
-                );
-              }
               if (kDebugMode) {
                 print('Parsed message: ${message.id} - ${message.content}');
               }
@@ -680,9 +613,9 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
         if (kDebugMode) print('WebSocket error: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: const Duration(seconds: 3),
-              content: Text('Ошибка WebSocket: $error'),
+            const SnackBar(
+              duration: Duration(seconds: 3),
+              content: Text('Проблема с подключением. Переподключаемся…'),
             ),
           );
         }
@@ -716,9 +649,6 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
   Future<void> _initWebSocket() async {
     try {
       await WebSocketService.instance.connectIfNeeded();
-      unawaited(
-        E2eeService.processPendingKeyRequests(widget.chatId.toString()),
-      );
       if (mounted) {
         _setupWebSocketListener();
       }

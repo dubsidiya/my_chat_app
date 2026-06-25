@@ -167,7 +167,6 @@ extension _ChatScreenQueuePart on _ChatScreenState {
             createdAt: DateTime.now().toIso8601String(),
             replyToMessageId: draft.replyToMessageId,
             replyToMessage: draft.replyToMessage,
-            keyVersion: 1,
           ),
         );
       }
@@ -206,7 +205,6 @@ extension _ChatScreenQueuePart on _ChatScreenState {
       createdAt: DateTime.now().toIso8601String(),
       replyToMessageId: draft.replyToMessageId,
       replyToMessage: draft.replyToMessage,
-      keyVersion: 1,
     );
 
     setState(() {
@@ -388,15 +386,7 @@ extension _ChatScreenQueuePart on _ChatScreenState {
             _cleanupTempStateCache();
           });
         } catch (e) {
-          final isE2eeKeyError = e.toString().contains(
-            'E2EE ключ для чата пока недоступен',
-          );
-          if (isE2eeKeyError) {
-            unawaited(
-              _ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()),
-            );
-          }
-          final shouldStayQueued = isE2eeKeyError || _isQueueableSendError(e);
+          final shouldStayQueued = _isQueueableSendError(e);
           if (!mounted) break;
           setState(() {
             _tempMessageStates[temp.id] = shouldStayQueued

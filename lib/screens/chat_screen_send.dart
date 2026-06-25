@@ -73,10 +73,6 @@ extension _ChatScreenSendPart on _ChatScreenState {
       return;
     }
 
-    if (_e2eeKeyState != _ChatScreenState._e2eeReady) {
-      unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
-    }
-
     if (_isSendingMessage) return;
     _isSendingMessage = true;
 
@@ -303,7 +299,6 @@ extension _ChatScreenSendPart on _ChatScreenState {
         isRead: false,
         replyToMessageId: replyToMessageId,
         replyToMessage: replyToMessage,
-        keyVersion: 1,
       );
 
       // Собственное новое сообщение всегда показываем внизу. На web пересчёт layout
@@ -555,7 +550,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
 
             // Принудительные обновления UI больше не нужны — список обновляется напрямую
 
-            // Кэш обновляется в MessagesService на raw-ответе сервера, чтобы не сохранять plaintext E2EE.
+            // Кэш обновляется в MessagesService по ответу сервера.
           } else {
             if (kDebugMode) {
               print('⚠️ No message received from server response');
@@ -581,19 +576,11 @@ extension _ChatScreenSendPart on _ChatScreenState {
       } catch (e, stackTrace) {
         if (kDebugMode) print('❌ Error sending message: $e');
         if (kDebugMode) print('❌ Stack trace: $stackTrace');
-        final errorText = e.toString();
-        final isE2eeKeyError = errorText.contains(
-          'E2EE ключ для чата пока недоступен',
-        );
         final isQueueableNetworkError = _isQueueableSendError(e);
-        if (isE2eeKeyError) {
-          unawaited(_ensureE2eeKeyAndReloadIfMissing(widget.chatId.toString()));
-        }
 
         if (mounted) {
           setState(() {
-            _tempMessageStates[tempMessageId] =
-                (isE2eeKeyError || isQueueableNetworkError)
+            _tempMessageStates[tempMessageId] = isQueueableNetworkError
                 ? _OutgoingUiState.queued
                 : _OutgoingUiState.error;
           });
@@ -611,8 +598,6 @@ extension _ChatScreenSendPart on _ChatScreenState {
               content: Text(
                 isQueueableNetworkError
                     ? 'Нет сети: сообщение оставлено в очереди и будет отправлено при подключении.'
-                    : isE2eeKeyError
-                    ? 'Ожидаем ключ шифрования. Попробуйте отправить снова через пару секунд.'
                     : 'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
               ),
             ),

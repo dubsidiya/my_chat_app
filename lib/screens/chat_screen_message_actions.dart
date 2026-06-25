@@ -589,7 +589,6 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
                 reactions: prev.reactions,
                 isForwarded: prev.isForwarded,
                 originalChatName: prev.originalChatName,
-                keyVersion: prev.keyVersion,
               );
             }
           });

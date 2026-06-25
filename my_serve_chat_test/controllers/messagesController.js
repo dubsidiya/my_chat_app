@@ -502,10 +502,6 @@ export const sendMessage = async (req, res) => {
     return res.status(400).json({ message: `Текст сообщения не более ${MAX_MESSAGE_CONTENT_LENGTH} символов` });
   }
 
-  const pushPreviewRaw = push_preview != null && String(push_preview).trim() !== ''
-    ? sanitizeMessageContent(String(push_preview)).slice(0, MAX_PUSH_PREVIEW_LENGTH)
-    : '';
-
   // Пока упрощаем: нельзя одновременно image и file в одном сообщении (чтобы не плодить message_type)
   const inputImageRef = image_storage_key || image_url || null;
   const inputOriginalImageRef = original_image_storage_key || original_image_url || null;
@@ -918,23 +914,27 @@ export const sendMessage = async (req, res) => {
           const chatName = chatInfo.rows[0]?.name || 'Чат';
           const isGroup = chatInfo.rows[0]?.is_group ?? true;
           const title = 'Новое сообщение';
-          const looksLikeEncryptedText = (() => {
-            const raw = String(contentStr || '').trim();
-            if (!raw.startsWith('{')) return false;
+          const plainPreview = String(contentStr || '').trim();
+          // content зашифрован shared-key чата — в пуш нельзя класть шифротекст.
+          // Используем присланный клиентом push_preview (открытый сниппет) либо нейтральный текст.
+          const looksEncrypted = (() => {
+            if (!plainPreview.startsWith('{')) return false;
             try {
-              const d = JSON.parse(raw);
+              const d = JSON.parse(plainPreview);
               return Boolean(d && d.v === '1' && d.ct);
             } catch (_) {
               return false;
             }
           })();
-          const plainPreview = String(contentStr || '').trim();
+          const pushPreviewRaw = (push_preview != null && String(push_preview).trim() !== '')
+            ? sanitizeMessageContent(String(push_preview)).slice(0, MAX_PUSH_PREVIEW_LENGTH).trim()
+            : '';
           const isFile = Boolean(file_url);
           const mime = String(file_mime || '').toLowerCase();
           const isVoice = isFile && (mime.startsWith('audio/') || String(file_name || '').toLowerCase().endsWith('.m4a'));
           const isImage = Boolean(image_url);
-          const preview = looksLikeEncryptedText
-            ? (pushPreviewRaw.trim() || '🔐 Зашифрованное сообщение')
+          const preview = looksEncrypted
+            ? (pushPreviewRaw || '🔐 Новое сообщение')
             : isVoice
               ? '🎤 Голосовое сообщение'
               : isImage

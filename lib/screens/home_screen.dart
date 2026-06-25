@@ -10,8 +10,9 @@ import '../services/storage_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/voice_call_service.dart';
-import '../services/e2ee_service.dart';
 import '../services/local_messages_service.dart';
+import '../services/messages/messages_decrypt.dart';
+import '../services/chat_key_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_empty_state.dart';
 import '../widgets/skeleton_placeholder.dart';
@@ -54,18 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _displayName = widget.displayName;
     _avatarUrl = widget.avatarUrl;
-    unawaited(_ensureE2eeIdentity());
     _loadChats();
     _loadFolders();
     _subscribeToNewMessages();
-  }
-
-  Future<void> _ensureE2eeIdentity() async {
-    try {
-      await E2eeService.ensureKeyPair();
-    } catch (_) {
-      // Не блокируем загрузку домашнего экрана, если E2EE сервер временно недоступен.
-    }
   }
 
   @override
@@ -286,39 +278,8 @@ class _HomeScreenState extends State<HomeScreen> {
           return;
         }
         _lastWsReconnectHandledAt = now;
-        // Единая точка мягкого восстановления после реконнекта:
-        // обновляем список чатов и пробуем закрыть отложенные E2EE key-requests.
+        // Единая точка мягкого восстановления после реконнекта: обновляем список чатов.
         _scheduleLoadChats(immediate: true);
-        final chatIds = _chats.map((c) => c.id).where((id) => id.isNotEmpty).toSet();
-        for (final chatId in chatIds) {
-          unawaited(E2eeService.processPendingKeyRequests(chatId));
-        }
-        return;
-      }
-      if (event is Map && event['type'] == 'e2ee_request_key') {
-        final chatId = event['chatId']?.toString();
-        final requesterUserId = event['userId']?.toString();
-        final keyVersion = event['keyVersion'] is int
-            ? event['keyVersion'] as int
-            : int.tryParse((event['keyVersion'] ?? '').toString());
-        if (chatId != null) {
-          if (requesterUserId != null && requesterUserId.isNotEmpty) {
-            unawaited(E2eeService.shareChatKeyWithUsers(chatId, [requesterUserId], keyVersion: keyVersion));
-          } else {
-            unawaited(E2eeService.shareChatKeyWithNewMembers(chatId));
-          }
-        }
-        return;
-      }
-      if (event is Map && event['type'] == 'e2ee_key_rotated') {
-        final chatId = event['chatId']?.toString();
-        final keyVersion = event['keyVersion'] is int
-            ? event['keyVersion'] as int
-            : int.tryParse((event['keyVersion'] ?? '').toString());
-        final leaderUserId = event['leaderUserId']?.toString();
-        if (chatId != null && keyVersion != null && keyVersion > 0) {
-          unawaited(_handleE2eeKeyRotationEvent(chatId, keyVersion, leaderUserId));
-        }
         return;
       }
       // Новое сообщение в любой чат: поднимаем чат наверх и синхронизируем с сервером
@@ -331,29 +292,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     });
-  }
-
-  Future<void> _handleE2eeKeyRotationEvent(String chatId, int keyVersion, String? leaderUserId) async {
-    final myId = widget.userId.toString();
-    if (leaderUserId != null && leaderUserId == myId) {
-      try {
-        await E2eeService.ensureKeyPair();
-        final members = await _chatsService.getChatMembers(chatId);
-        final memberIds = members.map((m) => m['id']?.toString() ?? '').where((x) => x.isNotEmpty).toList();
-        final pubKeys = await E2eeService.fetchPublicKeys(memberIds);
-        final keysMembers = memberIds
-            .map((id) => <String, dynamic>{'id': id, 'publicKey': pubKeys[id] ?? ''})
-            .toList();
-        await E2eeService.createChatKey(chatId, keysMembers, keyVersion: keyVersion);
-        return;
-      } catch (_) {
-        // fall back to request path
-      }
-    }
-    try {
-      await E2eeService.requestChatKey(chatId, keyVersion: keyVersion);
-      await E2eeService.waitForChatKeyFromServer(chatId, keyVersion: keyVersion);
-    } catch (_) {}
   }
 
   @override
@@ -438,35 +376,35 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       var chats = await _chatsService.fetchChats(widget.userId);
-      chats = await Future.wait(
-        chats.map((c) async {
-          final text = c.lastMessageText;
-          if (text != null && E2eeService.isEncrypted(text)) {
-            final plain = await E2eeService.decryptMessage(c.id, text);
-            return Chat(
-              id: c.id,
-              name: c.name,
-              isGroup: c.isGroup,
-              folderId: c.folderId,
-              folderName: c.folderName,
-              otherUserId: c.otherUserId,
-              otherUserAvatarUrl: c.otherUserAvatarUrl,
-              lastMessageId: c.lastMessageId,
-              lastMessageText: plain,
-              lastMessageType: c.lastMessageType,
-              lastMessageImageUrl: c.lastMessageImageUrl,
-              lastMessageFileUrl: c.lastMessageFileUrl,
-              lastMessageFileName: c.lastMessageFileName,
-              lastMessageFileSize: c.lastMessageFileSize,
-              lastMessageFileMime: c.lastMessageFileMime,
-              lastMessageAt: c.lastMessageAt,
-              lastSenderEmail: c.lastSenderEmail,
-              unreadCount: c.unreadCount,
-            );
-          }
-          return c;
-        }),
-      );
+      // Расшифровываем превью последнего сообщения общим ключом чата.
+      // displayText вернёт открытый текст как есть, расшифрует шифротекст или
+      // подставит заглушку для нечитаемых legacy-сообщений.
+      chats = await Future.wait(chats.map((c) async {
+        final text = c.lastMessageText;
+        if (text == null || text.isEmpty) return c;
+        final plain = await MessagesDecrypt.displayText(c.id, text);
+        if (plain == text) return c;
+        return Chat(
+          id: c.id,
+          name: c.name,
+          isGroup: c.isGroup,
+          folderId: c.folderId,
+          folderName: c.folderName,
+          otherUserId: c.otherUserId,
+          otherUserAvatarUrl: c.otherUserAvatarUrl,
+          lastMessageId: c.lastMessageId,
+          lastMessageText: plain,
+          lastMessageType: c.lastMessageType,
+          lastMessageImageUrl: c.lastMessageImageUrl,
+          lastMessageFileUrl: c.lastMessageFileUrl,
+          lastMessageFileName: c.lastMessageFileName,
+          lastMessageFileSize: c.lastMessageFileSize,
+          lastMessageFileMime: c.lastMessageFileMime,
+          lastMessageAt: c.lastMessageAt,
+          lastSenderEmail: c.lastSenderEmail,
+          unreadCount: c.unreadCount,
+        );
+      }));
       final order = await StorageService.getChatOrder(widget.userId);
       if (mounted) {
         setState(() {
@@ -479,7 +417,6 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
       }
-      unawaited(_processPendingE2eeRequestsForChats(chats));
     } catch (e) {
       if (mounted) {
         setState(() => _loadError = e.toString().replaceFirst('Exception: ', ''));
@@ -497,15 +434,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
-    }
-  }
-
-  Future<void> _processPendingE2eeRequestsForChats(List<Chat> chats) async {
-    for (final chat in chats) {
-      if (chat.id.isEmpty) continue;
-      try {
-        await E2eeService.processPendingKeyRequests(chat.id);
-      } catch (_) {}
     }
   }
 
@@ -1248,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> {
               VoiceCallService.instance.reset();
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
-              await E2eeService.clearAll();
+              await ChatKeyService.clearAll();
               await LocalMessagesService.clearAll();
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
@@ -1566,7 +1494,7 @@ class _HomeScreenState extends State<HomeScreen> {
       VoiceCallService.instance.reset();
       WebSocketService.instance.disconnect();
       await PushNotificationService.clearTokenOnBackend();
-      await E2eeService.clearAll();
+      await ChatKeyService.clearAll();
       await LocalMessagesService.clearAll();
       // Закрываем индикатор загрузки
       if (mounted) {

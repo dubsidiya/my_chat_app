@@ -16,6 +16,7 @@
     "smoke:reports:permissions": "node scripts/smoke-reports-permissions.js",
     "smoke:reports:regressions": "node scripts/smoke-reports-regressions.js",
     "smoke:teacher-balance": "node scripts/smoke-teacher-balance.js",
+    "decrypt:legacy": "node scripts/decrypt-legacy-messages.js",
     "smoke:call:signaling": "node scripts/smoke-call-signaling.js",
     "smoke:all": "npm run smoke:accounting && npm run smoke:accounting:edge && npm run smoke:accounting:xlsx && npm run smoke:accounting:hidden-quality && npm run smoke:accounting:wallet && npm run smoke:audit:hardening && npm run smoke:routes:access && npm run smoke:reports:permissions && npm run smoke:reports:regressions",
     "migrate-passwords": "node migrate_passwords.js",

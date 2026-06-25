@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import '../../utils/timed_http.dart';
-import '../e2ee_service.dart';
+import '../chat_key_service.dart';
 
 const int forwardDownloadMaxBytes = 40 * 1024 * 1024;
 
@@ -16,18 +16,15 @@ Future<Uint8List> downloadUrlBytesForForward(String url) async {
   return Uint8List.fromList(r.bodyBytes);
 }
 
-Future<Uint8List> unwrapForwardImageBytes(
-  String sourceChatId,
-  Uint8List bytes,
-  int keyVersion,
-) async {
-  if (!E2eeService.looksLikeEncryptedBytes(bytes)) {
+/// Если байты зашифрованы ключом исходного чата — расшифровываем; иначе возвращаем как есть.
+Future<Uint8List> unwrapForwardImageBytes(String sourceChatId, Uint8List bytes) async {
+  if (!ChatKeyService.looksLikeEncryptedBytes(bytes)) {
     return bytes;
   }
-  final d = await E2eeService.decryptBytes(sourceChatId, bytes, keyVersion: keyVersion);
+  final d = await ChatKeyService.decryptBytes(sourceChatId, bytes);
   if (d == null) {
     throw Exception(
-      'Не удалось расшифровать изображение для пересылки. Откройте исходный чат и дождитесь ключа.',
+      'Не удалось расшифровать изображение для пересылки. Откройте исходный чат и попробуйте снова.',
     );
   }
   return d;
@@ -37,7 +34,7 @@ String forwardImageStubName(String imageUrl) {
   try {
     final segs = Uri.parse(imageUrl).pathSegments.where((s) => s.isNotEmpty).toList();
     if (segs.isNotEmpty) {
-      var seg = segs.last.replaceAll(RegExp(r'\.e2ee$', caseSensitive: false), '');
+      final seg = segs.last;
       if (seg.contains('.') && seg.length <= 200) return seg;
     }
   } catch (_) {}

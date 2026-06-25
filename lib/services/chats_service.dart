@@ -5,8 +5,6 @@ import '../models/chat_folder.dart';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
-import 'e2ee_service.dart';
-
 class ChatsService {
   final String baseUrl = ApiConfig.baseUrl;
   String? _lastCreateChatWarning;
@@ -112,27 +110,7 @@ class ChatsService {
             throw Exception('Неверный формат ответа сервера: ожидается объект');
           }
           final chat = Chat.fromJson(responseData);
-          final alreadyExists = responseData['already_exists'] == true;
           _lastCreateChatWarning = null;
-          if (!alreadyExists) {
-            // Сначала пробуем упрощённый путь: сервер уже сгенерировал общий ключ чата.
-            // Если общий ключ доступен — сразу кэшируем его локально и можно слать сообщения.
-            // Если backend старый и общего ключа нет — откатываемся на прежнюю схему с
-            // пер-юзерным шифрованием, чтобы не сломать существующие развёртывания.
-            try {
-              final shared = await E2eeService.getChatKey(chat.id);
-              if (shared == null) {
-                final pubKeys = await E2eeService.fetchPublicKeys(userIds);
-                final List<Map<String, dynamic>> members = userIds.map((uid) {
-                  return <String, dynamic>{'id': uid, 'publicKey': pubKeys[uid] ?? ''};
-                }).toList();
-                await E2eeService.createChatKey(chat.id, members);
-              }
-            } catch (_) {
-              _lastCreateChatWarning =
-                  'Чат создан, но ключ шифрования пока не синхронизирован. Откройте чат и подождите 10-20 секунд.';
-            }
-          }
           return chat;
         } catch (e) {
           throw Exception('Ошибка парсинга созданного чата: $e');

@@ -17,7 +17,6 @@ import bankStatementRoutes from './routes/bankStatement.js';
 import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
 import moderationRoutes from './routes/moderation.js';
-import e2eeRoutes from './routes/e2ee.js';
 import callsRoutes from './routes/calls.js';
 import { setupWebSocket } from './websocket/websocket.js';
 import pool from './db.js';
@@ -312,7 +311,7 @@ const isProd = process.env.NODE_ENV === 'production';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   // Для мобильных клиентов за одним NAT/IP (эмулятор + устройство) прежний лимит
-  // приводил к ложным 429 и ломал E2EE-обмен ключами.
+  // приводил к ложным 429.
   max: isProd ? 3000 : 50000,
   message: { message: 'Слишком много запросов с вашего адреса, попробуйте позже' },
   standardHeaders: true,
@@ -347,16 +346,6 @@ const apiLimiter = rateLimit({
   keyGenerator: (req) => getAuthAwareKey(req, 'api'),
 });
 
-// E2EE использует bursts при обмене ключами; выделяем более мягкий лимит.
-const e2eeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isProd ? 600 : 10000,
-  message: 'Слишком много E2EE-запросов, попробуйте позже',
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => getAuthAwareKey(req, 'e2ee'),
-});
-
 // Более строгий лимит для загрузок
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -379,7 +368,6 @@ app.use('/reports', apiLimiter);
 app.use('/admin', apiLimiter);
 app.use('/bank-statement', apiLimiter);
 app.use('/setup', apiLimiter);
-app.use('/e2ee', e2eeLimiter);
 
 // Строгий лимит на upload endpoints (messages + bank statement)
 app.use('/messages/upload-image', uploadLimiter);
@@ -396,7 +384,6 @@ app.use('/bank-statement', bankStatementRoutes);
 app.use('/setup', setupRoutes);
 app.use('/admin', adminRoutes);
 app.use('/moderation', moderationRoutes);
-app.use('/e2ee', e2eeRoutes);
 
 // 404 — не раскрываем структуру API
 app.use((req, res) => {

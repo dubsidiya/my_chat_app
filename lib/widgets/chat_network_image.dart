@@ -2,19 +2,20 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../services/e2ee_service.dart';
+import '../services/chat_key_service.dart';
 import '../utils/timed_http.dart';
 
-/// Изображение по URL; при [chatId] и зашифрованном ответе — расшифровывает ключом чата.
-class E2eeImage extends StatefulWidget {
+/// Изображение чата по URL. При [chatId] и зашифрованном ответе — расшифровывает
+/// его общим ключом чата; иначе показывает как обычную (кэшируемую) картинку.
+class ChatNetworkImage extends StatefulWidget {
   final String imageUrl;
   final String? chatId;
   final BoxFit fit;
   final int? memCacheWidth;
   final Widget Function(BuildContext, String)? placeholder;
-  final Widget Function(BuildContext, String, dynamic)? errorWidget;
+  final Widget Function(BuildContext, String, Object)? errorWidget;
 
-  const E2eeImage({
+  const ChatNetworkImage({
     super.key,
     required this.imageUrl,
     this.chatId,
@@ -25,10 +26,10 @@ class E2eeImage extends StatefulWidget {
   });
 
   @override
-  State<E2eeImage> createState() => _E2eeImageState();
+  State<ChatNetworkImage> createState() => _ChatNetworkImageState();
 }
 
-class _E2eeImageState extends State<E2eeImage> {
+class _ChatNetworkImageState extends State<ChatNetworkImage> {
   Future<Uint8List?>? _decryptFuture;
 
   bool get _hasChatId => widget.chatId != null && widget.chatId!.isNotEmpty;
@@ -40,36 +41,30 @@ class _E2eeImageState extends State<E2eeImage> {
   }
 
   @override
-  void didUpdateWidget(covariant E2eeImage oldWidget) {
+  void didUpdateWidget(covariant ChatNetworkImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final sourceChanged =
-        oldWidget.imageUrl != widget.imageUrl || oldWidget.chatId != widget.chatId;
-    if (!sourceChanged) return;
-    _primeFutureIfNeeded();
+    if (oldWidget.imageUrl != widget.imageUrl || oldWidget.chatId != widget.chatId) {
+      _primeFutureIfNeeded();
+    }
   }
 
   void _primeFutureIfNeeded() {
-    if (!_hasChatId) {
-      _decryptFuture = null;
-      return;
-    }
-    _decryptFuture = _fetchAndDecrypt(widget.imageUrl, widget.chatId!);
+    _decryptFuture = _hasChatId ? _fetchAndDecrypt(widget.imageUrl, widget.chatId!) : null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (!_hasChatId) {
-      return CachedNetworkImage(
+  Widget _plain() => CachedNetworkImage(
         imageUrl: widget.imageUrl,
         fit: widget.fit,
         memCacheWidth: widget.memCacheWidth,
         httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
         placeholder: widget.placeholder ?? (_, __) => const SizedBox.shrink(),
         errorWidget:
-            widget.errorWidget ??
-            (_, __, ___) => const Icon(Icons.broken_image_rounded),
+            widget.errorWidget ?? (_, __, ___) => const Icon(Icons.broken_image_rounded),
       );
-    }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_hasChatId) return _plain();
     return FutureBuilder<Uint8List?>(
       future: _decryptFuture,
       builder: (context, snapshot) {
@@ -80,35 +75,23 @@ class _E2eeImageState extends State<E2eeImage> {
         }
         final bytes = snapshot.data;
         if (bytes != null && bytes.isNotEmpty) {
-          return Image.memory(
-            bytes,
-            fit: widget.fit,
-            cacheWidth: widget.memCacheWidth,
-          );
+          return Image.memory(bytes, fit: widget.fit, cacheWidth: widget.memCacheWidth);
         }
-        return CachedNetworkImage(
-          imageUrl: widget.imageUrl,
-          fit: widget.fit,
-          memCacheWidth: widget.memCacheWidth,
-          httpHeaders: kIsWeb ? {'Access-Control-Allow-Origin': '*'} : null,
-          placeholder: widget.placeholder ?? (_, __) => const SizedBox.shrink(),
-          errorWidget:
-              widget.errorWidget ??
-              (_, __, ___) => const Icon(Icons.broken_image_rounded),
-        );
+        // Не зашифровано / не удалось расшифровать — пробуем как обычную картинку.
+        return _plain();
       },
     );
   }
 
-  /// Возвращает расшифрованные байты изображения или сырые, если не E2EE. null при ошибке.
+  /// Возвращает расшифрованные байты, сырые (если не зашифровано) или null при ошибке.
   static Future<Uint8List?> _fetchAndDecrypt(String url, String chatId) async {
     try {
       final response = await timedGet(Uri.parse(url), timeout: kHttpUploadTimeout);
       if (response.statusCode != 200) return null;
       final bytes = Uint8List.fromList(response.bodyBytes);
       if (bytes.isEmpty) return null;
-      if (E2eeService.looksLikeEncryptedBytes(bytes)) {
-        return E2eeService.decryptBytes(chatId, bytes);
+      if (ChatKeyService.looksLikeEncryptedBytes(bytes)) {
+        return ChatKeyService.decryptBytes(chatId, bytes);
       }
       return bytes;
     } catch (_) {

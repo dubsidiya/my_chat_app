@@ -32,7 +32,7 @@ class AccountingHubScreen extends StatelessWidget {
           _HubTile(
             icon: Icons.person_search_rounded,
             color: Colors.teal.shade700,
-            title: 'nagavisor1.0',
+            title: 'Сводка по преподавателю',
             subtitle: 'Качество, график, выплаты, отчёты и ученики в одной карточке',
             onTap: () => Navigator.push<void>(
               context,

@@ -313,7 +313,7 @@ class _TeacherPlacementCard extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onNagavisor,
                   icon: const Icon(Icons.person_search_rounded, size: 18),
-                  label: const Text('nagavisor1.0'),
+                  label: const Text('Сводка'),
                 ),
               ],
             ),

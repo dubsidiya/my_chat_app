@@ -1,8 +1,6 @@
 import crypto from 'crypto';
 import pool from '../db.js';
 import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
-import { getWebSocketClients } from '../websocket/websocket.js';
-import { findChatMemberIds } from '../repositories/chats/chatsCommonRepository.js';
 import {
   hasChatFoldersTable,
   hasChatUsersFolderColumn,
@@ -74,43 +72,10 @@ const generateInviteCode = () => {
 
 const ensureChatMember = async (chatId, userId) => ensureChatMemberAccess(pool, chatId, userId);
 
-const notifyChatKeyRotated = async (chatId, keyVersion) => {
-  try {
-    const members = await findChatMemberIds(pool, chatId);
-    if (!members.rows.length) return;
-
-    const clients = getWebSocketClients();
-    let leaderUserId = null;
-    for (const row of members.rows) {
-      const uid = row.user_id?.toString();
-      if (!uid) continue;
-      const ws = clients.get(uid);
-      if (ws && ws.readyState === 1) {
-        leaderUserId = uid;
-        break;
-      }
-    }
-    if (!leaderUserId) {
-      leaderUserId = members.rows[0]?.user_id?.toString() || null;
-    }
-    const payload = JSON.stringify({
-      type: 'e2ee_key_rotated',
-      chatId: String(chatId),
-      keyVersion,
-      leaderUserId,
-    });
-    for (const row of members.rows) {
-      const uid = row.user_id?.toString();
-      if (!uid) continue;
-      const ws = clients.get(uid);
-      if (ws && ws.readyState === 1) {
-        ws.send(payload);
-      }
-    }
-  } catch (e) {
-    console.error('Ошибка notifyChatKeyRotated:', e);
-  }
-};
+// Простой shared-key чата: один AES-256 ключ (base64) на чат, который сервер
+// генерирует и выдаёт участникам. Клиент шифрует/расшифровывает им сообщения.
+// Это не E2EE (ключ хранится на сервере), а защита содержимого в БД «от посторонних глаз».
+const generateSharedChatKeyB64 = () => crypto.randomBytes(32).toString('base64');
 
 // Получение всех чатов пользователя
 export const getUserChats = async (req, res) => {
@@ -540,16 +505,11 @@ export const createChat = async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // Упрощённый E2EE: сервер сразу генерирует общий AES-ключ чата (base64).
-      // Любой будущий участник заберёт его через GET /e2ee/chat/:id/shared-key,
-      // ждать второго пользователя и обменов через X25519 не нужно.
-      const sharedChatKey = crypto.randomBytes(32).toString('base64');
-
       chatResult = await client.query(
         `INSERT INTO chats (name, is_group, created_by, shared_chat_key)
          VALUES ($1, $2, $3, $4)
          RETURNING id, name, is_group, created_by`,
-        [finalName, isGroup, creatorId, sharedChatKey]
+        [finalName, isGroup, creatorId, generateSharedChatKeyB64()]
       );
 
       chatId = chatResult.rows[0].id;
@@ -581,6 +541,56 @@ export const createChat = async (req, res) => {
   } catch (error) {
     console.error("Ошибка createChat:", error);
     res.status(500).json({ message: "Ошибка создания чата" });
+  }
+};
+
+// Выдача shared-key чата участнику. Если ключа ещё нет (старый чат или чат,
+// созданный в период без генерации) — лениво создаём и сохраняем. Только для участников.
+export const getSharedChatKey = async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const userId = req.user.userId;
+    if (!chatId) return res.status(400).json({ message: 'Укажите ID чата' });
+
+    const isMember = await ensureChatMember(chatId, userId);
+    if (!isMember) {
+      // 404, чтобы не раскрывать существование чужого чата
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+
+    const existing = await pool.query(
+      'SELECT shared_chat_key FROM chats WHERE id = $1',
+      [chatId]
+    );
+    if (!existing.rows.length) {
+      return res.status(404).json({ message: 'Чат не найден' });
+    }
+
+    let key = existing.rows[0].shared_chat_key;
+    if (!key || key === '') {
+      key = generateSharedChatKeyB64();
+      // Не перезаписываем, если параллельный запрос уже создал ключ.
+      const updated = await pool.query(
+        `UPDATE chats SET shared_chat_key = $1
+         WHERE id = $2 AND (shared_chat_key IS NULL OR shared_chat_key = '')
+         RETURNING shared_chat_key`,
+        [key, chatId]
+      );
+      if (updated.rows.length && updated.rows[0].shared_chat_key) {
+        key = updated.rows[0].shared_chat_key;
+      } else {
+        const reread = await pool.query(
+          'SELECT shared_chat_key FROM chats WHERE id = $1',
+          [chatId]
+        );
+        key = reread.rows[0]?.shared_chat_key || key;
+      }
+    }
+
+    return res.status(200).json({ key });
+  } catch (error) {
+    console.error('Ошибка getSharedChatKey:', error);
+    return res.status(500).json({ message: 'Ошибка получения ключа чата' });
   }
 };
 
@@ -884,11 +894,6 @@ export const removeMemberFromChat = async (req, res) => {
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId]
     );
-    // E2EE: отзываем ключ чата у удалённого — с нового устройства ключ получить нельзя
-    await pool.query(
-      'DELETE FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
-      [chatId, targetUserId]
-    );
 
     // Обновляем is_group, если участников стало 1 или меньше
     const newCount = await pool.query(
@@ -897,32 +902,11 @@ export const removeMemberFromChat = async (req, res) => {
     );
     const newCountValue = parseInt(newCount.rows[0].count);
 
-    let rotatedToVersion = null;
-    if (newCountValue > 0) {
-      // E2EE hardening: rotate active chat key version after member removal.
-      const rotated = await pool.query(
-        'UPDATE chats SET current_key_version = current_key_version + 1 WHERE id = $1 RETURNING current_key_version',
-        [chatId]
-      );
-      rotatedToVersion = parseInt(rotated.rows[0]?.current_key_version, 10) || null;
-      if (rotatedToVersion != null) {
-        // Ensure the new version starts clean; history keys for old versions remain intact.
-        await pool.query(
-          'DELETE FROM chat_keys WHERE chat_id = $1 AND key_version = $2',
-          [chatId, rotatedToVersion]
-        );
-      }
-    }
-
     if (newCountValue <= 1) {
       await pool.query(
         'UPDATE chats SET is_group = false WHERE id = $1',
         [chatId]
       );
-    }
-
-    if (rotatedToVersion != null) {
-      await notifyChatKeyRotated(chatId, rotatedToVersion);
     }
 
     res.status(200).json({ message: "Участник успешно удален из чата" });
@@ -1010,11 +994,6 @@ export const leaveChat = async (req, res) => {
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
-    // E2EE: отзываем ключ чата у вышедшего — с нового устройства ключ получить нельзя
-    await pool.query(
-      'DELETE FROM chat_keys WHERE chat_id = $1 AND user_id = $2',
-      [chatId, userId]
-    );
 
     // Обновляем is_group, если участников стало 1 или меньше
     const newCount = await pool.query(
@@ -1023,31 +1002,11 @@ export const leaveChat = async (req, res) => {
     );
     const newCountValue = parseInt(newCount.rows[0].count);
 
-    let rotatedToVersion = null;
-    if (newCountValue > 0) {
-      // E2EE hardening: rotate active chat key version after a member leaves.
-      const rotated = await pool.query(
-        'UPDATE chats SET current_key_version = current_key_version + 1 WHERE id = $1 RETURNING current_key_version',
-        [chatId]
-      );
-      rotatedToVersion = parseInt(rotated.rows[0]?.current_key_version, 10) || null;
-      if (rotatedToVersion != null) {
-        await pool.query(
-          'DELETE FROM chat_keys WHERE chat_id = $1 AND key_version = $2',
-          [chatId, rotatedToVersion]
-        );
-      }
-    }
-
     if (newCountValue <= 1) {
       await pool.query(
         'UPDATE chats SET is_group = false WHERE id = $1',
         [chatId]
       );
-    }
-
-    if (rotatedToVersion != null) {
-      await notifyChatKeyRotated(chatId, rotatedToVersion);
     }
 
     res.status(200).json({ message: "Вы успешно вышли из чата" });

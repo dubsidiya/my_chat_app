@@ -177,7 +177,7 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
           if (_hiddenCount > 0)
             IconButton(
               icon: Icon(_showHidden ? Icons.visibility_off_rounded : Icons.visibility_rounded),
-              tooltip: _showHidden ? 'Скрыть список тестовых' : 'Показать скрытых ($_hiddenCount)',
+              tooltip: _showHidden ? 'Скрыть скрытых преподавателей' : 'Показать скрытых ($_hiddenCount)',
               onPressed: () => setState(() => _showHidden = !_showHidden),
             ),
           IconButton(
@@ -248,7 +248,7 @@ class _TeacherPayrollScreenState extends State<TeacherPayrollScreen> {
                                     visualDensity: VisualDensity.compact,
                                     constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                     icon: Icon(Icons.person_search_rounded, size: 22, color: AppColors.primary),
-                                    tooltip: 'nagavisor1.0',
+                                    tooltip: 'Сводка по преподавателю',
                                     onPressed: () {
                                       Navigator.push<void>(
                                         context,

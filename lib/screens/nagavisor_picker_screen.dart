@@ -76,7 +76,7 @@ class _NagavisorPickerScreenState extends State<NagavisorPickerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('nagavisor1.0'),
+        title: const Text('Сводка по преподавателю'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
@@ -134,7 +134,7 @@ class _NagavisorPickerScreenState extends State<NagavisorPickerScreen> {
                                 child: Icon(Icons.person_search_rounded, color: AppColors.primary),
                               ),
                               title: Text(t.label, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: const Text('Открыть nagavisor1.0'),
+                              subtitle: const Text('Открыть сводку'),
                               trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: () => _openNagavisor(t),
                             ),

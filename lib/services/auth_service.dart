@@ -4,8 +4,6 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
-import 'e2ee_service.dart';
-
 class AuthService {
   final String baseUrl = ApiConfig.baseUrl;
 
@@ -38,7 +36,6 @@ class AuthService {
           );
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
         }
-        try { await E2eeService.ensureKeyPair(password: password); } catch (_) {}
         return data;
       } else if (response.statusCode == 500) {
         // Пробуем распарсить сообщение об ошибке
@@ -86,7 +83,6 @@ class AuthService {
           );
           await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
         }
-        try { await E2eeService.ensureKeyPair(password: password); } catch (_) {}
         return true;
       } else if (response.statusCode == 400) {
         // Пробуем распарсить сообщение об ошибке
@@ -217,12 +213,6 @@ class AuthService {
               displayName: userData['displayName'],
               avatarUrl: userData['avatarUrl'],
             );
-          }
-          // E2EE: перешифровать бэкап ключей новым паролем, чтобы после переустановки ключи восстанавливались по новому паролю
-          try {
-            await E2eeService.backupKeysWithPassword(newPassword);
-          } catch (_) {
-            // Ключей может ещё не быть — не блокируем смену пароля
           }
         }
         return;

@@ -288,7 +288,7 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                           );
                         },
                         icon: const Icon(Icons.person_search_rounded),
-                        label: const Text('nagavisor1.0'),
+                        label: const Text('Сводка'),
                       ),
                     ),
                   ],

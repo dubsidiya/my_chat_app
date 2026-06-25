@@ -3,138 +3,6 @@
 part of 'chat_screen.dart';
 
 extension _ChatScreenMessagesSyncPart on _ChatScreenState {
-  /// E2EE: после requestChatKey ждём появления ключа на сервере и перерисовываем сообщения (расшифровка чужих).
-  Future<void> _retryChatKeyThenReloadMessages(
-    String chatIdStr, {
-    int? keyVersion,
-  }) async {
-    if (_isWaitingForE2eeKey) return;
-    _isWaitingForE2eeKey = true;
-    if (mounted) {
-      setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
-    }
-    _showE2eeWaitingSnack();
-    final obtained = await E2eeService.waitForChatKeyFromServer(
-      chatIdStr,
-      keyVersion: keyVersion,
-    );
-    _isWaitingForE2eeKey = false;
-    if (obtained && mounted) {
-      setState(() => _e2eeKeyState = _ChatScreenState._e2eeReady);
-      _hideE2eeWaitingSnack();
-      _showE2eeReadySnack();
-      await _loadMessages();
-      unawaited(_retryQueuedMessages());
-    } else if (mounted) {
-      setState(() => _e2eeKeyState = _ChatScreenState._e2eeRetryBackoff);
-      _hideE2eeWaitingSnack();
-    }
-  }
-
-  Future<void> _ensureE2eeKeyAndReloadIfMissing(
-    String chatIdStr, {
-    int? keyVersion,
-  }) async {
-    if (_isWaitingForE2eeKey) return;
-    if (mounted) {
-      setState(() => _e2eeKeyState = _ChatScreenState._e2eeRequesting);
-    }
-    await E2eeService.requestChatKey(chatIdStr, keyVersion: keyVersion);
-    unawaited(
-      _retryChatKeyThenReloadMessages(chatIdStr, keyVersion: keyVersion),
-    );
-  }
-
-  Future<void> _handleE2eeKeyRotation(
-    String chatIdStr,
-    int keyVersion,
-    String? leaderUserId,
-  ) async {
-    if (!mounted) return;
-    setState(() => _e2eeKeyState = _ChatScreenState._e2eeMissing);
-
-    final myId = widget.userId.toString();
-    final isLeader = leaderUserId != null && leaderUserId == myId;
-    if (isLeader) {
-      try {
-        await E2eeService.ensureKeyPair();
-        final members = await _chatsService.getChatMembers(chatIdStr);
-        final memberIds = members
-            .map((m) => m['id']?.toString() ?? '')
-            .where((x) => x.isNotEmpty)
-            .toList();
-        final pubKeys = await E2eeService.fetchPublicKeys(memberIds);
-        final keysMembers = memberIds
-            .map(
-              (id) => <String, dynamic>{
-                'id': id,
-                'publicKey': pubKeys[id] ?? '',
-              },
-            )
-            .toList();
-        await E2eeService.createChatKey(
-          chatIdStr,
-          keysMembers,
-          keyVersion: keyVersion,
-        );
-        if (mounted) {
-          setState(() => _e2eeKeyState = _ChatScreenState._e2eeReady);
-          _showE2eeReadySnack();
-        }
-        await _loadMessages();
-        return;
-      } catch (_) {
-        // Fall through to request/retry path.
-      }
-    }
-
-    await _ensureE2eeKeyAndReloadIfMissing(chatIdStr, keyVersion: keyVersion);
-  }
-
-  String? _e2eeStatusText() {
-    switch (_e2eeKeyState) {
-      case _ChatScreenState._e2eeReady:
-        return null;
-      case _ChatScreenState._e2eeMissing:
-        return 'Ключ шифрования отсутствует. Запрашиваем...';
-      case _ChatScreenState._e2eeRequesting:
-        return 'Ожидаем ключ шифрования от собеседника...';
-      case _ChatScreenState._e2eeRetryBackoff:
-        return 'Ключ не получен, повторим запрос автоматически.';
-      case _ChatScreenState._e2eeFailed:
-        return 'Не удалось получить ключ шифрования.';
-      default:
-        return 'Ключ шифрования отсутствует. Запрашиваем...';
-    }
-  }
-
-  void _showE2eeWaitingSnack() {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 20),
-        content: Text('Ожидаем ключ шифрования от собеседника...'),
-      ),
-    );
-  }
-
-  void _hideE2eeWaitingSnack() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-  }
-
-  void _showE2eeReadySnack() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        content: Text('Ключ шифрования получен. Сообщения обновлены.'),
-      ),
-    );
-  }
-
   Future<void> _loadMessages() async {
     if (!mounted) return;
     // Были ли мы у низа до перезагрузки — чтобы решить, возвращать ли к низу.
@@ -145,12 +13,6 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       _hasMoreMessages = true;
       _oldestMessageId = null;
     });
-
-    // Для аккаунтов, которые вошли по сохранённому токену (без ввода пароля),
-    // гарантируем локальную E2EE-пару и публикацию public key перед обменом ключами чата.
-    try {
-      await E2eeService.ensureKeyPair();
-    } catch (_) {}
 
     // Восстанавливаем отложенные вложения/голосовые, пережившие перезапуск приложения.
     await _restorePendingUploadDrafts();
@@ -220,58 +82,9 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
           _oldestMessageId = result.oldestMessageId;
           _markMessagesSeen(_messages.map((m) => m.id));
         });
-
-        // E2EE: считаем требуемую (самую новую в истории) версию ключа.
-        final newestMessageKeyVersion = result.messages.fold<int>(
-          1,
-          (best, m) => m.keyVersion > best ? m.keyVersion : best,
-        );
-        final knownCurrentVersion = await E2eeService.getCurrentKeyVersion(
-          widget.chatId.toString(),
-        );
-        final requiredKeyVersion =
-            knownCurrentVersion != null &&
-                knownCurrentVersion > newestMessageKeyVersion
-            ? knownCurrentVersion
-            : newestMessageKeyVersion;
-        await E2eeService.markCurrentKeyVersion(
-          widget.chatId.toString(),
-          requiredKeyVersion,
-        );
-
-        // E2EE: если у нас есть ключ требуемой версии — отдать участникам без ключа; иначе запросить именно эту версию.
-        final chatIdStr = widget.chatId.toString();
-        final hasKey =
-            await E2eeService.getChatKey(
-              chatIdStr,
-              keyVersion: requiredKeyVersion,
-            ) !=
-            null;
-        if (hasKey) {
-          if (mounted) {
-            setState(() => _e2eeKeyState = _ChatScreenState._e2eeReady);
-          }
-          await E2eeService.shareChatKeyWithNewMembers(chatIdStr);
-          await E2eeService.processPendingKeyRequests(chatIdStr);
-        } else {
-          if (mounted) {
-            setState(() => _e2eeKeyState = _ChatScreenState._e2eeMissing);
-          }
-          await E2eeService.requestChatKey(
-            chatIdStr,
-            keyVersion: requiredKeyVersion,
-          );
-          unawaited(
-            _retryChatKeyThenReloadMessages(
-              chatIdStr,
-              keyVersion: requiredKeyVersion,
-            ),
-          );
-        }
       }
     } catch (e) {
       if (kDebugMode) print('Error loading messages: $e');
-      if (mounted) setState(() => _e2eeKeyState = _ChatScreenState._e2eeFailed);
       // ✅ Если ошибка, но есть кэш - не показываем ошибку
       if (_messages.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -298,8 +111,8 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       if (mounted) {
         setState(() => _isLoading = false);
         // reverse:true → чат открывается у низа сам, прокрутка не нужна.
-        // После reload (E2EE/pull-to-refresh): если были у низа — останемся у
-        // низа; при чтении истории позиция сохраняется reverse-списком.
+        // При pull-to-refresh: если были у низа — останемся у низа; при чтении
+        // истории позиция сохраняется reverse-списком.
         if (wasAtBottom) _scrollToBottom(animated: false);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _markInitialOpenComplete();
@@ -379,6 +192,4 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       }
     }
   }
-
-  // ✅ Виджет для отображения статуса сообщения
 }

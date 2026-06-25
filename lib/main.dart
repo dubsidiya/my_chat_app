@@ -108,13 +108,14 @@ class _BootstrapAppState extends State<_BootstrapApp> {
           );
         }
         if (snapshot.hasError) {
-          return MaterialApp(
+          return const MaterialApp(
+            debugShowCheckedModeBanner: false,
             home: Scaffold(
               body: Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.all(24),
                   child: Text(
-                    'Ошибка запуска: ${snapshot.error}',
+                    'Не удалось запустить приложение. Проверьте подключение к интернету и попробуйте снова.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -276,7 +277,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return _AutoHideScaffoldMessenger(
           child: MaterialApp(
             navigatorKey: navigatorKey,
-            title: 'Chat App',
+            title: 'Reollity',
             theme: theme,
             home: FutureBuilder<Map<String, dynamic>?>(
               future: _sessionFuture,

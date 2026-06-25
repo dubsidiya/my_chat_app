@@ -1,20 +1,24 @@
 import '../../models/message.dart';
-import '../e2ee_service.dart';
+import '../chat_key_service.dart';
 
-/// Расшифровка сообщений для отображения (E2EE + вложенный reply).
+/// Расшифровка сообщений для отображения (общий ключ чата).
+///
+/// Новые сообщения шифруются shared-key чата. Сообщения старых (legacy X25519)
+/// чатов сервер расшифровать не может — для них показываем нейтральную заглушку.
 class MessagesDecrypt {
+  static const String legacyUnavailableLabel = 'Сообщение недоступно';
+
+  /// Текст для отображения: расшифровка shared-key, либо заглушка, если это
+  /// нечитаемый шифротекст; обычный (незашифрованный) текст возвращается как есть.
+  static Future<String> displayText(String chatId, String content) async {
+    final decrypted = await ChatKeyService.decryptText(chatId, content);
+    if (decrypted != null) return decrypted;
+    // null = это зашифрованная строка, которую не получилось расшифровать.
+    return legacyUnavailableLabel;
+  }
+
   static Future<Message> decryptOne(String chatId, Message m) async {
-    String content = m.content;
-    if (E2eeService.isEncrypted(content)) {
-      content = await E2eeService.decryptMessage(chatId, content, keyVersion: m.keyVersion);
-      if (content == '[зашифровано]') {
-        await E2eeService.requestChatKey(chatId, keyVersion: m.keyVersion);
-        final ok = await E2eeService.waitForChatKeyFromServer(chatId, keyVersion: m.keyVersion);
-        if (ok) {
-          content = await E2eeService.decryptMessage(chatId, m.content, keyVersion: m.keyVersion);
-        }
-      }
-    }
+    final content = await displayText(chatId, m.content);
     Message? replyTo = m.replyToMessage;
     if (replyTo != null) {
       replyTo = await decryptOne(chatId, replyTo);
@@ -44,7 +48,6 @@ class MessagesDecrypt {
       reactions: m.reactions,
       isForwarded: m.isForwarded,
       originalChatName: m.originalChatName,
-      keyVersion: m.keyVersion,
     );
   }
 

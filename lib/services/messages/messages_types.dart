@@ -29,13 +29,14 @@ class UploadImageUrls {
   });
 }
 
-/// Фрагмент текста только для текста уведомления FCM при E2EE (не хранится в БД как шифротекст).
+/// Открытый сниппет текста для пуш-уведомления, когда content уходит зашифрованным.
+/// Возвращает null, если шифрования не было (отправляем как есть) или текст пуст.
 const int maxPushPreviewChars = 200;
 
 String? pushPreviewPlainForFcm(String originalPlain, String contentSent) {
   final t = originalPlain.trim();
   if (t.isEmpty) return null;
-  if (contentSent == originalPlain) return null;
+  if (contentSent == originalPlain) return null; // не шифровали — превью не нужно
   if (t.length <= maxPushPreviewChars) return t;
   return '${t.substring(0, maxPushPreviewChars)}…';
 }

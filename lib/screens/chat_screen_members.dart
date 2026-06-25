@@ -131,8 +131,6 @@ extension _ChatScreenMembersPart on _ChatScreenState {
             widget.chatId,
             selectedUsers.toList(),
           );
-          // E2EE: отправить ключ чата новым участникам (как при входе по инвайту)
-          E2eeService.shareChatKeyWithNewMembers(widget.chatId.toString());
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

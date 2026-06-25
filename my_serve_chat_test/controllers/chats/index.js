@@ -9,6 +9,7 @@ export {
   getChatById,
   getChatMembers,
   getChatsList,
+  getSharedChatKey,
   getUserChats,
   joinByInvite,
   leaveChat,

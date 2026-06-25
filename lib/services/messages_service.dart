@@ -6,9 +6,9 @@ import '../models/message.dart';
 import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
+import 'chat_key_service.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
-import 'e2ee_service.dart';
 import 'messages/messages_types.dart';
 import 'messages/messages_decrypt.dart';
 import 'messages/messages_forward_download.dart';
@@ -227,28 +227,12 @@ class MessagesService {
     // Реальную доступность сети определяем по фактическому ответу POST ниже.
     final headers = await _getAuthHeaders();
 
+    // Шифруем текст общим ключом чата. Если ключ недоступен (например, нет сети),
+    // отправляем как есть — без блокировок и баннеров «ожидаем ключ».
     String contentToSend = content;
-    try {
-      if (content.isNotEmpty) {
-        try {
-          await E2eeService.ensureKeyPair();
-        } catch (_) {}
-        var encrypted = await E2eeService.encryptMessage(chatId, content);
-        if (encrypted == null) {
-          await E2eeService.requestChatKey(chatId);
-          final obtained = await E2eeService.waitForChatKeyFromServer(chatId);
-          if (obtained) {
-            encrypted = await E2eeService.encryptMessage(chatId, content);
-          }
-        }
-        if (encrypted == null) {
-          throw Exception('E2EE ключ для чата пока недоступен (возможен лимит запросов 429). Подождите 10-20 секунд и повторите отправку.');
-        }
-        contentToSend = jsonEncode(encrypted);
-      }
-    } catch (e) {
-      if (e is Exception) rethrow;
-      throw Exception('Ошибка E2EE при отправке: $e');
+    if (content.isNotEmpty) {
+      final encrypted = await ChatKeyService.encryptText(chatId, content);
+      if (encrypted != null) contentToSend = encrypted;
     }
 
     final bodyMap = <String, dynamic>{
@@ -272,6 +256,7 @@ class MessagesService {
       bodyMap['forward_original_message_id'] = forwardOriginalMessageId;
       bodyMap['forward_original_chat_id'] = forwardOriginalChatId;
     }
+    // Если контент ушёл зашифрованным — кладём открытый сниппет для текста пуша.
     final previewForPush = pushPreviewPlainForFcm(content, contentToSend);
     if (previewForPush != null) {
       bodyMap['push_preview'] = previewForPush;
@@ -326,7 +311,8 @@ class MessagesService {
     }
   }
 
-  // Загрузка изображения. При [chatId] и наличии ключа — E2EE шифрование перед отправкой.
+  // Загрузка изображения на сервер. При [chatId] и доступном ключе — шифруем байты
+  // общим ключом чата перед отправкой (имя файла оставляем как есть для multer).
   Future<UploadImageUrls> uploadImageWithUrls(
     List<int> imageBytes,
     String fileName, {
@@ -338,17 +324,13 @@ class MessagesService {
 
     List<int> bytesToSend = imageBytes;
     List<int>? originalToSend = originalBytes;
-    String sendFileName = fileName;
+    final String sendFileName = fileName;
     if (chatId != null) {
-      final encrypted = await E2eeService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
-      if (encrypted != null) {
-        bytesToSend = encrypted;
-        // Имя в multipart оставляем как у исходного изображения (.jpg и т.д.): иначе multer
-        // на сервере видит только расширение .e2ee и отвечает 400 «не изображение».
-        // Шифрование — только в теле файла, не в суффиксе имени.
-        sendFileName = fileName;
+      final enc = await ChatKeyService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
+      if (enc != null) {
+        bytesToSend = enc;
         if (originalBytes != null) {
-          final encOrig = await E2eeService.encryptBytes(chatId, Uint8List.fromList(originalBytes));
+          final encOrig = await ChatKeyService.encryptBytes(chatId, Uint8List.fromList(originalBytes));
           if (encOrig != null) originalToSend = encOrig;
         }
       }
@@ -563,17 +545,15 @@ class MessagesService {
     }
   }
 
-  // ✅ Редактирование сообщения. [chatId] нужен для E2EE — шифруем content перед отправкой.
+  // ✅ Редактирование сообщения. [chatId] нужен для шифрования нового текста.
   Future<void> editMessage(String messageId, {String? content, String? imageUrl, String? chatId}) async {
     final headers = await _getAuthHeaders();
     final body = <String, dynamic>{};
     if (content != null) {
       String contentToSend = content;
-      if (chatId != null) {
-        try {
-          final encrypted = await E2eeService.encryptMessage(chatId, content);
-          if (encrypted != null) contentToSend = jsonEncode(encrypted);
-        } catch (_) {}
+      if (chatId != null && content.isNotEmpty) {
+        final encrypted = await ChatKeyService.encryptText(chatId, content);
+        if (encrypted != null) contentToSend = encrypted;
       }
       body['content'] = contentToSend;
     }
@@ -591,8 +571,8 @@ class MessagesService {
   }
 
   // ✅ Переслать сообщение
-  /// E2EE: расшифровка в [sourceChatId], затем для каждого целевого чата — обычная отправка
-  /// (шифрование под ключ целевого чата). Сервер только сохраняет метаданные [message_forwards].
+  /// Текст и вложения копируются в каждый целевой чат обычной отправкой.
+  /// Сервер сохраняет метаданные пересылки [message_forwards].
   static const int _maxForwardChats = 20;
 
   Future<void> forwardMessage(
@@ -605,22 +585,11 @@ class MessagesService {
         ? toChatIds.sublist(0, _maxForwardChats)
         : List<String>.from(toChatIds);
 
-    await E2eeService.ensureKeyPair();
-
+    // Текст исходного сообщения приводим к открытому виду (в UI он уже расшифрован,
+    // но на всякий случай расшифровываем, если пришёл шифротекст).
     var plain = sourceMessage.content;
-    final hadEncryptedText =
-        plain.trim().isNotEmpty && E2eeService.isEncrypted(plain);
-    if (hadEncryptedText) {
-      plain = await E2eeService.decryptMessage(
-        sourceChatId,
-        plain,
-        keyVersion: sourceMessage.keyVersion,
-      );
-      if (plain == '[зашифровано]') {
-        throw Exception(
-          'Не удалось переслать: сообщение не расшифровано в исходном чате. Откройте чат и дождитесь ключа, затем повторите.',
-        );
-      }
+    if (ChatKeyService.isEncryptedText(plain)) {
+      plain = (await ChatKeyService.decryptText(sourceChatId, plain)) ?? '';
     }
 
     final hasImage =
@@ -632,31 +601,23 @@ class MessagesService {
       throw Exception('Не удалось переслать: пустой текст (и нет вложения)');
     }
 
+    // Картинку, зашифрованную ключом исходного чата, нужно перешифровать под ключ
+    // целевого чата. Скачиваем и расшифровываем один раз, затем перезаливаем на чат.
     Uint8List? mainPlainBytes;
     Uint8List? origPlainBytes;
-    var imagePayloadE2ee = false;
-
+    var imageWasEncrypted = false;
     if (hasImage) {
       final rawMain = await downloadUrlBytesForForward(sourceMessage.imageUrl!);
-      imagePayloadE2ee = E2eeService.looksLikeEncryptedBytes(rawMain);
-      mainPlainBytes = await unwrapForwardImageBytes(
-        sourceChatId,
-        rawMain,
-        sourceMessage.keyVersion,
-      );
-
-      final origUrl = sourceMessage.originalImageUrl?.trim();
-      if (origUrl != null &&
-          origUrl.isNotEmpty &&
-          origUrl != sourceMessage.imageUrl!.trim()) {
-        final rawOrig = await downloadUrlBytesForForward(origUrl);
-        origPlainBytes = await unwrapForwardImageBytes(
-          sourceChatId,
-          rawOrig,
-          sourceMessage.keyVersion,
-        );
-      } else {
-        origPlainBytes = null;
+      imageWasEncrypted = ChatKeyService.looksLikeEncryptedBytes(rawMain);
+      if (imageWasEncrypted) {
+        mainPlainBytes = await unwrapForwardImageBytes(sourceChatId, rawMain);
+        final origUrl = sourceMessage.originalImageUrl?.trim();
+        if (origUrl != null &&
+            origUrl.isNotEmpty &&
+            origUrl != sourceMessage.imageUrl!.trim()) {
+          final rawOrig = await downloadUrlBytesForForward(origUrl);
+          origPlainBytes = await unwrapForwardImageBytes(sourceChatId, rawOrig);
+        }
       }
     }
 
@@ -664,21 +625,10 @@ class MessagesService {
       String? outImage = sourceMessage.imageUrl;
       String? outOriginal = sourceMessage.originalImageUrl;
 
-      if (hasImage && imagePayloadE2ee) {
-        final stub = forwardImageStubName(sourceMessage.imageUrl!);
-        final existingTargetKey = await E2eeService.getChatKey(toId);
-        if (existingTargetKey == null) {
-          await E2eeService.requestChatKey(toId);
-          final ok = await E2eeService.waitForChatKeyFromServer(toId);
-          if (!ok) {
-            throw Exception(
-              'Нет ключа шифрования для чата $toId — не удалось переслать фото. Откройте этот чат или попробуйте позже.',
-            );
-          }
-        }
+      if (hasImage && imageWasEncrypted && mainPlainBytes != null) {
         final urls = await uploadImageWithUrls(
-          mainPlainBytes!.toList(),
-          stub,
+          mainPlainBytes.toList(),
+          forwardImageStubName(sourceMessage.imageUrl!),
           originalBytes: origPlainBytes?.toList(),
           chatId: toId,
         );
@@ -750,7 +700,7 @@ class MessagesService {
     }
   }
 
-  // 🔎 Поиск сообщений в чате. Сервер отдаёт последние сообщения с content; расшифровываем и фильтруем по query на клиенте (E2EE).
+  // 🔎 Поиск сообщений в чате. Сервер отдаёт последние сообщения с content; фильтруем по query на клиенте.
   Future<List<Map<String, dynamic>>> searchMessages(String chatId, String query, {int limit = 20, String? before}) async {
     final headers = await _getAuthHeaders();
     final uri = Uri.parse('$baseUrl/messages/chat/$chatId/search').replace(
@@ -772,12 +722,11 @@ class MessagesService {
     final List<Map<String, dynamic>> out = [];
     for (final item in list) {
       final rawContent = (item['content'] ?? '').toString();
-      final keyVersion = item['key_version'] is int
-          ? item['key_version'] as int
-          : int.tryParse((item['key_version'] ?? '').toString());
       String plain = rawContent;
-      if (E2eeService.isEncrypted(rawContent)) {
-        plain = await E2eeService.decryptMessage(chatId, rawContent, keyVersion: keyVersion);
+      if (ChatKeyService.isEncryptedText(rawContent)) {
+        final decrypted = await ChatKeyService.decryptText(chatId, rawContent);
+        if (decrypted == null) continue; // нечитаемый legacy-шифротекст — пропускаем
+        plain = decrypted;
       }
       if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower)) continue;
       out.add(searchResultToSnippet(item, plain, queryLower));
