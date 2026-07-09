@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../theme/app_colors.dart';
+import '../widgets/theme_motion.dart';
 import '../models/student.dart';
 import '../services/students_service.dart';
 import '../services/storage_service.dart';
@@ -906,11 +907,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          FloatingActionButton(
-            heroTag: "add",
-            onPressed: _addStudent,
-            backgroundColor: scheme.primary,
-            child: const Icon(Icons.add_rounded),
+          PulsingGlow(
+            borderRadius: BorderRadius.circular(16),
+            child: FloatingActionButton(
+              heroTag: "add",
+              onPressed: _addStudent,
+              backgroundColor: scheme.primary,
+              child: const Icon(Icons.add_rounded),
+            ),
           ),
         ],
       ),

@@ -153,6 +153,42 @@ const _AppPalette _paletteAuroraLight = _AppPalette(
   ),
 );
 
+// ============================================================================
+// Палитра 3: «Океанский пульс» — тёмный navy + бирюза.
+// Холодная глубина вместо фиолетовой готики; motion (волна фона, пульс
+// online) включается через AppThemeVariant.hasMotion.
+// ============================================================================
+const _AppPalette _paletteOceanPulse = _AppPalette(
+  brightness: Brightness.dark,
+  backgroundDark: Color(0xFF061018),
+  surfaceDark: Color(0xFF0B1F2C),
+  cardDark: Color(0xFF102A3A),
+  cardElevatedDark: Color(0xFF163A4E),
+  borderDark: Color(0xFF1E4A5C),
+  primary: Color(0xFF0E7490),
+  primaryGlow: Color(0xFF22D3EE),
+  accent: Color(0xFF67E8F9),
+  primaryDeep: Color(0xFF155E75),
+  cyberAccent: Color(0xFF2DD4BF),
+  onlineColor: Color(0xFF22D3EE),
+  onSurfaceDark: Color(0xFFE0F7FA),
+  onSurfaceVariantDark: Color(0xFF7BA3B0),
+  errorColor: Color(0xFFFF6B81),
+  successColor: Color(0xFF34D399),
+  warningColor: Color(0xFFFBBF24),
+  homeBodyGradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: [0.0, 0.42, 0.78, 1.0],
+    colors: [
+      Color(0xFF061018),
+      Color(0xFF0B1F2C),
+      Color(0xFF0A2A38),
+      Color(0xFF061820),
+    ],
+  ),
+);
+
 /// Глобальные цвета приложения.
 ///
 /// API намеренно сохранён неизменным после введения нескольких тем:
@@ -181,6 +217,8 @@ class AppColors {
         return _paletteUltravioletDark;
       case AppThemeVariant.auroraLight:
         return _paletteAuroraLight;
+      case AppThemeVariant.oceanPulse:
+        return _paletteOceanPulse;
     }
   }
 

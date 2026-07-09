@@ -1,11 +1,12 @@
 /// Доступные варианты темы оформления.
 ///
 /// [ultravioletDark] — тёмная готическая ультрафиолетовая палитра (по умолчанию).
-/// [auroraLight] — светлая премиальная палитра «Северное сияние»:
-///   мягкие сиреневые акценты на чистом белом фоне, эффект «glassmorphism».
+/// [auroraLight] — светлая премиальная палитра «Северное сияние».
+/// [oceanPulse] — тёмная океаническая: navy + бирюза, с мягким «дыханием» UI.
 enum AppThemeVariant {
   ultravioletDark,
   auroraLight,
+  oceanPulse,
 }
 
 extension AppThemeVariantX on AppThemeVariant {
@@ -16,6 +17,8 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'ultraviolet_dark';
       case AppThemeVariant.auroraLight:
         return 'aurora_light';
+      case AppThemeVariant.oceanPulse:
+        return 'ocean_pulse';
     }
   }
 
@@ -26,6 +29,8 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'Ультрафиолет (тёмная)';
       case AppThemeVariant.auroraLight:
         return 'Аврора (светлая)';
+      case AppThemeVariant.oceanPulse:
+        return 'Океанский пульс';
     }
   }
 
@@ -36,11 +41,16 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'Глубокий фиолетовый, неоновое свечение';
       case AppThemeVariant.auroraLight:
         return 'Мягкие сиреневые акценты на белом';
+      case AppThemeVariant.oceanPulse:
+        return 'Navy и бирюза, живое дыхание интерфейса';
     }
   }
 
   /// Тёмная ли это палитра.
-  bool get isDark => this == AppThemeVariant.ultravioletDark;
+  bool get isDark => this != AppThemeVariant.auroraLight;
+
+  /// Включены ли motion-эффекты темы (волна фона, пульс online и т.п.).
+  bool get hasMotion => this == AppThemeVariant.oceanPulse;
 }
 
 /// Восстанавливает вариант темы из строки, сохранённой в [SharedPreferences].

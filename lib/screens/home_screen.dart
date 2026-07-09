@@ -16,6 +16,7 @@ import '../services/chat_key_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_empty_state.dart';
 import '../widgets/skeleton_placeholder.dart';
+import '../widgets/theme_motion.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
@@ -1690,12 +1691,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Container(
+      body: SizedBox(
         width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: AppColors.homeBodyGradient,
-        ),
-        child: SafeArea(
+        child: AnimatedHomeBody(
+          child: SafeArea(
           child: _isLoading
           ? _buildChatsLoadingSkeleton(scheme)
           : _loadError != null && _chats.isEmpty
@@ -1911,6 +1910,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+          ),
         ),
       ),
     );

@@ -15,7 +15,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
   // Активируем палитру до того, как начнём читать AppColors.
   AppColors.setActiveVariant(variant);
 
-  final isLight = variant == AppThemeVariant.auroraLight;
+  final isLight = !variant.isDark;
   final brightness = isLight ? Brightness.light : Brightness.dark;
 
   final scheme = isLight

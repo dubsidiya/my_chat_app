@@ -475,7 +475,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
-            variant.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+            variant == AppThemeVariant.oceanPulse
+                ? Icons.waves_rounded
+                : variant.isDark
+                    ? Icons.dark_mode_rounded
+                    : Icons.light_mode_rounded,
             color: iconColor,
             size: 22,
           ),
@@ -622,6 +626,12 @@ class _ThemeOptionCard extends StatelessWidget {
           Color(0xFFE2D6F8),
           Color(0xFF7B4FCB),
         ];
+      case AppThemeVariant.oceanPulse:
+        return const [
+          Color(0xFF061018),
+          Color(0xFF0E7490),
+          Color(0xFF22D3EE),
+        ];
     }
   }
 
@@ -631,6 +641,8 @@ class _ThemeOptionCard extends StatelessWidget {
         return const Color(0xFFC77DFF);
       case AppThemeVariant.auroraLight:
         return const Color(0xFF7B4FCB);
+      case AppThemeVariant.oceanPulse:
+        return const Color(0xFF22D3EE);
     }
   }
 
@@ -640,6 +652,8 @@ class _ThemeOptionCard extends StatelessWidget {
         return Colors.white;
       case AppThemeVariant.auroraLight:
         return Colors.white;
+      case AppThemeVariant.oceanPulse:
+        return const Color(0xFF061018);
     }
   }
 
@@ -685,9 +699,11 @@ class _ThemeOptionCard extends StatelessWidget {
                 ),
                 child: Center(
                   child: Icon(
-                    variant.isDark
-                        ? Icons.dark_mode_rounded
-                        : Icons.light_mode_rounded,
+                    variant == AppThemeVariant.oceanPulse
+                        ? Icons.waves_rounded
+                        : variant.isDark
+                            ? Icons.dark_mode_rounded
+                            : Icons.light_mode_rounded,
                     color: _onAccentColor,
                     size: 28,
                   ),

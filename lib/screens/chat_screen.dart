@@ -27,6 +27,7 @@ import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/theme_motion.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
 import '../utils/download_text_file.dart';
@@ -923,20 +924,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         TypingDots(color: AppColors.cyberAccent),
                         const SizedBox(width: 6),
                       ] else if (onlineOthers > 0) ...[
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: AppColors.online,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.online.withValues(alpha: 0.55),
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
-                        ),
+                        const PulsingOnlineDot(size: 7),
                         const SizedBox(width: 6),
                       ],
                       Flexible(
