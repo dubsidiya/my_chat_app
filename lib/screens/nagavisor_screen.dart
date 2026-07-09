@@ -118,8 +118,8 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
     final rows = <_AuditRow>[];
     for (final report in top) {
       try {
-        final events = await _reportsService.getReportAudit(report.id);
-        for (final ev in events) {
+        final audit = await _reportsService.getReportAudit(report.id);
+        for (final ev in audit.events) {
           if (ev.eventType == 'report_updated' || ev.eventType == 'report_created') {
             rows.add(_AuditRow(report: report, event: ev));
           }

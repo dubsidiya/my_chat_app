@@ -17,6 +17,7 @@ class ReportAuditScreen extends StatefulWidget {
 class _ReportAuditScreenState extends State<ReportAuditScreen> {
   final ReportsService _reportsService = ReportsService();
   List<ReportAuditEvent>? _events;
+  String? _serverMessage;
   String? _error;
   bool _loading = true;
 
@@ -32,8 +33,13 @@ class _ReportAuditScreenState extends State<ReportAuditScreen> {
       _error = null;
     });
     try {
-      final list = await _reportsService.getReportAudit(widget.reportId);
-      if (mounted) setState(() => _events = list);
+      final result = await _reportsService.getReportAudit(widget.reportId);
+      if (mounted) {
+        setState(() {
+          _events = result.events;
+          _serverMessage = result.serverMessage;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -89,7 +95,9 @@ class _ReportAuditScreenState extends State<ReportAuditScreen> {
               : (_events == null || _events!.isEmpty)
                   ? Center(
                       child: Text(
-                        'Записей нет (или таблица аудита не развёрнута на сервере).',
+                        _serverMessage?.isNotEmpty == true
+                            ? _serverMessage!
+                            : 'Записей нет (или таблица аудита не развёрнута на сервере).',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7)),
                       ),

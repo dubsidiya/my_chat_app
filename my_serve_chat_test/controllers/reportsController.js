@@ -7,6 +7,7 @@ import {
 } from '../utils/idempotency.js';
 import { logAccountingEvent } from '../utils/accountingAudit.js';
 import { isSuperuser } from '../middleware/auth.js';
+import { SALARY_SHARE } from '../services/accounting/salaryRules.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
 import {
   buildReportContentFromSlots,
@@ -293,7 +294,7 @@ export const getMonthlySalaryReport = async (req, res) => {
     // По расчётному счёту с каждого занятия удерживается комиссия до расчёта 50%.
     const incomeCountedNet = Number(row?.income_counted_net ?? incomeCounted);
     const bankTransferDeduction = Math.max(0, Math.round(incomeCounted - incomeCountedNet));
-    const salary = Math.round(incomeCountedNet * 0.5);
+    const salary = Math.round(incomeCountedNet * SALARY_SHARE);
 
     // Разбивка по отчётам за месяц (дата, поздний/нет, сумма)
     const breakdownResult = await findMonthlyBreakdown(pool, { userId, firstDay, lastDayStr });

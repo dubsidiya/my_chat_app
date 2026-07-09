@@ -305,7 +305,8 @@ class ReportsService {
   }
 
   /// Журнал аудита по отчёту (события из audit_events).
-  Future<List<ReportAuditEvent>> getReportAudit(int reportId) async {
+  /// [serverMessage] — опциональный текст с сервера (например, если таблица audit_events не развёрнута).
+  Future<({List<ReportAuditEvent> events, String? serverMessage})> getReportAudit(int reportId) async {
     final headers = await _getAuthHeaders();
     final response = await timedGet(
       Uri.parse('$baseUrl/reports/$reportId/audit'),
@@ -323,7 +324,7 @@ class ReportsService {
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['events'] as List<dynamic>? ?? [];
-    return list
+    final events = list
         .whereType<Map>()
         .map(
           (e) => ReportAuditEvent.fromJson(
@@ -333,6 +334,11 @@ class ReportsService {
           ),
         )
         .toList();
+    final msg = data['message']?.toString().trim();
+    return (
+      events: events,
+      serverMessage: (msg != null && msg.isNotEmpty) ? msg : null,
+    );
   }
 
   // Удаление отчета

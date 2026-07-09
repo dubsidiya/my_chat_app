@@ -372,10 +372,15 @@ class AuthService {
         userData['email'] ?? '',
         newAccessToken,
         refreshToken: data['refreshToken']?.toString() ?? refreshToken,
-        isSuperuser: userData['isSuperuser'] == 'true',
+        isSuperuser: data['isSuperuser'] == true || data['isSuperuser'] == 'true',
         displayName: userData['displayName'],
         avatarUrl: userData['avatarUrl'],
       );
+      final privateAccess = data['privateAccess'] == true || data['privateAccess'] == 'true';
+      final uid = userData['id']?.toString();
+      if (uid != null && uid.isNotEmpty) {
+        await StorageService.setPrivateFeaturesUnlocked(uid, privateAccess);
+      }
       return true;
     } catch (_) {
       return false;

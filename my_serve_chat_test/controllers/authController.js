@@ -14,7 +14,7 @@ import { sanitizeForDisplay, parsePositiveInt } from '../utils/sanitize.js';
 import { securityEvent } from '../utils/auditLog.js';
 import { isSuperuser, hasPrivateAccess } from '../middleware/auth.js';
 import { uploadToCloud } from '../utils/uploadImage.js';
-import { DEFAULT_USER_TIMEZONE, normalizeTimeZone } from '../utils/timezone.js';
+import { DEFAULT_USER_TIMEZONE, normalizeTimeZone, getDateInTimeZoneISO } from '../utils/timezone.js';
 import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 
@@ -536,12 +536,15 @@ export const getMe = async (req, res) => {
     if (!u) {
       return res.status(404).json({ message: 'Пользователь не найден' });
     }
+    const timezone = normalizeTimeZone(u.timezone) || DEFAULT_USER_TIMEZONE;
+    const today = getDateInTimeZoneISO(timezone);
     res.status(200).json({
       id: u.id,
       username: u.email,
       displayName: u.display_name ?? null,
       avatarUrl: await toClientMediaUrl(u.avatar_url),
-      timezone: normalizeTimeZone(u.timezone) || DEFAULT_USER_TIMEZONE,
+      timezone,
+      today,
       isSuperuser: isSuperuser(req.user),
       privateAccess: req.user.privateAccess === true,
     });

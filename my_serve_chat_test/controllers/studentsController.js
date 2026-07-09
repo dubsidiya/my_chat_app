@@ -91,28 +91,50 @@ export const getAllStudents = async (req, res) => {
 export const getMakeupPendingSummary = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const result = await pool.query(
-      `SELECT
-         s.id AS student_id,
-         s.name AS student_name,
-         COUNT(*) FILTER (
-           WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
-             AND l.status = 'missed'
-         )::int AS open_missed_count,
-         COUNT(*) FILTER (
-           WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
-             AND l.status = 'cancel_same_day'
-         )::int AS open_cancel_count,
-         COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
-       FROM teacher_students ts
-       JOIN students s ON s.id = ts.student_id
-       JOIN lessons l ON l.student_id = s.id AND l.created_by = $1
-       WHERE ts.teacher_id = $1
-       GROUP BY s.id, s.name
-       HAVING COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) > 0
-       ORDER BY COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) DESC, s.name ASC`,
-      [userId]
-    );
+    // Super (бухгалтерия) — глобальная сводка по всем ученикам, как getAllStudents.
+    // Обычный преподаватель — только свои связи teacher_students и свои занятия.
+    const result = isSuperuser(req.user)
+      ? await pool.query(
+          `SELECT
+             s.id AS student_id,
+             s.name AS student_name,
+             COUNT(*) FILTER (
+               WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+                 AND l.status = 'missed'
+             )::int AS open_missed_count,
+             COUNT(*) FILTER (
+               WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+                 AND l.status = 'cancel_same_day'
+             )::int AS open_cancel_count,
+             COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
+           FROM students s
+           JOIN lessons l ON l.student_id = s.id
+           GROUP BY s.id, s.name
+           HAVING COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) > 0
+           ORDER BY COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) DESC, s.name ASC`
+        )
+      : await pool.query(
+          `SELECT
+             s.id AS student_id,
+             s.name AS student_name,
+             COUNT(*) FILTER (
+               WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+                 AND l.status = 'missed'
+             )::int AS open_missed_count,
+             COUNT(*) FILTER (
+               WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}
+                 AND l.status = 'cancel_same_day'
+             )::int AS open_cancel_count,
+             COUNT(*) FILTER (WHERE l.status = 'makeup')::int AS makeup_count
+           FROM teacher_students ts
+           JOIN students s ON s.id = ts.student_id
+           JOIN lessons l ON l.student_id = s.id AND l.created_by = $1
+           WHERE ts.teacher_id = $1
+           GROUP BY s.id, s.name
+           HAVING COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) > 0
+           ORDER BY COUNT(*) FILTER (WHERE ${SQL_OPEN_MAKEUP_DEBT_ON_LESSON}) DESC, s.name ASC`,
+          [userId]
+        );
 
     const totalPending = result.rows.reduce(
       (acc, r) => acc + Number(r.open_missed_count || 0) + Number(r.open_cancel_count || 0),

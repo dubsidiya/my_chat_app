@@ -175,7 +175,9 @@ export const getStudentLessons = async (req, res) => {
 
 /**
  * GET /students/calendar-summary?from=YYYY-MM-DD&to=YYYY-MM-DD
- * Количество занятий по дням для текущего пользователя (created_by).
+ * Количество занятий по дням.
+ * Обычный пользователь — только свои (created_by).
+ * Super — все занятия в периоде (как полный список учеников).
  */
 export const getLessonsCalendarSummary = async (req, res) => {
   try {
@@ -184,14 +186,23 @@ export const getLessonsCalendarSummary = async (req, res) => {
     if (!from || !to || !ISO_DATE_RE.test(String(from)) || !ISO_DATE_RE.test(String(to))) {
       return res.status(400).json({ message: 'Укажите from и to в формате YYYY-MM-DD' });
     }
-    const result = await pool.query(
-      `SELECT lesson_date::text AS date, COUNT(*)::int AS count
-       FROM lessons
-       WHERE created_by = $1 AND lesson_date >= $2::date AND lesson_date <= $3::date
-       GROUP BY lesson_date
-       ORDER BY lesson_date`,
-      [userId, from, to]
-    );
+    const result = isSuperuser(req.user)
+      ? await pool.query(
+          `SELECT lesson_date::text AS date, COUNT(*)::int AS count
+           FROM lessons
+           WHERE lesson_date >= $1::date AND lesson_date <= $2::date
+           GROUP BY lesson_date
+           ORDER BY lesson_date`,
+          [from, to]
+        )
+      : await pool.query(
+          `SELECT lesson_date::text AS date, COUNT(*)::int AS count
+           FROM lessons
+           WHERE created_by = $1 AND lesson_date >= $2::date AND lesson_date <= $3::date
+           GROUP BY lesson_date
+           ORDER BY lesson_date`,
+          [userId, from, to]
+        );
     return res.json({ days: result.rows });
   } catch (error) {
     console.error('getLessonsCalendarSummary:', error);

@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import '../models/report.dart';
 import '../models/report_author_option.dart';
 import '../services/reports_service.dart';
+import '../services/auth_service.dart';
 import '../utils/network_error_helper.dart';
 import '../widgets/report_teacher_filter_picker_sheet.dart';
 import 'report_text_view_screen.dart';
@@ -28,10 +29,14 @@ class ReportsChatScreen extends StatefulWidget {
 
 class _ReportsChatScreenState extends State<ReportsChatScreen> {
   final ReportsService _reportsService = ReportsService();
+  final AuthService _authService = AuthService();
   final TextEditingController _dateController = TextEditingController();
   List<Report> _reports = [];
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now();
+
+  /// «Сегодня» в timezone преподавателя (из GET /auth/me → today), date-only.
+  DateTime? _teacherToday;
 
   /// Режим «Все отчёты» для бухгалтера/суперпользователя
   bool _allReportsMode = false;
@@ -98,14 +103,39 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       _yesterdayReminder = false;
       return;
     }
-    final now = DateTime.now();
-    final y = now.subtract(const Duration(days: 1));
-    final yd = DateTime(y.year, y.month, y.day);
+    final today = _teacherToday ??
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final yd = today.subtract(const Duration(days: 1));
     final has = _reports.any((r) {
       final d = r.reportDate;
       return d.year == yd.year && d.month == yd.month && d.day == yd.day;
     });
     _yesterdayReminder = !has;
+  }
+
+  DateTime get _yesterdayInTeacherTz {
+    final today = _teacherToday ??
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    return today.subtract(const Duration(days: 1));
+  }
+
+  Future<void> _ensureTeacherToday() async {
+    if (_teacherToday != null) return;
+    try {
+      final me = await _authService.fetchMe();
+      final todayStr = me?['today']?.toString();
+      if (todayStr != null && todayStr.isNotEmpty) {
+        final p = DateTime.tryParse(todayStr);
+        if (p != null) {
+          _teacherToday = DateTime(p.year, p.month, p.day);
+          return;
+        }
+      }
+    } catch (_) {
+      // fallback ниже
+    }
+    final n = DateTime.now();
+    _teacherToday = DateTime(n.year, n.month, n.day);
   }
 
   void _applyTeacherOptions(List<ReportAuthorOption> teachers) {
@@ -261,6 +291,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     setState(() => _isLoading = true);
 
     try {
+      await _ensureTeacherToday();
       final reports = await _reportsService.getAllReports();
       if (mounted) {
         setState(() {
@@ -576,7 +607,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'За вчера (${DateFormat('dd.MM.yyyy').format(DateTime.now().subtract(const Duration(days: 1)))}) отчёт не найден.',
+                        'За вчера (${DateFormat('dd.MM.yyyy').format(_yesterdayInTeacherTz)}) отчёт не найден.',
                         style: TextStyle(fontSize: 13, color: scheme.onSurface, height: 1.25),
                       ),
                     ),
