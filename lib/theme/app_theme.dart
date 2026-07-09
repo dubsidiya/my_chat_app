@@ -16,7 +16,13 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
   AppColors.setActiveVariant(variant);
 
   final isLight = !variant.isDark;
+  final isOcean = variant == AppThemeVariant.oceanPulse;
   final brightness = isLight ? Brightness.light : Brightness.dark;
+
+  // На ярком cyan Ocean Pulse текст на primary должен быть тёмным navy.
+  final Color onPrimaryColor = isOcean
+      ? const Color(0xFF04121C)
+      : (isLight ? Colors.white : AppColors.onSurfaceDark);
 
   final scheme = isLight
       ? ColorScheme.light(
@@ -36,7 +42,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
         )
       : ColorScheme.dark(
           primary: AppColors.primary,
-          onPrimary: AppColors.onSurfaceDark,
+          onPrimary: onPrimaryColor,
           primaryContainer: AppColors.cardElevatedDark,
           onPrimaryContainer: AppColors.accent,
           secondary: AppColors.primaryGlow,
@@ -298,7 +304,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
         elevation: 0,
         shadowColor: Colors.transparent,
         backgroundColor: AppColors.primary,
-        foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+        foregroundColor: onPrimaryColor,
         padding:
             const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         shape: RoundedRectangleBorder(
@@ -343,7 +349,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: AppColors.primary,
-      foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+      foregroundColor: onPrimaryColor,
       elevation: 0,
       focusElevation: 0,
       hoverElevation: 0,
@@ -385,7 +391,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.primary,
-        foregroundColor: isLight ? Colors.white : AppColors.onSurfaceDark,
+        foregroundColor: onPrimaryColor,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.mdAll),
         textStyle: const TextStyle(

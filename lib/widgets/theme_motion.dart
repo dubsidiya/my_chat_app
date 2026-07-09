@@ -62,27 +62,33 @@ class _AnimatedHomeBodyState extends State<AnimatedHomeBody>
       animation: _controller,
       builder: (context, child) {
         final t = Curves.easeInOut.transform(_controller.value);
-        final begin = Alignment(-1.0 + t * 0.35, -1.0);
-        final end = Alignment(1.0, 1.0 - t * 0.25);
+        final begin = Alignment(-1.0 + t * 0.45, -1.0 + t * 0.1);
+        final end = Alignment(1.0 - t * 0.15, 1.0 - t * 0.35);
+        // Волна должна «прокатывать» яркий cyan из галереи, не только navy.
         return DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: begin,
               end: end,
-              stops: const [0.0, 0.42, 0.78, 1.0],
+              stops: const [0.0, 0.22, 0.48, 0.72, 1.0],
               colors: [
-                const Color(0xFF061018),
+                const Color(0xFF04121C),
                 Color.lerp(
-                  const Color(0xFF0B1F2C),
-                  const Color(0xFF0E3A4A),
-                  t * 0.55,
-                )!,
-                Color.lerp(
-                  const Color(0xFF0A2A38),
+                  const Color(0xFF0B2F42),
                   const Color(0xFF0E7490),
-                  t * 0.35,
+                  t,
                 )!,
-                const Color(0xFF061820),
+                Color.lerp(
+                  const Color(0xFF0E7490),
+                  const Color(0xFF22D3EE),
+                  0.35 + t * 0.55,
+                )!,
+                Color.lerp(
+                  const Color(0xFF155E75),
+                  const Color(0xFF67E8F9),
+                  t * 0.45,
+                )!,
+                const Color(0xFF06202C),
               ],
             ),
           ),

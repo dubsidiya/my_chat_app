@@ -628,9 +628,9 @@ class _ThemeOptionCard extends StatelessWidget {
         ];
       case AppThemeVariant.oceanPulse:
         return const [
-          Color(0xFF061018),
-          Color(0xFF0E7490),
+          Color(0xFF04121C),
           Color(0xFF22D3EE),
+          Color(0xFF67E8F9),
         ];
     }
   }
@@ -653,7 +653,7 @@ class _ThemeOptionCard extends StatelessWidget {
       case AppThemeVariant.auroraLight:
         return Colors.white;
       case AppThemeVariant.oceanPulse:
-        return const Color(0xFF061018);
+        return const Color(0xFF04121C);
     }
   }
 
