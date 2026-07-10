@@ -7,6 +7,7 @@ import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import 'chat_key_service.dart';
+import 'chat_image_cache.dart';
 import 'storage_service.dart';
 import 'local_messages_service.dart';
 import 'messages/messages_types.dart';
@@ -383,12 +384,18 @@ class MessagesService {
               // ignore: avoid_print
               print('Original image URL returned');
             }
-            return UploadImageUrls(
+            final urls = UploadImageUrls(
               imageUrl: data['image_url'] as String,
               imageStorageKey: data['image_storage_key']?.toString(),
               originalImageUrl: data['original_image_url'] as String?,
               originalImageStorageKey: data['original_image_storage_key']?.toString(),
             );
+            // Локальные plaintext-байты — чтобы в ленте не качать/не расшифровывать снова.
+            ChatImageCache.warm(
+              urls.imageUrl,
+              Uint8List.fromList(imageBytes),
+            );
+            return urls;
           }
           throw Exception('Сервер не вернул image_url');
         } catch (e) {

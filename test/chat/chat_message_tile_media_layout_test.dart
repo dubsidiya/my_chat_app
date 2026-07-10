@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_chat_app/features/chat/chat_scroll_policy.dart';
 import 'package:my_chat_app/models/message.dart';
 import 'package:my_chat_app/widgets/chat_message_tile.dart';
+import 'package:my_chat_app/widgets/chat_network_image.dart';
 import 'package:my_chat_app/widgets/skeleton_placeholder.dart';
 
 Message _imageMessage() {
@@ -20,7 +21,9 @@ Message _imageMessage() {
 
 void main() {
   group('ChatMessageTile media layout regression', () {
-    testWidgets('placeholder фото совпадает с maxHeight bubble (400px)', (tester) async {
+    testWidgets(
+      'фото в фиксированном слоте 250×250 (placeholder = слот, без прыжка скролла)',
+      (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -56,8 +59,19 @@ void main() {
       final skeleton = tester.widget<SkeletonPlaceholder>(
         find.byType(SkeletonPlaceholder),
       );
-      expect(skeleton.height, 400);
+      expect(skeleton.height, 250);
       expect(skeleton.width, 250);
+
+      final imageSlot = tester.widget<SizedBox>(
+        find
+            .ancestor(
+              of: find.byType(ChatNetworkImage),
+              matching: find.byType(SizedBox),
+            )
+            .first,
+      );
+      expect(imageSlot.width, 250);
+      expect(imageSlot.height, 250);
     });
 
     test('incoming message policy: автоскролл только у низа', () {

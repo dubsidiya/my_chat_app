@@ -13,6 +13,7 @@ import '../services/voice_call_service.dart';
 import '../services/local_messages_service.dart';
 import '../services/messages/messages_decrypt.dart';
 import '../services/chat_key_service.dart';
+import '../services/chat_image_cache.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_empty_state.dart';
 import '../widgets/skeleton_placeholder.dart';
@@ -1178,6 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> {
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
               await ChatKeyService.clearAll();
+              await ChatImageCache.clearAll();
               await LocalMessagesService.clearAll();
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
@@ -1496,6 +1498,7 @@ class _HomeScreenState extends State<HomeScreen> {
       WebSocketService.instance.disconnect();
       await PushNotificationService.clearTokenOnBackend();
       await ChatKeyService.clearAll();
+      await ChatImageCache.clearAll();
       await LocalMessagesService.clearAll();
       // Закрываем индикатор загрузки
       if (mounted) {

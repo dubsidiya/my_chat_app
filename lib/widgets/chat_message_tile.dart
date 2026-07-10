@@ -14,6 +14,11 @@ import 'mention_text.dart';
 import 'skeleton_placeholder.dart';
 import 'video_thumbnail_view.dart';
 
+/// Стабильный размер превью фото в ленте. Без фиксированного слота высота
+/// строки меняется при загрузке/расшифровке и reverse-ListView дёргает скролл.
+const double _chatImageBubbleWidth = 250;
+const double _chatImageBubbleHeight = 250;
+
 class ChatMessageTile extends StatelessWidget {
   final Message msg;
   final bool isMine;
@@ -283,28 +288,33 @@ class ChatMessageTile extends StatelessWidget {
                       if (msg.hasImage) ...[
                         GestureDetector(
                           onTap: onOpenImage,
+                          // Фиксированный слот: placeholder и загруженное фото
+                          // одной высоты — иначе reverse-ListView «подбрасывает»
+                          // при смене 250×400 → intrinsic size картинки.
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 250, maxHeight: 400),
-                              child: ChatNetworkImage(
-                                imageUrl: msg.imageUrl!,
-                                chatId: chatId,
-                                fit: BoxFit.contain,
-                                memCacheWidth: 500,
-                                placeholder: (context, __) => const SkeletonPlaceholder(
-                                  width: 250,
-                                  height: 400,
-                                  borderRadius: BorderRadius.all(Radius.circular(8)),
-                                ),
-                                errorWidget: (_, __, ___) => Container(
-                                  width: 250,
-                                  height: 400,
-                                  color: scheme.surfaceContainerHighest,
-                                  child: Icon(
-                                    Icons.broken_image_rounded,
-                                    color: scheme.error,
-                                    size: 48,
+                            child: SizedBox(
+                              width: _chatImageBubbleWidth,
+                              height: _chatImageBubbleHeight,
+                              child: ColoredBox(
+                                color: scheme.surfaceContainerHighest,
+                                child: ChatNetworkImage(
+                                  imageUrl: msg.imageUrl!,
+                                  chatId: chatId,
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 500,
+                                  placeholder: (context, __) => const SkeletonPlaceholder(
+                                    width: _chatImageBubbleWidth,
+                                    height: _chatImageBubbleHeight,
+                                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                                  ),
+                                  errorWidget: (_, __, ___) => ColoredBox(
+                                    color: scheme.surfaceContainerHighest,
+                                    child: Icon(
+                                      Icons.broken_image_rounded,
+                                      color: scheme.error,
+                                      size: 48,
+                                    ),
                                   ),
                                 ),
                               ),

@@ -1200,9 +1200,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               parent: ClampingScrollPhysics(),
                                             ),
                                         cacheExtent:
-                                            800, // Предзагрузка элементов для плавного скролла
+                                            1600, // Prefetch соседних фото в ChatImageCache
                                         addAutomaticKeepAlives:
-                                            false, // Меньше памяти при длинных списках
+                                            false, // Меньше памяти; фото держит ChatImageCache
                                         itemCount: _listEntries.length,
                                         itemBuilder: (context, index) {
                                           final entry = _listEntries[index];
