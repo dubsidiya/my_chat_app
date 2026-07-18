@@ -491,15 +491,12 @@ const writeTransactionsSheet = (sheet, transactions) => {
 };
 
 const writeSalariesSheet = (sheet, payload) => {
+  // Компактная ведомость под печать: преподаватель → зарплата → штрафы → общая сумма.
   sheet.columns = [
-    { header: 'Преподаватель', key: 'teacher', width: 30 },
-    { header: 'Платных занятий', key: 'lessonsCount', width: 16, style: { numFmt: INT_FORMAT } },
-    { header: 'Сумма платных', key: 'totalChargeable', width: 18, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Из них в поздних отчётах', key: 'lateAmount', width: 22, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Без отчёта (входит в доход)', key: 'noReportAmount', width: 24, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Доход в зарплату', key: 'incomeCounted', width: 20, style: { numFmt: MONEY_FORMAT } },
-    { header: '- (расч. счёт)', key: 'bankTransferDeduction', width: 22, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Зарплата 50%', key: 'salary', width: 18, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Преподаватель', key: 'teacher', width: 32 },
+    { header: 'Зарплата', key: 'salary', width: 18, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Штрафы за поздние', key: 'lateAmount', width: 20, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Общая сумма', key: 'totalChargeable', width: 18, style: { numFmt: MONEY_FORMAT } },
   ];
 
   styleHeaderRow(sheet.getRow(1));
@@ -507,13 +504,9 @@ const writeSalariesSheet = (sheet, payload) => {
   for (const s of payload.salaries || []) {
     const row = sheet.addRow({
       teacher: s.teacherUsername || '—',
-      lessonsCount: s.chargeableLessonsCount,
-      totalChargeable: s.totalChargeable,
-      lateAmount: s.lateAmount,
-      noReportAmount: s.noReportAmount,
-      incomeCounted: s.incomeCounted,
-      bankTransferDeduction: s.bankTransferDeduction || 0,
       salary: s.salary,
+      lateAmount: s.lateAmount,
+      totalChargeable: s.totalChargeable,
     });
     row.getCell('salary').font = { bold: true, color: { argb: COLORS.okText } };
     if (s.lateAmount > 0) {
@@ -526,20 +519,16 @@ const writeSalariesSheet = (sheet, payload) => {
     const t = payload.salariesTotals || {};
     const totalsRow = sheet.addRow({
       teacher: 'ИТОГО',
-      lessonsCount: t.chargeableLessonsCount || 0,
-      totalChargeable: t.totalChargeable || 0,
-      lateAmount: t.lateAmount || 0,
-      noReportAmount: t.noReportAmount || 0,
-      incomeCounted: t.incomeCounted || 0,
-      bankTransferDeduction: t.bankTransferDeduction || 0,
       salary: t.salary || 0,
+      lateAmount: t.lateAmount || 0,
+      totalChargeable: t.totalChargeable || 0,
     });
     styleTotalsRow(totalsRow);
   } else {
     const row = sheet.addRow({
       teacher: 'Нет платных занятий в выбранном периоде',
     });
-    sheet.mergeCells(`A${row.number}:H${row.number}`);
+    sheet.mergeCells(`A${row.number}:D${row.number}`);
     row.getCell(1).alignment = { horizontal: 'center' };
     row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
   }
@@ -548,13 +537,26 @@ const writeSalariesSheet = (sheet, payload) => {
   sheet.addRow([]);
   const explainRow = sheet.addRow([
     'Зарплата = 50% от суммы платных занятий (без поздних отчётов). Уроки без отчёта засчитываются в доход. ' +
-      'На расчётный счёт - 300 ₽ ',
+      'Штрафы за поздние — сумма занятий из поздних отчётов (не входит в зарплату). ' +
+      'Общая сумма — все платные занятия за период. На расчётный счёт −300 ₽ с занятия.',
   ]);
-  sheet.mergeCells(`A${explainRow.number}:H${explainRow.number}`);
+  sheet.mergeCells(`A${explainRow.number}:D${explainRow.number}`);
   explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
   explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
+  explainRow.height = 36;
 
   if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
+
+  sheet.pageSetup = {
+    paperSize: 9, // A4
+    orientation: 'portrait',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    horizontalCentered: true,
+    margins: { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 },
+  };
+  sheet.pageSetup.printTitlesRow = '1:1';
 
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   sheet.autoFilter = {

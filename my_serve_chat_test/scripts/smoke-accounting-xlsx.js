@@ -103,7 +103,10 @@ const run = async () => {
   // Заголовки "Зарплаты" и "КПД" — тоже на русском.
   const salaryHeader = wb.getWorksheet('Зарплаты').getRow(1).values.filter(Boolean).map(String);
   assert(
-    salaryHeader.includes('Зарплата 50%') && salaryHeader.includes('Доход в зарплату'),
+    salaryHeader[0] === 'Преподаватель' &&
+      salaryHeader[1] === 'Зарплата' &&
+      salaryHeader[2] === 'Штрафы за поздние' &&
+      salaryHeader[3] === 'Общая сумма',
     `Заголовки "Зарплаты" неверные: ${salaryHeader.join(' | ')}`
   );
   const kpiHeader = wb.getWorksheet('КПД').getRow(1).values.filter(Boolean).map(String);
