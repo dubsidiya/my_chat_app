@@ -491,12 +491,15 @@ const writeTransactionsSheet = (sheet, transactions) => {
 };
 
 const writeSalariesSheet = (sheet, payload) => {
-  // Компактная ведомость под печать: преподаватель → зарплата → штрафы → общая сумма.
+  // Ведомость под печать:
+  // Преподаватель → Общая сумма → Проведено занятий → Часы testchild → Штрафы → Зарплата.
   sheet.columns = [
-    { header: 'Преподаватель', key: 'teacher', width: 32 },
-    { header: 'Зарплата', key: 'salary', width: 18, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Штрафы за поздние', key: 'lateAmount', width: 20, style: { numFmt: MONEY_FORMAT } },
-    { header: 'Общая сумма', key: 'totalChargeable', width: 18, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Преподаватель', key: 'teacher', width: 28 },
+    { header: 'Общая сумма', key: 'totalChargeable', width: 16, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Проведено занятий', key: 'conductedLessons', width: 16, style: { numFmt: INT_FORMAT } },
+    { header: 'Часы testchild', key: 'testchildHours', width: 16, style: { numFmt: '0.0' } },
+    { header: 'Штрафы', key: 'lateAmount', width: 14, style: { numFmt: MONEY_FORMAT } },
+    { header: 'Зарплата', key: 'salary', width: 16, style: { numFmt: MONEY_FORMAT } },
   ];
 
   styleHeaderRow(sheet.getRow(1));
@@ -504,9 +507,11 @@ const writeSalariesSheet = (sheet, payload) => {
   for (const s of payload.salaries || []) {
     const row = sheet.addRow({
       teacher: s.teacherUsername || '—',
-      salary: s.salary,
-      lateAmount: s.lateAmount,
       totalChargeable: s.totalChargeable,
+      conductedLessons: s.conductedLessonsCount || 0,
+      testchildHours: s.testchildHours || 0,
+      lateAmount: s.lateAmount,
+      salary: s.salary,
     });
     row.getCell('salary').font = { bold: true, color: { argb: COLORS.okText } };
     if (s.lateAmount > 0) {
@@ -519,16 +524,18 @@ const writeSalariesSheet = (sheet, payload) => {
     const t = payload.salariesTotals || {};
     const totalsRow = sheet.addRow({
       teacher: 'ИТОГО',
-      salary: t.salary || 0,
-      lateAmount: t.lateAmount || 0,
       totalChargeable: t.totalChargeable || 0,
+      conductedLessons: t.conductedLessonsCount || 0,
+      testchildHours: t.testchildHours || 0,
+      lateAmount: t.lateAmount || 0,
+      salary: t.salary || 0,
     });
     styleTotalsRow(totalsRow);
   } else {
     const row = sheet.addRow({
       teacher: 'Нет платных занятий в выбранном периоде',
     });
-    sheet.mergeCells(`A${row.number}:D${row.number}`);
+    sheet.mergeCells(`A${row.number}:F${row.number}`);
     row.getCell(1).alignment = { horizontal: 'center' };
     row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
   }
@@ -536,14 +543,15 @@ const writeSalariesSheet = (sheet, payload) => {
   // Подсказка под таблицей, что считается зарплатой.
   sheet.addRow([]);
   const explainRow = sheet.addRow([
-    'Зарплата = 50% от суммы платных занятий (без поздних отчётов). Уроки без отчёта засчитываются в доход. ' +
-      'Штрафы за поздние — сумма занятий из поздних отчётов (не входит в зарплату). ' +
-      'Общая сумма — все платные занятия за период. На расчётный счёт −300 ₽ с занятия.',
+    'Общая сумма — платные занятия за период. Проведено занятий — attended + makeup. ' +
+      'Часы testchild — часы проведённых занятий ученику testchild (тестовые часы). ' +
+      'Штрафы — сумма занятий из поздних отчётов (не входит в зарплату). ' +
+      'Зарплата = 50% от платных без поздних; уроки без отчёта в доход; на р/с −300 ₽.',
   ]);
-  sheet.mergeCells(`A${explainRow.number}:D${explainRow.number}`);
+  sheet.mergeCells(`A${explainRow.number}:F${explainRow.number}`);
   explainRow.getCell(1).alignment = { horizontal: 'left', wrapText: true };
   explainRow.getCell(1).font = { italic: true, color: { argb: 'FF374151' } };
-  explainRow.height = 36;
+  explainRow.height = 40;
 
   if (sheet.lastRow.number > 1) styleZebra(sheet, 2);
 

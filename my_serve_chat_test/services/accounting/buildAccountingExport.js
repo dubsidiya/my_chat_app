@@ -442,10 +442,15 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
   // Зарплаты за период: 50% от chargeable дохода без поздних отчётов
   // (поздним считается отчёт, помеченный is_late=true).
   // Уроки без отчёта — считаются как доход.
+  // Часы testchild — сумма duration проведённых занятий ученику с именем «testchild»
+  // (служебный ученик для учёта тестовых часов).
   const salariesRes = await pool.query(
     `WITH period_lessons AS (
        SELECT l.id, l.created_by, l.price, l.lesson_date,
               COALESCE(l.is_chargeable, true) AS is_chargeable,
+              COALESCE(l.duration_minutes, 60) AS duration_minutes,
+              COALESCE(l.status, 'attended')::text AS status,
+              lower(trim(COALESCE(s.name, ''))) AS student_name,
               ${sqlLessonSalaryBase('l', 's')} AS salary_base,
               r.id AS report_id, r.is_late
        FROM lessons l
@@ -458,6 +463,17 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
        created_by AS teacher_id,
        COALESCE(SUM(CASE WHEN is_chargeable THEN price ELSE 0 END), 0) AS total_chargeable,
        COUNT(*) FILTER (WHERE is_chargeable)::int AS chargeable_lessons_count,
+       COUNT(*) FILTER (WHERE status IN ('attended', 'makeup'))::int AS conducted_lessons_count,
+       COALESCE(
+         SUM(
+           CASE
+             WHEN student_name = 'testchild' AND status IN ('attended', 'makeup')
+             THEN duration_minutes
+             ELSE 0
+           END
+         ),
+         0
+       ) AS testchild_minutes,
        COALESCE(SUM(CASE WHEN is_chargeable AND is_late = true THEN price ELSE 0 END), 0) AS late_amount,
        COALESCE(SUM(CASE WHEN is_chargeable AND (report_id IS NULL OR is_late IS DISTINCT FROM true) THEN price ELSE 0 END), 0) AS income_counted,
        COALESCE(SUM(CASE WHEN is_chargeable AND (report_id IS NULL OR is_late IS DISTINCT FROM true) THEN salary_base ELSE 0 END), 0) AS income_counted_net,
@@ -468,12 +484,27 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
     [from, to]
   );
 
+  const emptySalary = (tid) => ({
+    teacherId: tid,
+    teacherUsername: teacherById.get(tid) || '',
+    totalChargeable: 0,
+    lateAmount: 0,
+    incomeCounted: 0,
+    bankTransferDeduction: 0,
+    noReportAmount: 0,
+    chargeableLessonsCount: 0,
+    conductedLessonsCount: 0,
+    testchildHours: 0,
+    salary: 0,
+  });
+
   const salaryByTeacher = new Map();
   for (const r of salariesRes.rows) {
     const tid = r.teacher_id;
     const income = toNumber(r.income_counted);
     const incomeNet = toNumber(r.income_counted_net);
     const bankTransferDeduction = Math.max(0, Math.round(income - incomeNet));
+    const testchildMinutes = toNumber(r.testchild_minutes);
     salaryByTeacher.set(tid, {
       teacherId: tid,
       teacherUsername: teacherById.get(tid) || '',
@@ -483,6 +514,9 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
       bankTransferDeduction,
       noReportAmount: toNumber(r.no_report_amount),
       chargeableLessonsCount: Number(r.chargeable_lessons_count || 0),
+      conductedLessonsCount: Number(r.conducted_lessons_count || 0),
+      // Часы с одним знаком после запятой (90 мин → 1.5).
+      testchildHours: Math.round((testchildMinutes / 60) * 10) / 10,
       salary: Math.round(incomeNet * SALARY_SHARE),
     });
     // Подхватим preподов, у которых не было ни одного занятия в периоде, но они есть в teacherStats.
@@ -493,17 +527,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
   // Гарантируем, что у каждого препода со статистикой есть запись про зарплату.
   for (const tid of teacherStatsMap.keys()) {
     if (!salaryByTeacher.has(tid)) {
-      salaryByTeacher.set(tid, {
-        teacherId: tid,
-        teacherUsername: teacherById.get(tid) || '',
-        totalChargeable: 0,
-        lateAmount: 0,
-        incomeCounted: 0,
-        bankTransferDeduction: 0,
-        noReportAmount: 0,
-        chargeableLessonsCount: 0,
-        salary: 0,
-      });
+      salaryByTeacher.set(tid, emptySalary(tid));
     }
   }
 
@@ -604,9 +628,21 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
       bankTransferDeduction: acc.bankTransferDeduction + (s.bankTransferDeduction || 0),
       noReportAmount: acc.noReportAmount + s.noReportAmount,
       chargeableLessonsCount: acc.chargeableLessonsCount + s.chargeableLessonsCount,
+      conductedLessonsCount: acc.conductedLessonsCount + (s.conductedLessonsCount || 0),
+      testchildHours: Math.round((acc.testchildHours + (s.testchildHours || 0)) * 10) / 10,
       salary: acc.salary + s.salary,
     }),
-    { totalChargeable: 0, lateAmount: 0, incomeCounted: 0, bankTransferDeduction: 0, noReportAmount: 0, chargeableLessonsCount: 0, salary: 0 }
+    {
+      totalChargeable: 0,
+      lateAmount: 0,
+      incomeCounted: 0,
+      bankTransferDeduction: 0,
+      noReportAmount: 0,
+      chargeableLessonsCount: 0,
+      conductedLessonsCount: 0,
+      testchildHours: 0,
+      salary: 0,
+    }
   );
 
   return {

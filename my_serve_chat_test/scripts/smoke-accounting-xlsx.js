@@ -104,9 +104,11 @@ const run = async () => {
   const salaryHeader = wb.getWorksheet('Зарплаты').getRow(1).values.filter(Boolean).map(String);
   assert(
     salaryHeader[0] === 'Преподаватель' &&
-      salaryHeader[1] === 'Зарплата' &&
-      salaryHeader[2] === 'Штрафы за поздние' &&
-      salaryHeader[3] === 'Общая сумма',
+      salaryHeader[1] === 'Общая сумма' &&
+      salaryHeader[2] === 'Проведено занятий' &&
+      salaryHeader[3] === 'Часы testchild' &&
+      salaryHeader[4] === 'Штрафы' &&
+      salaryHeader[5] === 'Зарплата',
     `Заголовки "Зарплаты" неверные: ${salaryHeader.join(' | ')}`
   );
   const kpiHeader = wb.getWorksheet('КПД').getRow(1).values.filter(Boolean).map(String);
