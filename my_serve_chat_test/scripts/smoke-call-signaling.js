@@ -88,12 +88,21 @@ async function findDmChat(tokenA, tokenB, userIdA, userIdB) {
   return String(created.id ?? created.chat_id);
 }
 
-async function scenarioHappyPath(wsA, wsB, chatId) {
-  const callId = `smoke-happy-${Date.now()}`;
+async function scenarioHappyPath(wsA, wsB, chatId, { mediaType = 'audio' } = {}) {
+  const callId = `smoke-happy-${mediaType}-${Date.now()}`;
   const inviteWait = waitForType(wsB, 'call_invite');
-  send(wsA, { type: 'call_invite', call_id: callId, chat_id: chatId });
+  send(wsA, {
+    type: 'call_invite',
+    call_id: callId,
+    chat_id: chatId,
+    media_type: mediaType,
+  });
   const invite = await inviteWait;
   if (invite.call_id !== callId) throw new Error('invite call_id mismatch');
+  const gotMedia = (invite.media_type || invite.mediaType || 'audio').toString();
+  if (gotMedia !== mediaType) {
+    throw new Error(`invite media_type mismatch: expected ${mediaType}, got ${gotMedia}`);
+  }
 
   const acceptWait = waitForType(wsA, 'call_accept');
   send(wsB, { type: 'call_accept', call_id: callId, chat_id: chatId });
@@ -186,8 +195,11 @@ async function main() {
   const wsB = await connectWs(userB.token);
 
   try {
-    await scenarioHappyPath(wsA, wsB, chatId);
+    await scenarioHappyPath(wsA, wsB, chatId, { mediaType: 'audio' });
     console.log('smoke-call-signaling[happy]: OK (invite/accept/offer/answer/ice/hangup)');
+
+    await scenarioHappyPath(wsA, wsB, chatId, { mediaType: 'video' });
+    console.log('smoke-call-signaling[video]: OK (media_type=video relayed)');
 
     await scenarioReject(wsA, wsB, chatId);
     console.log('smoke-call-signaling[reject]: OK (invite/reject relayed)');

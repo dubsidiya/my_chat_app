@@ -12,8 +12,15 @@ import 'nagavisor_screen.dart';
 /// Планировщик: по выбранным преподавателям — в какие дни и время можно поставить ребёнка.
 class TeacherScheduleOverviewScreen extends StatefulWidget {
   final List<int>? initialTeacherIds;
+  final DateTime? initialFrom;
+  final DateTime? initialTo;
 
-  const TeacherScheduleOverviewScreen({super.key, this.initialTeacherIds});
+  const TeacherScheduleOverviewScreen({
+    super.key,
+    this.initialTeacherIds,
+    this.initialFrom,
+    this.initialTo,
+  });
 
   @override
   State<TeacherScheduleOverviewScreen> createState() =>
@@ -23,8 +30,8 @@ class TeacherScheduleOverviewScreen extends StatefulWidget {
 class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewScreen> {
   final AdminService _admin = AdminService();
 
-  DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
-  DateTime _to = DateTime.now();
+  late DateTime _from;
+  late DateTime _to;
   List<ReportAuthorOption> _teachers = [];
   final Set<int> _selectedTeacherIds = {};
   TeacherPlacementPlan? _plan;
@@ -37,10 +44,24 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _from = widget.initialFrom ?? DateTime(now.year, now.month, 1);
+    _to = widget.initialTo ?? now;
+    if (_from.isAfter(_to)) {
+      final tmp = _from;
+      _from = _to;
+      _to = tmp;
+    }
     unawaited(_loadTeachers());
   }
 
+  bool get _periodValid => !_from.isAfter(_to);
+
   Future<void> _loadTeachers() async {
+    if (!_periodValid) {
+      setState(() => _error = 'Дата «С» не может быть позже «По»');
+      return;
+    }
     setState(() {
       _loadingTeachers = true;
       _error = null;
@@ -66,6 +87,10 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
   }
 
   Future<void> _loadPlan() async {
+    if (!_periodValid) {
+      setState(() => _error = 'Дата «С» не может быть позже «По»');
+      return;
+    }
     if (_selectedTeacherIds.isEmpty) {
       setState(() => _error = 'Выберите 1–5 преподавателей');
       return;
@@ -108,8 +133,14 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
       } else {
         _to = d;
       }
+      if (_from.isAfter(_to)) {
+        _error = 'Дата «С» не может быть позже «По»';
+        _plan = null;
+      } else {
+        _error = null;
+      }
     });
-    await _loadTeachers();
+    if (_periodValid) await _loadTeachers();
   }
 
   void _toggleTeacher(int id) {
@@ -127,6 +158,10 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
   }
 
   Future<void> _apply() async {
+    if (!_periodValid) {
+      setState(() => _error = 'Дата «С» не может быть позже «По»');
+      return;
+    }
     await _loadTeachers();
     await _loadPlan();
   }
@@ -159,7 +194,7 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Выберите преподавателей — увидите, в какие дни и на какое время у каждого можно поставить ребёнка. Решение принимаете вы.',
+            'Выберите преподавателей — увидите рекомендации по дням и времени на основе фактических уроков. Запись ребёнка делается отдельно.',
             style: TextStyle(color: scheme.onSurfaceVariant, height: 1.35),
           ),
           const SizedBox(height: 12),
@@ -223,7 +258,7 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: (_loadingPlan || _loadingTeachers) ? null : _apply,
+                      onPressed: (_loadingPlan || _loadingTeachers || !_periodValid) ? null : _apply,
                       icon: _loadingPlan
                           ? const SizedBox(
                               width: 18,
@@ -264,6 +299,8 @@ class _TeacherScheduleOverviewScreenState extends State<TeacherScheduleOverviewS
                         builder: (_) => NagavisorScreen(
                           teacherId: teacher.teacherId,
                           teacherLabel: teacher.teacherLabel,
+                          initialFrom: _from,
+                          initialTo: _to,
                         ),
                       ),
                     );
@@ -339,6 +376,10 @@ class _TeacherPlacementCard extends StatelessWidget {
             else
               ...slots.map((slot) {
                 final color = statusColor(slot.placementStatus);
+                final peak = slot.studentsPeak;
+                final density = peak != null && peak != slot.studentsCount
+                    ? '${slot.studentsCount} уч. (пик $peak) · ${slot.lessonsCount} ур. · ${slot.weeksActive} нед.'
+                    : '${slot.studentsCount} уч. · ${slot.lessonsCount} ур. · ${slot.weeksActive} нед.';
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
@@ -354,7 +395,7 @@ class _TeacherPlacementCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     subtitle: Text(
-                      '${slot.placementLabel} · ${slot.studentsCount} уч. · ${slot.weeksActive} нед.',
+                      '${slot.placementLabel} · $density',
                       style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
                     ),
                     children: [
@@ -363,14 +404,19 @@ class _TeacherPlacementCard extends StatelessWidget {
                           'Слот встречался меньше 2 недель — осторожно с переносом',
                           style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade600),
                         ),
-                      if (slot.isTypicalDay)
+                      if (!slot.isTypicalDay)
+                        Text(
+                          'День не входит в обычный график преподавателя',
+                          style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade600),
+                        )
+                      else
                         Text(
                           'День входит в обычный график преподавателя',
                           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                         ),
                       const SizedBox(height: 6),
                       Text(
-                        'Сейчас в слоте:',
+                        'Ученики в слоте за период:',
                         style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
                       ),
                       if (slot.students.isEmpty)

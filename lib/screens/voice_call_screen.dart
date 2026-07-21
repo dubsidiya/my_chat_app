@@ -7,9 +7,10 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/camera_permission.dart';
 import '../utils/microphone_permission.dart';
 
-/// Full-screen UI for an active or ringing voice call.
+/// Full-screen UI for an active or ringing voice/video call.
 class VoiceCallScreen extends StatefulWidget {
   const VoiceCallScreen({super.key});
 
@@ -20,6 +21,7 @@ class VoiceCallScreen extends StatefulWidget {
 class _VoiceCallScreenState extends State<VoiceCallScreen> {
   final VoiceCallService _calls = VoiceCallService.instance;
   RTCVideoRenderer? _remoteRenderer;
+  RTCVideoRenderer? _localRenderer;
   VoiceCallSnapshot _snap = VoiceCallService.instance.snapshot;
   StreamSubscription<VoiceCallSnapshot>? _stateSub;
   Timer? _durationTicker;
@@ -27,8 +29,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   DateTime? _connectedAt;
   Duration _callDuration = Duration.zero;
 
-  /// По умолчанию разговорный динамик (как обычный телефонный звонок), не громкая связь.
-  bool _speakerOn = false;
+  /// Голосовой: разговорный динамик; видео: громкая связь по умолчанию.
+  late bool _speakerOn;
   bool _autoCloseScheduled = false;
   VoiceCallPhase? _lastHapticPhase;
 
@@ -36,9 +38,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   void initState() {
     super.initState();
     _snap = _calls.snapshot;
+    _speakerOn = _snap.isVideo;
     _syncConnectedTimer();
     _syncRingerFor(_snap.phase);
-    _initRenderer();
+    _initRenderers();
     _stateSub = _calls.stateStream.listen(_onCallState);
     _applySpeakerphone(_speakerOn);
   }
@@ -46,8 +49,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   void _onCallState(VoiceCallSnapshot s) {
     if (!mounted) return;
     setState(() => _snap = s);
+    if (s.phase == VoiceCallPhase.connected || s.isVideo) {
+      _attachStreams();
+    }
     if (s.phase == VoiceCallPhase.connected) {
-      _attachRemote();
       // После configure audio session на iOS ранний setSpeakerphoneOn в initState
       // часто игнорируется — повторяем выбранный маршрут при «На связи».
       _applySpeakerphone(_speakerOn);
@@ -55,8 +60,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _syncConnectedTimer();
     _syncRingerFor(s.phase);
     if (s.phase == VoiceCallPhase.failed &&
-        (s.statusMessage?.contains('микрофон') ?? false)) {
-      _showMicDeniedHint();
+        ((s.statusMessage?.contains('микрофон') ?? false) ||
+            (s.statusMessage?.contains('камер') ?? false))) {
+      _showPermissionDeniedHint();
     }
     if (s.phase == VoiceCallPhase.ended ||
         s.phase == VoiceCallPhase.failed ||
@@ -141,41 +147,59 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     } catch (_) {}
   }
 
-  Future<void> _initRenderer() async {
-    final renderer = RTCVideoRenderer();
-    await renderer.initialize();
+  Future<void> _initRenderers() async {
+    final remote = RTCVideoRenderer();
+    final local = RTCVideoRenderer();
+    await remote.initialize();
+    await local.initialize();
     if (!mounted) {
-      await renderer.dispose();
+      await remote.dispose();
+      await local.dispose();
       return;
     }
-    setState(() => _remoteRenderer = renderer);
-    _attachRemote();
+    setState(() {
+      _remoteRenderer = remote;
+      _localRenderer = local;
+    });
+    _attachStreams();
   }
 
-  void _attachRemote() {
-    final stream = _calls.remoteStream;
-    final renderer = _remoteRenderer;
-    if (stream != null && renderer != null) {
-      renderer.srcObject = stream;
+  void _attachStreams() {
+    final remote = _calls.remoteStream;
+    final local = _calls.localStream;
+    if (remote != null && _remoteRenderer != null) {
+      _remoteRenderer!.srcObject = remote;
+    }
+    if (local != null && _localRenderer != null) {
+      _localRenderer!.srcObject = local;
     }
   }
 
-  void _showMicDeniedHint() {
-    final permanent =
+  void _showPermissionDeniedHint() {
+    final micPermanent =
         _calls.lastMicrophoneAccess == MicrophoneAccess.permanentlyDenied;
-    if (!permanent) return;
+    final camPermanent =
+        _calls.lastCameraAccess == MicrophoneAccess.permanentlyDenied;
+    if (!micPermanent && !camPermanent) return;
+    final needCamera = camPermanent && _snap.isVideo;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Нужен микрофон'),
-          content: const Text(
+          title: Text(needCamera ? 'Нужна камера' : 'Нужен микрофон'),
+          content: Text(
             kIsWeb
-                ? 'Разрешите микрофон для этого сайта в настройках браузера '
-                      '(иконка замка в адресной строке), затем повторите звонок.'
-                : 'Разрешите доступ к микрофону в Настройках → Reollity → Микрофон, '
-                      'затем повторите звонок.',
+                ? (needCamera
+                    ? 'Разрешите камеру и микрофон для этого сайта в настройках '
+                        'браузера, затем повторите звонок.'
+                    : 'Разрешите микрофон для этого сайта в настройках браузера '
+                        '(иконка замка в адресной строке), затем повторите звонок.')
+                : (needCamera
+                    ? 'Разрешите доступ к камере (и микрофону) в Настройках → '
+                        'Reollity, затем повторите звонок.'
+                    : 'Разрешите доступ к микрофону в Настройках → Reollity → '
+                        'Микрофон, затем повторите звонок.'),
           ),
           actions: [
             TextButton(
@@ -185,7 +209,11 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                unawaited(MicrophonePermission.openSettings());
+                unawaited(
+                  needCamera
+                      ? CameraPermission.openSettings()
+                      : MicrophonePermission.openSettings(),
+                );
               },
               child: const Text('Настройки'),
             ),
@@ -224,13 +252,15 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _ringerTicker = null;
     if (!kIsWeb) _applySpeakerphone(false);
     _remoteRenderer?.srcObject = null;
+    _localRenderer?.srcObject = null;
     _remoteRenderer?.dispose();
+    _localRenderer?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _attachRemote();
+    _attachStreams();
     final scheme = Theme.of(context).colorScheme;
     final label = (_snap.peerLabel ?? 'Звонок').trim();
     final initial = label.isNotEmpty ? label[0].toUpperCase() : '?';
@@ -238,6 +268,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     final isConnected = _snap.phase == VoiceCallPhase.connected;
     final canShowMediaControls =
         isConnected || _snap.phase == VoiceCallPhase.connecting;
+    final showVideoUi = _snap.isVideo;
     final status = isConnected
         ? _formatDuration(_callDuration)
         : (_snap.statusMessage ?? _phaseLabel(_snap.phase));
@@ -252,7 +283,50 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         body: SafeArea(
           child: Stack(
             children: [
-              if (_remoteRenderer != null)
+              if (showVideoUi) ...[
+                Positioned.fill(
+                  child: _snap.hasRemoteVideo && _remoteRenderer != null
+                      ? RTCVideoView(
+                          _remoteRenderer!,
+                          objectFit:
+                              RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        )
+                      : ColoredBox(
+                          color: AppColors.backgroundDark,
+                          child: Center(
+                            child: CircleAvatar(
+                              radius: 56,
+                              backgroundColor:
+                                  AppColors.primary.withValues(alpha: 0.25),
+                              child: Text(
+                                initial,
+                                style: const TextStyle(
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+                if (_localRenderer != null && !_snap.isCameraOff)
+                  Positioned(
+                    right: 16,
+                    top: 56,
+                    width: 112,
+                    height: 160,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: RTCVideoView(
+                        _localRenderer!,
+                        mirror: true,
+                        objectFit:
+                            RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                      ),
+                    ),
+                  ),
+              ] else if (_remoteRenderer != null)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -269,7 +343,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                 ),
               Column(
                 children: [
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
@@ -281,41 +355,77 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       onPressed: _minimizeCall,
                     ),
                   ),
-                  const Spacer(),
-                  CircleAvatar(
-                    radius: 56,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  if (!showVideoUi || !isConnected) ...[
+                    const Spacer(),
+                    if (!showVideoUi || !_snap.hasRemoteVideo)
+                      CircleAvatar(
+                        radius: 56,
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.25),
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
+                    const SizedBox(height: 8),
+                    Text(
+                      status,
                       style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface.withValues(alpha: 0.65),
+                        fontSize: 15,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    status,
-                    style: TextStyle(
-                      color: scheme.onSurface.withValues(alpha: 0.65),
-                      fontSize: 15,
+                    const Spacer(),
+                  ] else ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        children: [
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(blurRadius: 8, color: Colors.black54),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            status,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.85),
+                              fontSize: 14,
+                              shadows: const [
+                                Shadow(blurRadius: 8, color: Colors.black54),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Spacer(),
+                    const Spacer(),
+                  ],
                   if (canShowMediaControls)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -328,8 +438,24 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                 : Icons.mic_rounded,
                             onTap: () => unawaited(_calls.toggleMute()),
                           ),
+                          if (showVideoUi) ...[
+                            const SizedBox(width: 16),
+                            _mediaToggleButton(
+                              icon: _snap.isCameraOff
+                                  ? Icons.videocam_off_rounded
+                                  : Icons.videocam_rounded,
+                              onTap: () => unawaited(_calls.toggleCamera()),
+                            ),
+                            if (!kIsWeb) ...[
+                              const SizedBox(width: 16),
+                              _mediaToggleButton(
+                                icon: Icons.cameraswitch_rounded,
+                                onTap: () => unawaited(_calls.switchCamera()),
+                              ),
+                            ],
+                          ],
                           if (!kIsWeb) ...[
-                            const SizedBox(width: 24),
+                            const SizedBox(width: 16),
                             _mediaToggleButton(
                               icon: _speakerOn
                                   ? Icons.volume_up_rounded
@@ -354,7 +480,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                           ),
                           _roundButton(
                             color: Colors.green.shade600,
-                            icon: Icons.call_rounded,
+                            icon: showVideoUi
+                                ? Icons.videocam_rounded
+                                : Icons.call_rounded,
                             label: 'Принять',
                             onTap: () => unawaited(_calls.acceptIncoming()),
                           ),
@@ -380,13 +508,13 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   String _phaseLabel(VoiceCallPhase phase) {
     switch (phase) {
       case VoiceCallPhase.outgoing:
-        return 'Вызов…';
+        return _snap.isVideo ? 'Видеовызов…' : 'Вызов…';
       case VoiceCallPhase.connecting:
         return 'Соединение…';
       case VoiceCallPhase.connected:
         return 'На связи';
       case VoiceCallPhase.incoming:
-        return 'Входящий звонок';
+        return _snap.isVideo ? 'Входящий видеозвонок' : 'Входящий звонок';
       default:
         return '';
     }

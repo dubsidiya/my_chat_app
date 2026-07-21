@@ -4,8 +4,14 @@
  */
 
 import { sendIncomingCallPushToUser } from '../utils/pushNotifications.js';
+import { getUserGroupCallId } from './groupCallSignaling.js';
 
-/** @typedef {{ chatId: string, callerId: string, calleeId: string, state: string, createdAt: number, mediaConnId?: Record<string, string> }} ActiveCall */
+/** @typedef {{ chatId: string, callerId: string, calleeId: string, state: string, createdAt: number, mediaType: 'audio'|'video', mediaConnId?: Record<string, string> }} ActiveCall */
+
+function normalizeMediaType(raw) {
+  const v = (raw ?? 'audio').toString().trim().toLowerCase();
+  return v === 'video' ? 'video' : 'audio';
+}
 const activeCalls = new Map(); // callId -> ActiveCall
 const userActiveCallId = new Map(); // userId -> callId
 
@@ -22,6 +28,13 @@ function cleanupCall(callId) {
   if (userActiveCallId.get(call.calleeId) === callId) {
     userActiveCallId.delete(call.calleeId);
   }
+}
+
+/** @returns {string|null} */
+export function getUserDmCallId(userId) {
+  const uid = userId?.toString();
+  if (!uid) return null;
+  return userActiveCallId.get(uid) || null;
 }
 
 function isParticipant(call, userId) {
@@ -225,7 +238,7 @@ export async function handleCallSignaling(data, ctx) {
     cleanupStaleCallsForUser(userId);
     cleanupStaleCallsForUser(dm.peerId);
 
-    if (userActiveCallId.has(userId.toString())) {
+    if (userActiveCallId.has(userId.toString()) || getUserGroupCallId(userId)) {
       sendCallError(sendToUserSockets, userId, {
         code: 'busy',
         chat_id: dm.chatIdNum.toString(),
@@ -233,7 +246,7 @@ export async function handleCallSignaling(data, ctx) {
       });
       return true;
     }
-    if (userActiveCallId.has(dm.peerId)) {
+    if (userActiveCallId.has(dm.peerId) || getUserGroupCallId(dm.peerId)) {
       sendToUserSockets(userId, {
         type: 'call_busy',
         call_id: callId,
@@ -243,6 +256,7 @@ export async function handleCallSignaling(data, ctx) {
       return true;
     }
 
+    const mediaType = normalizeMediaType(data.media_type ?? data.mediaType);
     const now = Date.now();
     const callRecord = {
       chatId: dm.chatIdNum.toString(),
@@ -250,6 +264,7 @@ export async function handleCallSignaling(data, ctx) {
       calleeId: dm.peerId,
       state: 'ringing',
       createdAt: now,
+      mediaType,
       mediaConnId: {},
     };
     bindMediaConn(callRecord, userId, myConnId);
@@ -264,6 +279,7 @@ export async function handleCallSignaling(data, ctx) {
       chat_id: chatIdStr,
       from_user_id: userId.toString(),
       from_user_email: userEmail || '',
+      media_type: mediaType,
       ts: new Date().toISOString(),
     });
 
@@ -289,6 +305,7 @@ export async function handleCallSignaling(data, ctx) {
           chatName,
           fromUserId: userId.toString(),
           fromEmail: userEmail || '',
+          mediaType,
         });
       } catch (err) {
         if (process.env.NODE_ENV !== 'production') {

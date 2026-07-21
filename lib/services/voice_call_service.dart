@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../config/api_config.dart';
 import '../config/webrtc_config.dart';
+import '../utils/camera_permission.dart';
 import '../utils/microphone_permission.dart';
 import '../utils/webrtc_device_support.dart';
 import '../utils/timed_http.dart';
@@ -24,6 +25,16 @@ enum VoiceCallPhase {
   failed,
 }
 
+enum CallMediaType {
+  audio,
+  video,
+}
+
+CallMediaType callMediaTypeFromRaw(dynamic raw) {
+  final v = raw?.toString().trim().toLowerCase() ?? '';
+  return v == 'video' ? CallMediaType.video : CallMediaType.audio;
+}
+
 class VoiceCallSnapshot {
   final VoiceCallPhase phase;
   final String? callId;
@@ -32,6 +43,9 @@ class VoiceCallSnapshot {
   final String? peerLabel;
   final String? statusMessage;
   final bool isMuted;
+  final CallMediaType mediaType;
+  final bool isCameraOff;
+  final bool hasRemoteVideo;
 
   const VoiceCallSnapshot({
     this.phase = VoiceCallPhase.idle,
@@ -41,6 +55,9 @@ class VoiceCallSnapshot {
     this.peerLabel,
     this.statusMessage,
     this.isMuted = false,
+    this.mediaType = CallMediaType.audio,
+    this.isCameraOff = false,
+    this.hasRemoteVideo = false,
   });
 
   bool get isActive =>
@@ -48,6 +65,8 @@ class VoiceCallSnapshot {
       phase == VoiceCallPhase.outgoing ||
       phase == VoiceCallPhase.connecting ||
       phase == VoiceCallPhase.connected;
+
+  bool get isVideo => mediaType == CallMediaType.video;
 
   VoiceCallSnapshot copyWith({
     VoiceCallPhase? phase,
@@ -57,6 +76,9 @@ class VoiceCallSnapshot {
     String? peerLabel,
     String? statusMessage,
     bool? isMuted,
+    CallMediaType? mediaType,
+    bool? isCameraOff,
+    bool? hasRemoteVideo,
   }) {
     return VoiceCallSnapshot(
       phase: phase ?? this.phase,
@@ -66,6 +88,9 @@ class VoiceCallSnapshot {
       peerLabel: peerLabel ?? this.peerLabel,
       statusMessage: statusMessage ?? this.statusMessage,
       isMuted: isMuted ?? this.isMuted,
+      mediaType: mediaType ?? this.mediaType,
+      isCameraOff: isCameraOff ?? this.isCameraOff,
+      hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
     );
   }
 }
@@ -88,6 +113,7 @@ class VoiceCallService {
   MediaStream? _remoteStream;
   List<Map<String, dynamic>>? _iceServers;
   MicrophoneAccess? _lastMicAccess;
+  MicrophoneAccess? _lastCameraAccess;
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   static const int _maxPendingRemoteCandidates = 80;
   bool _remoteDescriptionSet = false;
@@ -102,9 +128,11 @@ class VoiceCallService {
   bool _webRtcMediaBroken = false;
   /// Этот клиент ведёт медиа-ногу звонка (invite/accept с этой вкладки/устройства).
   bool _ownsCallMedia = false;
+  bool _usingFrontCamera = true;
 
   VoiceCallSnapshot get snapshot => _snapshot;
   MicrophoneAccess? get lastMicrophoneAccess => _lastMicAccess;
+  MicrophoneAccess? get lastCameraAccess => _lastCameraAccess;
 
   void bindUser(String userId) {
     final uid = userId.trim();
@@ -123,8 +151,10 @@ class VoiceCallService {
     _idleResetTimer?.cancel();
     _idleResetTimer = null;
     _lastMicAccess = null;
+    _lastCameraAccess = null;
     _webRtcMediaBroken = false;
     _ownsCallMedia = false;
+    _usingFrontCamera = true;
     unawaited(_tearDownMedia());
     _emit(const VoiceCallSnapshot(phase: VoiceCallPhase.idle));
   }
@@ -133,6 +163,7 @@ class VoiceCallService {
     required String chatId,
     required String peerUserId,
     required String peerLabel,
+    CallMediaType mediaType = CallMediaType.audio,
   }) async {
     try {
       if (!WebRtcDeviceSupport.webCallsAllowed) {
@@ -156,6 +187,10 @@ class VoiceCallService {
       if (!await _ensureMicrophonePermission()) {
         return false;
       }
+      if (mediaType == CallMediaType.video &&
+          !await _ensureCameraPermission()) {
+        return false;
+      }
 
       // Заранее проверяем, что нативный flutter_webrtc вообще доступен.
       // Если на iOS release сломан pod install — здесь же отдадим понятное
@@ -171,6 +206,7 @@ class VoiceCallService {
 
       final callId = _newCallId();
       _ownsCallMedia = true;
+      _usingFrontCamera = true;
       _emit(
         VoiceCallSnapshot(
           phase: VoiceCallPhase.outgoing,
@@ -178,7 +214,10 @@ class VoiceCallService {
           chatId: chatId,
           peerUserId: peerUserId,
           peerLabel: peerLabel,
-          statusMessage: 'Вызов…',
+          mediaType: mediaType,
+          statusMessage: mediaType == CallMediaType.video
+              ? 'Видеовызов…'
+              : 'Вызов…',
         ),
       );
       _startOutgoingTimeout();
@@ -190,6 +229,7 @@ class VoiceCallService {
         'type': 'call_invite',
         'call_id': callId,
         'chat_id': chatId,
+        'media_type': mediaType == CallMediaType.video ? 'video' : 'audio',
       });
       if (!sent) {
         _cancelOutgoingTimeout();
@@ -270,6 +310,10 @@ class VoiceCallService {
         await rejectIncoming(reason: 'no_mic');
         return;
       }
+      if (_snapshot.isVideo && !await _ensureCameraPermission()) {
+        await rejectIncoming(reason: 'no_camera');
+        return;
+      }
 
       // Тот же ранний контракт, что и в startOutgoingCall: если flutter_webrtc
       // не зарегистрирован, peer не должен узнать о принятии звонка.
@@ -320,7 +364,9 @@ class VoiceCallService {
       });
     }
     await _tearDownMedia();
-    final statusMessage = reason == 'no_mic' || reason == 'media_error'
+    final statusMessage = reason == 'no_mic' ||
+            reason == 'no_camera' ||
+            reason == 'media_error'
         ? (_snapshot.statusMessage ?? 'Не удалось принять звонок')
         : 'Отклонён';
     _emit(
@@ -330,6 +376,7 @@ class VoiceCallService {
         chatId: chatId,
         peerUserId: _snapshot.peerUserId,
         peerLabel: _snapshot.peerLabel,
+        mediaType: _snapshot.mediaType,
         statusMessage: statusMessage,
       ),
     );
@@ -389,7 +436,33 @@ class VoiceCallService {
     _emit(_snapshot.copyWith(isMuted: !track.enabled));
   }
 
+  Future<void> toggleCamera() async {
+    if (!_snapshot.isVideo) return;
+    final stream = _localStream;
+    if (stream == null) return;
+    final tracks = stream.getVideoTracks();
+    if (tracks.isEmpty) return;
+    final track = tracks.first;
+    track.enabled = !track.enabled;
+    _emit(_snapshot.copyWith(isCameraOff: !track.enabled));
+  }
+
+  Future<void> switchCamera() async {
+    if (!_snapshot.isVideo || kIsWeb) return;
+    final stream = _localStream;
+    if (stream == null) return;
+    final tracks = stream.getVideoTracks();
+    if (tracks.isEmpty) return;
+    try {
+      await Helper.switchCamera(tracks.first);
+      _usingFrontCamera = !_usingFrontCamera;
+    } catch (e) {
+      if (kDebugMode) print('VoiceCall switchCamera: $e');
+    }
+  }
+
   MediaStream? get remoteStream => _remoteStream;
+  MediaStream? get localStream => _localStream;
 
   Future<void> bindUserIfNeeded() async {
     if (_myUserId != null) return;
@@ -404,6 +477,7 @@ class VoiceCallService {
     required String chatId,
     required String peerUserId,
     required String peerLabel,
+    CallMediaType mediaType = CallMediaType.audio,
   }) {
     if (callId.isEmpty || chatId.isEmpty || peerUserId.isEmpty) return;
     unawaited(bindUserIfNeeded());
@@ -421,7 +495,10 @@ class VoiceCallService {
         chatId: chatId,
         peerUserId: peerUserId,
         peerLabel: peerLabel,
-        statusMessage: 'Входящий звонок',
+        mediaType: mediaType,
+        statusMessage: mediaType == CallMediaType.video
+            ? 'Входящий видеозвонок'
+            : 'Входящий звонок',
       ),
     );
   }
@@ -516,6 +593,8 @@ class VoiceCallService {
   void _applyIncomingInvite(Map event) {
     final fromId = event['from_user_id']?.toString() ?? '';
     final fromEmail = event['from_user_email']?.toString() ?? 'Пользователь';
+    final mediaType =
+        callMediaTypeFromRaw(event['media_type'] ?? event['mediaType']);
     _emit(
       VoiceCallSnapshot(
         phase: VoiceCallPhase.incoming,
@@ -523,7 +602,10 @@ class VoiceCallService {
         chatId: event['chat_id']?.toString(),
         peerUserId: fromId,
         peerLabel: fromEmail,
-        statusMessage: 'Входящий звонок',
+        mediaType: mediaType,
+        statusMessage: mediaType == CallMediaType.video
+            ? 'Входящий видеозвонок'
+            : 'Входящий звонок',
       ),
     );
     unawaited(_preloadIceServers());
@@ -581,7 +663,9 @@ class VoiceCallService {
     final reason = event['reason']?.toString() ?? 'declined';
     final statusMessage = reason == 'busy'
         ? 'Абонент занят'
-        : reason == 'no_mic' || reason == 'media_error'
+        : reason == 'no_mic' ||
+                reason == 'no_camera' ||
+                reason == 'media_error'
             ? 'Абонент не смог принять звонок'
             : 'Абонент отклонил';
     _emit(
@@ -591,6 +675,7 @@ class VoiceCallService {
         chatId: _snapshot.chatId,
         peerUserId: _snapshot.peerUserId,
         peerLabel: _snapshot.peerLabel,
+        mediaType: _snapshot.mediaType,
         statusMessage: statusMessage,
       ),
     );
@@ -707,15 +792,18 @@ class VoiceCallService {
     return 'Соединение…';
   }
 
-  /// Offerer (звонящий после call_accept): PC → микрофон → offer.
+  /// Offerer (звонящий после call_accept): PC → микрофон[/камера] → offer.
   Future<void> _createAndSendOffer() async {
     await _preparePeerConnectionShell();
-    if (!await _ensureLocalAudioStream()) {
-      throw StateError('local audio unavailable');
+    if (!await _ensureLocalMediaStream()) {
+      throw StateError('local media unavailable');
     }
     await _attachLocalTracksToPeerConnection();
 
-    final offer = await _pc!.createOffer(<String, dynamic>{});
+    final offer = await _pc!.createOffer(<String, dynamic>{
+      if (_snapshot.isVideo) 'offerToReceiveVideo': true,
+      'offerToReceiveAudio': true,
+    });
     await _pc!.setLocalDescription(offer);
     if (kDebugMode) {
       print('VoiceCall: offer created, sdp length=${offer.sdp?.length ?? 0}');
@@ -732,12 +820,12 @@ class VoiceCallService {
     }
   }
 
-  /// Answerer: PC → remote offer → микрофон → answer (unified-plan).
+  /// Answerer: PC → remote offer → микрофон[/камера] → answer (unified-plan).
   Future<void> _createAndSendAnswer(RTCSessionDescription remoteOffer) async {
     await _preparePeerConnectionShell();
     await _setRemoteDescription(remoteOffer);
-    if (!await _ensureLocalAudioStream()) {
-      throw StateError('local audio unavailable');
+    if (!await _ensureLocalMediaStream()) {
+      throw StateError('local media unavailable');
     }
     await _attachLocalTracksToPeerConnection();
 
@@ -789,7 +877,7 @@ class VoiceCallService {
     }
   }
 
-  Future<bool> _ensureLocalAudioStream() async {
+  Future<bool> _ensureLocalMediaStream() async {
     if (_webRtcMediaBroken) {
       _emitFailed(
         'Ошибка WebRTC. Полностью закройте приложение и откройте снова.',
@@ -797,7 +885,9 @@ class VoiceCallService {
       return false;
     }
     if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
-      return true;
+      if (!_snapshot.isVideo || _localStream!.getVideoTracks().isNotEmpty) {
+        return true;
+      }
     }
     if (!_snapshot.isActive) return false;
     if (_pc == null) {
@@ -807,10 +897,12 @@ class VoiceCallService {
 
     if (_localAudioSetupInFlight != null) {
       await _localAudioSetupInFlight;
-      return _localStream != null && _localStream!.getAudioTracks().isNotEmpty;
+      return _localStream != null &&
+          _localStream!.getAudioTracks().isNotEmpty &&
+          (!_snapshot.isVideo || _localStream!.getVideoTracks().isNotEmpty);
     }
 
-    final setup = _ensureLocalAudioStreamImpl();
+    final setup = _ensureLocalMediaStreamImpl();
     _localAudioSetupInFlight = setup;
     try {
       return await setup;
@@ -821,22 +913,45 @@ class VoiceCallService {
     }
   }
 
-  Future<bool> _ensureLocalAudioStreamImpl() async {
-    if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
+  Future<bool> _ensureLocalMediaStreamImpl() async {
+    if (_localStream != null &&
+        _localStream!.getAudioTracks().isNotEmpty &&
+        (!_snapshot.isVideo || _localStream!.getVideoTracks().isNotEmpty)) {
       return true;
     }
 
     if (!await _ensureMicrophonePermission()) {
       return false;
     }
+    if (_snapshot.isVideo && !await _ensureCameraPermission()) {
+      return false;
+    }
 
     await _prepareAudioSessionForCall();
     try {
+      final wantVideo = _snapshot.isVideo;
       _localStream = await navigator.mediaDevices.getUserMedia({
         'audio': true,
-        'video': false,
+        'video': wantVideo
+            ? {
+                'facingMode': _usingFrontCamera ? 'user' : 'environment',
+                'width': 640,
+                'height': 480,
+              }
+            : false,
       });
-      return _localStream!.getAudioTracks().isNotEmpty;
+      if (_localStream!.getAudioTracks().isEmpty) {
+        await _finalizeFailedCall('Не удалось запустить микрофон');
+        return false;
+      }
+      if (wantVideo && _localStream!.getVideoTracks().isEmpty) {
+        await _finalizeFailedCall('Не удалось запустить камеру');
+        return false;
+      }
+      if (wantVideo) {
+        _emit(_snapshot.copyWith(isCameraOff: false));
+      }
+      return true;
     } catch (e) {
       if (kDebugMode) print('VoiceCall getUserMedia: $e');
       final err = e.toString().toLowerCase();
@@ -851,8 +966,10 @@ class VoiceCallService {
       final msg = _webRtcMediaBroken
           ? 'Ошибка WebRTC. Полностью закройте приложение и откройте снова.'
           : notAllowed
-              ? 'Нет доступа к микрофону'
-              : 'Не удалось запустить аудио: ${_shortError(e)}';
+              ? (_snapshot.isVideo
+                  ? 'Нет доступа к микрофону или камере'
+                  : 'Нет доступа к микрофону')
+              : 'Не удалось запустить медиа: ${_shortError(e)}';
       await _finalizeFailedCall(msg);
       return false;
     }
@@ -1011,8 +1128,7 @@ class VoiceCallService {
     };
 
     pc.onTrack = (RTCTrackEvent event) {
-      if (event.track.kind != 'audio') return;
-      unawaited(_bindRemoteAudioTrack(event));
+      unawaited(_bindRemoteTrack(event));
     };
 
     pc.onAddStream = (MediaStream stream) {
@@ -1068,13 +1184,23 @@ class VoiceCallService {
     if (stream == null || stream.getAudioTracks().isEmpty) {
       throw StateError('local audio stream missing');
     }
+    if (_snapshot.isVideo && stream.getVideoTracks().isEmpty) {
+      throw StateError('local video stream missing');
+    }
 
     final senders = await _pc!.getSenders();
     final hasAudio = senders.any((s) => s.track?.kind == 'audio');
-    if (hasAudio) return;
+    final hasVideo = senders.any((s) => s.track?.kind == 'video');
 
-    for (final track in stream.getAudioTracks()) {
-      await _pc!.addTrack(track, stream);
+    if (!hasAudio) {
+      for (final track in stream.getAudioTracks()) {
+        await _pc!.addTrack(track, stream);
+      }
+    }
+    if (_snapshot.isVideo && !hasVideo) {
+      for (final track in stream.getVideoTracks()) {
+        await _pc!.addTrack(track, stream);
+      }
     }
   }
 
@@ -1153,13 +1279,33 @@ class VoiceCallService {
     }
   }
 
+  Future<bool> _ensureCameraPermission() async {
+    final access = await CameraPermission.ensure();
+    _lastCameraAccess = access;
+    switch (access) {
+      case MicrophoneAccess.granted:
+        return true;
+      case MicrophoneAccess.permanentlyDenied:
+        _emitFailed(
+          kIsWeb
+              ? 'Нет доступа к камере. Разрешите камеру для этого сайта '
+                  'в настройках браузера.'
+              : 'Нет доступа к камере. Разрешите в Настройках → Reollity → Камера.',
+        );
+        return false;
+      case MicrophoneAccess.denied:
+        _emitFailed('Нет доступа к камере');
+        return false;
+    }
+  }
+
   Future<void> _prepareAudioSessionForCall() async {
     if (kIsWeb) return;
     try {
       if (WebRTC.platformIsIOS) {
         await Helper.setAppleAudioIOMode(
           AppleAudioIOMode.localAndRemote,
-          preferSpeakerOutput: false,
+          preferSpeakerOutput: _snapshot.isVideo,
         );
       } else if (WebRTC.platformIsAndroid) {
         await Helper.setAndroidAudioConfiguration(
@@ -1171,9 +1317,7 @@ class VoiceCallService {
     }
   }
 
-  Future<void> _bindRemoteAudioTrack(RTCTrackEvent event) async {
-    // Defensive: на iOS бывает, что удалённый трек приходит с enabled=false и
-    // звук молчит, пока его явно не включить.
+  Future<void> _bindRemoteTrack(RTCTrackEvent event) async {
     try {
       event.track.enabled = true;
     } catch (_) {}
@@ -1181,20 +1325,53 @@ class VoiceCallService {
       await _handleRemoteStream(event.streams.first);
       return;
     }
-    final stream =
-        await createLocalMediaStream('remote-audio-${_snapshot.callId ?? "call"}');
+    final kind = event.track.kind ?? 'media';
+    final stream = await createLocalMediaStream(
+      'remote-$kind-${_snapshot.callId ?? "call"}',
+    );
     await stream.addTrack(event.track);
     await _handleRemoteStream(stream);
   }
 
   Future<void> _handleRemoteStream(MediaStream stream) async {
-    if (stream.getAudioTracks().isEmpty) return;
+    final hasAudio = stream.getAudioTracks().isNotEmpty;
+    final hasVideo = stream.getVideoTracks().isNotEmpty;
+    if (!hasAudio && !hasVideo) return;
+
     for (final track in stream.getAudioTracks()) {
       try {
         track.enabled = true;
       } catch (_) {}
     }
-    _remoteStream = stream;
+    for (final track in stream.getVideoTracks()) {
+      try {
+        track.enabled = true;
+      } catch (_) {}
+    }
+
+    // Merge tracks into one remote stream when audio/video arrive separately.
+    if (_remoteStream != null && !identical(_remoteStream, stream)) {
+      try {
+        for (final track in stream.getTracks()) {
+          final already = _remoteStream!
+              .getTracks()
+              .any((t) => t.id == track.id && t.kind == track.kind);
+          if (!already) {
+            await _remoteStream!.addTrack(track);
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('VoiceCall merge remote stream: $e');
+        _remoteStream = stream;
+      }
+    } else {
+      _remoteStream = stream;
+    }
+
+    final remoteHasVideo = _remoteStream!.getVideoTracks().isNotEmpty;
+    if (remoteHasVideo != _snapshot.hasRemoteVideo) {
+      _emit(_snapshot.copyWith(hasRemoteVideo: remoteHasVideo));
+    }
     _markConnected();
   }
 
@@ -1212,20 +1389,20 @@ class VoiceCallService {
     );
   }
 
-  /// Подтверждаем режим «звонок» без принудительной громкой связи.
+  /// Подтверждаем режим «звонок»; для видео — громкая связь по умолчанию.
   Future<void> _reassertCallAudioSession() async {
     if (kIsWeb) return;
     try {
       if (WebRTC.platformIsIOS) {
         await Helper.setAppleAudioIOMode(
           AppleAudioIOMode.localAndRemote,
-          preferSpeakerOutput: false,
+          preferSpeakerOutput: _snapshot.isVideo,
         );
       } else if (WebRTC.platformIsAndroid) {
         await Helper.setAndroidAudioConfiguration(
           AndroidAudioConfiguration.communication,
         );
-        await Helper.setSpeakerphoneOn(false);
+        await Helper.setSpeakerphoneOn(_snapshot.isVideo);
       }
     } catch (e) {
       if (kDebugMode) print('VoiceCall reassert audio session: $e');
@@ -1382,6 +1559,7 @@ class VoiceCallService {
         chatId: _snapshot.chatId,
         peerUserId: _snapshot.peerUserId,
         peerLabel: _snapshot.peerLabel,
+        mediaType: _snapshot.mediaType,
         statusMessage: message,
       ),
     );

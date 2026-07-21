@@ -10,6 +10,7 @@ import '../services/storage_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/voice_call_service.dart';
+import '../services/group_voice_call_service.dart';
 import '../services/local_messages_service.dart';
 import '../services/messages/messages_decrypt.dart';
 import '../services/chat_key_service.dart';
@@ -1176,6 +1177,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(context); // Закрываем диалог
               await _authService.logout();
               VoiceCallService.instance.reset();
+              GroupVoiceCallService.instance.reset();
               WebSocketService.instance.disconnect();
               await PushNotificationService.clearTokenOnBackend();
               await ChatKeyService.clearAll();
@@ -1495,6 +1497,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _authService.deleteAccount(widget.userId, password);
 
       VoiceCallService.instance.reset();
+      GroupVoiceCallService.instance.reset();
       WebSocketService.instance.disconnect();
       await PushNotificationService.clearTokenOnBackend();
       await ChatKeyService.clearAll();

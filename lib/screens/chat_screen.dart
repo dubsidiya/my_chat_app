@@ -25,6 +25,7 @@ import '../services/local_messages_service.dart'; // ✅ Импорт серви
 import '../services/notification_feedback_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
+import '../services/group_voice_call_service.dart';
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/theme_motion.dart';
@@ -952,9 +953,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
-          if (!widget.isGroup)
+          if (!widget.isGroup) ...[
             Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 4),
               decoration: BoxDecoration(
                 color: _accent1.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(12),
@@ -963,6 +964,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 icon: Icon(Icons.call_rounded, color: _accent1),
                 onPressed: _startVoiceCall,
                 tooltip: 'Голосовой звонок',
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _accent1.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.videocam_rounded, color: _accent1),
+                onPressed: _startVideoCall,
+                tooltip: 'Видеозвонок',
+              ),
+            ),
+          ],
+          if (widget.isGroup)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _accent1.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.groups_rounded, color: _accent1),
+                onPressed: _startGroupVoiceCall,
+                tooltip: 'Групповой звонок',
               ),
             ),
           Container(

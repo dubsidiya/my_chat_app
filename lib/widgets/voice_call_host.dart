@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../main.dart' show navigatorKey;
+import '../screens/group_voice_call_screen.dart';
 import '../screens/voice_call_screen.dart';
+import '../services/group_voice_call_service.dart';
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
 
-/// Opens [VoiceCallScreen] when a call becomes active; supports minimize (banner).
+/// Opens DM or group call screens when a call becomes active; supports minimize.
 class VoiceCallHost extends StatefulWidget {
   final String userId;
   final Widget child;
@@ -24,23 +26,31 @@ class VoiceCallHost extends StatefulWidget {
 }
 
 class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserver {
-  StreamSubscription<VoiceCallSnapshot>? _sub;
+  StreamSubscription<VoiceCallSnapshot>? _dmSub;
+  StreamSubscription<GroupCallSnapshot>? _groupSub;
   bool _routeOpen = false;
   bool _userMinimized = false;
-  VoiceCallPhase? _lastPhase;
+  VoiceCallPhase? _lastDmPhase;
+  GroupCallPhase? _lastGroupPhase;
   int _openAttempts = 0;
   Timer? _openRetryTimer;
   static const int _maxOpenAttempts = 10;
+
+  bool get _anyActive =>
+      VoiceCallService.instance.snapshot.isActive ||
+      GroupVoiceCallService.instance.snapshot.isActive;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     VoiceCallService.instance.bindUser(widget.userId);
-    _sub = VoiceCallService.instance.stateStream.listen(_onCallState);
-    final snap = VoiceCallService.instance.snapshot;
-    _lastPhase = snap.phase;
-    if (snap.isActive && !_userMinimized) {
+    GroupVoiceCallService.instance.bindUser(widget.userId);
+    _dmSub = VoiceCallService.instance.stateStream.listen(_onDmState);
+    _groupSub = GroupVoiceCallService.instance.stateStream.listen(_onGroupState);
+    _lastDmPhase = VoiceCallService.instance.snapshot.phase;
+    _lastGroupPhase = GroupVoiceCallService.instance.snapshot.phase;
+    if (_anyActive && !_userMinimized) {
       _scheduleOpenCallScreen();
     }
   }
@@ -49,28 +59,38 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _openRetryTimer?.cancel();
-    _sub?.cancel();
+    _dmSub?.cancel();
+    _groupSub?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    final snap = VoiceCallService.instance.snapshot;
-    if (snap.isActive && !_routeOpen && !_userMinimized) {
+    if (_anyActive && !_routeOpen && !_userMinimized) {
       _scheduleOpenCallScreen();
     }
   }
 
-  void _onCallState(VoiceCallSnapshot snap) {
-    if (_lastPhase == VoiceCallPhase.idle && snap.isActive) {
+  void _onDmState(VoiceCallSnapshot snap) {
+    if (_lastDmPhase == VoiceCallPhase.idle && snap.isActive) {
       _userMinimized = false;
     }
-    _lastPhase = snap.phase;
+    _lastDmPhase = snap.phase;
+    _handleActiveChange();
+  }
 
-    if (snap.isActive) {
+  void _onGroupState(GroupCallSnapshot snap) {
+    if (_lastGroupPhase == GroupCallPhase.idle && snap.isActive) {
+      _userMinimized = false;
+    }
+    _lastGroupPhase = snap.phase;
+    _handleActiveChange();
+  }
+
+  void _handleActiveChange() {
+    if (_anyActive) {
       if (!_routeOpen && !_userMinimized) {
-        // Сразу, без postFrameCallback — иначе на iOS экран может ждать касания.
         _tryOpenCallScreen();
         _scheduleOpenCallScreen();
       }
@@ -86,10 +106,8 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
   void _scheduleOpenCallScreen() {
     if (!mounted) return;
     if (_routeOpen || _userMinimized) return;
-    if (!VoiceCallService.instance.snapshot.isActive) return;
+    if (!_anyActive) return;
 
-    // На iOS при статичном UI кадры иногда не идут, пока пользователь не коснётся
-    // экрана — тогда addPostFrameCallback не срабатывает и звонок «висит» в памяти.
     SchedulerBinding.instance.scheduleFrame();
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryOpenCallScreen());
 
@@ -97,7 +115,7 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
     _openRetryTimer = Timer(const Duration(milliseconds: 250), () {
       if (!mounted) return;
       if (_routeOpen || _userMinimized) return;
-      if (!VoiceCallService.instance.snapshot.isActive) return;
+      if (!_anyActive) return;
       _tryOpenCallScreen();
     });
   }
@@ -116,14 +134,12 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
 
   void _tryOpenCallScreen() {
     if (!mounted) return;
-    if (!VoiceCallService.instance.snapshot.isActive || _routeOpen) return;
+    if (!_anyActive || _routeOpen) return;
 
     final nav = _rootNavigator();
     if (nav == null) {
       _openAttempts++;
       if (_openAttempts < _maxOpenAttempts) {
-        // Только отложенный retry: microtask/postFrame в цикле давали 10 попыток
-        // за один тик и abortActiveCall() до появления Navigator.
         _openRetryTimer?.cancel();
         _openRetryTimer = Timer(
           Duration(milliseconds: 40 * _openAttempts),
@@ -136,9 +152,15 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
         WidgetsBinding.instance.addPostFrameCallback((_) => _tryOpenCallScreen());
         return;
       }
-      unawaited(VoiceCallService.instance.abortActiveCall(
-        'Не удалось открыть экран звонка',
-      ));
+      if (GroupVoiceCallService.instance.snapshot.isActive) {
+        unawaited(GroupVoiceCallService.instance.abortActiveCall(
+          'Не удалось открыть экран звонка',
+        ));
+      } else {
+        unawaited(VoiceCallService.instance.abortActiveCall(
+          'Не удалось открыть экран звонка',
+        ));
+      }
       return;
     }
 
@@ -146,17 +168,20 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
     _openRetryTimer?.cancel();
     _routeOpen = true;
     _userMinimized = false;
+    final openGroup = GroupVoiceCallService.instance.snapshot.isActive;
     nav
         .push(
           MaterialPageRoute<void>(
             fullscreenDialog: true,
-            builder: (_) => const VoiceCallScreen(),
+            builder: (_) => openGroup
+                ? const GroupVoiceCallScreen()
+                : const VoiceCallScreen(),
           ),
         )
         .whenComplete(() {
       if (!mounted) return;
       _routeOpen = false;
-      if (VoiceCallService.instance.snapshot.isActive) {
+      if (_anyActive) {
         _userMinimized = true;
         setState(() {});
       }
@@ -165,8 +190,9 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
 
   @override
   Widget build(BuildContext context) {
-    final snap = VoiceCallService.instance.snapshot;
-    final showBanner = snap.isActive && !_routeOpen && _userMinimized;
+    final dm = VoiceCallService.instance.snapshot;
+    final group = GroupVoiceCallService.instance.snapshot;
+    final showBanner = _anyActive && !_routeOpen && _userMinimized;
 
     return Stack(
       fit: StackFit.expand,
@@ -177,11 +203,17 @@ class _VoiceCallHostState extends State<VoiceCallHost> with WidgetsBindingObserv
             top: 0,
             left: 0,
             right: 0,
-            child: _VoiceCallMinimizedBar(
-              snapshot: snap,
-              onExpand: _expandCallScreen,
-              onHangUp: () => unawaited(VoiceCallService.instance.hangUp()),
-            ),
+            child: group.isActive
+                ? _GroupCallMinimizedBar(
+                    snapshot: group,
+                    onExpand: _expandCallScreen,
+                    onLeave: () => unawaited(GroupVoiceCallService.instance.leave()),
+                  )
+                : _VoiceCallMinimizedBar(
+                    snapshot: dm,
+                    onExpand: _expandCallScreen,
+                    onHangUp: () => unawaited(VoiceCallService.instance.hangUp()),
+                  ),
           ),
       ],
     );
@@ -204,9 +236,9 @@ class _VoiceCallMinimizedBar extends StatelessWidget {
       case VoiceCallPhase.connected:
         return snapshot.statusMessage ?? 'На связи';
       case VoiceCallPhase.incoming:
-        return 'Входящий звонок';
+        return snapshot.isVideo ? 'Входящий видеозвонок' : 'Входящий звонок';
       case VoiceCallPhase.outgoing:
-        return 'Вызов…';
+        return snapshot.isVideo ? 'Видеовызов…' : 'Вызов…';
       case VoiceCallPhase.connecting:
         return 'Соединение…';
       default:
@@ -228,7 +260,13 @@ class _VoiceCallMinimizedBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                const Icon(Icons.call_rounded, color: Colors.white, size: 22),
+                Icon(
+                  snapshot.isVideo
+                      ? Icons.videocam_rounded
+                      : Icons.call_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -264,6 +302,80 @@ class _VoiceCallMinimizedBar extends StatelessWidget {
                   icon: Icon(Icons.call_end_rounded, color: Colors.red.shade300),
                   tooltip: 'Завершить',
                   onPressed: onHangUp,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupCallMinimizedBar extends StatelessWidget {
+  final GroupCallSnapshot snapshot;
+  final VoidCallback onExpand;
+  final VoidCallback onLeave;
+
+  const _GroupCallMinimizedBar({
+    required this.snapshot,
+    required this.onExpand,
+    required this.onLeave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = (snapshot.chatName ?? 'Групповой звонок').trim();
+    final joined =
+        snapshot.roster.where((p) => p.state == 'joined').length;
+    return Material(
+      color: AppColors.primaryDeep.withValues(alpha: 0.96),
+      elevation: 6,
+      child: SafeArea(
+        bottom: false,
+        child: InkWell(
+          onTap: onExpand,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        snapshot.statusMessage ??
+                            (joined > 0 ? 'В звонке: $joined' : 'Групповой звонок'),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white),
+                  tooltip: 'Развернуть',
+                  onPressed: onExpand,
+                ),
+                IconButton(
+                  icon: Icon(Icons.call_end_rounded, color: Colors.red.shade300),
+                  tooltip: 'Выйти',
+                  onPressed: onLeave,
                 ),
               ],
             ),

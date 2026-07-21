@@ -5,6 +5,12 @@ import { computeTeacherWorkProfile } from '../services/accounting/teacherWorkPro
 
 const isValidISODate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+/** Уроки, которые реально занимают слот (как в teacherWorkProfile). */
+const SQL_SCHEDULE_LESSON_FILTER = `
+  AND COALESCE(is_chargeable, true) = true
+  AND status IN ('attended', 'makeup')
+`;
+
 function parsePeriod(query) {
   const from = query?.from;
   const to = query?.to;
@@ -30,6 +36,7 @@ export const getTeacherScheduleTeachers = async (req, res) => {
        FROM lessons l
        JOIN users u ON u.id = l.created_by
        WHERE l.lesson_date >= $1::date AND l.lesson_date <= $2::date
+         ${SQL_SCHEDULE_LESSON_FILTER}
        ORDER BY label ASC`,
       [period.from, period.to]
     );
@@ -77,6 +84,7 @@ export const getTeacherScheduleHeatmap = async (req, res) => {
          AND lesson_date >= $2::date
          AND lesson_date <= $3::date
          AND lesson_time IS NOT NULL
+         ${SQL_SCHEDULE_LESSON_FILTER}
        GROUP BY weekday, time_slot
        ORDER BY weekday, time_slot`,
       [teacherId, period.from, period.to]
@@ -88,7 +96,8 @@ export const getTeacherScheduleHeatmap = async (req, res) => {
        WHERE created_by = $1
          AND lesson_date >= $2::date
          AND lesson_date <= $3::date
-         AND lesson_time IS NULL`,
+         AND lesson_time IS NULL
+         ${SQL_SCHEDULE_LESSON_FILTER}`,
       [teacherId, period.from, period.to]
     );
 
@@ -127,11 +136,20 @@ export const getTeacherScheduleHeatmap = async (req, res) => {
   }
 };
 
-const percentile = (arr, p) => {
+export const percentile = (arr, p) => {
   if (!arr || arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * sorted.length)));
   return sorted[idx];
+};
+
+/** Медиана для concurrency (устойчивее к разовым пикам). */
+export const median = (arr) => {
+  if (!arr || arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
 const parseTeacherIds = (raw) => {
@@ -143,7 +161,7 @@ const parseTeacherIds = (raw) => {
   return [...new Set(ids)];
 };
 
-const loadLevelForCount = (count, thresholdHigh, thresholdOverload) => {
+export const loadLevelForCount = (count, thresholdHigh, thresholdOverload) => {
   if (count <= 0) return 'empty';
   if (count >= thresholdOverload) return 'overload';
   if (count >= thresholdHigh) return 'high';
@@ -196,6 +214,7 @@ export const getTeacherScheduleOverview = async (req, res) => {
          AND l.lesson_date <= $2::date
          AND l.lesson_time IS NOT NULL
          AND l.created_by = ANY($3::int[])
+         ${SQL_SCHEDULE_LESSON_FILTER}
        GROUP BY l.created_by, teacher_label, weekday, time_slot, s.id, s.name
        ORDER BY weekday, time_slot, teacher_label, student_name`,
       [period.from, period.to, teacherIds]
@@ -250,7 +269,13 @@ export const getTeacherScheduleOverview = async (req, res) => {
         student_name: row.student_name || '',
         lesson_count: lessonCount,
       });
-      countsByTeacher.get(teacherId)?.push(lessonCount);
+    }
+
+    // Пороги от итоговых уроков в ячейке на преподавателя (не per-student subgroup).
+    for (const cell of cellMap.values()) {
+      for (const [tid, tData] of cell.by_teacher.entries()) {
+        countsByTeacher.get(tid)?.push(tData.count);
+      }
     }
 
     const thresholdsByTeacher = new Map();
@@ -264,51 +289,48 @@ export const getTeacherScheduleOverview = async (req, res) => {
 
     const cellsOut = [];
     let overloadCells = 0;
-    let gapCells = 0;
     let maxTotal = 0;
 
-    for (const timeSlot of [...timeSet].sort((a, b) => a.localeCompare(b))) {
-      for (let weekday = 1; weekday <= 7; weekday += 1) {
-        const cellKey = `${weekday}:${timeSlot}`;
-        const existing = cellMap.get(cellKey);
-        const totalCount = existing?.total_count || 0;
-        maxTotal = Math.max(maxTotal, totalCount);
+    // Только реально встречавшиеся (weekday × time) — без cartesian-gap по чужим временам.
+    const sortedCells = [...cellMap.values()].sort((a, b) => {
+      if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+      return a.time_slot.localeCompare(b.time_slot);
+    });
 
-        const isGap = activeWeekdays.has(weekday) && totalCount === 0;
-        if (isGap) gapCells += 1;
+    for (const existing of sortedCells) {
+      const { weekday, time_slot: timeSlot } = existing;
+      const totalCount = existing.total_count || 0;
+      maxTotal = Math.max(maxTotal, totalCount);
 
-        const teachersInCell = [];
-        let cellOverload = false;
+      const teachersInCell = [];
+      let cellOverload = false;
 
-        for (const meta of teacherMeta) {
-          const tid = meta.id;
-          const tData = existing?.by_teacher.get(tid);
-          const count = tData?.count || 0;
-          const thr = thresholdsByTeacher.get(tid) || { high: 2, overload: 3 };
-          const loadLevel = loadLevelForCount(count, thr.high, thr.overload);
-          if (loadLevel === 'overload') cellOverload = true;
-          teachersInCell.push({
-            teacher_id: tid,
-            teacher_label: tData?.teacher_label || meta.label,
-            count,
-            load_level: loadLevel,
-            students: tData?.students || [],
-          });
-        }
-
-        if (cellOverload) overloadCells += 1;
-
-        if (totalCount > 0 || isGap) {
-          cellsOut.push({
-            weekday,
-            time_slot: timeSlot,
-            total_count: totalCount,
-            is_gap: isGap,
-            is_overload: cellOverload,
-            teachers: teachersInCell,
-          });
-        }
+      for (const meta of teacherMeta) {
+        const tid = meta.id;
+        const tData = existing.by_teacher.get(tid);
+        const count = tData?.count || 0;
+        const thr = thresholdsByTeacher.get(tid) || { high: 2, overload: 3 };
+        const loadLevel = loadLevelForCount(count, thr.high, thr.overload);
+        if (loadLevel === 'overload') cellOverload = true;
+        teachersInCell.push({
+          teacher_id: tid,
+          teacher_label: tData?.teacher_label || meta.label,
+          count,
+          load_level: loadLevel,
+          students: tData?.students || [],
+        });
       }
+
+      if (cellOverload) overloadCells += 1;
+
+      cellsOut.push({
+        weekday,
+        time_slot: timeSlot,
+        total_count: totalCount,
+        is_gap: false,
+        is_overload: cellOverload,
+        teachers: teachersInCell,
+      });
     }
 
     return res.json({
@@ -321,7 +343,7 @@ export const getTeacherScheduleOverview = async (req, res) => {
       active_weekdays: [...activeWeekdays].sort((a, b) => a - b),
       insights: {
         overload_cells: overloadCells,
-        gap_cells: gapCells,
+        gap_cells: 0,
         total_lessons: cellsOut.reduce((acc, c) => acc + c.total_count, 0),
       },
     });
@@ -336,8 +358,15 @@ const WEEKDAY_LABELS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'В�
 /** ISODOW (1=Пн … 7=Вс) → PostgreSQL DOW (0=Вс, 1=Пн …) для work profile */
 const isodowToPgDow = (isodow) => (isodow === 7 ? 0 : isodow);
 
-const placementStatus = (studentsCount, weeksActive, high, overload) => {
-  if (weeksActive < 2) return 'unstable';
+/**
+ * @param {number} studentsCount median concurrency
+ * @param {number} weeksActive
+ * @param {number} high
+ * @param {number} overload
+ * @param {boolean} isTypicalDay
+ */
+export const placementStatus = (studentsCount, weeksActive, high, overload, isTypicalDay = true) => {
+  if (weeksActive < 2 || !isTypicalDay) return 'unstable';
   if (studentsCount >= overload) return 'full';
   if (studentsCount >= high) return 'limited';
   return 'open';
@@ -389,30 +418,75 @@ export const getTeacherPlacementPlan = async (req, res) => {
       return res.status(404).json({ message: 'Преподаватели не найдены' });
     }
 
+    // Concurrency: distinct students per ISO week in the slot, then median across weeks.
     const slotsRes = await pool.query(
-      `SELECT l.created_by AS teacher_id,
-              EXTRACT(ISODOW FROM l.lesson_date)::int AS weekday,
-              to_char(l.lesson_time, 'HH24:MI') AS time_slot,
-              COUNT(*)::int AS lessons_count,
-              COUNT(DISTINCT l.student_id)::int AS students_count,
-              COUNT(DISTINCT date_trunc('week', l.lesson_date))::int AS weeks_active,
-              COALESCE(
-                json_agg(
-                  DISTINCT jsonb_build_object(
-                    'student_id', s.id,
-                    'student_name', COALESCE(s.name, '')
-                  )
-                ) FILTER (WHERE s.id IS NOT NULL),
-                '[]'::json
-              ) AS students
-       FROM lessons l
-       JOIN students s ON s.id = l.student_id
-       WHERE l.lesson_date >= $1::date
-         AND l.lesson_date <= $2::date
-         AND l.lesson_time IS NOT NULL
-         AND l.created_by = ANY($3::int[])
-       GROUP BY l.created_by, weekday, time_slot
-       ORDER BY l.created_by, weekday, time_slot`,
+      `WITH filtered AS (
+         SELECT l.created_by,
+                l.lesson_date,
+                l.lesson_time,
+                l.student_id,
+                s.id AS sid,
+                COALESCE(s.name, '') AS sname
+         FROM lessons l
+         JOIN students s ON s.id = l.student_id
+         WHERE l.lesson_date >= $1::date
+           AND l.lesson_date <= $2::date
+           AND l.lesson_time IS NOT NULL
+           AND l.created_by = ANY($3::int[])
+           AND COALESCE(l.is_chargeable, true) = true
+           AND l.status IN ('attended', 'makeup')
+       ),
+       weekly AS (
+         SELECT created_by AS teacher_id,
+                EXTRACT(ISODOW FROM lesson_date)::int AS weekday,
+                to_char(lesson_time, 'HH24:MI') AS time_slot,
+                date_trunc('week', lesson_date) AS week_start,
+                COUNT(*)::int AS lessons_count,
+                COUNT(DISTINCT student_id)::int AS students_in_week
+         FROM filtered
+         GROUP BY created_by, weekday, time_slot, week_start
+       ),
+       slot_stats AS (
+         SELECT teacher_id,
+                weekday,
+                time_slot,
+                SUM(lessons_count)::int AS lessons_count,
+                COUNT(*)::int AS weeks_active,
+                percentile_cont(0.5) WITHIN GROUP (ORDER BY students_in_week) AS students_median,
+                MAX(students_in_week)::int AS students_peak
+         FROM weekly
+         GROUP BY teacher_id, weekday, time_slot
+       ),
+       students_agg AS (
+         SELECT created_by AS teacher_id,
+                EXTRACT(ISODOW FROM lesson_date)::int AS weekday,
+                to_char(lesson_time, 'HH24:MI') AS time_slot,
+                COALESCE(
+                  json_agg(
+                    DISTINCT jsonb_build_object(
+                      'student_id', sid,
+                      'student_name', sname
+                    )
+                  ) FILTER (WHERE sid IS NOT NULL),
+                  '[]'::json
+                ) AS students
+         FROM filtered
+         GROUP BY created_by, weekday, time_slot
+       )
+       SELECT ss.teacher_id,
+              ss.weekday,
+              ss.time_slot,
+              ss.lessons_count,
+              ss.weeks_active,
+              ss.students_median,
+              ss.students_peak,
+              COALESCE(sa.students, '[]'::json) AS students
+       FROM slot_stats ss
+       LEFT JOIN students_agg sa
+         ON sa.teacher_id = ss.teacher_id
+        AND sa.weekday = ss.weekday
+        AND sa.time_slot = ss.time_slot
+       ORDER BY ss.teacher_id, ss.weekday, ss.time_slot`,
       [period.from, period.to, teacherIds]
     );
 
@@ -424,11 +498,16 @@ export const getTeacherPlacementPlan = async (req, res) => {
       const weekday = Number(row.weekday);
       const timeSlot = row.time_slot;
       if (!timeSlot || weekday < 1 || weekday > 7) continue;
+      const medianConcurrency = Number(row.students_median);
+      const studentsCount = Number.isFinite(medianConcurrency)
+        ? Math.round(medianConcurrency)
+        : 0;
       slotsByTeacher.get(tid)?.push({
         weekday,
         time_slot: timeSlot,
         lessons_count: Number(row.lessons_count) || 0,
-        students_count: Number(row.students_count) || 0,
+        students_count: studentsCount,
+        students_peak: Number(row.students_peak) || 0,
         weeks_active: Number(row.weeks_active) || 0,
         students: Array.isArray(row.students) ? row.students : [],
       });
@@ -462,7 +541,8 @@ export const getTeacherPlacementPlan = async (req, res) => {
             slot.students_count,
             slot.weeks_active,
             high,
-            overload
+            overload,
+            isTypicalDow
           );
           return {
             weekday: slot.weekday,
@@ -470,6 +550,7 @@ export const getTeacherPlacementPlan = async (req, res) => {
             time_slot: slot.time_slot,
             lessons_count: slot.lessons_count,
             students_count: slot.students_count,
+            students_peak: slot.students_peak,
             weeks_active: slot.weeks_active,
             is_typical_day: isTypicalDow,
             is_recurring: slot.weeks_active >= 2,
@@ -505,7 +586,8 @@ export const getTeacherPlacementPlan = async (req, res) => {
       from: period.from,
       to: period.to,
       teachers: teachersOut,
-      hint: 'Слоты по фактическим урокам за период. «Можно поставить» — устойчивый слот с запасом по загрузке.',
+      hint:
+        'Рекомендации по фактическим урокам (посещённые/отработки). «Можно поставить» — обычный рабочий день, устойчивый слот с запасом по одновременной загрузке. Запись ребёнка — отдельно.',
     });
   } catch (error) {
     console.error('getTeacherPlacementPlan:', error);

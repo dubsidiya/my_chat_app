@@ -168,13 +168,13 @@ export async function sendPushToTokens(tokens, title, body, data = {}) {
 }
 
 /**
- * Push о входящем голосовом звонке (1-на-1).
+ * Push о входящем голосовом/видеозвонке (1-на-1).
  * @param {import('pg').Pool} pool
  * @param {string|number} calleeUserId
- * @param {{ callId: string, chatId: string, chatName?: string, fromUserId: string, fromEmail?: string }} payload
+ * @param {{ callId: string, chatId: string, chatName?: string, fromUserId: string, fromEmail?: string, mediaType?: string, isGroup?: boolean }} payload
  */
 export async function sendIncomingCallPushToUser(pool, calleeUserId, payload) {
-  const { callId, chatId, chatName, fromUserId, fromEmail } = payload;
+  const { callId, chatId, chatName, fromUserId, fromEmail, mediaType, isGroup } = payload;
   if (!callId || !chatId || !fromUserId) return;
 
   try {
@@ -189,9 +189,19 @@ export async function sendIncomingCallPushToUser(pool, calleeUserId, payload) {
       return;
     }
 
+    const isVideo = String(mediaType || 'audio').toLowerCase() === 'video';
+    const group = Boolean(isGroup);
     const callerLabel = (fromEmail || chatName || 'Пользователь').toString().slice(0, 80);
-    const title = 'Входящий звонок';
-    const body = `${callerLabel} звонит`;
+    const title = group
+      ? 'Групповой звонок'
+      : isVideo
+        ? 'Входящий видеозвонок'
+        : 'Входящий звонок';
+    const body = group
+      ? `${callerLabel} начинает звонок в «${(chatName || 'группе').toString().slice(0, 40)}»`
+      : isVideo
+        ? `${callerLabel} звонит с видео`
+        : `${callerLabel} звонит`;
 
     const fcm = await getMessaging();
     if (!fcm) {
@@ -200,13 +210,14 @@ export async function sendIncomingCallPushToUser(pool, calleeUserId, payload) {
     }
 
     const data = {
-      type: 'incoming_call',
+      type: group ? 'incoming_group_call' : 'incoming_call',
       callId: String(callId),
       chatId: String(chatId),
       chatName: (chatName || callerLabel).toString().slice(0, 120),
       fromUserId: String(fromUserId),
       fromEmail: callerLabel,
-      isGroup: '0',
+      isGroup: group ? '1' : '0',
+      mediaType: isVideo ? 'video' : 'audio',
     };
 
     const message = {

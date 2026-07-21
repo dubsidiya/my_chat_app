@@ -20,6 +20,7 @@ void main() {
               'time_slot': '18:00',
               'lessons_count': 4,
               'students_count': 2,
+              'students_peak': 3,
               'weeks_active': 3,
               'is_typical_day': true,
               'is_recurring': true,
@@ -37,5 +38,7 @@ void main() {
     expect(plan.teachers.single.openSlotsCount, 1);
     expect(plan.teachers.single.openSlots.single.timeSlot, '18:00');
     expect(plan.teachers.single.slots.single.placementLabel, 'Можно поставить');
+    expect(plan.teachers.single.slots.single.studentsPeak, 3);
+    expect(plan.teachers.single.slots.single.lessonsCount, 4);
   });
 }

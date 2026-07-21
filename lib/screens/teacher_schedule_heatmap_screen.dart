@@ -113,11 +113,21 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
       } else {
         _to = d;
       }
+      if (_from.isAfter(_to)) {
+        _error = 'Дата «С» не может быть позже «По»';
+        _heatmap = null;
+      } else {
+        _error = null;
+      }
     });
-    await _loadTeachers();
+    if (!_from.isAfter(_to)) await _loadTeachers();
   }
 
   Future<void> _applyFilters() async {
+    if (_from.isAfter(_to)) {
+      setState(() => _error = 'Дата «С» не может быть позже «По»');
+      return;
+    }
     await _loadTeachers();
     await _loadHeatmap();
   }
@@ -234,7 +244,7 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: (_loadingHeatmap || _loadingTeachers)
+                      onPressed: (_loadingHeatmap || _loadingTeachers || _from.isAfter(_to))
                           ? null
                           : _applyFilters,
                       icon: _loadingHeatmap
@@ -258,6 +268,8 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                             MaterialPageRoute<void>(
                               builder: (_) => TeacherScheduleOverviewScreen(
                                 initialTeacherIds: [_teacherId!],
+                                initialFrom: _from,
+                                initialTo: _to,
                               ),
                             ),
                           );
@@ -283,6 +295,8 @@ class _TeacherScheduleHeatmapScreenState extends State<TeacherScheduleHeatmapScr
                               builder: (_) => NagavisorScreen(
                                 teacherId: tid,
                                 teacherLabel: label,
+                                initialFrom: _from,
+                                initialTo: _to,
                               ),
                             ),
                           );

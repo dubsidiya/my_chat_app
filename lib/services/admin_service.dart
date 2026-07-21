@@ -139,7 +139,7 @@ class AdminService {
     );
     final response = await timedGet(uri, headers: headers, timeout: const Duration(seconds: 20));
     if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is! Map) return [];
       final list = decoded['teachers'];
       if (list is! List) return [];
@@ -176,7 +176,7 @@ class AdminService {
     );
     final response = await timedGet(uri, headers: headers, timeout: const Duration(seconds: 25));
     if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is Map<String, dynamic>) {
         return TeacherScheduleHeatmap.fromJson(decoded);
       }

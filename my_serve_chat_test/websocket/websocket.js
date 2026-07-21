@@ -4,6 +4,7 @@ import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
 import { handleCallSignaling, releaseCallsForUser } from './callSignaling.js';
+import { handleGroupCallSignaling, releaseGroupCallsForUser } from './groupCallSignaling.js';
 
 const clients = new Map(); // userId -> Set<ws>
 
@@ -271,6 +272,20 @@ export function setupWebSocket(server) {
       try {
         const data = JSON.parse(message);
 
+        if (data?.type && typeof data.type === 'string' && data.type.startsWith('gcall_')) {
+          await handleGroupCallSignaling(data, {
+            userId,
+            userEmail,
+            pool,
+            ws,
+            sendToUserSockets,
+            sendToUserSocketsExcept,
+            sendToUserMediaSocket,
+            callLimiter,
+          });
+          return;
+        }
+
         if (data?.type && typeof data.type === 'string' && data.type.startsWith('call_')) {
           await handleCallSignaling(data, {
             userId,
@@ -479,6 +494,7 @@ export function setupWebSocket(server) {
         return;
       }
       releaseCallsForUser(userId, sendToUserSockets);
+      releaseGroupCallsForUser(userId, sendToUserSockets);
       try {
         const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
         subs.forEach((chatIdStr) => {

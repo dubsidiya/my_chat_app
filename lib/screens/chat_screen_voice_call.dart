@@ -11,6 +11,14 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
   }
 
   Future<void> _startVoiceCall() async {
+    await _startCall(CallMediaType.audio);
+  }
+
+  Future<void> _startVideoCall() async {
+    await _startCall(CallMediaType.video);
+  }
+
+  Future<void> _startCall(CallMediaType mediaType) async {
     if (widget.isGroup) return;
     try {
       final peerId = _peerUserIdForDm();
@@ -27,11 +35,11 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
           if (!mounted) return;
           final retry = _peerUserIdForDm();
           if (retry == null) return;
-          return _startVoiceCallWithPeer(retry);
+          return _startCallWithPeer(retry, mediaType);
         }
         return;
       }
-      await _startVoiceCallWithPeer(peerId);
+      await _startCallWithPeer(peerId, mediaType);
     } catch (e, st) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -49,7 +57,10 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
     return raw.length > 160 ? '${raw.substring(0, 160)}…' : raw;
   }
 
-  Future<void> _startVoiceCallWithPeer(String peerId) async {
+  Future<void> _startCallWithPeer(
+    String peerId,
+    CallMediaType mediaType,
+  ) async {
     // Освобождаем аудиосессию от just_audio (голосовые сообщения), иначе WebRTC на iOS
     // часто не получает микрофон.
     try {
@@ -64,6 +75,7 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
       chatId: widget.chatId,
       peerUserId: peerId,
       peerLabel: label,
+      mediaType: mediaType,
     );
     if (!ok && mounted) {
       _showVoiceCallStartError();
@@ -73,9 +85,12 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
   void _showVoiceCallStartError([String? overrideMessage]) {
     final msg = overrideMessage ??
         VoiceCallService.instance.snapshot.statusMessage ??
+        GroupVoiceCallService.instance.snapshot.statusMessage ??
         'Не удалось начать звонок';
     final permanent = VoiceCallService.instance.lastMicrophoneAccess ==
-        MicrophoneAccess.permanentlyDenied;
+            MicrophoneAccess.permanentlyDenied ||
+        GroupVoiceCallService.instance.lastMicrophoneAccess ==
+            MicrophoneAccess.permanentlyDenied;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
@@ -90,5 +105,33 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
             : null,
       ),
     );
+  }
+
+  Future<void> _startGroupVoiceCall() async {
+    if (!widget.isGroup) return;
+    try {
+      try {
+        await _voicePlayer.pause();
+      } catch (_) {}
+      if (_isRecordingVoice) {
+        await _cancelVoiceRecording();
+      }
+      final name = _chatTitle.trim().isNotEmpty ? _chatTitle : widget.chatName;
+      final ok = await GroupVoiceCallService.instance.startGroupCall(
+        chatId: widget.chatId,
+        chatName: name,
+      );
+      if (!ok && mounted) {
+        _showVoiceCallStartError();
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('chat_screen group call start: $e\n$st');
+      }
+      if (mounted) {
+        _showVoiceCallStartError('Не удалось начать звонок: ${_shortErr(e)}');
+      }
+    }
   }
 }

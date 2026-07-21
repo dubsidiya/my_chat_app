@@ -20,11 +20,15 @@ import 'report_text_view_screen.dart';
 class NagavisorScreen extends StatefulWidget {
   final int teacherId;
   final String teacherLabel;
+  final DateTime? initialFrom;
+  final DateTime? initialTo;
 
   const NagavisorScreen({
     super.key,
     required this.teacherId,
     required this.teacherLabel,
+    this.initialFrom,
+    this.initialTo,
   });
 
   @override
@@ -36,8 +40,8 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
   final TeacherBalanceService _balanceService = TeacherBalanceService();
   final ReportsService _reportsService = ReportsService();
 
-  DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
-  DateTime _to = DateTime.now();
+  late DateTime _from;
+  late DateTime _to;
 
   bool _loading = false;
   String? _error;
@@ -54,6 +58,14 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _from = widget.initialFrom ?? DateTime(now.year, now.month, 1);
+    _to = widget.initialTo ?? now;
+    if (_from.isAfter(_to)) {
+      final tmp = _from;
+      _from = _to;
+      _to = tmp;
+    }
     unawaited(_loadAll());
   }
 
@@ -148,8 +160,13 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
       } else {
         _to = d;
       }
+      if (_from.isAfter(_to)) {
+        _error = 'Дата «С» не может быть позже «По»';
+      } else {
+        _error = null;
+      }
     });
-    await _loadAll();
+    if (!_from.isAfter(_to)) await _loadAll();
   }
 
   Color _qualityColor(int? index) {

@@ -85,6 +85,8 @@ class TeacherPlacementSlot {
   final String timeSlot;
   final int lessonsCount;
   final int studentsCount;
+  /// Peak concurrent students in any single week (optional from API).
+  final int? studentsPeak;
   final int weeksActive;
   final bool isTypicalDay;
   final bool isRecurring;
@@ -104,6 +106,7 @@ class TeacherPlacementSlot {
     required this.placementStatus,
     required this.placementLabel,
     required this.students,
+    this.studentsPeak,
   });
 
   factory TeacherPlacementSlot.fromJson(Map<String, dynamic> json) {
@@ -125,6 +128,7 @@ class TeacherPlacementSlot {
       timeSlot: json['time_slot']?.toString() ?? '',
       lessonsCount: _parseInt(json['lessons_count']) ?? 0,
       studentsCount: _parseInt(json['students_count']) ?? 0,
+      studentsPeak: _parseInt(json['students_peak']),
       weeksActive: _parseInt(json['weeks_active']) ?? 0,
       isTypicalDay: json['is_typical_day'] == true,
       isRecurring: json['is_recurring'] == true,

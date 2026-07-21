@@ -33,7 +33,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нужно для выбора и отправки фото в чате.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Нужно для съемки фото и отправки в чате.</string>
+	<string>Нужно для съёмки фото/видео в чате и для видеозвонков.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -11,6 +11,7 @@ import '../config/api_config.dart';
 import '../screens/chat_screen.dart';
 import 'storage_service.dart';
 import 'voice_call_service.dart';
+import 'group_voice_call_service.dart';
 import 'websocket_service.dart';
 
 /// Канал для уведомлений о сообщениях (Android).
@@ -190,7 +191,8 @@ class PushNotificationService {
   }
 
   static bool _isIncomingCallData(Map<String, dynamic> data) {
-    return data['type']?.toString() == 'incoming_call';
+    final type = data['type']?.toString();
+    return type == 'incoming_call' || type == 'incoming_group_call';
   }
 
   /// На Apple-платформах FCM с notification payload уже показывается системой в foreground.
@@ -215,15 +217,50 @@ class PushNotificationService {
     final peerLabel = data['fromEmail']?.toString() ??
         data['chatName']?.toString() ??
         'Звонок';
-    if (callId.isEmpty || chatId.isEmpty || peerUserId.isEmpty) return;
+    final chatName = data['chatName']?.toString() ?? peerLabel;
+    final isGroup = data['type']?.toString() == 'incoming_group_call' ||
+        data['isGroup']?.toString() == '1';
+    if (callId.isEmpty || chatId.isEmpty) return;
 
     unawaited(WebSocketService.instance.connectIfNeeded());
+
+    if (isGroup) {
+      final before = GroupVoiceCallService.instance.snapshot;
+      GroupVoiceCallService.instance.applyIncomingFromPush(
+        callId: callId,
+        chatId: chatId,
+        chatName: chatName,
+        fromUserId: peerUserId,
+        fromLabel: peerLabel,
+      );
+      final after = GroupVoiceCallService.instance.snapshot;
+      if (before.isActive && before.callId == callId) return;
+      if (after.callId != callId || after.phase != GroupCallPhase.incoming) {
+        return;
+      }
+      final title = notification?.title ?? 'Групповой звонок';
+      final body = notification?.body ?? '$peerLabel начинает звонок';
+      unawaited(
+        _showForegroundNotification(
+          title: title,
+          body: body,
+          data: data,
+          isCall: true,
+        ),
+      );
+      return;
+    }
+
+    if (peerUserId.isEmpty) return;
+    final mediaType =
+        callMediaTypeFromRaw(data['mediaType'] ?? data['media_type']);
     final before = VoiceCallService.instance.snapshot;
     VoiceCallService.instance.applyIncomingFromPush(
       callId: callId,
       chatId: chatId,
       peerUserId: peerUserId,
       peerLabel: peerLabel,
+      mediaType: mediaType,
     );
     final after = VoiceCallService.instance.snapshot;
 
@@ -231,8 +268,14 @@ class PushNotificationService {
     if (before.isActive && before.callId == callId) return;
     if (after.callId != callId || after.phase != VoiceCallPhase.incoming) return;
 
-    final title = notification?.title ?? 'Входящий звонок';
-    final body = notification?.body ?? '$peerLabel звонит';
+    final title = notification?.title ??
+        (mediaType == CallMediaType.video
+            ? 'Входящий видеозвонок'
+            : 'Входящий звонок');
+    final body = notification?.body ??
+        (mediaType == CallMediaType.video
+            ? '$peerLabel звонит с видео'
+            : '$peerLabel звонит');
     unawaited(
       _showForegroundNotification(
         title: title,

@@ -80,8 +80,10 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
             return;
           }
 
-          // Голосовые звонки обрабатывает VoiceCallService — не парсим как Message.
-          if (messageType is String && messageType.startsWith('call_')) {
+          // Звонки обрабатывают VoiceCallService / GroupVoiceCallService.
+          if (messageType is String &&
+              (messageType.startsWith('call_') ||
+                  messageType.startsWith('gcall_'))) {
             return;
           }
 

@@ -1,14 +1,13 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../services/admin_service.dart';
 import '../services/students_service.dart';
 import '../utils/download_text_file.dart';
 import '../utils/download_binary_file.dart';
+import '../utils/save_download_file.dart';
 import 'bank_statement_screen.dart';
 import 'deposit_pick_student_screen.dart';
 import 'deposit_screen.dart';
@@ -361,23 +360,40 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
         content: csv,
         mimeType: 'text/csv; charset=utf-8',
       );
-      if (okWeb) return;
-
-      // Mobile/Desktop: сохраняем в documents и открываем
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$filename');
-      await file.writeAsString(csv, flush: true);
-
-      if (!mounted) return;
-      final uri = Uri.file(file.path);
-      final can = await canLaunchUrl(uri);
-      if (!mounted) return;
-      if (can) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (okWeb) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 3),
+            content: Text('CSV скачан'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
       }
+
+      // Mobile/Desktop: системный диалог «Сохранить» (Загрузки / Файлы)
+      final outcome = await saveDownloadFile(
+        filename: filename,
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        allowedExtensions: const ['csv'],
+      );
       if (!mounted) return;
+      if (outcome == SaveDownloadOutcome.cancelled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Сохранение CSV отменено'),
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('CSV сохранен: ${file.path}'), backgroundColor: Colors.green),
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('CSV сохранён'),
+          backgroundColor: Colors.green,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -414,22 +430,26 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
         return;
       }
 
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$filename');
-      await file.writeAsBytes(bytes, flush: true);
-
+      // Mobile/Desktop: системный диалог — пользователь выбирает «Загрузки» и т.п.
+      final outcome = await saveDownloadFile(
+        filename: filename,
+        bytes: bytes,
+        allowedExtensions: const ['xlsx'],
+      );
       if (!mounted) return;
-      final uri = Uri.file(file.path);
-      final can = await canLaunchUrl(uri);
-      if (!mounted) return;
-      if (can) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (outcome == SaveDownloadOutcome.cancelled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Сохранение Excel отменено'),
+          ),
+        );
+        return;
       }
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text('Excel сохранён: ${file.path}'),
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Excel сохранён'),
           backgroundColor: Colors.green,
         ),
       );
