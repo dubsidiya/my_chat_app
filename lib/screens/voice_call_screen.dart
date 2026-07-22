@@ -404,7 +404,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                   ),
                   if (!showVideoUi || !isConnected) ...[
                     const Spacer(),
-                    if (!showVideoUi || !_snap.hasRemoteVideo)
+                    // Video ringing already draws the avatar in the full-bleed
+                    // placeholder above — avoid a second overlapping circle.
+                    if (!showVideoUi)
                       CircleAvatar(
                         radius: 56,
                         backgroundColor: AppColors.primary.withValues(
@@ -419,7 +421,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                           ),
                         ),
                       ),
-                    const SizedBox(height: 20),
+                    if (!showVideoUi) const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Text(

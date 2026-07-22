@@ -7,6 +7,7 @@
     "start": "node index.js",
     "test": "node --test",
     "migrate": "node scripts/run-migration.js",
+    "migrate:critical": "node scripts/apply-critical-migrations.js",
     "smoke:accounting": "node scripts/smoke-accounting-reliability.js",
     "smoke:accounting:edge": "node scripts/smoke-accounting-edge-cases.js",
     "smoke:accounting:xlsx": "node scripts/smoke-accounting-xlsx.js",

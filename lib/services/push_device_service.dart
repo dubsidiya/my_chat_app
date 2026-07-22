@@ -360,7 +360,36 @@ class PushDeviceSyncService {
       authToken: authToken,
       payload: payload,
     );
-    return PushDeviceSyncResult.parse(response);
+    final parsed = PushDeviceSyncResult.parse(response);
+    if (parsed.accepted) return parsed;
+
+    // Incomplete server schema / old backend: keep users.fcm_token alive so
+    // message notifications do not silently die after a partial deploy.
+    if (tokens.includeFcm &&
+        tokens.fcm != null &&
+        tokens.fcm!.isNotEmpty &&
+        (response.statusCode == 503 ||
+            response.statusCode == 404 ||
+            response.statusCode >= 500)) {
+      try {
+        final legacy = await timedPost(
+          Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $authToken',
+          },
+          body: jsonEncode({'fcmToken': tokens.fcm}),
+        );
+        if (legacy.statusCode >= 200 && legacy.statusCode < 300) {
+          return PushDeviceSyncResult(
+            accepted: true,
+            statusCode: legacy.statusCode,
+            installationId: installationId,
+          );
+        }
+      } catch (_) {}
+    }
+    return parsed;
   }
 
   Future<bool> deregister() {

@@ -57,7 +57,19 @@ if ! command -v node &>/dev/null || [ "$(node -v 2>/dev/null | cut -d. -f1 | tr 
 fi
 
 cd my_serve_chat_test
+# Production requires REDIS_URL; keep local redis-server alive on this single VM.
+if ! command -v redis-server &>/dev/null; then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server
+fi
+sudo systemctl enable redis-server >/dev/null 2>&1 || true
+sudo systemctl start redis-server >/dev/null 2>&1 || true
+redis-cli ping >/dev/null
+if ! grep -q '^REDIS_URL=' .env 2>/dev/null; then
+  printf '\nCALL_REGISTRY_MODE=redis\nREDIS_URL=redis://127.0.0.1:6379\nREDIS_KEY_PREFIX=my-chat\n' >> .env
+fi
 npm ci 2>/dev/null || npm install
+npm run migrate:critical
 npm i -g pm2 2>/dev/null || true
 pm2 delete chat-server 2>/dev/null || true
 pm2 start index.js --name chat-server

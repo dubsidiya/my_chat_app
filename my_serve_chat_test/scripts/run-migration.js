@@ -1,6 +1,8 @@
 /**
  * Запуск одной миграции: node scripts/run-migration.js [путь к .sql]
  * Пример: node scripts/run-migration.js migrations/add_chat_folders.sql
+ *
+ * Executes the file as a single query so COMMENT/CHECK text with ';' is safe.
  */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -17,13 +19,7 @@ async function run() {
   const file = process.argv[2] || 'migrations/add_chat_folders.sql';
   const path = join(rootDir, file);
   const sql = readFileSync(path, 'utf8');
-  const statements = sql
-    .split(';')
-    .map((s) => s.replace(/--[^\n]*/g, '').trim())
-    .filter((s) => s.length > 0);
-  for (const st of statements) {
-    if (st) await pool.query(st + ';');
-  }
+  await pool.query(sql);
   console.log('✅ Миграция выполнена:', file);
   process.exit(0);
 }

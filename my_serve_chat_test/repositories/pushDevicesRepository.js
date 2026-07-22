@@ -138,6 +138,14 @@ export async function upsertPushDevice(
         hasApnsEnvironment,
       ]
     );
+    // Keep users.fcm_token as a dual-read safety net for old fanout paths and
+    // for the window before push_devices is fully populated.
+    if (hasFcmToken && typeof fcmToken === 'string' && fcmToken.length > 0) {
+      await client.query('UPDATE users SET fcm_token = $1 WHERE id = $2', [
+        fcmToken,
+        userId,
+      ]);
+    }
     return result.rows[0] || null;
   });
 }

@@ -10,7 +10,9 @@ ALLOWED_ORIGINS=https://your-app.vercel.app,https://reollity.duckdns.org
 
 # Realtime звонков (Redis обязателен при NODE_ENV=production)
 CALL_REGISTRY_MODE=redis
-REDIS_URL=rediss://USERNAME:PASSWORD@REDIS_HOST:REDIS_PORT
+# Single-VM (как сейчас на chat-server): local redis-server
+REDIS_URL=redis://127.0.0.1:6379
+# Managed Redis (когда появится): rediss://USERNAME:PASSWORD@REDIS_HOST:REDIS_PORT
 REDIS_KEY_PREFIX=my-chat
 REDIS_CONNECT_TIMEOUT_MS=5000
 REDIS_COMMAND_TIMEOUT_MS=1000

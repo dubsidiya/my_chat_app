@@ -1,4 +1,5 @@
 import {
+  claimLegacyFcmToken,
   disablePushDevice,
   upsertPushDevice,
 } from '../repositories/pushDevicesRepository.js';
@@ -222,7 +223,29 @@ export function createPushDevicesController({
       console.error('push device upsert failed', {
         code: error?.code || 'unknown',
       });
-      if (error?.code === '42P01') {
+      // Schema not ready yet: keep legacy users.fcm_token path alive so
+      // message/call pushes do not go dark after an incomplete deploy.
+      if (error?.code === '42P01' || error?.code === '42703') {
+        const fcm =
+          typeof parsed.value.fcmToken === 'string'
+            ? parsed.value.fcmToken.trim()
+            : '';
+        if (fcm) {
+          try {
+            await claimLegacyFcmToken(pool, { userId, fcmToken: fcm });
+            return res.status(200).json({
+              installationId: parsed.value.installationId,
+              platform: parsed.value.platform,
+              capabilities: parsed.value.capabilities,
+              appVersion: parsed.value.appVersion,
+              legacyFallback: true,
+            });
+          } catch (legacyError) {
+            console.error('legacy fcm fallback failed', {
+              code: legacyError?.code || 'unknown',
+            });
+          }
+        }
         return res.status(503).json({
           message: 'Реестр push-устройств ещё не готов',
         });
