@@ -10,7 +10,6 @@ echo "==> Flutter: pub get"
 cd "$ROOT_DIR"
 flutter pub get
 bash tool/check_ios_plugin_registrant.sh
-bash tool/apply_webrtc_patch.sh
 
 echo "==> Flutter: analyze"
 flutter analyze
@@ -20,7 +19,6 @@ flutter test
 
 echo "==> Backend smoke checks"
 cd "$SERVER_DIR"
-npm run smoke:reports:permissions
 npm run smoke:all
 
 if [[ "$FAST_MODE" == "--fast" ]]; then

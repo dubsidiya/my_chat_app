@@ -14,6 +14,7 @@ import {
   isOwnerOrAdmin as isOwnerOrAdminAccess,
 } from '../services/chats/accessControl.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
+import { getLiveKitGroupCallCoordinator } from '../services/calls/livekitGroupCallCoordinator.js';
 
 let _chatUsersFolderColumnExists = null;
 const chatUsersFolderColumnExists = async () => {
@@ -894,6 +895,14 @@ export const removeMemberFromChat = async (req, res) => {
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId]
     );
+    try {
+      await getLiveKitGroupCallCoordinator().handleMembershipRemoved(
+        chatId,
+        targetUserId
+      );
+    } catch (_) {
+      // Membership is authoritative immediately; webhook/TTL finishes cleanup.
+    }
 
     // Обновляем is_group, если участников стало 1 или меньше
     const newCount = await pool.query(
@@ -994,6 +1003,14 @@ export const leaveChat = async (req, res) => {
       'DELETE FROM chat_users WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
+    try {
+      await getLiveKitGroupCallCoordinator().handleMembershipRemoved(
+        chatId,
+        userId
+      );
+    } catch (_) {
+      // Membership is authoritative immediately; webhook/TTL finishes cleanup.
+    }
 
     // Обновляем is_group, если участников стало 1 или меньше
     const newCount = await pool.query(

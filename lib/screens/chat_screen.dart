@@ -27,6 +27,7 @@ import '../services/push_notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/group_voice_call_service.dart';
 import '../services/voice_call_service.dart';
+import '../utils/call_playback_pause.dart';
 import '../theme/app_colors.dart';
 import '../widgets/theme_motion.dart';
 import '../utils/file_name_display.dart';
@@ -549,6 +550,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     PushNotificationService.setCurrentChatId(widget.chatId);
     _chatTitle = widget.chatName;
+    CallPlaybackPause.register(_pauseVoiceForCall);
 
     // ✅ Voice player streams (single player for whole chat)
     _voicePositionSub = _voicePlayer.positionStream.listen((pos) {
@@ -806,8 +808,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _pauseVoiceForCall() async {
+    try {
+      await _voicePlayer.pause();
+    } catch (_) {}
+    if (_isRecordingVoice) {
+      try {
+        await _voiceRecorder.stop();
+      } catch (_) {}
+      _isRecordingVoice = false;
+    }
+  }
+
   @override
   void dispose() {
+    CallPlaybackPause.unregister(_pauseVoiceForCall);
     WidgetsBinding.instance.removeObserver(this);
     PushNotificationService.setCurrentChatId(null);
     _scrollController.removeListener(_onScroll);

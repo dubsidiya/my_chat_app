@@ -13,6 +13,7 @@ import 'services/local_messages_service.dart';
 import 'services/push_notification_service.dart';
 import 'services/websocket_service.dart';
 import 'services/auth_service.dart';
+import 'services/ios_callkit_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -32,7 +33,10 @@ class _AutoHideScaffoldMessengerState extends ScaffoldMessengerState {
     AnimationStyle? snackBarAnimationStyle,
   }) {
     hideCurrentSnackBar();
-    return super.showSnackBar(snackBar, snackBarAnimationStyle: snackBarAnimationStyle);
+    return super.showSnackBar(
+      snackBar,
+      snackBarAnimationStyle: snackBarAnimationStyle,
+    );
   }
 }
 
@@ -47,17 +51,22 @@ void main() {
   };
 
   // Обработка асинхронных ошибок
-  runZonedGuarded(() {
-    WidgetsFlutterBinding.ensureInitialized();
-    // runApp сразу — иначе на iOS виден белый LaunchScreen/Main.storyboard,
-    // пока в main() await-ятся Hive, Firebase и т.д.
-    runApp(const _BootstrapApp());
-  }, (error, stack) {
-    if (kDebugMode) {
-      print('Uncaught error: $error');
-      print('Stack trace: $stack');
-    }
-  });
+  runZonedGuarded(
+    () {
+      WidgetsFlutterBinding.ensureInitialized();
+      unawaited(IOSCallKitService.instance.initialize());
+      PushNotificationService.registerBackgroundHandler();
+      // runApp сразу — иначе на iOS виден белый LaunchScreen/Main.storyboard,
+      // пока в main() await-ятся Hive, Firebase и т.д.
+      runApp(const _BootstrapApp());
+    },
+    (error, stack) {
+      if (kDebugMode) {
+        print('Uncaught error: $error');
+        print('Stack trace: $stack');
+      }
+    },
+  );
 }
 
 /// Стартовая оболочка: показывает экран загрузки, пока идёт init в фоне.
@@ -80,7 +89,9 @@ class _BootstrapAppState extends State<_BootstrapApp> {
   Future<void> _initializeApp() async {
     try {
       await initializeDateFormatting('ru').timeout(const Duration(seconds: 8));
-      await initializeDateFormatting('en_US').timeout(const Duration(seconds: 8));
+      await initializeDateFormatting(
+        'en_US',
+      ).timeout(const Duration(seconds: 8));
     } catch (e) {
       if (kDebugMode) print('date formatting init: $e');
     }
@@ -90,7 +101,9 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       if (kDebugMode) print('LocalMessagesService.init: $e');
     }
     try {
-      await ThemeController.instance.loadFromStorage().timeout(const Duration(seconds: 5));
+      await ThemeController.instance.loadFromStorage().timeout(
+        const Duration(seconds: 5),
+      );
     } catch (e) {
       if (kDebugMode) print('ThemeController.loadFromStorage: $e');
     }
@@ -185,7 +198,9 @@ class _StartupLoadingScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.cyberAccent),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppColors.cyberAccent,
+                ),
                 strokeWidth: 3,
               ),
               const SizedBox(height: 16),
@@ -290,7 +305,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 if (data != null) {
                   final userData = data['userData'] as Map<String, dynamic>;
                   final eulaAccepted = data['eulaAccepted'] as bool;
-                  final userIdentifier = (userData['email'] ?? userData['username'] ?? '') as String;
+                  final userIdentifier =
+                      (userData['email'] ?? userData['username'] ?? '')
+                          as String;
                   final isSuperuser = userData['isSuperuser'] == 'true';
                   final displayName = userData['displayName']?.toString();
                   final avatarUrl = userData['avatarUrl']?.toString();

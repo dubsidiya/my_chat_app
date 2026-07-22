@@ -268,7 +268,7 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
                     const LinearProgressIndicator(),
                   ],
                   const SizedBox(height: 12),
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.insights_rounded,
                     title: 'Индекс качества',
                     subtitle: 'Только для руководства · не виден преподавателю',
@@ -457,7 +457,7 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
                       );
                     }),
                   const SizedBox(height: 16),
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.school_rounded,
                     title: 'Ученики',
                     subtitle: 'Долги и отработки',
@@ -496,7 +496,7 @@ class _NagavisorScreenState extends State<NagavisorScreen> {
                       );
                     }),
                   const SizedBox(height: 16),
-                  _SectionHeader(
+                  const _SectionHeader(
                     icon: Icons.history_rounded,
                     title: 'Журнал правок отчётов',
                     subtitle: 'Последние события аудита',

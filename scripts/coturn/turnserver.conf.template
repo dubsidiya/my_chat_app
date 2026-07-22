@@ -3,6 +3,11 @@
 #
 # Важно: relay-ip = внутренний IP ВМ, external-ip = публичный/внутренний.
 # Иначе allocate OK, но error 508 (Cannot create socket).
+#
+# Auth: TURN REST / use-auth-secret (time-limited HMAC). Node mints
+# username=`expiry:userId` + HMAC-SHA1 password via WEBRTC_TURN_SECRET.
+#
+# Do NOT enable tls-listening-port without cert/pkey — coturn may fail to start.
 
 listening-port=3478
 listening-ip=0.0.0.0
@@ -11,8 +16,17 @@ external-ip=TURN_PUBLIC_IP_PLACEHOLDER/TURN_PRIVATE_IP_PLACEHOLDER
 
 fingerprint
 lt-cred-mech
+use-auth-secret
+static-auth-secret=TURN_SECRET_PLACEHOLDER
 realm=reollity
-user=TURN_USER_PLACEHOLDER:TURN_SECRET_PLACEHOLDER
+
+# Optional TLS (turns:443 via proxy or turns:5349 direct).
+# Enabled only when setup-coturn-on-vm.sh is given TURN_TLS_CERT/KEY.
+# TURN_TLS_SECTION_BEGIN
+# tls-listening-port=5349
+# cert=/etc/coturn/fullchain.pem
+# pkey=/etc/coturn/privkey.pem
+# TURN_TLS_SECTION_END
 
 total-quota=100
 stale-nonce=600

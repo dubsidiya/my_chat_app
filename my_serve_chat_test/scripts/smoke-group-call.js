@@ -27,9 +27,23 @@ function connectWs(token) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(WS_BASE, { headers: { Authorization: `Bearer ${token}` } });
     const timeout = setTimeout(() => reject(new Error('WS connect timeout')), 15000);
-    ws.on('open', () => {
+    const onMessage = (raw) => {
+      try {
+        const message = JSON.parse(raw.toString());
+        if (message.type !== 'ws_ready') return;
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        if (message.realtime_ready === false) {
+          reject(new Error('WS realtime control plane is not ready'));
+          return;
+        }
+        resolve(ws);
+      } catch (_) {}
+    };
+    ws.on('message', onMessage);
+    ws.on('close', () => {
       clearTimeout(timeout);
-      resolve(ws);
+      reject(new Error('WS closed before ready'));
     });
     ws.on('error', (e) => {
       clearTimeout(timeout);

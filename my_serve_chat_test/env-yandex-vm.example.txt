@@ -8,6 +8,63 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/chat_db?sslmode=require
 JWT_SECRET=минимум-32-символа-случайная-строка-openssl-rand-base64-32
 ALLOWED_ORIGINS=https://your-app.vercel.app,https://reollity.duckdns.org
 
+# Realtime звонков (Redis обязателен при NODE_ENV=production)
+CALL_REGISTRY_MODE=redis
+REDIS_URL=rediss://USERNAME:PASSWORD@REDIS_HOST:REDIS_PORT
+REDIS_KEY_PREFIX=my-chat
+REDIS_CONNECT_TIMEOUT_MS=5000
+REDIS_COMMAND_TIMEOUT_MS=1000
+
+# TTL/lease/grace (миллисекунды; безопасные значения по умолчанию показаны явно)
+WS_HEARTBEAT_MS=10000
+WS_CONNECTION_LEASE_MS=45000
+WS_INSTANCE_LEASE_MS=30000
+CALL_RINGING_TTL_MS=75000
+CALL_ACCEPTED_TTL_MS=90000
+CALL_TERMINAL_TTL_MS=300000
+CALL_ACCEPTED_DISCONNECT_GRACE_MS=15000
+CALL_RINGING_DISCONNECT_GRACE_MS=3000
+CALL_BUSY_LEASE_MS=90000
+CALL_CLEANUP_INTERVAL_MS=1000
+
+# Групповые звонки LiveKit: dual-stack rollout. По умолчанию всё остаётся mesh.
+GROUP_CALL_DEFAULT_TRANSPORT=mesh
+GROUP_CALL_LIVEKIT_ROLLOUT_PERCENT=0
+LIVEKIT_GROUP_FEATURE_ENABLED=false
+LIVEKIT_DEPLOYMENT_ID=prod
+LIVEKIT_GROUP_MAX_PARTICIPANTS=4
+LIVEKIT_GROUP_MIN_APP_VERSION=
+LIVEKIT_GROUP_CALL_TTL_MS=14400000
+LIVEKIT_TOKEN_TTL_SECONDS=3600
+LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS=60
+LIVEKIT_WEBHOOK_ENABLED=false
+
+# Managed LiveKit — заполнить только в secret store при включении rollout.
+LIVEKIT_URL=
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+
+# APNs VoIP token auth — .p8/key values live only in the deployment secret store.
+APNS_KEY_ID=
+APNS_TEAM_ID=
+APNS_AUTH_KEY_PATH=
+# Alternative to APNS_AUTH_KEY_PATH for secret injection (escaped newlines allowed):
+APNS_AUTH_KEY_P8=
+APNS_VOIP_BUNDLE_ID=com.estellia.reol
+
+# WebRTC ICE / coturn (1:1 raw WebRTC). Prefer HMAC TURN REST:
+# WEBRTC_STUN_URLS=stun:stun.l.google.com:19302,stun:YOUR_PUBLIC_IP:3478
+# WEBRTC_TURN_URL=turn:YOUR_PUBLIC_IP:3478
+# WEBRTC_TURN_SECRET=same-as-coturn-static-auth-secret
+# WEBRTC_TURN_TTL_SECONDS=21600
+# Optional TLS TURN (after certs on coturn):
+# WEBRTC_TURN_TLS_ENABLED=true
+# WEBRTC_TURN_TLS_HOST=turn.example.com
+# WEBRTC_TURNS_URL=turns:turn.example.com:443?transport=tcp,turns:turn.example.com:5349?transport=tcp
+# Legacy static shared credentials (used only when WEBRTC_TURN_SECRET is empty):
+# WEBRTC_TURN_USERNAME=reollity
+# WEBRTC_TURN_CREDENTIAL=
+
 # Порт (опционально)
 PORT=3000
 

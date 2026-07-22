@@ -29,11 +29,23 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Нужно для голосовых сообщений и голосовых звонков в чате.</string>
+	<string>Нужно для голосовых сообщений, голосовых и видеозвонков в чате.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нужно для выбора и отправки фото в чате.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Нужно для съёмки фото/видео в чате и для видеозвонков.</string>
+	<!--
+	  PushKit uses the same sandbox/production boundary as APS_ENVIRONMENT.
+	  Debug → development; Release/TestFlight/App Store → production.
+	-->
+	<key>ReollityAPNSEnvironment</key>
+	<string>$(APS_ENVIRONMENT)</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+		<string>voip</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

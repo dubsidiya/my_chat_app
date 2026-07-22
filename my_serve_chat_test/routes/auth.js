@@ -1,10 +1,13 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { register, login, getMe, getWebSocketToken, refreshSession, logout, updateProfile, uploadAvatar, getAllUsers, getUserById, deleteAccount, changePassword, saveFcmToken } from '../controllers/auth/index.js';
+import { createPushDevicesController } from '../controllers/pushDevicesController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { uploadImage } from '../utils/uploadImage.js';
+import pool from '../db.js';
 
 const router = express.Router();
+const pushDevicesController = createPushDevicesController({ pool });
 
 // Лимит на сохранение FCM-токена (защита от спама)
 const fcmTokenLimiter = rateLimit({
@@ -59,6 +62,8 @@ router.get('/users/:userId', authenticateToken, getUserByIdLimiter, getUserById)
 router.delete('/user/:userId', authenticateToken, sensitiveActionLimiter, deleteAccount); // DELETE /auth/user/:userId
 router.put('/user/:userId/password', authenticateToken, sensitiveActionLimiter, changePassword); // PUT /auth/user/:userId/password
 router.post('/fcm-token', authenticateToken, fcmTokenLimiter, saveFcmToken); // POST /auth/fcm-token - сохранить FCM-токен для push
+router.put('/push-devices/current', authenticateToken, fcmTokenLimiter, pushDevicesController.upsertCurrent);
+router.delete('/push-devices/current', authenticateToken, fcmTokenLimiter, pushDevicesController.deleteCurrent);
 router.post('/logout', authenticateToken, logout); // POST /auth/logout - отзыв refresh-сессий
 
 export default router;

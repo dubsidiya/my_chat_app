@@ -14,7 +14,7 @@ dependencies:
   file_picker: ^8.1.4
   image_picker: ^1.2.0
   desktop_drop: ^0.7.0
-  http: ^0.13.6
+  http: ^1.6.0
   web_socket_channel: ^3.0.3
   intl: ^0.19.0
   shared_preferences: ^2.2.2
@@ -36,8 +36,11 @@ dependencies:
   cryptography: ^2.7.0       # AES-256-GCM для shared-key шифрования сообщений
   video_player: ^2.11.1
   video_thumbnail: ^0.5.6
-  flutter_webrtc: ^1.4.1   # iOS: WebRTC-SDK 144.x — перед App Store: bash tool/patch_ios_webrtc_sdk.sh (см. docs/IOS_APP_STORE_WEBRTC.md)
+  # LiveKit 2.8.1 requires exactly flutter_webrtc 1.4.0 so both plugins use
+  # the same native WebRTC-SDK (144.7559.01).
+  flutter_webrtc: 1.4.0
   permission_handler: ^11.4.0
+  livekit_client: 2.8.1
 
 dev_dependencies:
   flutter_test:

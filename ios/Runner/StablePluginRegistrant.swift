@@ -4,6 +4,8 @@ import Foundation
 enum StablePluginRegistrant {
   static func register(with registry: FlutterPluginRegistry) {
     register(registry, pluginKey: "AudioSessionPlugin", classCandidates: ["AudioSessionPlugin", "audio_session.AudioSessionPlugin"])
+    register(registry, pluginKey: "ConnectivityPlusPlugin", classCandidates: ["ConnectivityPlusPlugin", "connectivity_plus.ConnectivityPlusPlugin"])
+    register(registry, pluginKey: "FPPDeviceInfoPlusPlugin", classCandidates: ["FPPDeviceInfoPlusPlugin", "device_info_plus.FPPDeviceInfoPlusPlugin"])
     register(registry, pluginKey: "FilePickerPlugin", classCandidates: ["FilePickerPlugin", "file_picker.FilePickerPlugin"])
     register(registry, pluginKey: "FLTImagePickerPlugin", classCandidates: ["FLTImagePickerPlugin"])
     register(registry, pluginKey: "FLTFirebaseCorePlugin", classCandidates: ["FLTFirebaseCorePlugin", "firebase_core.FLTFirebaseCorePlugin"])
@@ -12,6 +14,7 @@ enum StablePluginRegistrant {
     register(registry, pluginKey: "FlutterSecureStoragePlugin", classCandidates: ["FlutterSecureStoragePlugin", "flutter_secure_storage.FlutterSecureStoragePlugin"])
     register(registry, pluginKey: "FlutterWebRTCPlugin", classCandidates: ["FlutterWebRTCPlugin", "flutter_webrtc.FlutterWebRTCPlugin"])
     register(registry, pluginKey: "JustAudioPlugin", classCandidates: ["JustAudioPlugin", "just_audio.JustAudioPlugin"])
+    register(registry, pluginKey: "LiveKitPlugin", classCandidates: ["LiveKitPlugin", "livekit_client.LiveKitPlugin"])
     register(registry, pluginKey: "FPPPackageInfoPlusPlugin", classCandidates: ["FPPPackageInfoPlusPlugin", "package_info_plus.FPPPackageInfoPlusPlugin"])
     register(registry, pluginKey: "PathProviderPlugin", classCandidates: ["PathProviderPlugin", "path_provider_foundation.PathProviderPlugin"])
     register(registry, pluginKey: "PermissionHandlerPlugin", classCandidates: ["PermissionHandlerPlugin", "permission_handler_apple.PermissionHandlerPlugin"])

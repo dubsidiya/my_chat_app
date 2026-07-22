@@ -3,16 +3,29 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb;
+    show TargetPlatform, defaultTargetPlatform, debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../utils/timed_http.dart';
-import '../config/api_config.dart';
 import '../screens/chat_screen.dart';
+import '../utils/android_full_screen_intent.dart';
+import '../utils/push_payload.dart';
 import 'storage_service.dart';
+import 'push_device_service.dart';
 import 'voice_call_service.dart';
 import 'group_voice_call_service.dart';
+import 'ios_callkit_service.dart';
 import 'websocket_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  if (!isCallReconciliationPushData(message.data)) return;
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Firebase can already be initialized in the background isolate.
+  }
+  await PushNotificationService.cancelCallNotificationData(message.data);
+}
 
 /// Канал для уведомлений о сообщениях (Android).
 const String _channelId = 'chat_messages';
@@ -27,8 +40,12 @@ const String _callChannelName = 'Голосовые звонки';
 /// В foreground при получении FCM показывается локальное уведомление (flutter_local_notifications).
 class PushNotificationService {
   static bool _initialized = false;
+  static bool _backgroundHandlerRegistered = false;
   static String? _fcmToken;
   static GlobalKey<NavigatorState>? _navigatorKey;
+  static StreamSubscription<dynamic>? _callEventSubscription;
+  static final Map<String, CallNotificationIdentity>
+  _callNotificationIdentities = {};
 
   /// Текущий открытый чат (id). Если пришёл push по этому чату — уведомление не показываем.
   static String? _currentChatId;
@@ -37,6 +54,15 @@ class PushNotificationService {
       FlutterLocalNotificationsPlugin();
 
   static bool get isInitialized => _initialized;
+  static String? get currentFcmToken => _fcmToken;
+
+  /// Register before [runApp] so Android can reconcile a call notification
+  /// while the UI isolate is suspended.
+  static void registerBackgroundHandler() {
+    if (kIsWeb || _backgroundHandlerRegistered) return;
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    _backgroundHandlerRegistered = true;
+  }
 
   /// Вызвать при входе в чат. Передай [chatId] или null при выходе из чата.
   static void setCurrentChatId(String? chatId) {
@@ -47,9 +73,12 @@ class PushNotificationService {
   /// [navigatorKey] — ключ навигатора приложения для перехода в чат при нажатии на уведомление.
   static Future<void> init(GlobalKey<NavigatorState>? navigatorKey) async {
     _navigatorKey = navigatorKey;
+    registerBackgroundHandler();
     // На веб Firebase без конфигурации падает с assertion — не вызываем initializeApp.
     if (kIsWeb) {
-      if (kDebugMode) print('PushNotificationService: web platform, skip Firebase');
+      if (kDebugMode) {
+        print('PushNotificationService: web platform, skip Firebase');
+      }
       return;
     }
     try {
@@ -86,7 +115,8 @@ class PushNotificationService {
     );
     await _localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(androidChannel);
 
     const androidCallChannel = AndroidNotificationChannel(
@@ -98,7 +128,8 @@ class PushNotificationService {
     );
     await _localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(androidCallChannel);
 
     final messaging = FirebaseMessaging.instance;
@@ -128,7 +159,9 @@ class PushNotificationService {
     try {
       await _requestPermissionAndRegisterToken(FirebaseMessaging.instance);
     } catch (e) {
-      if (kDebugMode) print('PushNotificationService.requestPermissionIfNeeded: $e');
+      if (kDebugMode) {
+        print('PushNotificationService.requestPermissionIfNeeded: $e');
+      }
     }
   }
 
@@ -145,16 +178,35 @@ class PushNotificationService {
       return;
     }
 
-    // Токен для отправки на бэкенд
-    messaging.getToken().then((token) {
-      if (token != null) {
-        _fcmToken = token;
-        if (kDebugMode) print('PushNotificationService: FCM token received');
-        sendTokenToBackendIfNeeded();
+    // Android 14+: full-screen incoming-call intent may be restricted. We never
+    // auto-jump to Settings here; notifications fall back to heads-up when
+    // denied. Call AndroidFullScreenIntent.ensureReady(openSettingsIfNeeded: true)
+    // from an in-app prompt if product wants a guided enable flow.
+    if (kDebugMode && AndroidFullScreenIntent.isSupported) {
+      final ok = await AndroidFullScreenIntent.canUseFullScreenIntent();
+      if (!ok) {
+        debugPrint(
+          'PushNotificationService: full-screen intent disabled — '
+          'incoming calls use heads-up fallback',
+        );
       }
-    }).catchError((e) {
-      if (kDebugMode) print('PushNotificationService: getToken error: $e');
-    });
+    }
+
+    // Токен для отправки на бэкенд
+    messaging
+        .getToken()
+        .then((token) {
+          if (token != null) {
+            _fcmToken = token;
+            if (kDebugMode) {
+              print('PushNotificationService: FCM token received');
+            }
+            sendTokenToBackendIfNeeded();
+          }
+        })
+        .catchError((e) {
+          if (kDebugMode) print('PushNotificationService: getToken error: $e');
+        });
   }
 
   static void _attachMessagingHandlers(FirebaseMessaging messaging) {
@@ -163,7 +215,21 @@ class PushNotificationService {
       sendTokenToBackendIfNeeded();
     });
 
-    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+    _callEventSubscription ??= WebSocketService.instance.stream.listen((event) {
+      if (event is! Map) return;
+      final type = event['type']?.toString();
+      if (type == 'call_answered_elsewhere' ||
+          type == 'call_reject' ||
+          type == 'call_hangup' ||
+          type == 'gcall_ended' ||
+          type == 'lkcall_ended') {
+        unawaited(cancelCallNotificationData(Map<String, dynamic>.from(event)));
+      }
+    });
+
+    FirebaseMessaging.instance.getInitialMessage().then((
+      RemoteMessage? message,
+    ) {
       if (message != null) _handleOpenFromNotification(message.data);
     });
 
@@ -173,11 +239,20 @@ class PushNotificationService {
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       final data = message.data;
+      if (isCallReconciliationPushData(data)) {
+        unawaited(cancelCallNotificationData(data));
+        return;
+      }
       if (_isIncomingCallData(data)) {
+        if (shouldDiscardIncomingCallPush(data)) {
+          unawaited(cancelCallNotificationData(data));
+          return;
+        }
         _handleIncomingCallPush(data, message.notification);
         return;
       }
-      if (_currentChatId != null && data['chatId']?.toString() == _currentChatId) {
+      if (_currentChatId != null &&
+          data['chatId']?.toString() == _currentChatId) {
         return;
       }
       final notification = message.notification;
@@ -191,40 +266,64 @@ class PushNotificationService {
   }
 
   static bool _isIncomingCallData(Map<String, dynamic> data) {
-    final type = data['type']?.toString();
-    return type == 'incoming_call' || type == 'incoming_group_call';
+    return isIncomingCallPushData(data);
   }
 
   /// На Apple-платформах FCM с notification payload уже показывается системой в foreground.
-  static bool _shouldSkipLocalForegroundMessageNotification(RemoteMessage message) {
-    if (message.notification == null) return false;
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        return true;
-      default:
-        return false;
-    }
+  static bool _shouldSkipLocalForegroundMessageNotification(
+    RemoteMessage message,
+  ) {
+    return !shouldShowForegroundLocalNotification(
+      platform: defaultTargetPlatform,
+      hasRemoteNotification: message.notification != null,
+    );
   }
 
   static void _handleIncomingCallPush(
     Map<String, dynamic> data,
-    RemoteNotification? notification,
-  ) {
+    RemoteNotification? notification, {
+    bool allowLocalNotification = true,
+  }) {
+    if (shouldDiscardIncomingCallPush(data)) {
+      unawaited(cancelCallNotificationData(data));
+      return;
+    }
+    if (data['type']?.toString() == 'incoming_livekit_group_call' &&
+        !isLiveKitGroupCallPushData(data)) {
+      return;
+    }
     final callId = data['callId']?.toString() ?? '';
     final chatId = data['chatId']?.toString() ?? '';
     final peerUserId = data['fromUserId']?.toString() ?? '';
-    final peerLabel = data['fromEmail']?.toString() ??
+    final peerLabel =
+        data['fromLabel']?.toString() ??
+        data['fromEmail']?.toString() ??
         data['chatName']?.toString() ??
         'Звонок';
     final chatName = data['chatName']?.toString() ?? peerLabel;
-    final isGroup = data['type']?.toString() == 'incoming_group_call' ||
+    final isGroup =
+        data['type']?.toString() == 'incoming_group_call' ||
+        data['type']?.toString() == 'incoming_livekit_group_call' ||
         data['isGroup']?.toString() == '1';
     if (callId.isEmpty || chatId.isEmpty) return;
+    final dedupeKey = incomingCallPushDedupeKey(data);
+    _callNotificationIdentities[dedupeKey] = callNotificationIdentity(data);
+    final expiresAt = parseCallPushExpiry(data);
+    final shouldShowLocal =
+        allowLocalNotification &&
+        shouldShowForegroundLocalNotification(
+          platform: defaultTargetPlatform,
+          hasRemoteNotification: notification != null,
+        );
 
     unawaited(WebSocketService.instance.connectIfNeeded());
 
     if (isGroup) {
+      final liveKit = isLiveKitGroupCallPushData(data);
+      final mediaType =
+          (data['initialMediaType'] ?? data['mediaType'])?.toString() == 'video'
+          ? GroupCallMediaType.video
+          : GroupCallMediaType.audio;
       final before = GroupVoiceCallService.instance.snapshot;
       GroupVoiceCallService.instance.applyIncomingFromPush(
         callId: callId,
@@ -232,14 +331,35 @@ class PushNotificationService {
         chatName: chatName,
         fromUserId: peerUserId,
         fromLabel: peerLabel,
+        expiresAt: expiresAt,
+        transport: liveKit
+            ? GroupCallTransport.livekit
+            : GroupCallTransport.mesh,
+        mediaType: mediaType,
       );
       final after = GroupVoiceCallService.instance.snapshot;
-      if (before.isActive && before.callId == callId) return;
+      if (before.isActive &&
+          before.callId == callId &&
+          before.transport ==
+              (liveKit
+                  ? GroupCallTransport.livekit
+                  : GroupCallTransport.mesh)) {
+        return;
+      }
       if (after.callId != callId || after.phase != GroupCallPhase.incoming) {
         return;
       }
-      final title = notification?.title ?? 'Групповой звонок';
-      final body = notification?.body ?? '$peerLabel начинает звонок';
+      if (!shouldShowLocal) return;
+      final title =
+          notification?.title ??
+          (mediaType == GroupCallMediaType.video
+              ? 'Групповой видеозвонок'
+              : 'Групповой звонок');
+      final body =
+          notification?.body ??
+          (mediaType == GroupCallMediaType.video
+              ? '$peerLabel начинает видеозвонок'
+              : '$peerLabel начинает звонок');
       unawaited(
         _showForegroundNotification(
           title: title,
@@ -252,8 +372,9 @@ class PushNotificationService {
     }
 
     if (peerUserId.isEmpty) return;
-    final mediaType =
-        callMediaTypeFromRaw(data['mediaType'] ?? data['media_type']);
+    final mediaType = callMediaTypeFromRaw(
+      data['mediaType'] ?? data['media_type'],
+    );
     final before = VoiceCallService.instance.snapshot;
     VoiceCallService.instance.applyIncomingFromPush(
       callId: callId,
@@ -261,18 +382,24 @@ class PushNotificationService {
       peerUserId: peerUserId,
       peerLabel: peerLabel,
       mediaType: mediaType,
+      expiresAt: expiresAt,
     );
     final after = VoiceCallService.instance.snapshot;
 
     // Уже звоним по WebSocket — не дублируем баннер.
     if (before.isActive && before.callId == callId) return;
-    if (after.callId != callId || after.phase != VoiceCallPhase.incoming) return;
+    if (after.callId != callId || after.phase != VoiceCallPhase.incoming) {
+      return;
+    }
+    if (!shouldShowLocal) return;
 
-    final title = notification?.title ??
+    final title =
+        notification?.title ??
         (mediaType == CallMediaType.video
             ? 'Входящий видеозвонок'
             : 'Входящий звонок');
-    final body = notification?.body ??
+    final body =
+        notification?.body ??
         (mediaType == CallMediaType.video
             ? '$peerLabel звонит с видео'
             : '$peerLabel звонит');
@@ -295,7 +422,9 @@ class PushNotificationService {
         data.map((k, v) => MapEntry(k, v?.toString() ?? '')),
       );
     } catch (_) {
-      if (kDebugMode) print('PushNotificationService: invalid payload $payload');
+      if (kDebugMode) {
+        print('PushNotificationService: invalid payload $payload');
+      }
     }
   }
 
@@ -306,6 +435,9 @@ class PushNotificationService {
     bool isCall = false,
   }) async {
     final payload = jsonEncode(data);
+    final callIdentity = isCall ? callNotificationIdentity(data) : null;
+    final allowFullScreen =
+        isCall && await AndroidFullScreenIntent.canUseFullScreenIntent();
     final androidDetails = AndroidNotificationDetails(
       isCall ? _callChannelId : _channelId,
       isCall ? _callChannelName : _channelName,
@@ -316,7 +448,9 @@ class PushNotificationService {
       priority: isCall ? Priority.max : Priority.high,
       playSound: true,
       category: isCall ? AndroidNotificationCategory.call : null,
-      fullScreenIntent: isCall,
+      fullScreenIntent: allowFullScreen,
+      tag: callIdentity?.tag,
+      timeoutAfter: isCall ? callNotificationTimeoutMs(data) : null,
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -327,13 +461,44 @@ class PushNotificationService {
       android: androidDetails,
       iOS: iosDetails,
     );
-    final id = DateTime.now().millisecondsSinceEpoch.remainder(0x7FFFFFFF);
+    final id =
+        callIdentity?.id ??
+        DateTime.now().millisecondsSinceEpoch.remainder(0x7FFFFFFF);
     await _localNotifications.show(id, title, body, details, payload: payload);
   }
 
+  static Future<void> cancelCallNotificationData(
+    Map<String, dynamic> data,
+  ) async {
+    await IOSCallKitService.instance.handleReconciliationPush(data);
+    final callId =
+        data['callId']?.toString() ?? data['call_id']?.toString() ?? '';
+    final dedupeKey = incomingCallPushDedupeKey(data);
+    final identity =
+        _callNotificationIdentities[dedupeKey] ??
+        callNotificationIdentity(data);
+    try {
+      await _localNotifications.cancel(identity.id, tag: identity.tag);
+    } catch (_) {
+      if (kDebugMode) {
+        print('PushNotificationService: call notification cancel failed');
+      }
+    } finally {
+      if (callId.isNotEmpty) _callNotificationIdentities.remove(dedupeKey);
+    }
+  }
+
   static void _handleOpenFromNotification(Map<String, dynamic> data) {
+    if (isCallReconciliationPushData(data)) {
+      unawaited(cancelCallNotificationData(data));
+      return;
+    }
     if (_isIncomingCallData(data)) {
-      _handleIncomingCallPush(data, null);
+      if (shouldDiscardIncomingCallPush(data)) {
+        unawaited(cancelCallNotificationData(data));
+        return;
+      }
+      _handleIncomingCallPush(data, null, allowLocalNotification: false);
       return;
     }
     final chatId = data['chatId']?.toString();
@@ -353,7 +518,11 @@ class PushNotificationService {
     if (navigator == null) return;
 
     StorageService.getUserData().then((userData) {
-      if (userData == null || userData['id'] == null || userData['token'] == null) return;
+      if (userData == null ||
+          userData['id'] == null ||
+          userData['token'] == null) {
+        return;
+      }
       final userId = userData['id']!;
       final userEmail = userData['email'] ?? userData['username'] ?? '';
       final displayName = userData['displayName']?.toString();
@@ -373,54 +542,42 @@ class PushNotificationService {
     });
   }
 
-  /// Отправить FCM-токен на бэкенд (если пользователь залогинен).
+  /// Sync this installation's normal FCM token after login/start/refresh.
   static Future<void> sendTokenToBackendIfNeeded() async {
     final token = _fcmToken;
-    if (token == null || token.isEmpty) return;
-
-    final userData = await StorageService.getUserData();
-    final authToken = userData?['token'];
-    if (authToken == null || authToken.isEmpty) return;
-
-    final url = Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token');
     try {
-      final response = await timedPost(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'fcmToken': token}),
-      );
+      final result = token == null || token.isEmpty
+          ? null
+          : await PushDeviceSyncService.instance.syncNormalToken(token);
+      await IOSCallKitService.instance.syncVoipRegistration();
       if (kDebugMode) {
-        print('PushNotificationService: fcm-token response ${response.statusCode}');
+        print(
+          'PushNotificationService: device sync '
+          '${result?.statusCode ?? 'skipped'}',
+        );
       }
-    } catch (e) {
-      if (kDebugMode) print('PushNotificationService: sendToken error: $e');
+    } catch (_) {
+      if (kDebugMode) {
+        print('PushNotificationService: device sync failed');
+      }
     }
   }
 
-  /// Очистить FCM-токен на бэкенде (вызывать перед выходом из аккаунта).
+  /// Deregister only this installation; a delayed logout cannot affect a row
+  /// that has already moved to another account.
   static Future<void> clearTokenOnBackend() async {
-    final userData = await StorageService.getUserData();
-    final authToken = userData?['token'];
-    if (authToken == null || authToken.isEmpty) return;
-
-    final url = Uri.parse('${ApiConfig.baseUrl}/auth/fcm-token');
     try {
-      final response = await timedPost(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'fcmToken': ''}),
-      );
+      final cleared = await PushDeviceSyncService.instance.deregister();
       if (kDebugMode) {
-        print('PushNotificationService: clear fcm-token response ${response.statusCode}');
+        print(
+          'PushNotificationService: device deregistration '
+          '${cleared ? 'accepted' : 'skipped'}',
+        );
       }
-    } catch (e) {
-      if (kDebugMode) print('PushNotificationService: clearToken error: $e');
+    } catch (_) {
+      if (kDebugMode) {
+        print('PushNotificationService: device deregistration failed');
+      }
     }
   }
 }

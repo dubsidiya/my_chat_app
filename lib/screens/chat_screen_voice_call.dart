@@ -26,7 +26,9 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Не удалось определить собеседника. Попробуйте позже.'),
+            content: Text(
+              'Не удалось определить собеседника. Попробуйте позже.',
+            ),
             duration: Duration(seconds: 3),
           ),
         );
@@ -83,11 +85,13 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
   }
 
   void _showVoiceCallStartError([String? overrideMessage]) {
-    final msg = overrideMessage ??
+    final msg =
+        overrideMessage ??
         VoiceCallService.instance.snapshot.statusMessage ??
         GroupVoiceCallService.instance.snapshot.statusMessage ??
         'Не удалось начать звонок';
-    final permanent = VoiceCallService.instance.lastMicrophoneAccess ==
+    final permanent =
+        VoiceCallService.instance.lastMicrophoneAccess ==
             MicrophoneAccess.permanentlyDenied ||
         GroupVoiceCallService.instance.lastMicrophoneAccess ==
             MicrophoneAccess.permanentlyDenied;
@@ -109,6 +113,33 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
 
   Future<void> _startGroupVoiceCall() async {
     if (!widget.isGroup) return;
+    final mediaType = await showModalBottomSheet<GroupCallMediaType>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.call_rounded),
+              title: const Text('Аудиозвонок'),
+              onTap: () => Navigator.pop(context, GroupCallMediaType.audio),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_rounded),
+              title: const Text('Видеозвонок'),
+              subtitle: const Text('Камеру можно выключить в любой момент'),
+              onTap: () => Navigator.pop(context, GroupCallMediaType.video),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mediaType == null || !mounted) return;
+    await _startSelectedGroupCall(mediaType);
+  }
+
+  Future<void> _startSelectedGroupCall(GroupCallMediaType mediaType) async {
     try {
       try {
         await _voicePlayer.pause();
@@ -120,6 +151,7 @@ extension _ChatScreenVoiceCallPart on _ChatScreenState {
       final ok = await GroupVoiceCallService.instance.startGroupCall(
         chatId: widget.chatId,
         chatName: name,
+        mediaType: mediaType,
       );
       if (!ok && mounted) {
         _showVoiceCallStartError();

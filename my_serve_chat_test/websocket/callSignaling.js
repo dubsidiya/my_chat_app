@@ -1,40 +1,46 @@
 /**
- * WebRTC voice call signaling (1-on-1 DM chats only).
- * Relays SDP/ICE between two participants; does not touch media.
+ * WebRTC DM call coordinator.
+ *
+ * Validation and payload shaping stay here. Durable state, fencing, leases,
+ * expiry and cross-instance delivery belong to the configured realtime runtime.
  */
+import crypto from 'node:crypto';
 
-import { sendIncomingCallPushToUser } from '../utils/pushNotifications.js';
-import { getUserGroupCallId } from './groupCallSignaling.js';
-
-/** @typedef {{ chatId: string, callerId: string, calleeId: string, state: string, createdAt: number, mediaType: 'audio'|'video', mediaConnId?: Record<string, string> }} ActiveCall */
+import { realtimeRuntime, isRealtimeUnavailable } from '../realtime/index.js';
+import {
+  sendCallReconciliationPushToUser,
+  sendIncomingCallPushToUser,
+} from '../utils/pushNotifications.js';
 
 function normalizeMediaType(raw) {
-  const v = (raw ?? 'audio').toString().trim().toLowerCase();
-  return v === 'video' ? 'video' : 'audio';
-}
-const activeCalls = new Map(); // callId -> ActiveCall
-const userActiveCallId = new Map(); // userId -> callId
-
-const CALL_TTL_MS = 5 * 60 * 1000;
-const RINGING_STALE_MS = 90 * 1000;
-
-function cleanupCall(callId) {
-  const call = activeCalls.get(callId);
-  if (!call) return;
-  activeCalls.delete(callId);
-  if (userActiveCallId.get(call.callerId) === callId) {
-    userActiveCallId.delete(call.callerId);
-  }
-  if (userActiveCallId.get(call.calleeId) === callId) {
-    userActiveCallId.delete(call.calleeId);
-  }
+  const value = (raw ?? 'audio').toString().trim().toLowerCase();
+  return value === 'video' ? 'video' : 'audio';
 }
 
-/** @returns {string|null} */
-export function getUserDmCallId(userId) {
-  const uid = userId?.toString();
-  if (!uid) return null;
-  return userActiveCallId.get(uid) || null;
+export function parseCallMediaUpdate(data, currentMediaType) {
+  const rawMediaType = data?.media_type ?? data?.mediaType;
+  let mediaType = currentMediaType;
+  if (rawMediaType !== undefined) {
+    if (typeof rawMediaType !== 'string') return { ok: false };
+    const normalized = rawMediaType.trim().toLowerCase();
+    if (normalized !== 'audio' && normalized !== 'video') {
+      return { ok: false };
+    }
+    mediaType = normalized;
+  }
+  const hasCameraOff = Object.prototype.hasOwnProperty.call(
+    data ?? {},
+    'camera_off'
+  );
+  if (hasCameraOff && typeof data.camera_off !== 'boolean') {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    mediaType,
+    hasCameraOff,
+    cameraOff: hasCameraOff ? data.camera_off : undefined,
+  };
 }
 
 function isParticipant(call, userId) {
@@ -43,12 +49,45 @@ function isParticipant(call, userId) {
 }
 
 function peerIdFor(call, userId) {
-  const uid = userId?.toString();
-  return call.callerId === uid ? call.calleeId : call.callerId;
+  return call.callerId === userId?.toString()
+    ? call.calleeId
+    : call.callerId;
+}
+
+function getWsConnId(ws) {
+  return ws?.connId?.toString() || null;
+}
+
+function sendCurrent(ws, payload) {
+  if (ws?.readyState !== 1) return false;
+  try {
+    ws.send(JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sendCallError(ws, payload) {
+  sendCurrent(ws, {
+    type: 'call_error',
+    ...payload,
+    ts: new Date().toISOString(),
+  });
+}
+
+function statusPayload(status, extra = {}) {
+  return {
+    type: 'call_status',
+    status: status.active ? status.state : 'none',
+    ...status,
+    ...extra,
+    ts: new Date().toISOString(),
+  };
 }
 
 async function resolveDmChat(pool, chatIdRaw, userId) {
-  const chatIdNum = parseInt(chatIdRaw, 10);
+  const chatIdNum = Number.parseInt(chatIdRaw, 10);
   if (!Number.isFinite(chatIdNum)) {
     return { ok: false, status: 400, error: 'invalid_chat_id' };
   }
@@ -80,154 +119,176 @@ async function resolveDmChat(pool, chatIdRaw, userId) {
     return { ok: false, status: 403, error: 'not_dm_chat' };
   }
 
-  const ids = members.rows.map((r) => r.user_id?.toString()).filter(Boolean);
+  const ids = members.rows
+    .map((row) => row.user_id?.toString())
+    .filter(Boolean);
   const peerId = ids.find((id) => id !== userId.toString());
   if (!peerId) {
     return { ok: false, status: 403, error: 'peer_not_found' };
   }
-
   return { ok: true, chatIdNum, peerId };
 }
 
-function sendCallError(sendToUserSockets, userId, payload) {
-  sendToUserSockets(userId, {
-    type: 'call_error',
-    ...payload,
-    ts: new Date().toISOString(),
-  });
-}
-
-function relayToPeer(sendToUserSockets, call, fromUserId, payload) {
-  const target = peerIdFor(call, fromUserId);
-  sendToUserSockets(target, payload);
-}
-
-function getWsConnId(ws) {
-  return ws?.connId?.toString() || null;
-}
-
-function bindMediaConn(call, userId, connId) {
-  if (!connId) return false;
-  const uid = userId?.toString();
-  if (!uid) return false;
-  if (!call.mediaConnId) call.mediaConnId = {};
-  const prev = call.mediaConnId[uid];
-  if (prev && prev !== connId) return false;
-  call.mediaConnId[uid] = connId;
-  return true;
-}
-
-function mediaConnMatches(call, userId, connId) {
-  if (!connId) return false;
-  const bound = call.mediaConnId?.[userId?.toString()];
-  return !bound || bound === connId;
-}
-
-function relayToPeerMedia(call, fromUserId, payload, sendToUserMediaSocket, sendToUserSockets) {
-  const target = peerIdFor(call, fromUserId);
-  const mediaConn = call.mediaConnId?.[target];
-  if (mediaConn) {
-    sendToUserMediaSocket(target, mediaConn, payload);
-  } else {
-    sendToUserSockets(target, payload);
-  }
-}
-
-function broadcastToBoth(call, payload, sendToUserSockets) {
-  sendToUserSockets(call.callerId, payload);
-  sendToUserSockets(call.calleeId, payload);
-}
-
-function cleanupStaleCallsForUser(userId) {
-  const uid = userId?.toString();
-  if (!uid) return;
-  const callId = userActiveCallId.get(uid);
-  if (!callId) return;
-  const call = activeCalls.get(callId);
-  if (!call) {
-    userActiveCallId.delete(uid);
-    return;
-  }
-  const age = Date.now() - call.createdAt;
-  // TTL чистит ТОЛЬКО ringing-сессии. Принятый звонок может длиться долго;
-  // его убирает либо явный call_hangup, либо releaseCallsForUser на disconnect.
-  if (call.state === 'ringing' && age > RINGING_STALE_MS) {
-    cleanupCall(callId);
-    return;
-  }
-  if (call.state === 'ringing' && age > CALL_TTL_MS) {
-    cleanupCall(callId);
-  }
-}
-
-/**
- * When user has no WS connections left, drop server-side call locks.
- */
-export function releaseCallsForUser(userId, sendToUserSockets) {
-  const uid = userId?.toString();
-  if (!uid) return;
-  const callId = userActiveCallId.get(uid);
-  if (!callId) return;
-  const call = activeCalls.get(callId);
-  if (!call) {
-    userActiveCallId.delete(uid);
-    return;
-  }
-  const peer = peerIdFor(call, uid);
-  const base = {
-    call_id: callId,
-    chat_id: call.chatId,
-    from_user_id: uid,
-    ts: new Date().toISOString(),
-  };
-  if (sendToUserSockets && peer) {
-    sendToUserSockets(peer, { type: 'call_hangup', ...base });
-  }
-  cleanupCall(callId);
-}
-
-/**
- * @param {object} data - parsed WS JSON
- * @param {{ userId: string, userEmail: string, pool: import('pg').Pool, ws: import('ws').WebSocket, sendToUserSockets: Function, sendToUserSocketsExcept: Function, sendToUserMediaSocket: Function, callLimiter: { allow: (key: string) => boolean } }} ctx
- * @returns {boolean} true if handled (call-related message)
- */
-export async function handleCallSignaling(data, ctx) {
-  const type = data?.type;
-  if (!type || typeof type !== 'string' || !type.startsWith('call_')) {
+async function deliverToPeerMedia(runtime, call, fromUserId, payload) {
+  const peerId = peerIdFor(call, fromUserId);
+  const connId = call.media?.[peerId]?.connId;
+  if (!connId) {
+    runtime.telemetry?.('delivery_miss', {
+      operation: payload?.type || 'call_signal',
+      reason: 'peer_media_unbound',
+    });
     return false;
   }
+  return runtime.deliver(peerId, payload, { connId });
+}
 
+async function broadcastToCall(runtime, call, payload) {
+  await Promise.all([
+    runtime.deliver(call.callerId, payload),
+    runtime.deliver(call.calleeId, payload),
+  ]);
+}
+
+function basePayload(call, callId, userId) {
+  return {
+    call_id: callId,
+    chat_id: call.chatId,
+    from_user_id: userId.toString(),
+    ts: new Date().toISOString(),
+  };
+}
+
+async function pushInvite({
+  pool,
+  peerId,
+  callId,
+  chatId,
+  userId,
+  userEmail,
+  mediaType,
+  expiresAt,
+  callKitUuid,
+}) {
+  let chatName = userEmail || 'Звонок';
+  try {
+    const nameRow = await pool.query('SELECT name FROM chats WHERE id = $1', [
+      Number.parseInt(chatId, 10),
+    ]);
+    if (nameRow.rows[0]?.name) chatName = String(nameRow.rows[0].name);
+  } catch {
+    // Push is best-effort and must never block signaling.
+  }
+  try {
+    await sendIncomingCallPushToUser(pool, peerId, {
+      callId,
+      chatId,
+      chatName,
+      fromUserId: userId.toString(),
+      fromEmail: userEmail || '',
+      mediaType,
+      expiresAt,
+      callKitUuid,
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('sendIncomingCallPushToUser failed:', error?.message || error);
+    }
+  }
+}
+
+async function reconcileAnsweredElsewhere({ pool, userId, call }) {
+  try {
+    await sendCallReconciliationPushToUser(pool, userId, {
+      callId: call.callId,
+      callKitUuid: call.callKitUuid,
+      chatId: call.chatId,
+      status: 'accepted',
+      reason: 'answered_elsewhere',
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        'sendCallReconciliationPushToUser failed:',
+        error?.code || error?.name || 'unknown'
+      );
+    }
+  }
+}
+
+function validateCallContext(call, userId, chatIdRaw) {
+  if (!isParticipant(call, userId)) return 'forbidden';
+  if (chatIdRaw && call.chatId !== chatIdRaw.toString()) {
+    return 'chat_mismatch';
+  }
+  return null;
+}
+
+async function handleCallSignalingInner(data, ctx) {
+  const type = data?.type;
   const {
     userId,
     userEmail,
     pool,
     ws,
-    sendToUserSockets,
-    sendToUserSocketsExcept,
-    sendToUserMediaSocket,
     callLimiter,
+    runtime = realtimeRuntime,
   } = ctx;
+  const registry = runtime.registry;
   const myConnId = getWsConnId(ws);
-  if (!callLimiter.allow(`call:${userId}`)) {
+
+  const critical = new Set([
+    'call_hangup',
+    'call_reject',
+    'call_accept',
+    'call_ice',
+    'call_ice_restart',
+    'call_resume',
+  ]);
+  if (
+    !critical.has(type) &&
+    !callLimiter.allow(`call:${userId}`)
+  ) {
+    sendCallError(ws, {
+      code: 'rate_limited',
+      call_id: data?.call_id,
+      operation: type,
+    });
     return true;
   }
 
   const callId = (data.call_id ?? data.callId)?.toString()?.trim();
   const chatIdRaw = data.chat_id ?? data.chatId;
+  const requestId =
+    typeof data.request_id === 'string' && data.request_id.length <= 64
+      ? data.request_id
+      : undefined;
+
+  if (type === 'call_status') {
+    if (callId && callId.length > 128) {
+      sendCallError(ws, { code: 'invalid_call_id' });
+      return true;
+    }
+    const status = await registry.getStatus(userId, { callId });
+    sendCurrent(ws, statusPayload(status, { request_id: requestId }));
+    return true;
+  }
 
   if (type === 'call_invite') {
     if (!callId || callId.length > 128) {
-      sendCallError(sendToUserSockets, userId, { code: 'invalid_call_id', chat_id: chatIdRaw });
+      sendCallError(ws, {
+        code: 'invalid_call_id',
+        chat_id: chatIdRaw,
+      });
       return true;
     }
     if (!chatIdRaw) {
-      sendCallError(sendToUserSockets, userId, { code: 'chat_id_required' });
+      sendCallError(ws, { code: 'chat_id_required' });
       return true;
     }
 
     const dm = await resolveDmChat(pool, chatIdRaw, userId);
     if (!dm.ok) {
-      sendCallError(sendToUserSockets, userId, {
+      sendCallError(ws, {
         code: dm.error,
         chat_id: chatIdRaw,
         call_id: callId,
@@ -235,242 +296,392 @@ export async function handleCallSignaling(data, ctx) {
       return true;
     }
 
-    cleanupStaleCallsForUser(userId);
-    cleanupStaleCallsForUser(dm.peerId);
-
-    if (userActiveCallId.has(userId.toString()) || getUserGroupCallId(userId)) {
-      sendCallError(sendToUserSockets, userId, {
-        code: 'busy',
-        chat_id: dm.chatIdNum.toString(),
-        call_id: callId,
-      });
-      return true;
-    }
-    if (userActiveCallId.has(dm.peerId) || getUserGroupCallId(dm.peerId)) {
-      sendToUserSockets(userId, {
-        type: 'call_busy',
-        call_id: callId,
-        chat_id: dm.chatIdNum.toString(),
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
     const mediaType = normalizeMediaType(data.media_type ?? data.mediaType);
-    const now = Date.now();
-    const callRecord = {
+    const callKitUuid = crypto.randomUUID();
+    const created = await registry.createDmCall({
+      callId,
+      callKitUuid,
       chatId: dm.chatIdNum.toString(),
       callerId: userId.toString(),
       calleeId: dm.peerId,
-      state: 'ringing',
-      createdAt: now,
       mediaType,
-      mediaConnId: {},
-    };
-    bindMediaConn(callRecord, userId, myConnId);
-    activeCalls.set(callId, callRecord);
-    userActiveCallId.set(userId.toString(), callId);
-    userActiveCallId.set(dm.peerId, callId);
+      callerConnId: myConnId,
+    });
+    if (!created.ok) {
+      runtime.telemetry?.('call_conflict', {
+        operation: 'invite',
+        reason: created.code || 'busy',
+      });
+      if (created.code === 'busy' && created.busyUserId === dm.peerId) {
+        await runtime.deliver(userId, {
+          type: 'call_busy',
+          call_id: callId,
+          chat_id: dm.chatIdNum.toString(),
+          ts: new Date().toISOString(),
+        });
+      } else {
+        sendCallError(ws, {
+          code: created.code || 'busy',
+          chat_id: dm.chatIdNum.toString(),
+          call_id: callId,
+        });
+      }
+      return true;
+    }
 
-    const chatIdStr = dm.chatIdNum.toString();
-    sendToUserSockets(dm.peerId, {
+    const chatId = dm.chatIdNum.toString();
+    runtime.telemetry?.('call_transition', {
+      operation: 'invite',
+      state: 'ringing',
+    });
+    await runtime.deliver(dm.peerId, {
       type: 'call_invite',
       call_id: callId,
-      chat_id: chatIdStr,
+      chat_id: chatId,
       from_user_id: userId.toString(),
       from_user_email: userEmail || '',
       media_type: mediaType,
+      callkit_uuid: created.call?.callKitUuid || callKitUuid,
       ts: new Date().toISOString(),
     });
-
-    // FCM: дублируем приглашение push-ом (клиент дедуплирует с WS).
-    // Если WS онлайн, но приложение в фоне — push всё равно полезен.
-    // ВАЖНО: push отправляем fire-and-forget. Иначе медленный/упавший Firebase
-    // блокирует обработчик WS на несколько секунд — следующее сообщение от
-    // того же клиента (offer/ICE) подвисает.
-    (async () => {
-      let chatName = userEmail || 'Звонок';
-      try {
-        const nameRow = await pool.query('SELECT name FROM chats WHERE id = $1', [dm.chatIdNum]);
-        if (nameRow.rows[0]?.name) {
-          chatName = String(nameRow.rows[0].name);
-        }
-      } catch (_) {
-        /* best-effort */
-      }
-      try {
-        await sendIncomingCallPushToUser(pool, dm.peerId, {
-          callId,
-          chatId: chatIdStr,
-          chatName,
-          fromUserId: userId.toString(),
-          fromEmail: userEmail || '',
-          mediaType,
-        });
-      } catch (err) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('sendIncomingCallPushToUser failed:', err?.message || err);
-        }
-      }
-    })();
-
+    void pushInvite({
+      pool,
+      peerId: dm.peerId,
+      callId,
+      chatId,
+      userId,
+      userEmail,
+      mediaType,
+      expiresAt: created.call?.expiresAt,
+      callKitUuid: created.call?.callKitUuid || callKitUuid,
+    });
     return true;
   }
 
-  if (!callId) {
+  if (!callId) return true;
+  if (callId.length > 128) {
+    sendCallError(ws, { code: 'invalid_call_id' });
     return true;
   }
 
-  const call = activeCalls.get(callId);
-  if (!call) {
-    if (type === 'call_hangup' || type === 'call_reject') {
+  if (type === 'call_resume') {
+    const resumableCall = await registry.getCall(callId);
+    if (!resumableCall) {
+      sendCurrent(
+        ws,
+        statusPayload({ active: false }, { request_id: requestId })
+      );
       return true;
     }
-    sendCallError(sendToUserSockets, userId, {
+    const resumeContextError = validateCallContext(
+      resumableCall,
+      userId,
+      chatIdRaw
+    );
+    if (resumeContextError) {
+      sendCallError(ws, {
+        code: resumeContextError,
+        call_id: callId,
+      });
+      return true;
+    }
+    const resumed = await registry.resumeDmCall({
+      callId,
+      userId,
+      connId: myConnId,
+    });
+    if (!resumed.ok) {
+      runtime.telemetry?.('call_resume_conflict', {
+        operation: 'resume',
+        reason: resumed.code || 'unknown',
+      });
+      if (resumed.status?.active) {
+        sendCurrent(
+          ws,
+          statusPayload(resumed.status, {
+            resumed: false,
+            media_owner: false,
+            request_id: requestId,
+          })
+        );
+      } else {
+        sendCurrent(
+          ws,
+          statusPayload({ active: false }, { request_id: requestId })
+        );
+      }
+      if (resumed.code !== 'call_not_found') {
+        sendCallError(ws, { code: resumed.code, call_id: callId });
+      }
+      return true;
+    }
+    sendCurrent(
+      ws,
+      statusPayload(resumed.status, {
+        resumed: resumed.resumed === true,
+        media_owner: true,
+        request_id: requestId,
+      })
+    );
+    runtime.telemetry?.('call_resumed', {
+      operation: 'resume',
+      state: resumed.call?.state,
+    });
+    if (resumed.call?.state === 'accepted') {
+      await deliverToPeerMedia(
+        runtime,
+        resumed.call,
+        userId,
+        {
+          type: 'call_resume',
+          ...basePayload(resumed.call, callId, userId),
+        }
+      );
+    }
+    return true;
+  }
+
+  const call = await registry.getCall(callId);
+  if (!call) {
+    if (type === 'call_hangup' || type === 'call_reject') return true;
+    sendCallError(ws, {
       code: 'call_not_found',
       call_id: callId,
       chat_id: chatIdRaw?.toString(),
     });
     return true;
   }
-
-  // TTL применяем только к ringing-инвайтам — длинный разговор не должен
-  // обрываться через 5 минут из-за того, что прилетел очередной ICE-candidate.
-  if (call.state === 'ringing' && Date.now() - call.createdAt > CALL_TTL_MS) {
-    cleanupCall(callId);
-    sendCallError(sendToUserSockets, userId, { code: 'call_expired', call_id: callId });
+  const contextError = validateCallContext(call, userId, chatIdRaw);
+  if (contextError) {
+    sendCallError(ws, { code: contextError, call_id: callId });
     return true;
   }
-
-  if (!isParticipant(call, userId)) {
-    sendCallError(sendToUserSockets, userId, { code: 'forbidden', call_id: callId });
-    return true;
-  }
-
-  if (chatIdRaw && call.chatId !== chatIdRaw.toString()) {
-    sendCallError(sendToUserSockets, userId, { code: 'chat_mismatch', call_id: callId });
-    return true;
-  }
-
-  const base = {
-    call_id: callId,
-    chat_id: call.chatId,
-    from_user_id: userId.toString(),
-    ts: new Date().toISOString(),
-  };
+  const base = basePayload(call, callId, userId);
 
   if (type === 'call_accept') {
-    if (call.state !== 'ringing') {
-      return true;
-    }
-    if (userId.toString() !== call.calleeId) {
-      sendCallError(sendToUserSockets, userId, { code: 'only_callee_can_accept', call_id: callId });
-      return true;
-    }
-    if (!bindMediaConn(call, userId, myConnId)) {
-      sendCallError(sendToUserSockets, userId, { code: 'busy', call_id: callId });
-      return true;
-    }
-    call.state = 'accepted';
-    relayToPeerMedia(
-      call,
+    const accepted = await registry.acceptDmCall({
+      callId,
       userId,
-      { type: 'call_accept', ...base },
-      sendToUserMediaSocket,
-      sendToUserSockets
-    );
-    if (myConnId) {
-      sendToUserSocketsExcept(userId, myConnId, {
-        type: 'call_answered_elsewhere',
+      connId: myConnId,
+    });
+    if (!accepted.ok) {
+      if (accepted.code === 'media_owned_elsewhere') {
+        sendCurrent(ws, {
+          type: 'call_answered_elsewhere',
+          ...base,
+        });
+        return true;
+      }
+      sendCallError(ws, { code: accepted.code, call_id: callId });
+      return true;
+    }
+    sendCurrent(ws, {
+      type: 'call_accept_ack',
+      ...base,
+      callkit_uuid: accepted.call?.callKitUuid,
+      already_accepted: accepted.alreadyAccepted === true,
+    });
+    if (!accepted.alreadyAccepted) {
+      runtime.telemetry?.('call_transition', {
+        operation: 'accept',
+        state: 'accepted',
+      });
+      await deliverToPeerMedia(runtime, accepted.call, userId, {
+        type: 'call_accept',
         ...base,
+      });
+      if (myConnId) {
+        await runtime.deliver(
+          userId,
+          { type: 'call_answered_elsewhere', ...base },
+          { excludeConnId: myConnId }
+        );
+      }
+      // Data-only normal push lets background/offline sibling installations
+      // dismiss the ringing notification. The accepting device may receive it
+      // too; clients only reconcile notification UI and retain media ownership.
+      void reconcileAnsweredElsewhere({
+        pool,
+        userId,
+        call: accepted.call,
       });
     }
     return true;
   }
 
   if (type === 'call_reject') {
-    const rejectPayload = {
-      type: 'call_reject',
-      ...base,
-      reason: (data.reason ?? 'declined').toString().slice(0, 64),
-    };
-    broadcastToBoth(call, rejectPayload, sendToUserSockets);
-    cleanupCall(callId);
+    const reason = (data.reason ?? 'declined').toString().slice(0, 64);
+    const rejected = await registry.terminateDmCall({
+      callId,
+      userId,
+      connId: myConnId,
+      reason,
+      ringingOnly: true,
+    });
+    if (rejected.ok) {
+      runtime.telemetry?.('call_transition', {
+        operation: 'reject',
+        state: 'ended',
+      });
+      await broadcastToCall(runtime, rejected.call, {
+        type: 'call_reject',
+        ...base,
+        reason,
+      });
+    }
     return true;
   }
 
   if (type === 'call_hangup') {
-    broadcastToBoth(call, { type: 'call_hangup', ...base }, sendToUserSockets);
-    cleanupCall(callId);
+    const ended = await registry.terminateDmCall({
+      callId,
+      userId,
+      connId: myConnId,
+      reason: 'hangup',
+    });
+    if (ended.ok) {
+      runtime.telemetry?.('call_transition', {
+        operation: 'hangup',
+        state: 'ended',
+      });
+      await broadcastToCall(runtime, ended.call, {
+        type: 'call_hangup',
+        ...base,
+      });
+    }
+    return true;
+  }
+
+  if (type === 'call_media_update') {
+    const update = parseCallMediaUpdate(data, call.mediaType);
+    if (!update.ok) {
+      sendCallError(ws, {
+        code: 'invalid_media_update',
+        call_id: callId,
+      });
+      return true;
+    }
+    const authorized = await registry.authorizeMedia({
+      callId,
+      userId,
+      connId: myConnId,
+      mediaType: update.mediaType,
+    });
+    if (!authorized.ok) return true;
+    const payload = {
+      type: 'call_media_update',
+      ...base,
+      media_type: update.mediaType,
+      reason: (data.reason ?? '').toString().slice(0, 64),
+    };
+    if (update.hasCameraOff) payload.camera_off = update.cameraOff;
+    await deliverToPeerMedia(runtime, authorized.call, userId, payload);
+    return true;
+  }
+
+  if (type === 'call_ice_restart') {
+    const authorized = await registry.authorizeMedia({
+      callId,
+      userId,
+      connId: myConnId,
+    });
+    if (!authorized.ok) return true;
+    await deliverToPeerMedia(runtime, authorized.call, userId, {
+      type: 'call_ice_restart',
+      ...base,
+    });
     return true;
   }
 
   if (type === 'call_offer' || type === 'call_answer') {
-    // Offer/answer допустимы только после call_accept (state=accepted).
-    // Принять SDP в ringing — узкое окно гонок и потенциальный вектор подмены.
-    if (call.state !== 'accepted') {
-      return true;
-    }
-    if (!mediaConnMatches(call, userId, myConnId)) {
-      return true;
-    }
     const sdp = data.sdp;
-    if (!sdp || typeof sdp !== 'object') {
+    if (
+      !sdp ||
+      typeof sdp !== 'object' ||
+      typeof sdp.type !== 'string' ||
+      typeof sdp.sdp !== 'string' ||
+      sdp.sdp.length > 48_000
+    ) {
       return true;
     }
-    const sdpType = sdp.type;
-    const sdpBody = sdp.sdp;
-    if (typeof sdpType !== 'string' || typeof sdpBody !== 'string') {
-      return true;
-    }
-    if (sdpBody.length > 48_000) {
-      return true;
-    }
-    if (type === 'call_offer') {
-      bindMediaConn(call, userId, myConnId);
-    }
-    relayToPeerMedia(
-      call,
+    const authorized = await registry.authorizeMedia({
+      callId,
       userId,
-      {
-        type,
-        ...base,
-        sdp: { type: sdpType, sdp: sdpBody },
-      },
-      sendToUserMediaSocket,
-      sendToUserSockets
-    );
+      connId: myConnId,
+    });
+    if (!authorized.ok) return true;
+    await deliverToPeerMedia(runtime, authorized.call, userId, {
+      type,
+      ...base,
+      sdp: { type: sdp.type, sdp: sdp.sdp },
+    });
     return true;
   }
 
   if (type === 'call_ice') {
-    if (call.state !== 'accepted') {
-      return true;
-    }
-    if (!mediaConnMatches(call, userId, myConnId)) {
-      return true;
-    }
     const candidate = data.candidate;
-    if (!candidate || typeof candidate !== 'object') {
-      return true;
-    }
-    const candStr = JSON.stringify(candidate);
-    if (candStr.length > 16_000) {
-      return true;
-    }
-    relayToPeerMedia(
-      call,
+    if (!candidate || typeof candidate !== 'object') return true;
+    if (JSON.stringify(candidate).length > 16_000) return true;
+    const authorized = await registry.authorizeMedia({
+      callId,
       userId,
-      {
-        type: 'call_ice',
-        ...base,
-        candidate,
-      },
-      sendToUserMediaSocket,
-      sendToUserSockets
-    );
+      connId: myConnId,
+    });
+    if (!authorized.ok) return true;
+    await deliverToPeerMedia(runtime, authorized.call, userId, {
+      type: 'call_ice',
+      ...base,
+      candidate,
+    });
     return true;
   }
 
   return false;
+}
+
+/**
+ * @returns {Promise<boolean>} true when a call_* message was handled
+ */
+export async function handleCallSignaling(data, ctx) {
+  const type = data?.type;
+  if (!type || typeof type !== 'string' || !type.startsWith('call_')) {
+    return false;
+  }
+  try {
+    return await handleCallSignalingInner(data, ctx);
+  } catch (error) {
+    if (isRealtimeUnavailable(error)) {
+      sendCallError(ctx.ws, {
+        code: 'signaling_unavailable',
+        call_id: data?.call_id,
+        operation: type,
+      });
+      ctx.runtime?.telemetry?.('mutation_failed_closed', {
+        operation: type,
+        reason: 'realtime_unavailable',
+      });
+      return true;
+    }
+    throw error;
+  }
+}
+
+// Compatibility helpers for legacy callers while state lives in the registry.
+export async function getUserDmCallId(userId, runtime = realtimeRuntime) {
+  return runtime.registry.getUserDmCallId(userId);
+}
+
+export async function cleanupStaleCallsForUser(
+  _userId,
+  _send,
+  runtime = realtimeRuntime
+) {
+  return runtime.registry.sweepExpired();
+}
+
+export async function sweepStaleDmRinging(
+  _send,
+  runtime = realtimeRuntime
+) {
+  return runtime.registry.sweepExpired();
 }

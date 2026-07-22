@@ -86,6 +86,24 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "connectivity_plus",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/connectivity_plus-7.3.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.2"
+    },
+    {
+      "name": "connectivity_plus_platform_interface",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/connectivity_plus_platform_interface-2.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.18"
+    },
+    {
+      "name": "convert",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/convert-3.1.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
       "name": "cross_file",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/cross_file-0.3.5+1",
       "packageUri": "lib/",
@@ -116,6 +134,12 @@
       "languageVersion": "3.1"
     },
     {
+      "name": "dart_jsonwebtoken",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/dart_jsonwebtoken-3.4.1",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
       "name": "dart_webrtc",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/dart_webrtc-1.8.1",
       "packageUri": "lib/",
@@ -132,6 +156,18 @@
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/desktop_drop-0.7.0",
       "packageUri": "lib/",
       "languageVersion": "3.4"
+    },
+    {
+      "name": "device_info_plus",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/device_info_plus-12.4.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
+    },
+    {
+      "name": "device_info_plus_platform_interface",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/device_info_plus_platform_interface-7.0.3",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
     },
     {
       "name": "fake_async",
@@ -327,7 +363,7 @@
     },
     {
       "name": "flutter_webrtc",
-      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.1",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.0",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
@@ -351,9 +387,9 @@
     },
     {
       "name": "http",
-      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/http-0.13.6",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/http-1.6.0",
       "packageUri": "lib/",
-      "languageVersion": "2.19"
+      "languageVersion": "3.4"
     },
     {
       "name": "http_parser",
@@ -476,6 +512,12 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "livekit_client",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/livekit_client-2.8.1",
+      "packageUri": "lib/",
+      "languageVersion": "3.6"
+    },
+    {
       "name": "logger",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/logger-2.7.0",
       "packageUri": "lib/",
@@ -510,6 +552,18 @@
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/mime-2.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.2"
+    },
+    {
+      "name": "mime_type",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/mime_type-1.0.1",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
+      "name": "nm",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/nm-0.5.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
     },
     {
       "name": "octo_image",
@@ -626,10 +680,22 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "pointycastle",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/pointycastle-4.0.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.2"
+    },
+    {
       "name": "posix",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/posix-6.0.3",
       "packageUri": "lib/",
       "languageVersion": "3.0"
+    },
+    {
+      "name": "protobuf",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/protobuf-6.0.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
     },
     {
       "name": "record",
@@ -682,6 +748,12 @@
     {
       "name": "rxdart",
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/rxdart-0.27.7",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
+      "name": "sdp_transform",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/sdp_transform-0.3.2",
       "packageUri": "lib/",
       "languageVersion": "2.12"
     },
@@ -873,7 +945,7 @@
     },
     {
       "name": "uuid",
-      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/uuid-4.5.2",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/uuid-4.6.0",
       "packageUri": "lib/",
       "languageVersion": "3.0"
     },
@@ -954,6 +1026,12 @@
       "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/win32-5.15.0",
       "packageUri": "lib/",
       "languageVersion": "3.8"
+    },
+    {
+      "name": "win32_registry",
+      "rootUri": "file:///Users/vladkharin/.pub-cache/hosted/pub.dev/win32_registry-2.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
     },
     {
       "name": "xdg_directories",

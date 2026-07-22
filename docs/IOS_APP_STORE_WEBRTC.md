@@ -13,16 +13,23 @@
 
 ## Что сделано в репозитории
 
-1. **WebRTC-SDK** для iOS обновлён до **144.7559.04** (через `tool/patch_ios_webrtc_sdk.sh` + `pod update WebRTC-SDK`).
-2. В `ios/Podfile` добавлен spec-репозиторий `webrtc-sdk/Specs` и `ONLY_ACTIVE_ARCH` для WebRTC.
-3. Скрипт **`tool/ios_app_store_release.sh`** — подготовка Pods и сборка release.
+1. `livekit_client 2.8.1` и прямой `flutter_webrtc 1.4.0` используют один
+   **WebRTC-SDK 144.7559.01** на iOS. Точная версия задаётся podspec обоих
+   пакетов и фиксируется в `ios/Podfile.lock`.
+2. В `ios/Podfile` подключён spec-репозиторий `webrtc-sdk/Specs`, а deployment
+   target приложения и Pods выровнен на iOS 13.0.
+3. Скрипт **`tool/ios_app_store_release.sh`** разрешает зависимости обычными
+   `flutter pub get` / `pod install` и собирает release.
+
+Не изменяйте podspec в `$PUB_CACHE` и не выполняйте отдельный
+`pod update WebRTC-SDK`: это может рассинхронизировать нативный SDK,
+`livekit_client` и `flutter_webrtc`.
 
 Перед каждой **новой** отправкой в App Store на Mac:
 
 ```bash
 flutter pub get
-bash tool/patch_ios_webrtc_sdk.sh
-cd ios && pod update WebRTC-SDK && cd ..
+cd ios && pod install && cd ..
 flutter build ipa   # или Archive в Xcode
 ```
 
@@ -30,7 +37,7 @@ flutter build ipa   # или Archive в Xcode
 
 ### 1. Ответ в Resolution Center (шаблон)
 
-> The flagged selectors are not Apple private APIs. They come from the open-source WebRTC.framework (WebRTC-SDK 144.7559.x) used for voice calls, bundled via the flutter_webrtc plugin. Names such as `addStream:`, `initWithURLStrings:`, and `sendData:` are documented WebRTC APIs. References to `UIScreen`/`UIApplication` originate from Google's libwebrtc iOS capture stack, not undocumented Apple SPI. We use the latest WebRTC-SDK from https://github.com/webrtc-sdk/Specs. Please allow the build or specify the exact symbol list so we can address a targeted upstream update.
+> The flagged selectors are not Apple private APIs. They come from the open-source WebRTC.framework (WebRTC-SDK 144.7559.01) used for voice calls, bundled by the compatible livekit_client/flutter_webrtc dependency pair. Names such as `addStream:`, `initWithURLStrings:`, and `sendData:` are documented WebRTC APIs. References to `UIScreen`/`UIApplication` originate from Google's libwebrtc iOS capture stack, not undocumented Apple SPI. Please allow the build or specify the exact symbol list so we can address a targeted upstream update.
 
 (Можно перевести на русский для переписки с поддержкой.)
 

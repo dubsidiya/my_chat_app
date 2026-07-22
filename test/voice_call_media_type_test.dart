@@ -20,4 +20,9 @@ void main() {
       isTrue,
     );
   });
+
+  test('audio downgrade clears isVideo', () {
+    const video = VoiceCallSnapshot(mediaType: CallMediaType.video);
+    expect(video.copyWith(mediaType: CallMediaType.audio).isVideo, isFalse);
+  });
 }

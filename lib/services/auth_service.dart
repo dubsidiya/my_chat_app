@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
+import 'push_notification_service.dart';
 class AuthService {
   final String baseUrl = ApiConfig.baseUrl;
 
@@ -35,6 +37,7 @@ class AuthService {
             avatarUrl: avatarUrl != null && avatarUrl.isNotEmpty ? avatarUrl : null,
           );
           await StorageService.setPrivateFeaturesUnlocked(data['id'].toString(), privateAccess);
+          unawaited(PushNotificationService.sendTokenToBackendIfNeeded());
         }
         return data;
       } else if (response.statusCode == 500) {
@@ -82,6 +85,7 @@ class AuthService {
             displayName: displayName,
           );
           await StorageService.setPrivateFeaturesUnlocked(data['userId'].toString(), privateAccess);
+          unawaited(PushNotificationService.sendTokenToBackendIfNeeded());
         }
         return true;
       } else if (response.statusCode == 400) {
@@ -381,6 +385,7 @@ class AuthService {
       if (uid != null && uid.isNotEmpty) {
         await StorageService.setPrivateFeaturesUnlocked(uid, privateAccess);
       }
+      unawaited(PushNotificationService.sendTokenToBackendIfNeeded());
       return true;
     } catch (_) {
       return false;

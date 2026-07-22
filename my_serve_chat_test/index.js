@@ -18,8 +18,10 @@ import setupRoutes from './routes/setup.js';
 import adminRoutes from './routes/admin.js';
 import moderationRoutes from './routes/moderation.js';
 import callsRoutes from './routes/calls.js';
+import { createLiveKitWebhookHandler } from './controllers/livekitGroupCallsController.js';
 import { setupWebSocket } from './websocket/websocket.js';
 import pool from './db.js';
+import { realtimeRuntime } from './realtime/index.js';
 
 dotenv.config();
 
@@ -35,6 +37,26 @@ app.get('/healthz', (req, res) => {
     return;
   }
   res.status(200).send('ok');
+});
+
+app.get('/readyz', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  let databaseReady = false;
+  try {
+    await pool.query('SELECT 1');
+    databaseReady = true;
+  } catch {
+    databaseReady = false;
+  }
+  const realtime = realtimeRuntime.readiness();
+  const ready = databaseReady && realtime.ready;
+  res.status(ready ? 200 : 503).json({
+    ready,
+    checks: {
+      database: databaseReady,
+      realtime,
+    },
+  });
 });
 
 // Метаданные сервера (диагностика). В production отключено — не раскрывать окружение.
@@ -279,6 +301,21 @@ app.use(cors({
 // Лимит размера тела запроса — защита от DoS большими JSON
 const JSON_LIMIT = '512kb';
 const URLENC_LIMIT = '512kb';
+const liveKitWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'rate_limited' },
+});
+// LiveKit signatures cover the exact request bytes. This route must stay
+// before every JSON parser and never receive a parsed/re-serialized object.
+app.post(
+  '/calls/livekit/webhook',
+  liveKitWebhookLimiter,
+  express.raw({ type: 'application/webhook+json', limit: '256kb' }),
+  createLiveKitWebhookHandler()
+);
 app.use(bodyParser.json({ limit: JSON_LIMIT }));
 app.use(bodyParser.urlencoded({ extended: true, limit: URLENC_LIMIT }));
 
@@ -362,6 +399,7 @@ app.use('/auth/register', authLimiter);
 
 // Общий лимит на основные API
 app.use('/messages', apiLimiter);
+app.use('/calls', apiLimiter);
 app.use('/chats', apiLimiter);
 app.use('/students', apiLimiter);
 app.use('/reports', apiLimiter);
@@ -396,8 +434,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Ошибка сервера' });
 });
 
-// Подключение WebSocket
-setupWebSocket(server);
+// Realtime state never falls back from Redis to memory. A temporarily
+// unavailable Redis starts the HTTP server unready and retries in background.
+await realtimeRuntime.start();
+const websocketControl = setupWebSocket(server, {
+  runtime: realtimeRuntime,
+});
 
 const PORT = process.env.PORT || 3000;
 
@@ -445,6 +487,33 @@ server.listen(PORT, () => {
     console.log(`   Установите YANDEX_ACCESS_KEY_ID, YANDEX_SECRET_ACCESS_KEY, YANDEX_BUCKET_NAME`);
     console.log(`   См. инструкцию: YANDEX_CLOUD_SETUP.md`);
   }
+});
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down (${signal})`);
+  const forceTimer = setTimeout(() => process.exit(1), 10_000);
+  forceTimer.unref?.();
+  try {
+    await websocketControl.close();
+    await realtimeRuntime.stop();
+    await new Promise((resolve) => server.close(resolve));
+    await pool.end();
+    clearTimeout(forceTimer);
+    process.exit(0);
+  } catch (error) {
+    console.error('Graceful shutdown failed:', error?.message || error);
+    process.exit(1);
+  }
+}
+
+process.once('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+process.once('SIGINT', () => {
+  void shutdown('SIGINT');
 });
 
 // Обработка необработанных ошибок

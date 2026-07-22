@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "test": "node --test",
     "migrate": "node scripts/run-migration.js",
     "smoke:accounting": "node scripts/smoke-accounting-reliability.js",
     "smoke:accounting:edge": "node scripts/smoke-accounting-edge-cases.js",
@@ -20,7 +21,10 @@
     "smoke:call:signaling": "node scripts/smoke-call-signaling.js",
     "smoke:call:group": "node scripts/smoke-group-call.js",
     "smoke:call:unit": "node scripts/smoke-call-unit.js",
-    "smoke:all": "npm run smoke:accounting && npm run smoke:accounting:edge && npm run smoke:accounting:xlsx && npm run smoke:accounting:hidden-quality && npm run smoke:accounting:wallet && npm run smoke:audit:hardening && npm run smoke:routes:access && npm run smoke:reports:permissions && npm run smoke:reports:regressions",
+    "smoke:call:livekit": "node --test test/livekit-group.test.js",
+    "smoke:call:turn": "node scripts/smoke-turn-rest.js",
+    "smoke:calls:fakes": "node --test test/realtime-memory.test.js test/realtime-redis.test.js test/livekit-group.test.js test/push-devices.test.js test/push-notifications.test.js test/apns-voip.test.js test/turn-credentials.test.js && npm run smoke:call:turn",
+    "smoke:all": "npm run smoke:calls:fakes && npm run smoke:call:unit && npm run smoke:accounting && npm run smoke:accounting:edge && npm run smoke:accounting:xlsx && npm run smoke:accounting:hidden-quality && npm run smoke:accounting:wallet && npm run smoke:audit:hardening && npm run smoke:routes:access && npm run smoke:reports:permissions && npm run smoke:reports:regressions",
     "migrate-passwords": "node migrate_passwords.js",
     "check-setup": "node check_setup.js",
     "auto-setup": "node auto_setup.js",
@@ -30,6 +34,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
     "@aws-sdk/s3-request-presigner": "^3.1030.0",
+    "@parse/node-apn": "^8.1.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
@@ -42,8 +47,10 @@
     "helmet": "^7.2.0",
     "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.17.0",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.11.0",
+    "redis": "^6.1.0",
     "validator": "^13.11.0",
     "ws": "^8.13.0"
   },

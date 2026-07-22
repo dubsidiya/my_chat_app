@@ -3,8 +3,22 @@ import { WebSocketServer } from 'ws';
 import pool from '../db.js';
 import { verifyWebSocketToken } from '../middleware/auth.js';
 import { sanitizeMessageContent } from '../utils/sanitize.js';
-import { handleCallSignaling, releaseCallsForUser } from './callSignaling.js';
-import { handleGroupCallSignaling, releaseGroupCallsForUser } from './groupCallSignaling.js';
+import {
+  handleCallSignaling,
+} from './callSignaling.js';
+import {
+  handleGroupCallSignaling,
+  scheduleReleaseGroupCallsForUser,
+  cancelPendingGroupCallRelease,
+  sweepStaleGroupRinging,
+} from './groupCallSignaling.js';
+import {
+  handleLiveKitGroupCallSignaling,
+} from './livekitGroupCallSignaling.js';
+import {
+  getLiveKitGroupCallCoordinator,
+} from '../services/calls/livekitGroupCallCoordinator.js';
+import { realtimeRuntime } from '../realtime/index.js';
 
 const clients = new Map(); // userId -> Set<ws>
 
@@ -59,34 +73,33 @@ function sendToUserSockets(userId, payload) {
   }
 }
 
-/** All sockets for user except one (e.g. other tabs/devices). */
-function sendToUserSocketsExcept(userId, excludeConnId, payload) {
-  const sockets = getUserSockets(userId);
-  if (!sockets || sockets.size === 0) return;
-  const exclude = excludeConnId?.toString();
-  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  for (const ws of sockets) {
-    if (ws?.readyState === WS_OPEN && ws.connId !== exclude) {
-      ws.send(data);
-    }
+function sendCurrentSocket(ws, payload) {
+  if (ws?.readyState !== WS_OPEN) return false;
+  try {
+    ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
   }
 }
 
-/** Single WS connection for this user (media leg); falls back to all if conn gone. */
-function sendToUserMediaSocket(userId, connId, payload) {
-  const sockets = getUserSockets(userId);
+function deliverRealtimeEnvelope(envelope) {
+  const sockets = getUserSockets(envelope?.userId);
   if (!sockets || sockets.size === 0) return;
-  const targetConn = connId?.toString();
-  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  if (targetConn) {
-    for (const ws of sockets) {
-      if (ws?.readyState === WS_OPEN && ws.connId === targetConn) {
-        ws.send(data);
-        return;
-      }
-    }
+  const target = envelope.connId?.toString();
+  const exclude = envelope.excludeConnId?.toString();
+  const data =
+    typeof envelope.payload === 'string'
+      ? envelope.payload
+      : JSON.stringify(envelope.payload);
+  for (const ws of sockets) {
+    if (ws?.readyState !== WS_OPEN) continue;
+    if (target && ws.connId !== target) continue;
+    if (exclude && ws.connId === exclude) continue;
+    try {
+      ws.send(data);
+    } catch {}
   }
-  sendToUserSockets(userId, payload);
 }
 
 class WsRateLimiter {
@@ -165,14 +178,70 @@ export async function broadcastToChatMembers(chatIdNum, payload, { excludeUserId
   return broadcastToChat(chatIdNum, payload, { excludeUserId });
 }
 
-export function setupWebSocket(server) {
+export function setupWebSocket(
+  server,
+  { runtime = realtimeRuntime } = {}
+) {
   // Лимит размера одного сообщения (64 KB) — защита от DoS
   const MAX_WS_PAYLOAD = 64 * 1024;
   const wss = new WebSocketServer({ server, maxPayload: MAX_WS_PAYLOAD });
+  let closing = false;
+  const liveKitCoordinator = getLiveKitGroupCallCoordinator();
+  runtime.setLocalDelivery(deliverRealtimeEnvelope);
+  runtime.setLiveKitGroupEndedHandler((call) =>
+    liveKitCoordinator.handleSweptCall(call)
+  );
+  runtime.start().catch(() => {
+    // /readyz and call_error expose the closed realtime control plane.
+  });
+  const sendRealtimeToUserSockets = (userId, payload) => {
+    runtime.deliver(userId, payload).catch(() => {});
+  };
+  const sendRealtimeToUserSocketsExcept = (
+    userId,
+    excludeConnId,
+    payload
+  ) => {
+    runtime
+      .deliver(userId, payload, { excludeConnId })
+      .catch(() => {});
+  };
+  const sendRealtimeToUserMediaSocket = (userId, connId, payload) => {
+    runtime.deliver(userId, payload, { connId }).catch(() => {});
+  };
+  const groupSweepInterval = setInterval(() => {
+    try {
+      sweepStaleGroupRinging(sendRealtimeToUserSockets, runtime);
+    } catch (_) {}
+  }, 15_000);
+  groupSweepInterval.unref?.();
+  const nativeHeartbeatInterval = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (socket.isAlive === false) {
+        socket.terminate();
+        continue;
+      }
+      socket.isAlive = false;
+      try {
+        socket.ping();
+      } catch {
+        socket.terminate();
+      }
+    }
+  }, runtime.config.wsHeartbeatMs);
+  nativeHeartbeatInterval.unref?.();
   const allowQueryTokenFallback = process.env.ENABLE_WS_QUERY_TOKEN_FALLBACK !== 'false';
   const allowAccessTokenFallback = process.env.ENABLE_WS_ACCESS_TOKEN_FALLBACK !== 'false';
 
   wss.on('connection', async (ws, req) => {
+    if (closing) {
+      ws.close(1012, 'server_restarting');
+      return;
+    }
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
     // Получаем токен:
     // 1) из Authorization header (предпочтительно для mobile/desktop)
     // 2) из query параметра token (fallback для web)
@@ -254,9 +323,36 @@ export function setupWebSocket(server) {
     }
     ws.connId = crypto.randomUUID();
     addClientSocket(userId, ws);
+    cancelPendingGroupCallRelease(userId);
+    let realtimeRegistered = false;
+    try {
+      realtimeRegistered = await runtime.registry.registerConnection({
+        userId,
+        connId: ws.connId,
+        instanceId: runtime.instanceId,
+      });
+    } catch (_) {
+      realtimeRegistered = false;
+    }
+    if (ws.readyState !== WS_OPEN) {
+      removeClientSocket(userId, ws);
+      try {
+        await runtime.registry.unregisterConnection({
+          userId,
+          connId: ws.connId,
+        });
+      } catch (_) {}
+      return;
+    }
     ws.userId = userId;
     ws.userEmail = userEmail;
     ws.subscriptions = new Set();
+    sendCurrentSocket(ws, {
+      type: 'ws_ready',
+      realtime_ready: runtime.isReady() && realtimeRegistered,
+      realtime_mode: runtime.config.mode,
+      ts: new Date().toISOString(),
+    });
 
     const recheckInterval = setInterval(async () => {
       try {
@@ -267,10 +363,61 @@ export function setupWebSocket(server) {
         }
       } catch (_) {}
     }, 5 * 60 * 1000);
+    const refreshRealtimeConnection = async () => {
+      let refreshed = false;
+      try {
+        refreshed = await runtime.registry.heartbeatConnection({
+          userId,
+          connId: ws.connId,
+          instanceId: runtime.instanceId,
+        });
+        if (!refreshed) {
+          refreshed = await runtime.registry.registerConnection({
+            userId,
+            connId: ws.connId,
+            instanceId: runtime.instanceId,
+          });
+        }
+      } catch (_) {
+        refreshed = false;
+      }
+      return refreshed;
+    };
+    const realtimeHeartbeatInterval = setInterval(() => {
+      void refreshRealtimeConnection();
+    }, Math.max(5_000, Math.floor(runtime.config.connectionLeaseMs / 3)));
+    realtimeHeartbeatInterval.unref?.();
 
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
+
+        if (data?.type === 'ws_ping') {
+          const refreshed = await refreshRealtimeConnection();
+          sendCurrentSocket(ws, {
+            type: 'ws_pong',
+            realtime_ready: runtime.isReady() && refreshed,
+            ts: new Date().toISOString(),
+          });
+          return;
+        }
+
+        if (
+          data?.type &&
+          typeof data.type === 'string' &&
+          data.type.startsWith('lkcall_')
+        ) {
+          await handleLiveKitGroupCallSignaling(data, {
+            userId,
+            userEmail,
+            pool,
+            ws,
+            callLimiter,
+            runtime,
+            coordinator: liveKitCoordinator,
+          });
+          return;
+        }
 
         if (data?.type && typeof data.type === 'string' && data.type.startsWith('gcall_')) {
           await handleGroupCallSignaling(data, {
@@ -278,10 +425,11 @@ export function setupWebSocket(server) {
             userEmail,
             pool,
             ws,
-            sendToUserSockets,
-            sendToUserSocketsExcept,
-            sendToUserMediaSocket,
+            sendToUserSockets: sendRealtimeToUserSockets,
+            sendToUserSocketsExcept: sendRealtimeToUserSocketsExcept,
+            sendToUserMediaSocket: sendRealtimeToUserMediaSocket,
             callLimiter,
+            runtime,
           });
           return;
         }
@@ -292,10 +440,8 @@ export function setupWebSocket(server) {
             userEmail,
             pool,
             ws,
-            sendToUserSockets,
-            sendToUserSocketsExcept,
-            sendToUserMediaSocket,
             callLimiter,
+            runtime,
           });
           return;
         }
@@ -487,14 +633,27 @@ export function setupWebSocket(server) {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', async () => {
       clearInterval(recheckInterval);
+      clearInterval(realtimeHeartbeatInterval);
       removeClientSocket(userId, ws);
+      try {
+        await runtime.registry.unregisterConnection({
+          userId,
+          connId: ws.connId,
+        });
+      } catch (_) {
+        // The connection lease expires in Redis; another runtime sweeps it.
+      }
       if (hasAnyOnlineSocket(userId)) {
         return;
       }
-      releaseCallsForUser(userId, sendToUserSockets);
-      releaseGroupCallsForUser(userId, sendToUserSockets);
+      scheduleReleaseGroupCallsForUser(
+        userId,
+        sendRealtimeToUserSockets,
+        () => !hasAnyOnlineSocket(userId),
+        runtime
+      );
       try {
         const subs = ws.subscriptions ? Array.from(ws.subscriptions) : [];
         subs.forEach((chatIdStr) => {
@@ -515,4 +674,38 @@ export function setupWebSocket(server) {
   });
 
   console.log('✅ WebSocket сервер запущен');
+  return {
+    wss,
+    async close() {
+      closing = true;
+      clearInterval(groupSweepInterval);
+      clearInterval(nativeHeartbeatInterval);
+      runtime.setLocalDelivery(null);
+      runtime.setLiveKitGroupEndedHandler(null);
+      const unregisters = [];
+      for (const sockets of clients.values()) {
+        for (const ws of sockets) {
+          if (ws.userId && ws.connId) {
+            try {
+              unregisters.push(
+                runtime.registry.unregisterConnection({
+                  userId: ws.userId,
+                  connId: ws.connId,
+                })
+              );
+            } catch {}
+          }
+        }
+      }
+      await Promise.allSettled(unregisters);
+      for (const sockets of clients.values()) {
+        for (const ws of sockets) {
+          try {
+            ws.close(1001, 'server_shutdown');
+          } catch {}
+        }
+      }
+      await new Promise((resolve) => wss.close(resolve));
+    },
+  };
 }

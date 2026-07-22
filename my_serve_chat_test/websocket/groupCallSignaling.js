@@ -1,10 +1,15 @@
 /**
  * Group voice call signaling (mesh, ≤4 participants).
  * Relays SDP/ICE between members; does not touch media.
+ * Room/roster state remains process-local until the LiveKit phase. Only the
+ * cross-kind user busy lease is shared, so mesh rooms are not multi-instance.
  */
 
 import { sendIncomingCallPushToUser } from '../utils/pushNotifications.js';
-import { getUserDmCallId } from './callSignaling.js';
+import {
+  realtimeRuntime,
+  isRealtimeUnavailable,
+} from '../realtime/index.js';
 
 /** @typedef {{ userId: string, state: 'ringing'|'joined', joinedAt?: number, email?: string }} GroupParticipant */
 /** @typedef {{ callId: string, chatId: string, hostId: string, createdAt: number, participants: Map<string, GroupParticipant> }} GroupCall */
@@ -12,10 +17,44 @@ import { getUserDmCallId } from './callSignaling.js';
 const activeGroupCalls = new Map(); // callId -> GroupCall
 const userGroupCallId = new Map(); // userId -> callId
 const chatActiveGroupCallId = new Map(); // chatId -> callId
+/** In-flight gcall_create (await DB) — leave can cancel before insert. */
+const pendingGroupCreates = new Map(); // callId -> { userId: string, cancelled: boolean }
+/** @type {Map<string, NodeJS.Timeout>} */
+const pendingGroupDisconnectRelease = new Map();
 
 const MAX_PARTICIPANTS = 4;
 const CALL_TTL_MS = 5 * 60 * 1000;
-const RINGING_STALE_MS = 90 * 1000;
+export const LEGACY_GROUP_BUSY_KIND = 'legacy_group_mesh';
+export const LIVEKIT_GROUP_BUSY_KIND = 'livekit_group';
+
+function releaseGroupBusy(userId, callId, runtime = realtimeRuntime) {
+  try {
+    return runtime.registry
+      .releaseBusy({
+        userId,
+        kind: LEGACY_GROUP_BUSY_KIND,
+        ownerId: callId,
+      })
+      .catch(() => false);
+  } catch {
+    // Fail closed: the bounded Redis lease remains until it can expire.
+    return Promise.resolve(false);
+  }
+}
+
+function releaseGroupChatBusy(chatId, callId, runtime = realtimeRuntime) {
+  try {
+    return runtime.registry
+      .releaseChatBusy({
+        chatId,
+        kind: LEGACY_GROUP_BUSY_KIND,
+        ownerId: callId,
+      })
+      .catch(() => false);
+  } catch {
+    return Promise.resolve(false);
+  }
+}
 
 /** @returns {string|null} */
 export function getUserGroupCallId(userId) {
@@ -50,18 +89,22 @@ function rosterPayload(call) {
   }));
 }
 
-function cleanupGroupCall(callId) {
+function cleanupGroupCall(callId, runtime = realtimeRuntime) {
   const call = activeGroupCalls.get(callId);
   if (!call) return;
   activeGroupCalls.delete(callId);
   if (chatActiveGroupCallId.get(call.chatId) === callId) {
     chatActiveGroupCallId.delete(call.chatId);
   }
+  const releases = [];
+  releases.push(releaseGroupChatBusy(call.chatId, call.callId, runtime));
   for (const uid of participantIds(call)) {
     if (userGroupCallId.get(uid) === callId) {
       userGroupCallId.delete(uid);
     }
+    releases.push(releaseGroupBusy(uid, callId, runtime));
   }
+  return Promise.allSettled(releases);
 }
 
 function broadcastGroup(call, payload, sendToUserSockets, { excludeUserId } = {}) {
@@ -80,18 +123,13 @@ function broadcastJoined(call, payload, sendToUserSockets, { excludeUserId } = {
   }
 }
 
-function removeParticipant(call, userId) {
+function removeParticipant(call, userId, runtime = realtimeRuntime) {
   const uid = userId.toString();
   call.participants.delete(uid);
   if (userGroupCallId.get(uid) === call.callId) {
     userGroupCallId.delete(uid);
   }
-}
-
-function isUserBusy(userId) {
-  const uid = userId?.toString();
-  if (!uid) return true;
-  return Boolean(getUserDmCallId(uid) || userGroupCallId.get(uid));
+  return releaseGroupBusy(uid, call.callId, runtime);
 }
 
 async function resolveGroupChat(pool, chatIdRaw, userId) {
@@ -142,32 +180,192 @@ async function resolveGroupChat(pool, chatIdRaw, userId) {
   };
 }
 
-function cleanupStaleGroupCallsForUser(userId) {
+export function cleanupStaleGroupCallsForUser(
+  userId,
+  runtime = realtimeRuntime
+) {
   const uid = userId?.toString();
-  if (!uid) return;
+  if (!uid) return Promise.resolve();
   const callId = userGroupCallId.get(uid);
-  if (!callId) return;
+  if (!callId) return Promise.resolve();
   const call = activeGroupCalls.get(callId);
   if (!call) {
     userGroupCallId.delete(uid);
-    return;
+    return Promise.resolve();
   }
   const age = Date.now() - call.createdAt;
   const me = call.participants.get(uid);
-  if (me?.state === 'ringing' && age > RINGING_STALE_MS) {
-    removeParticipant(call, uid);
+  if (me?.state === 'ringing' && age > runtime.config.ringingTtlMs) {
+    const release = removeParticipant(call, uid, runtime);
     if (joinedIds(call).length === 0) {
-      cleanupGroupCall(callId);
+      return Promise.allSettled([
+        release,
+        cleanupGroupCall(callId, runtime),
+      ]);
+    }
+    return release;
+  }
+  return Promise.resolve();
+}
+
+/**
+ * Снимает зависших ringing-участников со всех групповых звонков.
+ * Иначе ignore invite держит userGroupCallId forever (пока online).
+ */
+export function sweepStaleGroupRinging(
+  sendToUserSockets,
+  runtime = realtimeRuntime
+) {
+  const now = Date.now();
+  for (const [callId, call] of [...activeGroupCalls.entries()]) {
+    void runtime.registry
+      .acquireChatBusy({
+        chatId: call.chatId,
+        kind: LEGACY_GROUP_BUSY_KIND,
+        ownerId: callId,
+        instanceId: runtime.instanceId,
+      })
+      .catch(() => {});
+    for (const uid of participantIds(call)) {
+      void runtime.registry
+        .acquireBusy({
+          userId: uid,
+          kind: LEGACY_GROUP_BUSY_KIND,
+          ownerId: callId,
+          instanceId: runtime.instanceId,
+        })
+        .catch(() => {});
+    }
+    const age = now - call.createdAt;
+    if (age <= runtime.config.ringingTtlMs) continue;
+    let removed = false;
+    for (const [uid, p] of [...call.participants.entries()]) {
+      if (p.state !== 'ringing') continue;
+      removeParticipant(call, uid, runtime);
+      removed = true;
+      if (sendToUserSockets) {
+        sendToUserSockets(uid, {
+          type: 'gcall_ended',
+          call_id: callId,
+          chat_id: call.chatId,
+          from_user_id: uid,
+          reason: 'ringing_timeout',
+          ts: new Date().toISOString(),
+        });
+      }
+    }
+    if (removed && sendToUserSockets) {
+      broadcastJoined(
+        call,
+        {
+          type: 'gcall_peer_left',
+          call_id: callId,
+          chat_id: call.chatId,
+          reason: 'ringing_timeout',
+          roster: rosterPayload(call),
+          ts: new Date().toISOString(),
+        },
+        sendToUserSockets
+      );
+    }
+    if (joinedIds(call).length === 0) {
+      if (sendToUserSockets) {
+        broadcastGroup(
+          call,
+          {
+            type: 'gcall_ended',
+            call_id: callId,
+            chat_id: call.chatId,
+            reason: 'empty',
+            ts: new Date().toISOString(),
+          },
+          sendToUserSockets
+        );
+      }
+      cleanupGroupCall(callId, runtime);
+      continue;
+    }
+    // Solo host «никто не ответил» — только если никто кроме host никогда не joined.
+    // Иначе после реального разговора + leave peer'а не убиваем оставшегося.
+    if (
+      joinedIds(call).length === 1 &&
+      age > runtime.config.ringingTtlMs &&
+      !call.hadGuestJoin
+    ) {
+      const hostId = joinedIds(call)[0];
+      if (sendToUserSockets) {
+        broadcastGroup(
+          call,
+          {
+            type: 'gcall_ended',
+            call_id: callId,
+            chat_id: call.chatId,
+            from_user_id: hostId,
+            reason: 'no_answer',
+            ts: new Date().toISOString(),
+          },
+          sendToUserSockets
+        );
+      }
+      cleanupGroupCall(callId, runtime);
     }
   }
 }
 
 /**
- * When user has no WS connections left, drop group call membership.
+ * When user has no WS connections left, drop group call membership after grace.
  */
-export function releaseGroupCallsForUser(userId, sendToUserSockets) {
+export function scheduleReleaseGroupCallsForUser(
+  userId,
+  sendToUserSockets,
+  isStillOffline,
+  runtime = realtimeRuntime
+) {
   const uid = userId?.toString();
   if (!uid) return;
+  cancelPendingGroupCallRelease(uid);
+
+  const callId = userGroupCallId.get(uid);
+  const call = callId ? activeGroupCalls.get(callId) : null;
+  if (!call) return;
+  const me = call.participants.get(uid);
+  if (!me) return;
+
+  const graceMs =
+    me.state === 'joined'
+      ? runtime.config.disconnectGraceMs
+      : runtime.config.ringingDisconnectGraceMs;
+
+  const timer = setTimeout(() => {
+    pendingGroupDisconnectRelease.delete(uid);
+    if (typeof isStillOffline === 'function' && !isStillOffline()) {
+      return;
+    }
+    releaseGroupCallsForUser(uid, sendToUserSockets, runtime);
+  }, graceMs);
+  pendingGroupDisconnectRelease.set(uid, timer);
+}
+
+export function cancelPendingGroupCallRelease(userId) {
+  const uid = userId?.toString();
+  if (!uid) return;
+  const timer = pendingGroupDisconnectRelease.get(uid);
+  if (!timer) return;
+  clearTimeout(timer);
+  pendingGroupDisconnectRelease.delete(uid);
+}
+
+/**
+ * Immediate release of group call membership.
+ */
+export async function releaseGroupCallsForUser(
+  userId,
+  sendToUserSockets,
+  runtime = realtimeRuntime
+) {
+  const uid = userId?.toString();
+  if (!uid) return;
+  cancelPendingGroupCallRelease(uid);
   const callId = userGroupCallId.get(uid);
   if (!callId) return;
   const call = activeGroupCalls.get(callId);
@@ -176,25 +374,30 @@ export function releaseGroupCallsForUser(userId, sendToUserSockets) {
     return;
   }
 
-  removeParticipant(call, uid);
+  const wasHost = uid === call.hostId;
+  await removeParticipant(call, uid, runtime);
   const base = {
     call_id: callId,
     chat_id: call.chatId,
     from_user_id: uid,
     ts: new Date().toISOString(),
   };
+  // Сообщаем самому отвалившемуся (иначе ghost UI / sticky busy на клиенте).
+  sendToUserSockets(uid, { type: 'gcall_ended', ...base, reason: 'disconnected' });
   broadcastGroup(call, { type: 'gcall_peer_left', ...base, roster: rosterPayload(call) }, sendToUserSockets);
 
-  if (joinedIds(call).length === 0) {
-    broadcastGroup(call, { type: 'gcall_ended', ...base, reason: 'empty' }, sendToUserSockets);
-    cleanupGroupCall(callId);
+  const remaining = joinedIds(call);
+  if (remaining.length === 0 || wasHost || remaining.length === 1) {
+    const reason = wasHost ? 'host_left' : 'empty';
+    broadcastGroup(call, { type: 'gcall_ended', ...base, reason }, sendToUserSockets);
+    await cleanupGroupCall(callId, runtime);
   }
 }
 
 /**
  * @returns {boolean} true if handled
  */
-export async function handleGroupCallSignaling(data, ctx) {
+async function handleGroupCallSignalingInner(data, ctx) {
   const type = data?.type;
   if (!type || typeof type !== 'string' || !type.startsWith('gcall_')) {
     return false;
@@ -206,11 +409,27 @@ export async function handleGroupCallSignaling(data, ctx) {
     pool,
     sendToUserSockets,
     callLimiter,
+    runtime = realtimeRuntime,
   } = ctx;
 
   if (!callLimiter.allow(`gcall:${userId}`)) {
-    return true;
+    // leave/reject/join/ice не режем — иначе sticky busy / ICE restart рвёт звонок.
+    const critical =
+      type === 'gcall_leave' ||
+      type === 'gcall_reject' ||
+      type === 'gcall_join' ||
+      type === 'gcall_ice' ||
+      type === 'gcall_ice_restart';
+    if (!critical) {
+      sendGcallError(sendToUserSockets, userId, {
+        code: 'rate_limited',
+        call_id: data?.call_id,
+      });
+      return true;
+    }
   }
+
+  sweepStaleGroupRinging(sendToUserSockets, runtime);
 
   const callId = (data.call_id ?? data.callId)?.toString()?.trim();
   const chatIdRaw = data.chat_id ?? data.chatId;
@@ -220,13 +439,24 @@ export async function handleGroupCallSignaling(data, ctx) {
       sendGcallError(sendToUserSockets, userId, { code: 'invalid_call_id', chat_id: chatIdRaw });
       return true;
     }
+    if (activeGroupCalls.has(callId)) {
+      sendGcallError(sendToUserSockets, userId, { code: 'call_id_exists', call_id: callId });
+      return true;
+    }
     if (!chatIdRaw) {
       sendGcallError(sendToUserSockets, userId, { code: 'chat_id_required' });
       return true;
     }
 
+    pendingGroupCreates.set(callId, { userId: userId.toString(), cancelled: false });
     const group = await resolveGroupChat(pool, chatIdRaw, userId);
+    const pending = pendingGroupCreates.get(callId);
+    if (!pending || pending.cancelled) {
+      pendingGroupCreates.delete(callId);
+      return true;
+    }
     if (!group.ok) {
+      pendingGroupCreates.delete(callId);
       sendGcallError(sendToUserSockets, userId, {
         code: group.error,
         chat_id: chatIdRaw,
@@ -235,8 +465,19 @@ export async function handleGroupCallSignaling(data, ctx) {
       return true;
     }
 
-    cleanupStaleGroupCallsForUser(userId);
-    if (isUserBusy(userId)) {
+    await cleanupStaleGroupCallsForUser(userId, runtime);
+    if (pendingGroupCreates.get(callId)?.cancelled) {
+      pendingGroupCreates.delete(callId);
+      return true;
+    }
+    const hostBusy = await runtime.registry.acquireBusy({
+      userId,
+      kind: LEGACY_GROUP_BUSY_KIND,
+      ownerId: callId,
+      instanceId: runtime.instanceId,
+    });
+    if (!hostBusy.ok) {
+      pendingGroupCreates.delete(callId);
       sendGcallError(sendToUserSockets, userId, {
         code: 'busy',
         chat_id: group.chatIdNum.toString(),
@@ -246,12 +487,42 @@ export async function handleGroupCallSignaling(data, ctx) {
     }
 
     const chatIdStr = group.chatIdNum.toString();
+    const chatBusy = await runtime.registry.acquireChatBusy({
+      chatId: chatIdStr,
+      kind: LEGACY_GROUP_BUSY_KIND,
+      ownerId: callId,
+      instanceId: runtime.instanceId,
+    });
+    if (!chatBusy.ok) {
+      pendingGroupCreates.delete(callId);
+      await releaseGroupBusy(userId, callId, runtime);
+      sendGcallError(sendToUserSockets, userId, {
+        code: 'chat_call_active',
+        chat_id: chatIdStr,
+        call_id: chatBusy.busy?.ownerId || callId,
+      });
+      return true;
+    }
     if (chatActiveGroupCallId.has(chatIdStr)) {
+      pendingGroupCreates.delete(callId);
+      await Promise.allSettled([
+        releaseGroupBusy(userId, callId, runtime),
+        releaseGroupChatBusy(chatIdStr, callId, runtime),
+      ]);
       sendGcallError(sendToUserSockets, userId, {
         code: 'chat_call_active',
         chat_id: chatIdStr,
         call_id: chatActiveGroupCallId.get(chatIdStr),
       });
+      return true;
+    }
+
+    if (pendingGroupCreates.get(callId)?.cancelled) {
+      pendingGroupCreates.delete(callId);
+      await Promise.allSettled([
+        releaseGroupBusy(userId, callId, runtime),
+        releaseGroupChatBusy(chatIdStr, callId, runtime),
+      ]);
       return true;
     }
 
@@ -262,6 +533,7 @@ export async function handleGroupCallSignaling(data, ctx) {
       chatId: chatIdStr,
       hostId: userId.toString(),
       createdAt: now,
+      hadGuestJoin: false,
       participants: new Map(),
     };
     call.participants.set(userId.toString(), {
@@ -274,12 +546,21 @@ export async function handleGroupCallSignaling(data, ctx) {
     activeGroupCalls.set(callId, call);
     chatActiveGroupCallId.set(chatIdStr, callId);
     userGroupCallId.set(userId.toString(), callId);
+    pendingGroupCreates.delete(callId);
 
     // Invite other members (ringing slots, capped by max).
     const others = group.memberIds.filter((id) => id !== userId.toString());
     for (const peerId of others) {
       if (call.participants.size >= MAX_PARTICIPANTS) break;
-      if (isUserBusy(peerId)) continue;
+      // Как DM: сначала stale cleanup invitee, иначе ignored invite держит busy 75s.
+      await cleanupStaleGroupCallsForUser(peerId, runtime);
+      const peerBusy = await runtime.registry.acquireBusy({
+        userId: peerId,
+        kind: LEGACY_GROUP_BUSY_KIND,
+        ownerId: callId,
+        instanceId: runtime.instanceId,
+      });
+      if (!peerBusy.ok) continue;
       call.participants.set(peerId, {
         userId: peerId,
         state: 'ringing',
@@ -313,6 +594,7 @@ export async function handleGroupCallSignaling(data, ctx) {
             fromEmail: userEmail || '',
             mediaType: 'audio',
             isGroup: true,
+            expiresAt: call.createdAt + runtime.config.ringingTtlMs,
           });
         } catch (err) {
           if (process.env.NODE_ENV !== 'production') {
@@ -342,6 +624,10 @@ export async function handleGroupCallSignaling(data, ctx) {
   const call = activeGroupCalls.get(callId);
   if (!call) {
     if (type === 'gcall_leave' || type === 'gcall_reject') {
+      const pending = pendingGroupCreates.get(callId);
+      if (pending && pending.userId === userId.toString()) {
+        pending.cancelled = true;
+      }
       return true;
     }
     sendGcallError(sendToUserSockets, userId, {
@@ -353,7 +639,7 @@ export async function handleGroupCallSignaling(data, ctx) {
   }
 
   if (Date.now() - call.createdAt > CALL_TTL_MS && joinedIds(call).length === 0) {
-    cleanupGroupCall(callId);
+    await cleanupGroupCall(callId, runtime);
     sendGcallError(sendToUserSockets, userId, { code: 'call_expired', call_id: callId });
     return true;
   }
@@ -392,6 +678,9 @@ export async function handleGroupCallSignaling(data, ctx) {
     me.state = 'joined';
     me.joinedAt = Date.now();
     me.email = userEmail || me.email || '';
+    if (userId.toString() !== call.hostId) {
+      call.hadGuestJoin = true;
+    }
 
     const joinedPayload = {
       type: 'gcall_peer_joined',
@@ -410,8 +699,8 @@ export async function handleGroupCallSignaling(data, ctx) {
   }
 
   if (type === 'gcall_reject') {
-    removeParticipant(call, userId);
-    broadcastJoined(
+    await removeParticipant(call, userId, runtime);
+    broadcastGroup(
       call,
       {
         type: 'gcall_peer_left',
@@ -423,13 +712,14 @@ export async function handleGroupCallSignaling(data, ctx) {
     );
     if (joinedIds(call).length === 0) {
       broadcastGroup(call, { type: 'gcall_ended', ...base, reason: 'empty' }, sendToUserSockets);
-      cleanupGroupCall(callId);
+      await cleanupGroupCall(callId, runtime);
     }
     return true;
   }
 
   if (type === 'gcall_leave') {
-    removeParticipant(call, userId);
+    const leavingWasHost = userId.toString() === call.hostId;
+    await removeParticipant(call, userId, runtime);
     broadcastGroup(
       call,
       {
@@ -439,19 +729,31 @@ export async function handleGroupCallSignaling(data, ctx) {
       },
       sendToUserSockets
     );
-    if (joinedIds(call).length === 0) {
-      broadcastGroup(call, { type: 'gcall_ended', ...base, reason: 'empty' }, sendToUserSockets);
-      cleanupGroupCall(callId);
+    const remaining = joinedIds(call);
+    // Host ушёл или остался ≤1 joined — завершаем (не strand'им гостя + chat lock).
+    if (remaining.length === 0 || leavingWasHost || remaining.length === 1) {
+      const reason = leavingWasHost ? 'host_left' : 'empty';
+      broadcastGroup(call, { type: 'gcall_ended', ...base, reason }, sendToUserSockets);
+      await cleanupGroupCall(callId, runtime);
     }
     return true;
   }
 
-  if (type === 'gcall_offer' || type === 'gcall_answer' || type === 'gcall_ice') {
+  if (type === 'gcall_offer' || type === 'gcall_answer' || type === 'gcall_ice' || type === 'gcall_ice_restart') {
     if (me.state !== 'joined') return true;
     const toUserId = (data.to_user_id ?? data.toUserId)?.toString();
     if (!toUserId) return true;
     const peer = call.participants.get(toUserId);
     if (!peer || peer.state !== 'joined') return true;
+
+    if (type === 'gcall_ice_restart') {
+      sendToUserSockets(toUserId, {
+        type: 'gcall_ice_restart',
+        ...base,
+        to_user_id: toUserId,
+      });
+      return true;
+    }
 
     if (type === 'gcall_offer' || type === 'gcall_answer') {
       const sdp = data.sdp;
@@ -482,4 +784,32 @@ export async function handleGroupCallSignaling(data, ctx) {
   }
 
   return false;
+}
+
+export async function handleGroupCallSignaling(data, ctx) {
+  const type = data?.type;
+  if (!type || typeof type !== 'string' || !type.startsWith('gcall_')) {
+    return false;
+  }
+  try {
+    return await handleGroupCallSignalingInner(data, ctx);
+  } catch (error) {
+    if (!isRealtimeUnavailable(error)) throw error;
+    const payload = JSON.stringify({
+      type: 'gcall_error',
+      code: 'signaling_unavailable',
+      call_id: data?.call_id,
+      ts: new Date().toISOString(),
+    });
+    if (ctx.ws?.readyState === 1) {
+      try {
+        ctx.ws.send(payload);
+      } catch {}
+    }
+    ctx.runtime?.telemetry?.('mutation_failed_closed', {
+      operation: type,
+      reason: 'realtime_unavailable',
+    });
+    return true;
+  }
 }

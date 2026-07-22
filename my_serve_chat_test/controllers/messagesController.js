@@ -5,7 +5,7 @@ import { uploadImage as uploadImageMiddleware, uploadToCloud, deleteImage } from
 import { uploadFileToCloud, deleteFile as deleteCloudFile } from '../utils/uploadFile.js';
 import { getSignedObjectUrl, isStorageKey, toStorageKey } from '../utils/yandexStorage.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
-import { sendPushToTokens } from '../utils/pushNotifications.js';
+import { sendPushToUsers } from '../utils/pushNotifications.js';
 import { parseLimit, parseOffset, parseOptionalInt } from '../services/messages/pagination.js';
 import { enrichMessageRow } from '../services/messages/enrichMessageRow.js';
 import { findChatMembership, findSenderDisplayName } from '../repositories/messages/messagesCommonRepository.js';
@@ -891,70 +891,69 @@ export const sendMessage = async (req, res) => {
       // Не прерываем выполнение, сообщение уже сохранено в БД
     }
 
-    // Push-уведомления: участникам чата (кроме отправителя) с сохранённым FCM-токеном
+    // Push-уведомления: все активные установки участников, плюс legacy
+    // users.fcm_token для клиентов, которые ещё не перешли на device API.
     try {
       const otherMemberIds = members.rows
         .map(r => r.user_id)
         .filter(id => id !== user_id);
       if (otherMemberIds.length > 0) {
-        const tokensResult = await pool.query(
-          'SELECT id, fcm_token FROM users WHERE id = ANY($1) AND fcm_token IS NOT NULL AND fcm_token != \'\'',
-          [otherMemberIds]
-        );
-        const tokens = tokensResult.rows.map(r => r.fcm_token);
-        console.log('Push:', {
-          chat_id: chatIdNum,
-          sender_id: user_id,
-          other_members: otherMemberIds.length,
-          tokens_found: tokens.length,
-          user_ids_with_token: tokensResult.rows.map(r => r.id),
-        });
-        if (tokens.length > 0) {
-          const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
-          const chatName = chatInfo.rows[0]?.name || 'Чат';
-          const isGroup = chatInfo.rows[0]?.is_group ?? true;
-          const title = 'Новое сообщение';
-          const plainPreview = String(contentStr || '').trim();
-          // content зашифрован shared-key чата — в пуш нельзя класть шифротекст.
-          // Используем присланный клиентом push_preview (открытый сниппет) либо нейтральный текст.
-          const looksEncrypted = (() => {
-            if (!plainPreview.startsWith('{')) return false;
-            try {
-              const d = JSON.parse(plainPreview);
-              return Boolean(d && d.v === '1' && d.ct);
-            } catch (_) {
-              return false;
-            }
-          })();
-          const pushPreviewRaw = (push_preview != null && String(push_preview).trim() !== '')
-            ? sanitizeMessageContent(String(push_preview)).slice(0, MAX_PUSH_PREVIEW_LENGTH).trim()
-            : '';
-          const isFile = Boolean(file_url);
-          const mime = String(file_mime || '').toLowerCase();
-          const isVoice = isFile && (mime.startsWith('audio/') || String(file_name || '').toLowerCase().endsWith('.m4a'));
-          const isImage = Boolean(image_url);
-          const preview = looksEncrypted
-            ? (pushPreviewRaw || '🔐 Новое сообщение')
-            : isVoice
-              ? '🎤 Голосовое сообщение'
-              : isImage
-                ? (plainPreview ? `📷 ${plainPreview}` : '📷 Изображение')
-                : isFile
-                  ? (plainPreview ? `📎 ${plainPreview}` : '📎 Файл')
-                  : (plainPreview || 'Сообщение в чате');
-          const body = `${senderEmail}: ${preview.slice(0, 80)}${preview.length > 80 ? '…' : ''}`.trim();
-          await sendPushToTokens(tokens, title, body, {
+        const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
+        const chatName = chatInfo.rows[0]?.name || 'Чат';
+        const isGroup = chatInfo.rows[0]?.is_group ?? true;
+        const title = 'Новое сообщение';
+        const plainPreview = String(contentStr || '').trim();
+        // content зашифрован shared-key чата — в пуш нельзя класть шифротекст.
+        // Используем присланный клиентом push_preview (открытый сниппет) либо нейтральный текст.
+        const looksEncrypted = (() => {
+          if (!plainPreview.startsWith('{')) return false;
+          try {
+            const d = JSON.parse(plainPreview);
+            return Boolean(d && d.v === '1' && d.ct);
+          } catch (_) {
+            return false;
+          }
+        })();
+        const pushPreviewRaw = (push_preview != null && String(push_preview).trim() !== '')
+          ? sanitizeMessageContent(String(push_preview)).slice(0, MAX_PUSH_PREVIEW_LENGTH).trim()
+          : '';
+        const isFile = Boolean(file_url);
+        const mime = String(file_mime || '').toLowerCase();
+        const isVoice = isFile && (mime.startsWith('audio/') || String(file_name || '').toLowerCase().endsWith('.m4a'));
+        const isImage = Boolean(image_url);
+        const preview = looksEncrypted
+          ? (pushPreviewRaw || '🔐 Новое сообщение')
+          : isVoice
+            ? '🎤 Голосовое сообщение'
+            : isImage
+              ? (plainPreview ? `📷 ${plainPreview}` : '📷 Изображение')
+              : isFile
+                ? (plainPreview ? `📎 ${plainPreview}` : '📎 Файл')
+                : (plainPreview || 'Сообщение в чате');
+        const body = `${senderEmail}: ${preview.slice(0, 80)}${preview.length > 80 ? '…' : ''}`.trim();
+        const pushResult = await sendPushToUsers(
+          pool,
+          otherMemberIds,
+          title,
+          body,
+          {
             chatId: chatIdNum.toString(),
             messageId: message.id.toString(),
             chatName,
             isGroup: isGroup ? '1' : '0',
-          });
-        } else {
-          console.log('Push skipped: no recipient tokens for chat', chatIdNum);
-        }
+          }
+        );
+        console.log('Push:', {
+          chat_id: chatIdNum,
+          sender_id: user_id,
+          other_members: otherMemberIds.length,
+          target_count: pushResult.targetCount,
+          success_count: pushResult.successCount,
+          failure_count: pushResult.failureCount,
+        });
       }
     } catch (pushErr) {
-      console.error('Ошибка отправки push:', pushErr.message);
+      console.error('Ошибка отправки push:', pushErr?.code || pushErr?.name || 'unknown');
     }
 
     if (idempotencyKey) {

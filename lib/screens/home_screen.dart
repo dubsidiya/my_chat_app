@@ -1175,11 +1175,11 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               final navigator = Navigator.of(context);
               Navigator.pop(context); // Закрываем диалог
+              await GroupVoiceCallService.instance.shutdownForAccountChange();
+              await PushNotificationService.clearTokenOnBackend();
               await _authService.logout();
               VoiceCallService.instance.reset();
-              GroupVoiceCallService.instance.reset();
               WebSocketService.instance.disconnect();
-              await PushNotificationService.clearTokenOnBackend();
               await ChatKeyService.clearAll();
               await ChatImageCache.clearAll();
               await LocalMessagesService.clearAll();
@@ -1497,7 +1497,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _authService.deleteAccount(widget.userId, password);
 
       VoiceCallService.instance.reset();
-      GroupVoiceCallService.instance.reset();
+      await GroupVoiceCallService.instance.shutdownForAccountChange();
       WebSocketService.instance.disconnect();
       await PushNotificationService.clearTokenOnBackend();
       await ChatKeyService.clearAll();

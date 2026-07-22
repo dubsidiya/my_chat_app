@@ -74,11 +74,21 @@
 - `reportsController.js` - логика отчетов
 - `bankStatementController.js` - логика выписок
 
+#### WebSocket (`websocket/`)
+- `websocket.js` - realtime hub (chat + call signaling)
+- `callSignaling.js` - 1:1 raw WebRTC signaling
+- `groupCallSignaling.js` - legacy group mesh (`gcall_*`)
+- `livekitGroupCallSignaling.js` - LiveKit group control (`lkcall_*`)
+
+#### Calls stack (see `docs/CALLS_ROLLOUT.md`)
+- Redis/memory call registry: `realtime/`
+  → [REDIS_SIGNALING.md](./REDIS_SIGNALING.md)
+- LiveKit group: `services/calls/`, [LIVEKIT_GROUP_CALLS.md](./LIVEKIT_GROUP_CALLS.md)
+- Push devices / APNs VoIP: [PUSH_DEVICES.md](./PUSH_DEVICES.md), [IOS_CALLKIT.md](./IOS_CALLKIT.md)
+- TURN REST/HMAC: [VOICE_CALLS_COTURN.md](./VOICE_CALLS_COTURN.md)
+
 #### Middleware (`middleware/`)
 - `auth.js` - JWT аутентификация (authenticateToken, generateToken)
-
-#### WebSocket (`websocket/`)
-- `websocket.js` - WebSocket сервер для real-time сообщений
 
 #### Утилиты (`utils/`)
 - `validation.js` - валидация данных
@@ -188,7 +198,7 @@
 ## 📦 Зависимости
 
 ### Flutter (pubspec.yaml)
-- `http: ^0.13.6` - HTTP запросы
+- `http: ^1.6.0` - HTTP запросы
 - `web_socket_channel: ^3.0.3` - WebSocket
 - `shared_preferences: ^2.2.2` - локальное хранилище
 - `intl: ^0.19.0` - форматирование дат

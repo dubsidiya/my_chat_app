@@ -27,9 +27,23 @@ function connectWs(token) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(WS_BASE, { headers: { Authorization: `Bearer ${token}` } });
     const timeout = setTimeout(() => reject(new Error('WS connect timeout')), 15000);
-    ws.on('open', () => {
+    const onMessage = (raw) => {
+      try {
+        const message = JSON.parse(raw.toString());
+        if (message.type !== 'ws_ready') return;
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        if (message.realtime_ready === false) {
+          reject(new Error('WS realtime control plane is not ready'));
+          return;
+        }
+        resolve(ws);
+      } catch (_) {}
+    };
+    ws.on('message', onMessage);
+    ws.on('close', () => {
       clearTimeout(timeout);
-      resolve(ws);
+      reject(new Error('WS closed before ready'));
     });
     ws.on('error', (e) => {
       clearTimeout(timeout);
@@ -103,10 +117,26 @@ async function scenarioHappyPath(wsA, wsB, chatId, { mediaType = 'audio' } = {})
   if (gotMedia !== mediaType) {
     throw new Error(`invite media_type mismatch: expected ${mediaType}, got ${gotMedia}`);
   }
+  const ringingStatusWait = waitForType(wsB, 'call_status');
+  send(wsB, { type: 'call_status', call_id: callId });
+  const ringingStatus = await ringingStatusWait;
+  if (ringingStatus.active !== true || ringingStatus.state !== 'ringing') {
+    throw new Error(`unexpected ringing call_status: ${JSON.stringify(ringingStatus)}`);
+  }
 
   const acceptWait = waitForType(wsA, 'call_accept');
   send(wsB, { type: 'call_accept', call_id: callId, chat_id: chatId });
   await acceptWait;
+  const resumeStatusWait = waitForType(wsB, 'call_status');
+  send(wsB, { type: 'call_resume', call_id: callId, chat_id: chatId });
+  const resumeStatus = await resumeStatusWait;
+  if (
+    resumeStatus.active !== true ||
+    resumeStatus.state !== 'accepted' ||
+    resumeStatus.media_owner !== true
+  ) {
+    throw new Error(`unexpected call_resume status: ${JSON.stringify(resumeStatus)}`);
+  }
 
   const fakeOffer = {
     type: 'offer',
@@ -196,7 +226,7 @@ async function main() {
 
   try {
     await scenarioHappyPath(wsA, wsB, chatId, { mediaType: 'audio' });
-    console.log('smoke-call-signaling[happy]: OK (invite/accept/offer/answer/ice/hangup)');
+    console.log('smoke-call-signaling[happy]: OK (status/resume + invite/accept/offer/answer/ice/hangup)');
 
     await scenarioHappyPath(wsA, wsB, chatId, { mediaType: 'video' });
     console.log('smoke-call-signaling[video]: OK (media_type=video relayed)');

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare iOS deps (WebRTC-SDK pin) and build release IPA for App Store.
+# Resolve package-owned iOS dependencies and build a release IPA for App Store.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -7,13 +7,9 @@ cd "$ROOT"
 echo "== flutter pub get =="
 flutter pub get
 
-echo "== patch WebRTC (SDK version + Android/iOS crash fixes) =="
-bash "$ROOT/tool/patch_ios_webrtc_sdk.sh"
-
-echo "== CocoaPods (WebRTC-SDK from webrtc-sdk/Specs) =="
+echo "== CocoaPods (WebRTC-SDK selected by LiveKit/flutter_webrtc) =="
 cd ios
 pod install --repo-update
-pod update WebRTC-SDK --no-repo-update
 cd "$ROOT"
 
 echo "== scan WebRTC symbols (informational) =="

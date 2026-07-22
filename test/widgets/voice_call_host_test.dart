@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_chat_app/main.dart' show navigatorKey;
 import 'package:my_chat_app/screens/voice_call_screen.dart';
+import 'package:my_chat_app/services/group_voice_call_service.dart';
 import 'package:my_chat_app/services/voice_call_service.dart';
 import 'package:my_chat_app/widgets/voice_call_host.dart';
 
 void main() {
   setUp(() {
+    VoiceCallService.instance.reset();
+  });
+
+  tearDown(() {
     VoiceCallService.instance.reset();
   });
 
@@ -52,6 +57,10 @@ void main() {
       expect(find.byType(VoiceCallScreen), findsOneWidget);
       expect(find.text('Принять'), findsOneWidget);
       expect(find.text('Отклонить'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      VoiceCallService.instance.reset();
+      await tester.pump(const Duration(seconds: 2));
     },
   );
 
@@ -85,6 +94,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(VoiceCallScreen), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      VoiceCallService.instance.reset();
+      await tester.pump(const Duration(seconds: 2));
     },
   );
+
+  test('minimized DM action invokes reject only while incoming', () async {
+    var rejected = 0;
+    var hungUp = 0;
+
+    Future<void> reject() async => rejected++;
+    Future<void> hangUp() async => hungUp++;
+
+    await performMinimizedDmEndAction(
+      phase: VoiceCallPhase.incoming,
+      rejectIncoming: reject,
+      hangUp: hangUp,
+    );
+    await performMinimizedDmEndAction(
+      phase: VoiceCallPhase.connected,
+      rejectIncoming: reject,
+      hangUp: hangUp,
+    );
+
+    expect(rejected, 1);
+    expect(hungUp, 1);
+  });
+
+  test('CallKit suppresses only the duplicate incoming route', () {
+    expect(
+      shouldAutoOpenDmCall(
+        phase: VoiceCallPhase.incoming,
+        callKitOwnsIncoming: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoOpenDmCall(
+        phase: VoiceCallPhase.connecting,
+        callKitOwnsIncoming: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldAutoOpenGroupCall(
+        phase: GroupCallPhase.incoming,
+        callKitOwnsIncoming: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoOpenGroupCall(
+        phase: GroupCallPhase.connected,
+        callKitOwnsIncoming: true,
+      ),
+      isTrue,
+    );
+  });
 }

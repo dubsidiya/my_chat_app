@@ -17,6 +17,7 @@ import { uploadToCloud } from '../utils/uploadImage.js';
 import { DEFAULT_USER_TIMEZONE, normalizeTimeZone, getDateInTimeZoneISO } from '../utils/timezone.js';
 import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
+import { claimLegacyFcmToken } from '../repositories/pushDevicesRepository.js';
 
 let _authSessionsTableEnsured = false;
 
@@ -604,23 +605,20 @@ export const saveFcmToken = async (req, res) => {
       if (tokenTrimmed.length > FCM_TOKEN_MAX_LENGTH) {
         return res.status(400).json({ message: `fcmToken не более ${FCM_TOKEN_MAX_LENGTH} символов` });
       }
-      await pool.query(
-        'UPDATE users SET fcm_token = $1 WHERE id = $2',
-        [tokenTrimmed, userId]
-      );
+      await claimLegacyFcmToken(pool, {
+        userId,
+        fcmToken: tokenTrimmed,
+      });
       // Не логируем токен (секрет/PII). Только факт и длина.
       console.log('FCM token saved:', { userId, length: tokenTrimmed.length });
       return res.status(200).json({ message: 'Токен сохранён' });
     }
     // Пустая строка — сброс токена (при выходе из аккаунта)
-    await pool.query(
-      'UPDATE users SET fcm_token = NULL WHERE id = $1',
-      [userId]
-    );
+    await claimLegacyFcmToken(pool, { userId, fcmToken: null });
     console.log('FCM token cleared:', { userId });
     res.status(200).json({ message: 'Токен сброшен' });
   } catch (error) {
-    console.error('Ошибка saveFcmToken:', error);
+    console.error('Ошибка saveFcmToken:', error?.code || error?.name || 'unknown');
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

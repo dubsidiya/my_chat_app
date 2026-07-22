@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../services/voice_call_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/call_route_close_gate.dart';
 import '../utils/camera_permission.dart';
 import '../utils/microphone_permission.dart';
 
@@ -32,13 +33,16 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   /// Голосовой: разговорный динамик; видео: громкая связь по умолчанию.
   late bool _speakerOn;
   bool _autoCloseScheduled = false;
+  final CallRouteCloseGate _closeGate = CallRouteCloseGate();
   VoiceCallPhase? _lastHapticPhase;
+  String? _boundCallId;
 
   @override
   void initState() {
     super.initState();
     _snap = _calls.snapshot;
-    _speakerOn = _snap.isVideo;
+    _boundCallId = _snap.callId;
+    _speakerOn = _calls.preferredSpeakerOn;
     _syncConnectedTimer();
     _syncRingerFor(_snap.phase);
     _initRenderers();
@@ -63,6 +67,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         ((s.statusMessage?.contains('микрофон') ?? false) ||
             (s.statusMessage?.contains('камер') ?? false))) {
       _showPermissionDeniedHint();
+      // Не auto-close поверх dialog — иначе pop закрывает только dialog.
+      return;
     }
     if (s.phase == VoiceCallPhase.ended ||
         s.phase == VoiceCallPhase.failed ||
@@ -73,15 +79,34 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   void _scheduleAutoClose() {
     if (_autoCloseScheduled) return;
+    if (!_closeGate.requestClose()) return;
     _autoCloseScheduled = true;
+    final boundId = _boundCallId;
     Future<void>.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
-      final phase = _calls.snapshot.phase;
+      final snap = _calls.snapshot;
+      // Не поп'аем чужой/новый звонок: только если это наш callId или
+      // активный звонок уже другой (наш сеанс точно закончился).
+      final sameOrGone =
+          boundId == null ||
+          snap.callId == null ||
+          snap.callId == boundId ||
+          !snap.isActive;
+      if (!sameOrGone) {
+        _autoCloseScheduled = false;
+        return;
+      }
+      final phase = snap.phase;
       if (phase == VoiceCallPhase.ended ||
           phase == VoiceCallPhase.failed ||
-          phase == VoiceCallPhase.idle) {
+          phase == VoiceCallPhase.idle ||
+          (boundId != null && snap.callId != boundId)) {
+        if (!_closeGate.requestClose()) {
+          _autoCloseScheduled = false;
+          return;
+        }
         if (Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop('auto_close');
         }
       } else {
         _autoCloseScheduled = false;
@@ -176,14 +201,23 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   }
 
   void _showPermissionDeniedHint() {
-    final micPermanent =
-        _calls.lastMicrophoneAccess == MicrophoneAccess.permanentlyDenied;
-    final camPermanent =
-        _calls.lastCameraAccess == MicrophoneAccess.permanentlyDenied;
-    if (!micPermanent && !camPermanent) return;
-    final needCamera = camPermanent && _snap.isVideo;
+    final micDenied =
+        _calls.lastMicrophoneAccess != null &&
+        _calls.lastMicrophoneAccess != MicrophoneAccess.granted;
+    final camDenied =
+        _calls.lastCameraAccess != null &&
+        _calls.lastCameraAccess != MicrophoneAccess.granted;
+    if (!micDenied && !camDenied) {
+      _scheduleAutoClose();
+      return;
+    }
+    if (!_closeGate.beginDialog()) return;
+    final needCamera = camDenied && _snap.isVideo;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted) {
+        _closeGate.endDialog();
+        return;
+      }
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -191,15 +225,15 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
           content: Text(
             kIsWeb
                 ? (needCamera
-                    ? 'Разрешите камеру и микрофон для этого сайта в настройках '
-                        'браузера, затем повторите звонок.'
-                    : 'Разрешите микрофон для этого сайта в настройках браузера '
-                        '(иконка замка в адресной строке), затем повторите звонок.')
+                      ? 'Разрешите камеру и микрофон для этого сайта в настройках '
+                            'браузера, затем повторите звонок.'
+                      : 'Разрешите микрофон для этого сайта в настройках браузера '
+                            '(иконка замка в адресной строке), затем повторите звонок.')
                 : (needCamera
-                    ? 'Разрешите доступ к камере (и микрофону) в Настройках → '
-                        'Reollity, затем повторите звонок.'
-                    : 'Разрешите доступ к микрофону в Настройках → Reollity → '
-                        'Микрофон, затем повторите звонок.'),
+                      ? 'Разрешите доступ к камере (и микрофону) в Настройках → '
+                            'Reollity, затем повторите звонок.'
+                      : 'Разрешите доступ к микрофону в Настройках → Reollity → '
+                            'Микрофон, затем повторите звонок.'),
           ),
           actions: [
             TextButton(
@@ -219,14 +253,23 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
             ),
           ],
         ),
-      );
+      ).whenComplete(() {
+        final deferredClose = _closeGate.endDialog();
+        if (!mounted) return;
+        final phase = _calls.snapshot.phase;
+        final terminal =
+            phase == VoiceCallPhase.ended ||
+            phase == VoiceCallPhase.failed ||
+            phase == VoiceCallPhase.idle;
+        if (deferredClose || terminal) _scheduleAutoClose();
+      });
     });
   }
 
   /// Свернуть экран звонка без завершения (плашка в [VoiceCallHost]).
   void _minimizeCall() {
     if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop('minimize');
     }
   }
 
@@ -239,6 +282,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   void _toggleSpeaker() {
     setState(() => _speakerOn = !_speakerOn);
+    _calls.setPreferredSpeakerOn(_speakerOn);
     _applySpeakerphone(_speakerOn);
   }
 
@@ -250,7 +294,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _durationTicker = null;
     _ringerTicker?.cancel();
     _ringerTicker = null;
-    if (!kIsWeb) _applySpeakerphone(false);
+    if (!kIsWeb && !_calls.snapshot.isActive) {
+      _applySpeakerphone(false);
+    }
     _remoteRenderer?.srcObject = null;
     _localRenderer?.srcObject = null;
     _remoteRenderer?.dispose();
@@ -274,7 +320,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         : (_snap.statusMessage ?? _phaseLabel(_snap.phase));
 
     return PopScope(
-      canPop: true,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _minimizeCall();
       },
@@ -296,8 +342,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                           child: Center(
                             child: CircleAvatar(
                               radius: 56,
-                              backgroundColor:
-                                  AppColors.primary.withValues(alpha: 0.25),
+                              backgroundColor: AppColors.primary.withValues(
+                                alpha: 0.25,
+                              ),
                               child: Text(
                                 initial,
                                 style: const TextStyle(
@@ -320,7 +367,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       borderRadius: BorderRadius.circular(12),
                       child: RTCVideoView(
                         _localRenderer!,
-                        mirror: true,
+                        mirror: _snap.isUsingFrontCamera,
                         objectFit:
                             RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                       ),
@@ -360,8 +407,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     if (!showVideoUi || !_snap.hasRemoteVideo)
                       CircleAvatar(
                         radius: 56,
-                        backgroundColor:
-                            AppColors.primary.withValues(alpha: 0.25),
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.25,
+                        ),
                         child: Text(
                           initial,
                           style: const TextStyle(

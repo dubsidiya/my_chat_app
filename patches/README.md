@@ -1,13 +1,12 @@
 # Patches
 
-After `flutter pub get`:
+The project does not patch packages in the pub cache.
 
-```bash
-bash tool/patch_ios_webrtc_sdk.sh   # iOS: WebRTC-SDK 144.7559.04 + Android/iOS crash fixes
-# or only Android/iOS plugin fixes:
-bash tool/apply_webrtc_patch.sh
-```
+`livekit_client` and the direct `flutter_webrtc` dependency are pinned to one
+compatible pair in `pubspec.yaml`. Their package metadata selects the native
+WebRTC SDK on Android and iOS, and CocoaPods records that selection in
+`ios/Podfile.lock`.
 
-- **iOS App Store:** см. `docs/IOS_APP_STORE_WEBRTC.md` и `tool/ios_app_store_release.sh`.
-- **Android:** crash when `createPeerConnection` fails and `getUserMedia` runs afterward (zombie observer).
-- **iOS plugin:** на flutter_webrtc 1.4.x в upstream уже есть guard в `postEvent`; старый iOS-патч нужен только для 0.12.x.
+If an upstream plugin fix is needed, consume a published compatible release
+instead of modifying `$PUB_CACHE`. See `docs/IOS_APP_STORE_WEBRTC.md` for the
+release workflow.
