@@ -192,7 +192,7 @@ export const register = async (req, res) => {
   // Нормализуем логин перед валидацией (убираем пробелы, приводим к нижнему регистру)
   const normalizedUsername = username.trim().toLowerCase();
 
-  // Валидация данных
+  // Валидация данных ()
   const validation = validateRegisterData(normalizedUsername, password);
   if (!validation.valid) {
     if (process.env.NODE_ENV !== 'production') {
