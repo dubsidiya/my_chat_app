@@ -40,6 +40,8 @@ private final class IOSCallRecord {
   var answerAction: CXAnswerCallAction?
   var suppressEndEvent = false
   var suppressMuteEvent = false
+  /// App already accepted in Flutter UI; CallKit answer must not re-enter Dart.
+  var suppressAnswerEvent = false
 
   init(
     payload: IOSCallPayload,
@@ -180,6 +182,58 @@ final class IOSCallCoordinator: NSObject {
     emit(type: "connected", record: record)
     persistRecords()
     return true
+  }
+
+  /// Flutter accepted in-app while CallKit is still ringing. Request a native
+  /// answer so the system UI leaves the incoming state without a second accept.
+  func answerFromApp(
+    callUUID: UUID,
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard let record = records[callUUID] else {
+      completion(false)
+      return
+    }
+    if record.lifecycle == .connected || record.lifecycle == .connecting {
+      if let action = record.answerAction {
+        record.answerAction = nil
+        action.fulfill()
+        persistRecords()
+      }
+      completion(true)
+      return
+    }
+    if let action = record.answerAction {
+      record.lifecycle = .connecting
+      record.answerAction = nil
+      action.fulfill()
+      persistRecords()
+      completion(true)
+      return
+    }
+
+    record.suppressAnswerEvent = true
+    record.lifecycle = .connecting
+    persistRecords()
+    let transaction = CXTransaction(action: CXAnswerCallAction(call: callUUID))
+    callController.request(transaction) { [weak self] error in
+      DispatchQueue.main.async {
+        guard let self else {
+          completion(false)
+          return
+        }
+        if error != nil {
+          record.suppressAnswerEvent = false
+          if record.lifecycle == .connecting {
+            record.lifecycle = .reported
+          }
+          self.persistRecords()
+          completion(false)
+          return
+        }
+        completion(true)
+      }
+    }
   }
 
   func reportEnd(
@@ -573,11 +627,30 @@ extension IOSCallCoordinator: CXProviderDelegate {
       action.fail()
       return
     }
-    if record.answerAction != nil || record.lifecycle == .connected {
+    configureAudioSession(for: record.payload)
+
+    // In-app accept already owns media; just dismiss CallKit ringing UI.
+    if record.suppressAnswerEvent
+      || record.lifecycle == .connecting
+      || record.lifecycle == .connected
+    {
+      record.suppressAnswerEvent = false
+      if record.lifecycle != .connected {
+        record.lifecycle = .connecting
+      }
+      if let pending = record.answerAction, pending !== action {
+        record.answerAction = nil
+        pending.fail()
+      }
+      action.fulfill()
+      persistRecords()
+      return
+    }
+
+    if record.answerAction != nil {
       action.fail()
       return
     }
-    configureAudioSession(for: record.payload)
     record.lifecycle = .answerRequested
     record.answerAction = action
     persistRecords()
@@ -593,7 +666,16 @@ extension IOSCallCoordinator: CXProviderDelegate {
     let suppress = record.suppressEndEvent
     record.suppressEndEvent = false
     if !suppress {
-      emit(type: "endRequested", record: record, extra: ["reason": "localEnded"])
+      // Decline while still ringing vs End after answer — Flutter must not
+      // hang up an in-app accepted call just because CallKit ringing was dismissed.
+      let reason: String
+      switch record.lifecycle {
+      case .reported, .answerRequested:
+        reason = "declined"
+      case .connecting, .connected:
+        reason = "localEnded"
+      }
+      emit(type: "endRequested", record: record, extra: ["reason": reason])
     }
     removeRecord(action.callUUID)
   }

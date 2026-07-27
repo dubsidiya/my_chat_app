@@ -46,7 +46,20 @@ void main() {
       expect(s.email, 'm@mail.ru');
       expect(s.notes, 'Заметка');
       expect(s.payByBankTransfer, true);
+      expect(s.isArchived, false);
       expect(s.updatedAt, isNotNull);
+    });
+
+    test('is_archived из JSON', () {
+      final s = Student.fromJson({
+        'id': 3,
+        'name': 'Выпускник',
+        'balance': 0,
+        'is_archived': true,
+        'created_at': '2025-03-01T10:00:00Z',
+      });
+      expect(s.isArchived, true);
+      expect(s.copyWith(isArchived: false).isArchived, false);
     });
   });
 }

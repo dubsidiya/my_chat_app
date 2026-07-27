@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS teacher_students (
     id SERIAL PRIMARY KEY,
     teacher_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    is_archived BOOLEAN NOT NULL DEFAULT false,
+    archived_at TIMESTAMPTZ NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(teacher_id, student_id)
 );

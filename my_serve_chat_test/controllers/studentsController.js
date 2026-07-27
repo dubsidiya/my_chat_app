@@ -22,11 +22,14 @@ const normalizeText = (v) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const ensureTeacherStudentLink = async (client, teacherId, studentId) => {
+/** Явная привязка снова делает ученика активным (снимает выпускники). */
+const ensureTeacherStudentLinkActive = async (client, teacherId, studentId) => {
   await client.query(
-    `INSERT INTO teacher_students (teacher_id, student_id)
-     VALUES ($1, $2)
-     ON CONFLICT DO NOTHING`,
+    `INSERT INTO teacher_students (teacher_id, student_id, is_archived, archived_at)
+     VALUES ($1, $2, false, NULL)
+     ON CONFLICT (teacher_id, student_id) DO UPDATE
+       SET is_archived = false,
+           archived_at = NULL`,
     [teacherId, studentId]
   );
 };
@@ -45,22 +48,30 @@ const assertTeacherHasStudentAccess = async (client, teacherId, studentId) => {
 // Получение всех студентов (привязаны к владельцу created_by)
 export const getAllStudents = async (req, res) => {
   try {
-    // Суперпользователь (бухгалтерия) должен видеть всех учеников
+    const userId = req.user.userId;
+
+    // Суперпользователь (бухгалтерия) должен видеть всех учеников.
+    // is_archived — только личный архив суперюзера (его строка в teacher_students), иначе false.
     if (isSuperuser(req.user)) {
       const result = await pool.query(
-        `SELECT s.*, 
+        `SELECT s.*,
+                COALESCE(BOOL_OR(ts.is_archived), false) AS is_archived,
+                MAX(ts.archived_at) AS archived_at,
                 COALESCE(SUM(CASE WHEN t.type IN ('deposit', 'refund') THEN t.amount ELSE -t.amount END), 0) as balance
          FROM students s
+         LEFT JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = $1
          LEFT JOIN transactions t ON s.id = t.student_id
          GROUP BY s.id
-         ORDER BY s.name`
+         ORDER BY s.name`,
+        [userId]
       );
       return res.json(result.rows);
     }
 
-    const userId = req.user.userId;
     const result = await pool.query(
-      `SELECT s.*, 
+      `SELECT s.*,
+              BOOL_OR(ts.is_archived) AS is_archived,
+              MAX(ts.archived_at) AS archived_at,
               COALESCE(SUM(
                 CASE
                   WHEN t.type IN ('deposit', 'refund')
@@ -248,7 +259,7 @@ export const createStudent = async (req, res) => {
 
     if (existingStudent) {
       // Привязываем студента текущему преподавателю (если ещё не привязан)
-      await ensureTeacherStudentLink(client, userId, existingStudent.id);
+      await ensureTeacherStudentLinkActive(client, userId, existingStudent.id);
 
       // Заполняем недостающие поля, не перетирая существующие
       const updates = [];
@@ -326,7 +337,7 @@ export const createStudent = async (req, res) => {
       ]
     );
     const student = created.rows[0];
-    await ensureTeacherStudentLink(client, userId, student.id);
+    await ensureTeacherStudentLinkActive(client, userId, student.id);
     await logAccountingEvent({
       userId,
       eventType: 'student_created',
@@ -473,7 +484,7 @@ export const linkExistingStudent = async (req, res) => {
       return res.status(404).json({ message: 'Студент не найден' });
     }
 
-    await ensureTeacherStudentLink(client, userId, studentId);
+    await ensureTeacherStudentLinkActive(client, userId, studentId);
     await logAccountingEvent({
       userId,
       eventType: 'student_linked_manual',
@@ -549,6 +560,113 @@ export const updateStudent = async (req, res) => {
   } catch (error) {
     console.error('Ошибка обновления студента:', error);
     res.status(500).json({ message: 'Ошибка обновления студента' });
+  }
+};
+
+// Отправить ученика в выпускники (персонально для текущего пользователя).
+export const archiveStudent = async (req, res) => {
+  const userId = req.user.userId;
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Некорректный ID ученика' });
+
+  try {
+    const isSuper = isSuperuser(req.user);
+    if (!isSuper) {
+      const hasAccess = await assertTeacherHasStudentAccess(pool, userId, id);
+      if (!hasAccess) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
+    } else {
+      const exists = await pool.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+      if (exists.rows.length === 0) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE teacher_students
+       SET is_archived = true,
+           archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+       WHERE teacher_id = $1 AND student_id = $2
+       RETURNING student_id, is_archived, archived_at`,
+      [userId, id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: isSuper
+          ? 'Связь текущего суперпользователя с учеником не найдена — сначала добавьте ученика к себе'
+          : 'Связь с учеником не найдена',
+      });
+    }
+
+    await logAccountingEvent({
+      userId,
+      eventType: 'student_archived',
+      entityType: 'student',
+      entityId: id,
+      payload: { archivedAt: result.rows[0].archived_at },
+    });
+
+    return res.json({
+      message: 'Ученик перенесён в выпускники',
+      student_id: id,
+      is_archived: true,
+      archived_at: result.rows[0].archived_at,
+    });
+  } catch (error) {
+    console.error('Ошибка архивации студента:', error);
+    return res.status(500).json({ message: 'Ошибка архивации студента' });
+  }
+};
+
+// Вернуть ученика из выпускников в активный список.
+export const unarchiveStudent = async (req, res) => {
+  const userId = req.user.userId;
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Некорректный ID ученика' });
+
+  try {
+    const isSuper = isSuperuser(req.user);
+    if (!isSuper) {
+      const hasAccess = await assertTeacherHasStudentAccess(pool, userId, id);
+      if (!hasAccess) {
+        return res.status(404).json({ message: 'Студент не найден' });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE teacher_students
+       SET is_archived = false,
+           archived_at = NULL
+       WHERE teacher_id = $1 AND student_id = $2
+       RETURNING student_id, is_archived, archived_at`,
+      [userId, id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: isSuper
+          ? 'Связь текущего суперпользователя с учеником не найдена'
+          : 'Связь с учеником не найдена',
+      });
+    }
+
+    await logAccountingEvent({
+      userId,
+      eventType: 'student_unarchived',
+      entityType: 'student',
+      entityId: id,
+      payload: {},
+    });
+
+    return res.json({
+      message: 'Ученик возвращён в активные',
+      student_id: id,
+      is_archived: false,
+      archived_at: null,
+    });
+  } catch (error) {
+    console.error('Ошибка возврата студента из архива:', error);
+    return res.status(500).json({ message: 'Ошибка возврата студента из архива' });
   }
 };
 

@@ -1,4 +1,5 @@
 export {
+  archiveStudent,
   createStudent,
   deleteStudent,
   deleteStudentFull,
@@ -8,5 +9,6 @@ export {
   getStudentTransactions,
   linkExistingStudent,
   searchStudentSuggestions,
+  unarchiveStudent,
   updateStudent,
 } from '../studentsController.js';

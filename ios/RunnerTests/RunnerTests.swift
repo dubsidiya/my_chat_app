@@ -131,4 +131,102 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(events?.first?["type"] as? String, "incomingReported")
     defaults.removePersistentDomain(forName: suite)
   }
+
+  func testAnswerFromAppRequestsCallKitAnswerWithoutFlutterEvent() {
+    let suite = "RunnerTests.CallKit.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    let provider = FakeProvider()
+    let controller = FakeController()
+    let coordinator = IOSCallCoordinator(
+      provider: provider,
+      callController: controller,
+      defaults: defaults
+    )
+    let callUUID = UUID(uuidString: "123e4567-e89b-42d3-a456-426614174000")!
+    let reported = expectation(description: "incoming reported")
+    coordinator.receiveIncomingPayloadForTesting(
+      [
+        "type": "incoming_call",
+        "callId": "call-123",
+        "callKitUuid": callUUID.uuidString,
+        "chatId": "8",
+        "fromUserId": "6",
+        "fromLabel": "Caller",
+        "expiresAt": ISO8601DateFormatter().string(
+          from: Date().addingTimeInterval(60)
+        ),
+      ]
+    ) {
+      reported.fulfill()
+    }
+    wait(for: [reported], timeout: 1)
+    _ = coordinator.drain()
+
+    var events: [[String: Any]] = []
+    coordinator.setEventSink { events.append($0) }
+
+    let answered = expectation(description: "answerFromApp")
+    coordinator.answerFromApp(callUUID: callUUID) { ok in
+      XCTAssertTrue(ok)
+      answered.fulfill()
+    }
+    wait(for: [answered], timeout: 1)
+
+    XCTAssertEqual(controller.transactions.count, 1)
+    let action = controller.transactions[0].actions.first as? CXAnswerCallAction
+    XCTAssertEqual(action?.callUUID, callUUID)
+
+    // Simulate CallKit delivering the requested answer action.
+    provider.delegate?.provider(
+      CXProvider(configuration: CXProviderConfiguration(localizedName: "test")),
+      perform: action!
+    )
+    XCTAssertTrue(events.isEmpty, "in-app answer must not re-enter Flutter")
+    defaults.removePersistentDomain(forName: suite)
+  }
+
+  func testRingingEndEmitsDeclinedNotLocalEnded() {
+    let suite = "RunnerTests.CallKit.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    let provider = FakeProvider()
+    let coordinator = IOSCallCoordinator(
+      provider: provider,
+      callController: FakeController(),
+      defaults: defaults
+    )
+    let callUUID = UUID(uuidString: "123e4567-e89b-42d3-a456-426614174000")!
+    let reported = expectation(description: "incoming reported")
+    coordinator.receiveIncomingPayloadForTesting(
+      [
+        "type": "incoming_call",
+        "callId": "call-123",
+        "callKitUuid": callUUID.uuidString,
+        "chatId": "8",
+        "fromUserId": "6",
+        "fromLabel": "Caller",
+        "expiresAt": ISO8601DateFormatter().string(
+          from: Date().addingTimeInterval(60)
+        ),
+      ]
+    ) {
+      reported.fulfill()
+    }
+    wait(for: [reported], timeout: 1)
+    _ = coordinator.drain()
+
+    var events: [[String: Any]] = []
+    coordinator.setEventSink { events.append($0) }
+
+    let endAction = CXEndCallAction(call: callUUID)
+    provider.delegate?.provider(
+      CXProvider(configuration: CXProviderConfiguration(localizedName: "test")),
+      perform: endAction
+    )
+
+    XCTAssertEqual(events.first?["type"] as? String, "endRequested")
+    XCTAssertEqual(events.first?["reason"] as? String, "declined")
+    defaults.removePersistentDomain(forName: suite)
+  }
 }

@@ -140,6 +140,7 @@ abstract class IOSCallKitPlatform {
   Future<Map<String, dynamic>> getRegistration();
   Future<bool> completeAnswer(String callUuid, bool success);
   Future<bool> reportConnected(String callUuid);
+  Future<bool> answerFromApp(String callUuid);
   Future<bool> reportEnd(String callUuid, String reason);
   Future<bool> syncMute(String callUuid, bool muted);
 }
@@ -181,6 +182,13 @@ class MethodChannelIOSCallKitPlatform implements IOSCallKitPlatform {
   @override
   Future<bool> reportConnected(String callUuid) async =>
       await _methods.invokeMethod<bool>('reportConnected', {
+        'callUuid': callUuid,
+      }) ??
+      false;
+
+  @override
+  Future<bool> answerFromApp(String callUuid) async =>
+      await _methods.invokeMethod<bool>('answerFromApp', {
         'callUuid': callUuid,
       }) ??
       false;
@@ -235,7 +243,8 @@ class HttpIOSCallStatusClient implements IOSCallStatusClient {
 }
 
 abstract class IOSCallActionHandler {
-  Future<void> applyIncoming(IOSCallKitCall call);
+  /// Returns false when the invite was rejected locally (busy / ignored).
+  Future<bool> applyIncoming(IOSCallKitCall call);
   Future<bool> answer(IOSCallKitCall call);
   Future<void> end(IOSCallKitCall call, String reason);
   Future<void> setMuted(IOSCallKitCall call, bool muted);
@@ -243,7 +252,7 @@ abstract class IOSCallActionHandler {
 
 class DefaultIOSCallActionHandler implements IOSCallActionHandler {
   @override
-  Future<void> applyIncoming(IOSCallKitCall call) async {
+  Future<bool> applyIncoming(IOSCallKitCall call) async {
     if (call.isGroup) {
       GroupVoiceCallService.instance.applyIncomingFromPush(
         callId: call.callId,
@@ -259,7 +268,8 @@ class DefaultIOSCallActionHandler implements IOSCallActionHandler {
             ? GroupCallMediaType.video
             : GroupCallMediaType.audio,
       );
-      return;
+      final group = GroupVoiceCallService.instance.snapshot;
+      return group.callId == call.callId && group.isActive;
     }
     VoiceCallService.instance.applyIncomingFromPush(
       callId: call.callId,
@@ -269,12 +279,27 @@ class DefaultIOSCallActionHandler implements IOSCallActionHandler {
       mediaType: call.hasVideo ? CallMediaType.video : CallMediaType.audio,
       expiresAt: call.expiresAt,
     );
+    final dm = VoiceCallService.instance.snapshot;
+    return dm.callId == call.callId && dm.isActive;
   }
 
   @override
   Future<bool> answer(IOSCallKitCall call) {
     if (call.isGroup) {
+      final group = GroupVoiceCallService.instance.snapshot;
+      if (group.callId == call.callId &&
+          (group.phase == GroupCallPhase.connecting ||
+              group.phase == GroupCallPhase.connected ||
+              group.phase == GroupCallPhase.reconnecting)) {
+        return Future<bool>.value(true);
+      }
       return GroupVoiceCallService.instance.acceptIncomingFromSystem();
+    }
+    final dm = VoiceCallService.instance.snapshot;
+    if (dm.callId == call.callId &&
+        (dm.phase == VoiceCallPhase.connecting ||
+            dm.phase == VoiceCallPhase.connected)) {
+      return Future<bool>.value(true);
     }
     return VoiceCallService.instance.acceptIncomingFromSystem();
   }
@@ -314,6 +339,8 @@ class DefaultIOSCallActionHandler implements IOSCallActionHandler {
 
 /// Orders native events, deduplicates cold-start replay and reconciles server
 /// authority before any CallKit answer starts media.
+typedef IOSCallLocalActivityChecker = bool Function(IOSCallKitCall call);
+
 class IOSCallKitService {
   static final IOSCallKitService instance = IOSCallKitService();
 
@@ -322,6 +349,7 @@ class IOSCallKitService {
   final IOSCallActionHandler actionHandler;
   final bool forceSupported;
   final bool observeCallServices;
+  final IOSCallLocalActivityChecker? localActivityChecker;
 
   StreamSubscription<Map<String, dynamic>>? _eventSubscription;
   StreamSubscription<VoiceCallSnapshot>? _voiceSubscription;
@@ -331,6 +359,7 @@ class IOSCallKitService {
   final List<String> _eventIdOrder = <String>[];
   final Map<String, IOSCallKitCall> _reportedByCallId = {};
   final Set<String> _answering = <String>{};
+  final Set<String> _answeredFromApp = <String>{};
   final Set<String> _connectedReported = <String>{};
   final Map<String, bool> _lastSyncedMute = {};
   final List<Map<String, dynamic>> _initialEventBuffer = [];
@@ -347,6 +376,7 @@ class IOSCallKitService {
     IOSCallActionHandler? actionHandler,
     this.forceSupported = false,
     this.observeCallServices = true,
+    this.localActivityChecker,
   }) : platform = platform ?? MethodChannelIOSCallKitPlatform(),
        statusClient = statusClient ?? HttpIOSCallStatusClient(),
        actionHandler = actionHandler ?? DefaultIOSCallActionHandler();
@@ -536,17 +566,27 @@ class IOSCallKitService {
         break;
       case 'endRequested':
       case 'providerReset':
-        await actionHandler.end(
-          call,
-          event['reason']?.toString() ?? 'localEnded',
-        );
+        final endReason = event['reason']?.toString() ?? 'localEnded';
+        // CallKit ringing declined after in-app Accept must not tear media down.
+        if (endReason == 'declined' && _isActivelyHandledLocally(call)) {
+          _forget(call);
+          break;
+        }
+        await actionHandler.end(call, endReason);
         _forget(call);
         break;
       case 'muteRequested':
         await actionHandler.setMuted(call, event['muted'] == true);
         break;
       case 'actionTimedOut':
+        if (_isActivelyHandledLocally(call)) {
+          await _answerFromAppIfNeeded(call);
+          break;
+        }
         await actionHandler.end(call, 'unanswered');
+        _forget(call);
+        break;
+      case 'callEnded':
         _forget(call);
         break;
     }
@@ -564,14 +604,32 @@ class IOSCallKitService {
 
   Future<void> _registerIncoming(IOSCallKitCall call) async {
     final existing = _reportedByCallId[call.callId];
-    if (existing?.callUuid == call.callUuid) return;
+    if (existing?.callUuid == call.callUuid) {
+      await _syncLocalAnswerState(call);
+      return;
+    }
     _reportedByCallId[call.callId] = call;
-    await actionHandler.applyIncoming(call);
+    final adopted = await actionHandler.applyIncoming(call);
+    // Busy / ignored invites must not leave a zombie CallKit ringing UI.
+    if (!adopted) {
+      try {
+        await platform.reportEnd(call.callUuid, 'failed');
+      } catch (_) {}
+      _forget(call);
+      return;
+    }
+    await _syncLocalAnswerState(call);
   }
 
   Future<void> _handleAnswer(IOSCallKitCall call) async {
     if (!_answering.add(call.callUuid)) return;
     try {
+      // In-app Accept already claimed the call — never fail CallKit into hangup.
+      if (_isActivelyHandledLocally(call)) {
+        await platform.completeAnswer(call.callUuid, true);
+        await _answerFromAppIfNeeded(call);
+        return;
+      }
       await WebSocketService.instance.connectIfNeeded();
       final status = await statusClient.fetch(call.callId);
       if (!status.permitsAnswer(call)) {
@@ -582,12 +640,26 @@ class IOSCallKitService {
         return;
       }
       final accepted = await actionHandler.answer(call);
-      await platform.completeAnswer(call.callUuid, accepted);
       if (!accepted) {
+        // Another local path may have taken the call between status check and
+        // answer; prefer keeping media if we already own it.
+        if (_isActivelyHandledLocally(call)) {
+          await platform.completeAnswer(call.callUuid, true);
+          await _answerFromAppIfNeeded(call);
+          return;
+        }
+        await platform.completeAnswer(call.callUuid, false);
         await platform.reportEnd(call.callUuid, 'answeredElsewhere');
         _forget(call);
+        return;
       }
+      await platform.completeAnswer(call.callUuid, true);
     } catch (_) {
+      if (_isActivelyHandledLocally(call)) {
+        await platform.completeAnswer(call.callUuid, true);
+        await _answerFromAppIfNeeded(call);
+        return;
+      }
       await platform.completeAnswer(call.callUuid, false);
       await platform.reportEnd(call.callUuid, 'failed');
       await actionHandler.end(call, 'failed');
@@ -597,11 +669,36 @@ class IOSCallKitService {
     }
   }
 
+  bool _isActivelyHandledLocally(IOSCallKitCall call) {
+    final override = localActivityChecker;
+    if (override != null) return override(call);
+    if (call.isGroup) {
+      final group = GroupVoiceCallService.instance.snapshot;
+      return group.callId == call.callId &&
+          (group.phase == GroupCallPhase.connecting ||
+              group.phase == GroupCallPhase.connected ||
+              group.phase == GroupCallPhase.reconnecting);
+    }
+    final dm = VoiceCallService.instance.snapshot;
+    return dm.callId == call.callId &&
+        (dm.phase == VoiceCallPhase.connecting ||
+            dm.phase == VoiceCallPhase.connected);
+  }
+
+  Future<void> _syncLocalAnswerState(IOSCallKitCall call) async {
+    if (!_isActivelyHandledLocally(call)) return;
+    await _answerFromAppIfNeeded(call);
+  }
+
   Future<void> _observeVoice(VoiceCallSnapshot snapshot) async {
     if (snapshot.callId != null) _lastVoiceCallId = snapshot.callId;
     final callId = snapshot.callId ?? _lastVoiceCallId;
     final call = callId == null ? null : _reportedByCallId[callId];
     if (call == null || call.isGroup) return;
+    if (snapshot.phase == VoiceCallPhase.connecting ||
+        snapshot.phase == VoiceCallPhase.connected) {
+      await _answerFromAppIfNeeded(call);
+    }
     if (snapshot.phase == VoiceCallPhase.connected) {
       await _reportConnected(call);
     }
@@ -628,6 +725,11 @@ class IOSCallKitService {
     final callId = snapshot.callId ?? _lastGroupCallId;
     final call = callId == null ? null : _reportedByCallId[callId];
     if (call == null || !call.isGroup) return;
+    if (snapshot.phase == GroupCallPhase.connecting ||
+        snapshot.phase == GroupCallPhase.connected ||
+        snapshot.phase == GroupCallPhase.reconnecting) {
+      await _answerFromAppIfNeeded(call);
+    }
     if (snapshot.phase == GroupCallPhase.connected) {
       await _reportConnected(call);
     }
@@ -646,6 +748,15 @@ class IOSCallKitService {
             ? 'localEnded'
             : 'remoteEnded',
       );
+    }
+  }
+
+  Future<void> _answerFromAppIfNeeded(IOSCallKitCall call) async {
+    if (!_answeredFromApp.add(call.callUuid)) return;
+    try {
+      await platform.answerFromApp(call.callUuid);
+    } catch (_) {
+      _answeredFromApp.remove(call.callUuid);
     }
   }
 
@@ -672,6 +783,7 @@ class IOSCallKitService {
     if (_lastVoiceCallId == call.callId) _lastVoiceCallId = null;
     if (_lastGroupCallId == call.callId) _lastGroupCallId = null;
     _connectedReported.remove(call.callUuid);
+    _answeredFromApp.remove(call.callUuid);
     _lastSyncedMute.remove(call.callUuid);
   }
 

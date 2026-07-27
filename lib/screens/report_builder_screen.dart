@@ -99,12 +99,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     setState(() => _isLoading = true);
     try {
       final students = await _studentsService.getAllStudents();
-      final userData = await StorageService.getUserData();
-      final userId = userData?['id'];
-      final hiddenIds = userId == null
-          ? <int>{}
-          : await StorageService.getHiddenStudentIds(userId);
-      final visibleStudents = students.where((s) => !hiddenIds.contains(s.id)).toList();
+      // Активные для нового отчёта; выпускники — только если уже выбраны в редактируемом отчёте.
+      final activeStudents = students.where((s) => !s.isArchived).toList();
+      final visibleStudents = activeStudents;
 
       // Режим редактирования: грузим отчёт по reportId, дату и статусы берём из него.
       // Режим «по шаблону» (templateReportId): грузим отчёт-шаблон,
@@ -185,8 +182,25 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         }
 
         if (!mounted) return;
+        // В редактировании подмешиваем выпускников, уже стоящих в отчёте — иначе Dropdown падает.
+        final pickerStudents = List<Student>.from(visibleStudents);
+        if (!isTemplateMode) {
+          final byId = {for (final s in students) s.id: s};
+          final already = <int>{for (final s in pickerStudents) s.id};
+          for (final slot in slotDrafts) {
+            for (final sid in slot.studentIds) {
+              if (sid == null || already.contains(sid)) continue;
+              final extra = byId[sid];
+              if (extra != null) {
+                pickerStudents.add(extra);
+                already.add(sid);
+              }
+            }
+          }
+          pickerStudents.sort((a, b) => a.name.compareTo(b.name));
+        }
         setState(() {
-          _students = visibleStudents;
+          _students = pickerStudents;
           if (!isTemplateMode) {
             _selectedDate = reportDate;
             _dateController.text = DateFormat('dd.MM.yyyy').format(reportDate);

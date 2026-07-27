@@ -44,6 +44,8 @@ class PushNotificationService {
   static String? _fcmToken;
   static GlobalKey<NavigatorState>? _navigatorKey;
   static StreamSubscription<dynamic>? _callEventSubscription;
+  static StreamSubscription<VoiceCallSnapshot>? _voiceCallSubscription;
+  static StreamSubscription<GroupCallSnapshot>? _groupCallSubscription;
   static final Map<String, CallNotificationIdentity>
   _callNotificationIdentities = {};
 
@@ -224,6 +226,27 @@ class PushNotificationService {
           type == 'gcall_ended' ||
           type == 'lkcall_ended') {
         unawaited(cancelCallNotificationData(Map<String, dynamic>.from(event)));
+      }
+    });
+    _voiceCallSubscription ??= VoiceCallService.instance.stateStream.listen((
+      snapshot,
+    ) {
+      if (snapshot.phase == VoiceCallPhase.connecting ||
+          snapshot.phase == VoiceCallPhase.connected ||
+          snapshot.phase == VoiceCallPhase.ended ||
+          snapshot.phase == VoiceCallPhase.failed) {
+        unawaited(cancelCallNotificationForCallId(snapshot.callId));
+      }
+    });
+    _groupCallSubscription ??= GroupVoiceCallService.instance.stateStream.listen((
+      snapshot,
+    ) {
+      if (snapshot.phase == GroupCallPhase.connecting ||
+          snapshot.phase == GroupCallPhase.connected ||
+          snapshot.phase == GroupCallPhase.reconnecting ||
+          snapshot.phase == GroupCallPhase.ended ||
+          snapshot.phase == GroupCallPhase.failed) {
+        unawaited(cancelCallNotificationForCallId(snapshot.callId));
       }
     });
 
@@ -486,6 +509,30 @@ class PushNotificationService {
     } finally {
       if (callId.isNotEmpty) _callNotificationIdentities.remove(dedupeKey);
     }
+  }
+
+  /// Dismiss leftover local call banners after in-app / CallKit accept.
+  /// Does not touch CallKit — only flutter_local_notifications.
+  static Future<void> cancelCallNotificationForCallId(String? callId) async {
+    if (callId == null || callId.isEmpty) return;
+    final keys = _callNotificationIdentities.keys
+        .where((key) => key.endsWith(':$callId'))
+        .toList(growable: false);
+    final cancelled = <String>{};
+    for (final key in keys) {
+      final identity = _callNotificationIdentities.remove(key);
+      if (identity == null) continue;
+      cancelled.add('${identity.id}|${identity.tag}');
+      try {
+        await _localNotifications.cancel(identity.id, tag: identity.tag);
+      } catch (_) {}
+    }
+    final fallback = callNotificationIdentity({'callId': callId});
+    final fallbackKey = '${fallback.id}|${fallback.tag}';
+    if (cancelled.contains(fallbackKey)) return;
+    try {
+      await _localNotifications.cancel(fallback.id, tag: fallback.tag);
+    } catch (_) {}
   }
 
   static void _handleOpenFromNotification(Map<String, dynamic> data) {

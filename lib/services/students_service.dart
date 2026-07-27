@@ -268,6 +268,36 @@ class StudentsService {
     }
   }
 
+  /// Перенести ученика в выпускники (серверный архив на связи).
+  Future<void> archiveStudent(int id) async {
+    final headers = await _getAuthHeaders();
+    final response = await timedPost(
+      Uri.parse('$baseUrl/students/$id/archive'),
+      headers: headers,
+      body: '{}',
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось перенести в выпускники')} (${response.statusCode})',
+      );
+    }
+  }
+
+  /// Вернуть ученика из выпускников в активные.
+  Future<void> unarchiveStudent(int id) async {
+    final headers = await _getAuthHeaders();
+    final response = await timedPost(
+      Uri.parse('$baseUrl/students/$id/unarchive'),
+      headers: headers,
+      body: '{}',
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось вернуть из выпускников')} (${response.statusCode})',
+      );
+    }
+  }
+
   /// Полное каскадное удаление ученика (только суперпользователь).
   Future<void> deleteStudentFull(int id) async {
     final headers = await _getAuthHeaders();

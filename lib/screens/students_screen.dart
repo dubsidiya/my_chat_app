@@ -27,8 +27,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   List<Student> _students = [];
   bool _isLoading = false;
   String _searchQuery = '';
-  Set<int> _hiddenStudentIds = <int>{};
-  bool _showHidden = false;
+  bool _showArchived = false;
   bool _showOnlyDebtors = false;
   bool _isSuperuser = false;
   int _makeupPendingTotal = 0;
@@ -46,7 +45,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Future<void> _initAndLoad() async {
     final userData = await StorageService.getUserData();
     _isSuperuser = userData?['isSuperuser'] == 'true';
-    await _loadHiddenStudents();
+    await _migrateLocalHiddenToServerArchive();
     await _loadStudents();
   }
 
@@ -64,10 +63,21 @@ class _StudentsScreenState extends State<StudentsScreen> {
     return name.contains(query) || parent.contains(query);
   }
 
-  Future<void> _loadHiddenStudents() async {
-    final ids = await StorageService.getHiddenStudentIds(widget.userId);
-    if (!mounted) return;
-    setState(() => _hiddenStudentIds = ids);
+  Set<int> get _archivedStudentIds =>
+      _students.where((s) => s.isArchived).map((s) => s.id).toSet();
+
+  /// Одноразово переносим старые локальные «скрытых» в серверный архив.
+  Future<void> _migrateLocalHiddenToServerArchive() async {
+    final localIds = await StorageService.getHiddenStudentIds(widget.userId);
+    if (localIds.isEmpty) return;
+    for (final id in localIds) {
+      try {
+        await _studentsService.archiveStudent(id);
+      } catch (_) {
+        // Нет связи / уже архив / сеть — пропускаем, локальный список всё равно очистим.
+      }
+    }
+    await StorageService.clearHiddenStudentIds(widget.userId);
   }
 
   Future<void> _loadStudents() async {
@@ -116,39 +126,68 @@ class _StudentsScreenState extends State<StudentsScreen> {
     _loadStudents();
   }
 
-  Future<void> _hideStudent(Student student) async {
-    await StorageService.hideStudent(widget.userId, student.id);
-    if (!mounted) return;
-    setState(() {
-      _hiddenStudentIds = {..._hiddenStudentIds, student.id};
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 4),
-        content: Text('Ученик "${student.name}" скрыт'),
-        action: SnackBarAction(
-          label: 'Отменить',
-          onPressed: () async {
-            await _unhideStudent(student, silent: true);
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(duration: Duration(seconds: 2), content: Text('Скрытие отменено')),
-            );
-          },
+  Future<void> _archiveStudent(Student student) async {
+    try {
+      await _studentsService.archiveStudent(student.id);
+      if (!mounted) return;
+      setState(() {
+        _students = _students
+            .map((s) => s.id == student.id ? s.copyWith(isArchived: true) : s)
+            .toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          content: Text('Ученик "${student.name}" в выпускниках'),
+          action: SnackBarAction(
+            label: 'Отменить',
+            onPressed: () async {
+              await _unarchiveStudent(student, silent: true);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(duration: Duration(seconds: 2), content: Text('Возврат отменён')),
+              );
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось перенести в выпускники: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  Future<void> _unhideStudent(Student student, {bool silent = false}) async {
-    await StorageService.unhideStudent(widget.userId, student.id);
-    if (!mounted) return;
-    setState(() {
-      _hiddenStudentIds = {..._hiddenStudentIds}..remove(student.id);
-    });
-    if (!silent) {
+  Future<void> _unarchiveStudent(Student student, {bool silent = false}) async {
+    try {
+      await _studentsService.unarchiveStudent(student.id);
+      if (!mounted) return;
+      setState(() {
+        _students = _students
+            .map((s) => s.id == student.id ? s.copyWith(isArchived: false) : s)
+            .toList();
+      });
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ученик "${student.name}" снова в активных'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ученик "${student.name}" снова отображается')),
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Не удалось вернуть из выпускников: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -223,10 +262,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
   }
 
   void _openMakeupPendingSheet() {
-    final visibleMakeupItems = _showHidden
+    final visibleMakeupItems = _showArchived
         ? _makeupPendingItems
         : _makeupPendingItems
-            .where((item) => !_hiddenStudentIds.contains((item['studentId'] as num?)?.toInt()))
+            .where((item) => !_archivedStudentIds.contains((item['studentId'] as num?)?.toInt()))
             .toList();
     if (visibleMakeupItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -325,21 +364,21 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final q = _searchQuery.trim().toLowerCase();
-    final visibleMakeupTotal = _showHidden
+    final visibleMakeupTotal = _showArchived
         ? _makeupPendingTotal
         : _makeupPendingItems.fold<int>(
             0,
-            (acc, item) => _hiddenStudentIds.contains((item['studentId'] as num?)?.toInt())
+            (acc, item) => _archivedStudentIds.contains((item['studentId'] as num?)?.toInt())
                 ? acc
                 : acc + ((item['pendingCount'] as num?)?.toInt() ?? 0),
           );
     final filteredStudents = _students.where((s) {
-      if (!_showHidden && _hiddenStudentIds.contains(s.id)) return false;
+      if (!_showArchived && s.isArchived) return false;
       if (_showOnlyDebtors && s.balance >= 0) return false;
       return _matchesStudent(s, q);
     }).toList();
     final addedChildrenCount = _students.length;
-    final hiddenVisibleCount = _students.where((s) => _hiddenStudentIds.contains(s.id)).length;
+    final archivedVisibleCount = _students.where((s) => s.isArchived).length;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
@@ -395,7 +434,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         _openMakeupPendingSheet();
                         break;
                       case 'hidden':
-                        setState(() => _showHidden = !_showHidden);
+                        setState(() => _showArchived = !_showArchived);
                         break;
                       case 'calendar':
                         await Navigator.push<void>(
@@ -430,11 +469,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       child: Row(
                         children: [
                           Icon(
-                            _showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                            color: _showHidden ? Colors.teal : Colors.grey,
+                            _showArchived ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                            color: _showArchived ? Colors.teal : Colors.grey,
                           ),
                           const SizedBox(width: 10),
-                          Text(_showHidden ? 'Скрыть выпускников' : 'Показать скрытых ($hiddenVisibleCount)'),
+                          Text(_showArchived
+                              ? 'Скрыть выпускников'
+                              : 'Показать выпускников ($archivedVisibleCount)'),
                         ],
                       ),
                     ),
@@ -529,7 +570,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           border: const OutlineInputBorder(),
                         ),
                       ),
-                      if (!_showHidden && hiddenVisibleCount > 0)
+                      if (!_showArchived && archivedVisibleCount > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Row(
@@ -537,7 +578,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               Icon(Icons.visibility_off_rounded, size: 16, color: scheme.onSurface.withValues(alpha: 0.6)),
                               const SizedBox(width: 6),
                               Text(
-                                'Скрыто выпускников: $hiddenVisibleCount',
+                                'В выпускниках: $archivedVisibleCount',
                                 style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                               ),
                             ],
@@ -681,7 +722,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     itemBuilder: (context, index) {
                       final student = filteredStudents[index];
-                      final isHiddenStudent = _hiddenStudentIds.contains(student.id);
+                      final isArchivedStudent = student.isArchived;
                       return Dismissible(
                         key: Key('student_${student.id}'),
                         direction: DismissDirection.endToStart,
@@ -689,11 +730,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
                           decoration: BoxDecoration(
-                            color: isHiddenStudent ? Colors.teal : Colors.red,
+                            color: isArchivedStudent ? Colors.teal : Colors.red,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Icon(
-                            isHiddenStudent ? Icons.visibility_rounded : Icons.delete_outline_rounded,
+                            isArchivedStudent ? Icons.visibility_rounded : Icons.delete_outline_rounded,
                             color: Colors.white,
                             size: 30,
                           ),
@@ -702,25 +743,27 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           final result = await showDialog<String>(
                             context: context,
                             builder: (context) => AlertDialog(
-                              title: Text(isHiddenStudent ? 'Что сделать со скрытым учеником?' : 'Что сделать с учеником?'),
+                              title: Text(isArchivedStudent
+                                  ? 'Что сделать с выпускником?'
+                                  : 'Что сделать с учеником?'),
                               content: Text(
                                 'Ученик: "${student.name}"\n\n'
-                                '${isHiddenStudent ? 'Вернуть — снова показывать в вашем списке.\nУдалить — только снять вашу связь с учеником.' : 'Удалить — только снять вашу связь с учеником.\nСкрыть — оставить в базе, но убрать из ваших списков.'}',
+                                '${isArchivedStudent ? 'Вернуть — снова в активный список на всех устройствах.\nУдалить связь — снять вашу привязку к ученику.' : 'В выпускники — убрать из активного списка и дневного отчёта, данные сохранятся.\nУдалить связь — только снять вашу привязку.'}',
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, 'cancel'),
                                   child: const Text('Отмена'),
                                 ),
-                                if (isHiddenStudent)
+                                if (isArchivedStudent)
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, 'unhide'),
+                                    onPressed: () => Navigator.pop(context, 'unarchive'),
                                     child: const Text('Вернуть'),
                                   )
                                 else
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, 'hide'),
-                                    child: const Text('Скрыть'),
+                                    onPressed: () => Navigator.pop(context, 'archive'),
+                                    child: const Text('В выпускники'),
                                   ),
                                 if (_isSuperuser)
                                   TextButton(
@@ -735,12 +778,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             ),
                           );
                           if (!context.mounted) return false;
-                          if (result == 'hide') {
-                            await _hideStudent(student);
+                          if (result == 'archive') {
+                            await _archiveStudent(student);
                             return false;
                           }
-                          if (result == 'unhide') {
-                            await _unhideStudent(student);
+                          if (result == 'unarchive') {
+                            await _unarchiveStudent(student);
                             return false;
                           }
                           if (result == 'delete_full') {
@@ -845,10 +888,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                     ),
                                   ),
                                 ),
-                                if (isHiddenStudent) ...[
+                                if (isArchivedStudent) ...[
                                   const SizedBox(height: 4),
                                   TextButton(
-                                    onPressed: () => _unhideStudent(student),
+                                    onPressed: () => _unarchiveStudent(student),
                                     style: TextButton.styleFrom(
                                       minimumSize: const Size(0, 28),
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),

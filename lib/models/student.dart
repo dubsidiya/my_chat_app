@@ -7,6 +7,8 @@ class Student {
   final String? notes;
   final double balance;
   final bool payByBankTransfer;
+  /// Выпускник для текущего пользователя (серверный флаг на teacher_students).
+  final bool isArchived;
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -19,6 +21,7 @@ class Student {
     this.notes,
     required this.balance,
     this.payByBankTransfer = false,
+    this.isArchived = false,
     required this.createdAt,
     this.updatedAt,
   });
@@ -56,13 +59,41 @@ class Student {
       notes: json['notes'] as String?,
       balance: _parseDouble(json['balance']),
       payByBankTransfer: _parseBool(json['pay_by_bank_transfer']),
+      isArchived: _parseBool(json['is_archived']),
       createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: json['updated_at'] != null 
+      updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : null,
     );
   }
 
+  Student copyWith({
+    int? id,
+    String? name,
+    String? parentName,
+    String? phone,
+    String? email,
+    String? notes,
+    double? balance,
+    bool? payByBankTransfer,
+    bool? isArchived,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return Student(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      parentName: parentName ?? this.parentName,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      notes: notes ?? this.notes,
+      balance: balance ?? this.balance,
+      payByBankTransfer: payByBankTransfer ?? this.payByBankTransfer,
+      isArchived: isArchived ?? this.isArchived,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   bool get isDebtor => balance < 0;
 }
-

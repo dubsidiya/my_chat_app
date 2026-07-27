@@ -32,6 +32,7 @@ class _Platform implements IOSCallKitPlatform {
   };
   final List<String> completedAnswers = [];
   final List<String> connected = [];
+  final List<String> answeredFromApp = [];
   final List<(String, String)> ended = [];
   final List<(String, bool)> muted = [];
 
@@ -53,6 +54,12 @@ class _Platform implements IOSCallKitPlatform {
   @override
   Future<bool> reportConnected(String callUuid) async {
     connected.add(callUuid);
+    return true;
+  }
+
+  @override
+  Future<bool> answerFromApp(String callUuid) async {
+    answeredFromApp.add(callUuid);
     return true;
   }
 
@@ -81,10 +88,12 @@ class _StatusClient implements IOSCallStatusClient {
 class _Handler implements IOSCallActionHandler {
   final List<String> operations = [];
   bool answerResult = true;
+  bool adoptIncoming = true;
 
   @override
-  Future<void> applyIncoming(IOSCallKitCall call) async {
+  Future<bool> applyIncoming(IOSCallKitCall call) async {
     operations.add('incoming:${call.callId}');
+    return adoptIncoming;
   }
 
   @override
@@ -229,4 +238,122 @@ void main() {
     await service.dispose();
     await platform.controller.close();
   });
+
+  test('busy invite dismisses CallKit without applying media end', () async {
+    final platform = _Platform();
+    final call = _call();
+    final handler = _Handler()..adoptIncoming = false;
+    final service = IOSCallKitService(
+      platform: platform,
+      statusClient: _StatusClient(
+        const IOSCallStatus(active: true, state: 'ringing'),
+      ),
+      actionHandler: handler,
+      forceSupported: true,
+      observeCallServices: false,
+    );
+    await service.initialize();
+
+    platform.controller.add({
+      'eventId': 'incoming-busy',
+      'type': 'incomingReported',
+      'call': call,
+    });
+    await pumpEventQueue(times: 20);
+
+    expect(handler.operations, ['incoming:call-1']);
+    expect(platform.ended, [
+      ('123e4567-e89b-42d3-a456-426614174000', 'failed'),
+    ]);
+    expect(service.ownsIncomingUI('call-1'), isFalse);
+    await service.dispose();
+    await platform.controller.close();
+  });
+
+  test('ringing decline after local accept does not hang up', () async {
+    final platform = _Platform();
+    final call = _call();
+    final handler = _Handler();
+    final service = IOSCallKitService(
+      platform: platform,
+      statusClient: _StatusClient(
+        const IOSCallStatus(active: true, state: 'active'),
+      ),
+      actionHandler: handler,
+      forceSupported: true,
+      observeCallServices: false,
+      localActivityChecker: (activeCall) => activeCall.callId == 'call-1',
+    );
+    await service.initialize();
+
+    platform.controller.add({
+      'eventId': 'incoming-decline-race',
+      'type': 'incomingReported',
+      'call': call,
+    });
+    platform.controller.add({
+      'eventId': 'end-decline-race',
+      'type': 'endRequested',
+      'call': call,
+      'reason': 'declined',
+    });
+    await pumpEventQueue(times: 20);
+
+    expect(handler.operations, ['incoming:call-1']);
+    expect(handler.operations, isNot(contains('end:call-1:declined')));
+    expect(service.ownsIncomingUI('call-1'), isFalse);
+    await service.dispose();
+    await platform.controller.close();
+  });
+
+  test(
+    'CallKit answer after local in-app accept fulfills without ending',
+    () async {
+      final platform = _Platform();
+      final call = _call();
+      final handler = _Handler()..answerResult = false;
+      final service = IOSCallKitService(
+        platform: platform,
+        statusClient: _StatusClient(
+          const IOSCallStatus(
+            active: true,
+            state: 'ringing',
+            callId: 'call-1',
+            callUuid: '123e4567-e89b-42d3-a456-426614174000',
+            role: 'callee',
+          ),
+        ),
+        actionHandler: handler,
+        forceSupported: true,
+        observeCallServices: false,
+        localActivityChecker: (activeCall) => activeCall.callId == 'call-1',
+      );
+      await service.initialize();
+
+      platform.controller.add({
+        'eventId': 'incoming-inapp',
+        'type': 'incomingReported',
+        'call': call,
+      });
+      await pumpEventQueue(times: 10);
+
+      platform.controller.add({
+        'eventId': 'answer-after-inapp',
+        'type': 'answerRequested',
+        'call': call,
+      });
+      await pumpEventQueue(times: 20);
+
+      expect(platform.ended, isEmpty);
+      expect(platform.completedAnswers, [
+        '123e4567-e89b-42d3-a456-426614174000:true',
+      ]);
+      expect(platform.answeredFromApp, [
+        '123e4567-e89b-42d3-a456-426614174000',
+      ]);
+      expect(handler.operations, ['incoming:call-1']);
+      await service.dispose();
+      await platform.controller.close();
+    },
+  );
 }

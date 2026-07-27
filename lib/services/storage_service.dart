@@ -322,7 +322,8 @@ class StorageService {
     }
   }
 
-  /// Локально скрытые ученики (по userId). Не удаляет ученика на сервере.
+  /// Локально скрытые ученики (legacy). Новые скрытия — серверный is_archived.
+  /// Используется только для одноразовой миграции на сервер.
   static Future<Set<int>> getHiddenStudentIds(String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -341,6 +342,18 @@ class StorageService {
         print('StorageService.getHiddenStudentIds error: $e');
       }
       return <int>{};
+    }
+  }
+
+  static Future<void> clearHiddenStudentIds(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_hiddenStudentsPrefix$userId');
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('StorageService.clearHiddenStudentIds error: $e');
+      }
     }
   }
 
@@ -381,18 +394,6 @@ class StorageService {
         print('StorageService.setThemeVariantRaw error: $e');
       }
     }
-  }
-
-  static Future<void> hideStudent(String userId, int studentId) async {
-    final ids = await getHiddenStudentIds(userId);
-    ids.add(studentId);
-    await setHiddenStudentIds(userId, ids);
-  }
-
-  static Future<void> unhideStudent(String userId, int studentId) async {
-    final ids = await getHiddenStudentIds(userId);
-    ids.remove(studentId);
-    await setHiddenStudentIds(userId, ids);
   }
 
   /// Скрытые преподаватели в «Выплаты преподавателям» (локально, по userId бухгалтерии).

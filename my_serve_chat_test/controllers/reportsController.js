@@ -66,6 +66,7 @@ const resolveStudentForReportLesson = async (client, { teacherId, studentIdRaw, 
      FROM teacher_students ts
      JOIN students s ON s.id = ts.student_id
      WHERE ts.teacher_id = $1
+       AND ts.is_archived = false
        AND LOWER(TRIM(s.name)) = LOWER($2)
      ORDER BY s.id ASC
      LIMIT 2`,
@@ -86,6 +87,7 @@ const resolveStudentForReportLesson = async (client, { teacherId, studentIdRaw, 
      FROM teacher_students ts
      JOIN students s ON s.id = ts.student_id
      WHERE ts.teacher_id = $1
+       AND ts.is_archived = false
        AND LOWER(TRIM(s.name)) LIKE LOWER($2)
      ORDER BY LENGTH(TRIM(s.name)) ASC, s.id ASC
      LIMIT 2`,
@@ -450,18 +452,22 @@ export const createReport = async (req, res) => {
         return res.status(400).json({ message: err });
       }
 
-      // Получаем имена студентов (только свои)
+      // Только активные (не выпускники) — для нового дневного отчёта
       const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
       const studentsResult = await client.query(
         `SELECT s.id, s.name
          FROM teacher_students ts
          JOIN students s ON s.id = ts.student_id
-         WHERE ts.teacher_id = $1 AND s.id = ANY($2::int[])`,
+         WHERE ts.teacher_id = $1
+           AND s.id = ANY($2::int[])
+           AND ts.is_archived = false`,
         [userId, studentIds]
       );
       if (studentsResult.rows.length !== studentIds.length) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ message: 'В отчете есть ученики, которых нет в списке доступных' });
+        return res.status(400).json({
+          message: 'В отчете есть ученики, которых нет в списке доступных или они в выпускниках',
+        });
       }
 
       const idToName = new Map(studentsResult.rows.map((r) => [r.id, r.name]));

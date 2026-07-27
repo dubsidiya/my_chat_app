@@ -94,6 +94,17 @@ final class IOSCallKitBridge {
         return
       }
       result(coordinator.reportConnected(callUUID: uuid))
+    case "answerFromApp":
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let uuid = parseUUID(arguments)
+      else {
+        result(invalidArguments("answerFromApp"))
+        return
+      }
+      coordinator.answerFromApp(callUUID: uuid) { accepted in
+        result(accepted)
+      }
     case "reportEnd":
       guard
         let arguments = call.arguments as? [String: Any],
