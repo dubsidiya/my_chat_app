@@ -17,8 +17,13 @@ FLUTTER_DIR="/tmp/flutter"
 # Удаляем старую установку если есть
 rm -rf "$FLUTTER_DIR" 2>/dev/null || true
 
-# Клонируем Flutter
-git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$FLUTTER_DIR" || {
+# Pin SDK: `stable` follows the latest release. Flutter 3.47 (2026-08-12)
+# fails this app's web compile (dart:html / dart:io vs Wasm dry-run).
+# 3.44.9 is the last 3.44 patch — the line Vercel used through July 2026.
+FLUTTER_VERSION="${FLUTTER_VERSION:-3.44.9}"
+echo "Flutter SDK: $FLUTTER_VERSION"
+
+git clone https://github.com/flutter/flutter.git -b "$FLUTTER_VERSION" --depth 1 "$FLUTTER_DIR" || {
   echo "❌ Ошибка при клонировании Flutter"
   exit 1
 }
@@ -60,7 +65,9 @@ if [ -n "$API_BASE_URL" ]; then
   DART_DEFINES="--dart-define=API_BASE_URL=$API_BASE_URL"
   echo "Используется API_BASE_URL: $API_BASE_URL"
 fi
-flutter build web --release $DART_DEFINES || {
+# --no-wasm-dry-run: keep dart2js (JS) builds green; this app still imports
+# dart:html / dart:io, which dart2wasm rejects.
+flutter build web --release --no-wasm-dry-run $DART_DEFINES || {
   echo "❌ Ошибка при сборке"
   exit 1
 }
