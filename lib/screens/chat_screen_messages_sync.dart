@@ -29,19 +29,26 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       final cachedMessages = await LocalMessagesService.getMessages(
         widget.chatId,
       );
-      if (cachedMessages.isNotEmpty && mounted) {
+      final decryptedCached = await MessagesDecrypt.decryptMessages(
+        widget.chatId,
+        cachedMessages,
+      );
+      final visibleCached = decryptedCached
+          .where((m) => !BlockedUsersCache.isBlocked(m.userId))
+          .toList();
+      if (visibleCached.isNotEmpty && mounted) {
         setState(() {
           // ✅ Сохраняем временные сообщения при загрузке из кэша
-          final cachedIds = cachedMessages.map((m) => m.id).toSet();
+          final cachedIds = visibleCached.map((m) => m.id).toSet();
           final uniqueTempMessages = existingTempMessages
               .where((m) => !cachedIds.contains(m.id))
               .toList();
           // старые сверху, временные (новые) в конце
-          _messages = [...cachedMessages, ...uniqueTempMessages];
+          _messages = [...visibleCached, ...uniqueTempMessages];
           _markMessagesSeen(_messages.map((m) => m.id));
         });
         if (kDebugMode) {
-          print('✅ Загружено ${cachedMessages.length} сообщений из кэша');
+          print('✅ Загружено ${visibleCached.length} сообщений из кэша');
         }
       }
     } catch (e) {
@@ -54,13 +61,11 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         widget.chatId,
         limit: _ChatScreenState._messagesPerPage,
         offset: 0,
-        useCache:
-            false, // ✅ НЕ используем кэш при загрузке с сервера, чтобы не перезаписывать текущие сообщения
+        useCache: true,
       );
 
       if (mounted) {
         setState(() {
-          // ✅ Объединяем существующие сообщения с новыми (сохраняем временные сообщения)
           final currentTempMessages = _messages
               .where(
                 (m) =>
@@ -68,16 +73,23 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
                     m.userId == widget.userId.toString(),
               )
               .toList();
-          final newMessages = result.messages;
-
-          // ✅ Удаляем дубликаты и сохраняем временные сообщения
-          final existingIds = newMessages.map((m) => m.id).toSet();
+          final serverMessages = result.messages
+              .where((m) => !BlockedUsersCache.isBlocked(m.userId))
+              .toList();
+          final existingHistory = _messages
+              .where((m) => !m.id.startsWith('temp_'))
+              .toList();
+          final merged = mergeMessageCache(
+            existing: existingHistory,
+            incoming: serverMessages,
+            evictMissingInWindow: true,
+          );
+          final existingIds = merged.map((m) => m.id).toSet();
           final uniqueTempMessages = currentTempMessages
               .where((m) => !existingIds.contains(m.id))
               .toList();
 
-          // старые сверху, новые снизу: серверные сообщения + временные в конце
-          _messages = [...newMessages, ...uniqueTempMessages];
+          _messages = [...merged, ...uniqueTempMessages];
           _hasMoreMessages = result.hasMore;
           _oldestMessageId = result.oldestMessageId;
           _markMessagesSeen(_messages.map((m) => m.id));
@@ -132,13 +144,15 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         widget.chatId,
         limit: _ChatScreenState._messagesPerPage,
         beforeMessageId: _oldestMessageId,
-        useCache: false,
+        useCache: true,
       );
 
       if (mounted && result.messages.isNotEmpty) {
         setState(() {
-          // Добавляем старые сообщения в начало списка
-          _messages.insertAll(0, result.messages);
+          final older = result.messages
+              .where((m) => !BlockedUsersCache.isBlocked(m.userId))
+              .toList();
+          _messages.insertAll(0, older);
           // Удаляем дубликаты (на случай если сообщение уже есть)
           final seen = <String>{};
           _messages.removeWhere((msg) {

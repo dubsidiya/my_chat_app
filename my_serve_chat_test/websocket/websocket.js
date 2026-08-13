@@ -19,6 +19,10 @@ import {
   getLiveKitGroupCallCoordinator,
 } from '../services/calls/livekitGroupCallCoordinator.js';
 import { realtimeRuntime } from '../realtime/index.js';
+import {
+  getUserIdsWhoBlocked,
+  recipientIdsForChatEvent,
+} from '../utils/userBlocks.js';
 
 const clients = new Map(); // userId -> Set<ws>
 
@@ -138,19 +142,29 @@ async function ensureChatMember(chatId, userId) {
   return { ok: true, chatIdNum };
 }
 
-async function broadcastToChat(chatIdNum, payload, { excludeUserId } = {}) {
+async function broadcastToChat(
+  chatIdNum,
+  payload,
+  { excludeUserId, hideFromUsersWhoBlockedSender } = {}
+) {
   const members = await pool.query(
     'SELECT user_id FROM chat_users WHERE chat_id = $1',
     [chatIdNum]
   );
 
-  const data = JSON.stringify(payload);
-  members.rows.forEach((row) => {
-    const memberId = row.user_id?.toString();
-    if (!memberId) return;
-    if (excludeUserId && memberId === excludeUserId.toString()) return;
-    sendToUserSockets(memberId, data);
+  let usersWhoBlockedSender = [];
+  if (hideFromUsersWhoBlockedSender) {
+    const senderId = payload?.user_id ?? payload?.userId;
+    usersWhoBlockedSender = await getUserIdsWhoBlocked(pool, senderId);
+  }
+  const memberIds = recipientIdsForChatEvent(members.rows, {
+    excludeUserId,
+    usersWhoBlockedSender,
   });
+  const data = JSON.stringify(payload);
+  for (const memberId of memberIds) {
+    sendToUserSockets(memberId, data);
+  }
 }
 
 // Экспортируем функцию для получения клиентов
@@ -512,7 +526,7 @@ export function setupWebSocket(
             user_email: userEmail,
             is_typing: isTyping,
             ts: new Date().toISOString(),
-          }, { excludeUserId: userId });
+          }, { excludeUserId: userId, hideFromUsersWhoBlockedSender: true });
 
           return;
         }
@@ -624,9 +638,13 @@ export function setupWebSocket(
             [chatIdNum]
           );
 
-          members.rows.forEach(row => {
-            sendToUserSockets(row.user_id?.toString(), fullMessage);
+          const usersWhoBlockedSender = await getUserIdsWhoBlocked(pool, userId);
+          const recipientIds = recipientIdsForChatEvent(members.rows, {
+            usersWhoBlockedSender,
           });
+          for (const memberId of recipientIds) {
+            sendToUserSockets(memberId, fullMessage);
+          }
         }
       } catch (e) {
         console.error('Ошибка WebSocket:', e);

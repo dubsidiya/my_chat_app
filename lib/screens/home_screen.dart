@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/chat.dart';
 import '../models/chat_folder.dart';
 import '../services/chats_service.dart';
+import '../services/moderation_service.dart';
+import '../features/moderation/blocked_users_cache.dart';
 import '../services/auth_service.dart';
 import '../services/admin_service.dart';
 import '../services/storage_service.dart';
@@ -37,7 +39,14 @@ class HomeScreen extends StatefulWidget {
   final String? avatarUrl;
   final bool isSuperuser;
 
-  const HomeScreen({super.key, required this.userId, required this.userEmail, this.displayName, this.avatarUrl, this.isSuperuser = false});
+  const HomeScreen({
+    super.key,
+    required this.userId,
+    required this.userEmail,
+    this.displayName,
+    this.avatarUrl,
+    this.isSuperuser = false,
+  });
 
   @override
   // ignore: library_private_types_in_public_api
@@ -61,16 +70,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadChats();
     _loadFolders();
     _subscribeToNewMessages();
+    unawaited(ModerationService().getBlockedUserIds());
   }
 
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.displayName != widget.displayName) _displayName = widget.displayName;
+    if (oldWidget.displayName != widget.displayName)
+      _displayName = widget.displayName;
     if (oldWidget.avatarUrl != widget.avatarUrl) _avatarUrl = widget.avatarUrl;
   }
+
   List<String> _chatOrder = []; // порядок чатов (id), для перетаскивания
-  bool _useManualChatOrder = false; // true после ручной сортировки, сбрасывается при новом сообщении
+  bool _useManualChatOrder =
+      false; // true после ручной сортировки, сбрасывается при новом сообщении
   bool _isLoading = false;
   String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
   final TextEditingController _searchController = TextEditingController();
@@ -95,14 +108,20 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Center(
         child: Text(
           initial,
-          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
   }
 
   Widget _chatAvatarPlaceholder(String chatName) {
-    final letter = chatName.trim().isNotEmpty ? chatName.trim()[0].toUpperCase() : '?';
+    final letter = chatName.trim().isNotEmpty
+        ? chatName.trim()[0].toUpperCase()
+        : '?';
     return Container(
       width: 52,
       height: 52,
@@ -116,7 +135,11 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Center(
         child: Text(
           letter,
-          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -127,7 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final dt = DateTime.parse(iso).toLocal();
       final now = DateTime.now();
-      final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final sameDay =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
       if (sameDay) {
         return DateFormat('HH:mm').format(dt);
       }
@@ -214,13 +238,19 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isLoading
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('Отмена'),
                 ),
                 ElevatedButton(
                   onPressed: isLoading ? null : doJoin,
                   child: isLoading
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Text('Вступить'),
                 ),
               ],
@@ -289,6 +319,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (event is Map && event['chat_id'] != null && event['id'] != null) {
         final type = event['type']?.toString();
         if (type == null || type.isEmpty || type == 'message') {
+          final sender = event['user_id']?.toString();
+          if (sender != null && BlockedUsersCache.isBlocked(sender)) {
+            return;
+          }
           _useManualChatOrder = false;
           _applyIncomingMessageToChatList(Map<String, dynamic>.from(event));
           _scheduleLoadChats();
@@ -382,32 +416,34 @@ class _HomeScreenState extends State<HomeScreen> {
       // Расшифровываем превью последнего сообщения общим ключом чата.
       // displayText вернёт открытый текст как есть, расшифрует шифротекст или
       // подставит заглушку для нечитаемых legacy-сообщений.
-      chats = await Future.wait(chats.map((c) async {
-        final text = c.lastMessageText;
-        if (text == null || text.isEmpty) return c;
-        final plain = await MessagesDecrypt.displayText(c.id, text);
-        if (plain == text) return c;
-        return Chat(
-          id: c.id,
-          name: c.name,
-          isGroup: c.isGroup,
-          folderId: c.folderId,
-          folderName: c.folderName,
-          otherUserId: c.otherUserId,
-          otherUserAvatarUrl: c.otherUserAvatarUrl,
-          lastMessageId: c.lastMessageId,
-          lastMessageText: plain,
-          lastMessageType: c.lastMessageType,
-          lastMessageImageUrl: c.lastMessageImageUrl,
-          lastMessageFileUrl: c.lastMessageFileUrl,
-          lastMessageFileName: c.lastMessageFileName,
-          lastMessageFileSize: c.lastMessageFileSize,
-          lastMessageFileMime: c.lastMessageFileMime,
-          lastMessageAt: c.lastMessageAt,
-          lastSenderEmail: c.lastSenderEmail,
-          unreadCount: c.unreadCount,
-        );
-      }));
+      chats = await Future.wait(
+        chats.map((c) async {
+          final text = c.lastMessageText;
+          if (text == null || text.isEmpty) return c;
+          final plain = await MessagesDecrypt.displayText(c.id, text);
+          if (plain == text) return c;
+          return Chat(
+            id: c.id,
+            name: c.name,
+            isGroup: c.isGroup,
+            folderId: c.folderId,
+            folderName: c.folderName,
+            otherUserId: c.otherUserId,
+            otherUserAvatarUrl: c.otherUserAvatarUrl,
+            lastMessageId: c.lastMessageId,
+            lastMessageText: plain,
+            lastMessageType: c.lastMessageType,
+            lastMessageImageUrl: c.lastMessageImageUrl,
+            lastMessageFileUrl: c.lastMessageFileUrl,
+            lastMessageFileName: c.lastMessageFileName,
+            lastMessageFileSize: c.lastMessageFileSize,
+            lastMessageFileMime: c.lastMessageFileMime,
+            lastMessageAt: c.lastMessageAt,
+            lastSenderEmail: c.lastSenderEmail,
+            unreadCount: c.unreadCount,
+          );
+        }),
+      );
       final order = await StorageService.getChatOrder(widget.userId);
       if (mounted) {
         setState(() {
@@ -422,14 +458,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _loadError = e.toString().replaceFirst('Exception: ', ''));
+        setState(
+          () => _loadError = e.toString().replaceFirst('Exception: ', ''),
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Ошибка при загрузке чатов'),
-            action: SnackBarAction(
-              label: 'Повторить',
-              onPressed: _loadChats,
-            ),
+            action: SnackBarAction(label: 'Повторить', onPressed: _loadChats),
           ),
         );
       }
@@ -447,7 +482,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _folders = folders;
         // если фильтр указывает на несуществующую папку — сбрасываем
-        if (_folderFilterId != null && !_folders.any((f) => f.id == _folderFilterId)) {
+        if (_folderFilterId != null &&
+            !_folders.any((f) => f.id == _folderFilterId)) {
           _folderFilterId = null;
         }
       });
@@ -485,7 +521,8 @@ class _HomeScreenState extends State<HomeScreen> {
         if (chat != null) out.add(chat);
       }
       final orderSet = _chatOrder.toSet();
-      final rest = _chats.where((c) => !orderSet.contains(c.id)).toList()..sort(_compareChatsByActivity);
+      final rest = _chats.where((c) => !orderSet.contains(c.id)).toList()
+        ..sort(_compareChatsByActivity);
       out.addAll(rest);
       return out;
     }
@@ -496,7 +533,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _applyIncomingMessageToChatList(Map<String, dynamic> event) {
     final chatId = event['chat_id']?.toString();
     final messageId = event['id']?.toString();
-    if (chatId == null || chatId.isEmpty || messageId == null || messageId.isEmpty) return;
+    if (chatId == null ||
+        chatId.isEmpty ||
+        messageId == null ||
+        messageId.isEmpty)
+      return;
 
     final idx = _chats.indexWhere((c) => c.id == chatId);
     if (idx < 0) return;
@@ -504,7 +545,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final old = _chats[idx];
     final senderId = event['user_id']?.toString();
     final isFromOther = senderId != null && senderId != widget.userId;
-    final createdAt = event['created_at']?.toString() ?? DateTime.now().toUtc().toIso8601String();
+    final createdAt =
+        event['created_at']?.toString() ??
+        DateTime.now().toUtc().toIso8601String();
 
     final updated = Chat(
       id: old.id,
@@ -537,7 +580,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onReorderChats(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || newIndex < 0 || oldIndex >= _sortedChats.length || newIndex >= _sortedChats.length) return;
+    if (oldIndex < 0 ||
+        newIndex < 0 ||
+        oldIndex >= _sortedChats.length ||
+        newIndex >= _sortedChats.length)
+      return;
     final sorted = List<Chat>.from(_sortedChats);
     final item = sorted.removeAt(oldIndex);
     final insertIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
@@ -555,7 +602,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildChatsLoadingSkeleton(ColorScheme scheme) {
     // Немного разные ширины полосок, чтобы список выглядел «живым».
     const nameWidths = [150.0, 110.0, 170.0, 130.0, 150.0, 100.0, 160.0, 120.0];
-    const previewWidths = [220.0, 180.0, 240.0, 160.0, 200.0, 230.0, 170.0, 210.0];
+    const previewWidths = [
+      220.0,
+      180.0,
+      240.0,
+      160.0,
+      200.0,
+      230.0,
+      170.0,
+      210.0,
+    ];
     return IgnorePointer(
       child: ListView.builder(
         physics: const NeverScrollableScrollPhysics(),
@@ -568,9 +624,7 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest.withValues(alpha: 0.30),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: scheme.outline.withValues(alpha: 0.16),
-              ),
+              border: Border.all(color: scheme.outline.withValues(alpha: 0.16)),
             ),
             child: Row(
               children: [
@@ -644,9 +698,13 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Удалить чат?'),
             content: Text(
-                'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.'),
+              'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена'),
+              ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
@@ -667,7 +725,9 @@ class _HomeScreenState extends State<HomeScreen> {
           if (kDebugMode) print('Ошибка удаления чата: $e');
           messenger.showSnackBar(
             SnackBar(
-              content: Text('Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}'),
+              content: Text(
+                'Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}',
+              ),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -683,7 +743,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         StorageService.saveChatOrder(widget.userId, _chatOrder);
         messenger.showSnackBar(
-          SnackBar(content: Text('Чат "${chat.name}" удален'), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text('Чат "${chat.name}" удален'),
+            duration: const Duration(seconds: 2),
+          ),
         );
         // Фоново синхронизируем список с сервером.
         Future.microtask(_loadChats);
@@ -700,7 +763,9 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 1,
           ),
         ),
-        color: scheme.surfaceContainerHighest.withValues(alpha: unread > 0 ? 0.58 : 0.42),
+        color: scheme.surfaceContainerHighest.withValues(
+          alpha: unread > 0 ? 0.58 : 0.42,
+        ),
         clipBehavior: Clip.antiAlias,
         shadowColor: AppColors.primary.withValues(alpha: 0.07),
         child: InkWell(
@@ -717,11 +782,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      gradient: (chat.isGroup || chat.otherUserAvatarUrl == null || chat.otherUserAvatarUrl!.trim().isEmpty)
+                      gradient:
+                          (chat.isGroup ||
+                              chat.otherUserAvatarUrl == null ||
+                              chat.otherUserAvatarUrl!.trim().isEmpty)
                           ? LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [AppColors.primary, AppColors.primaryDeep],
+                              colors: [
+                                AppColors.primary,
+                                AppColors.primaryDeep,
+                              ],
                             )
                           : null,
                       borderRadius: BorderRadius.circular(14),
@@ -729,17 +800,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: chat.isGroup
-                          ? const Icon(Icons.group_rounded, color: Colors.white, size: 22)
-                          : (chat.otherUserAvatarUrl != null && chat.otherUserAvatarUrl!.trim().isNotEmpty)
-                              ? CachedNetworkImage(
-                                  imageUrl: chat.otherUserAvatarUrl!,
-                                  width: 52,
-                                  height: 52,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, __) => _chatAvatarPlaceholder(chat.name),
-                                  errorWidget: (_, __, ___) => _chatAvatarPlaceholder(chat.name),
-                                )
-                              : _chatAvatarPlaceholder(chat.name),
+                          ? const Icon(
+                              Icons.group_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            )
+                          : (chat.otherUserAvatarUrl != null &&
+                                chat.otherUserAvatarUrl!.trim().isNotEmpty)
+                          ? CachedNetworkImage(
+                              imageUrl: chat.otherUserAvatarUrl!,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) =>
+                                  _chatAvatarPlaceholder(chat.name),
+                              errorWidget: (_, __, ___) =>
+                                  _chatAvatarPlaceholder(chat.name),
+                            )
+                          : _chatAvatarPlaceholder(chat.name),
                     ),
                   ),
                 ),
@@ -753,7 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         chat.name,
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w700,
+                          fontWeight: unread > 0
+                              ? FontWeight.w800
+                              : FontWeight.w700,
                           color: scheme.onSurface,
                           letterSpacing: 0.1,
                         ),
@@ -781,7 +861,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 13,
                           color: scheme.onSurface.withValues(alpha: 0.65),
-                          fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: unread > 0
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ],
@@ -796,15 +878,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       lastTime,
                       style: TextStyle(
                         fontSize: 12,
-                        color: unread > 0 ? scheme.primary : scheme.onSurface.withValues(alpha: 0.50),
-                        fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                        color: unread > 0
+                            ? scheme.primary
+                            : scheme.onSurface.withValues(alpha: 0.50),
+                        fontWeight: unread > 0
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 8),
                     if (unread > 0)
                       Container(
                         constraints: const BoxConstraints(minWidth: 22),
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 4,
+                        ),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -813,7 +902,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(999),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.primaryGlow.withValues(alpha: 0.45),
+                              color: AppColors.primaryGlow.withValues(
+                                alpha: 0.45,
+                              ),
                               blurRadius: 10,
                               spreadRadius: -2,
                               offset: const Offset(0, 2),
@@ -868,17 +959,36 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
               ListTile(
-                title: Text(chat.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: Text(
+                  chat.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: const Text('Переместить в папку'),
               ),
               const Divider(height: 1),
-              _folderTile(ctx, scheme, 'Без папки', '__none__', selectedId.isEmpty),
+              _folderTile(
+                ctx,
+                scheme,
+                'Без папки',
+                '__none__',
+                selectedId.isEmpty,
+              ),
               for (final f in _folders)
                 _folderTile(ctx, scheme, f.name, f.id, f.id == selectedId),
               const Divider(height: 1),
               ListTile(
-                leading: Icon(Icons.create_new_folder_rounded, color: _folders.length >= 5 ? scheme.onSurface.withValues(alpha: 0.35) : scheme.primary),
-                title: Text(_folders.length >= 5 ? 'Создать папку (лимит 5)' : 'Создать папку'),
+                leading: Icon(
+                  Icons.create_new_folder_rounded,
+                  color: _folders.length >= 5
+                      ? scheme.onSurface.withValues(alpha: 0.35)
+                      : scheme.primary,
+                ),
+                title: Text(
+                  _folders.length >= 5
+                      ? 'Создать папку (лимит 5)'
+                      : 'Создать папку',
+                ),
                 onTap: _folders.length >= 5
                     ? null
                     : () async {
@@ -886,7 +996,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
               ),
               ListTile(
-                leading: Icon(Icons.settings_rounded, color: scheme.onSurface.withValues(alpha: 0.7)),
+                leading: Icon(
+                  Icons.settings_rounded,
+                  color: scheme.onSurface.withValues(alpha: 0.7),
+                ),
                 title: const Text('Управление папками'),
                 onTap: () async {
                   Navigator.pop(ctx, '__manage__');
@@ -912,7 +1025,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final folderId = result == '__none__' ? null : result;
-    final folderName = folderId == null ? null : _folders.firstWhere((f) => f.id == folderId, orElse: () => ChatFolder(id: folderId, name: '')).name;
+    final folderName = folderId == null
+        ? null
+        : _folders
+              .firstWhere(
+                (f) => f.id == folderId,
+                orElse: () => ChatFolder(id: folderId, name: ''),
+              )
+              .name;
 
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -920,28 +1040,30 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _chats = _chats
-            .map((c) => c.id == chat.id
-                ? Chat(
-                    id: c.id,
-                    name: c.name,
-                    isGroup: c.isGroup,
-                    folderId: folderId,
-                    folderName: folderName,
-                    otherUserId: c.otherUserId,
-                    otherUserAvatarUrl: c.otherUserAvatarUrl,
-                    lastMessageId: c.lastMessageId,
-                    lastMessageText: c.lastMessageText,
-                    lastMessageType: c.lastMessageType,
-                    lastMessageImageUrl: c.lastMessageImageUrl,
-                    lastMessageFileUrl: c.lastMessageFileUrl,
-                    lastMessageFileName: c.lastMessageFileName,
-                    lastMessageFileSize: c.lastMessageFileSize,
-                    lastMessageFileMime: c.lastMessageFileMime,
-                    lastMessageAt: c.lastMessageAt,
-                    lastSenderEmail: c.lastSenderEmail,
-                    unreadCount: c.unreadCount,
-                  )
-                : c)
+            .map(
+              (c) => c.id == chat.id
+                  ? Chat(
+                      id: c.id,
+                      name: c.name,
+                      isGroup: c.isGroup,
+                      folderId: folderId,
+                      folderName: folderName,
+                      otherUserId: c.otherUserId,
+                      otherUserAvatarUrl: c.otherUserAvatarUrl,
+                      lastMessageId: c.lastMessageId,
+                      lastMessageText: c.lastMessageText,
+                      lastMessageType: c.lastMessageType,
+                      lastMessageImageUrl: c.lastMessageImageUrl,
+                      lastMessageFileUrl: c.lastMessageFileUrl,
+                      lastMessageFileName: c.lastMessageFileName,
+                      lastMessageFileSize: c.lastMessageFileSize,
+                      lastMessageFileMime: c.lastMessageFileMime,
+                      lastMessageAt: c.lastMessageAt,
+                      lastSenderEmail: c.lastSenderEmail,
+                      unreadCount: c.unreadCount,
+                    )
+                  : c,
+            )
             .toList();
       });
       messenger.showSnackBar(const SnackBar(content: Text('Папка обновлена')));
@@ -952,11 +1074,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _folderTile(BuildContext ctx, ColorScheme scheme, String label, String? value, bool selected) {
+  Widget _folderTile(
+    BuildContext ctx,
+    ColorScheme scheme,
+    String label,
+    String? value,
+    bool selected,
+  ) {
     return ListTile(
       leading: Icon(
         selected ? Icons.check_circle_rounded : Icons.folder_rounded,
-        color: selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7),
+        color: selected
+            ? scheme.primary
+            : scheme.onSurface.withValues(alpha: 0.7),
       ),
       title: Text(label),
       onTap: () => Navigator.pop(ctx, value),
@@ -977,7 +1107,10 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: const InputDecoration(hintText: 'Название папки'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('Создать'),
@@ -994,7 +1127,9 @@ class _HomeScreenState extends State<HomeScreen> {
       await _loadFolders();
       messenger.showSnackBar(const SnackBar(content: Text('Папка создана')));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
     }
   }
 
@@ -1050,10 +1185,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                 context: ctx,
                                 builder: (dctx) => AlertDialog(
                                   title: const Text('Переименовать папку'),
-                                  content: TextField(controller: c, autofocus: true),
+                                  content: TextField(
+                                    controller: c,
+                                    autofocus: true,
+                                  ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
-                                    FilledButton(onPressed: () => Navigator.pop(dctx, c.text), child: const Text('Сохранить')),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dctx),
+                                      child: const Text('Отмена'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dctx, c.text),
+                                      child: const Text('Сохранить'),
+                                    ),
                                   ],
                                 ),
                               );
@@ -1064,26 +1209,45 @@ class _HomeScreenState extends State<HomeScreen> {
                                 await _loadFolders();
                               } catch (e) {
                                 messenger.showSnackBar(
-                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                                  SnackBar(
+                                    content: Text(
+                                      e.toString().replaceFirst(
+                                        'Exception: ',
+                                        '',
+                                      ),
+                                    ),
+                                  ),
                                 );
                               }
                             },
                           ),
                           IconButton(
                             tooltip: 'Удалить',
-                            icon: Icon(Icons.delete_rounded, color: scheme.error),
+                            icon: Icon(
+                              Icons.delete_rounded,
+                              color: scheme.error,
+                            ),
                             onPressed: () async {
                               final messenger = ScaffoldMessenger.of(ctx);
                               final ok = await showDialog<bool>(
                                 context: ctx,
                                 builder: (dctx) => AlertDialog(
                                   title: const Text('Удалить папку?'),
-                                  content: Text('Папка "${f.name}" будет удалена. Чаты останутся, просто без папки.'),
+                                  content: Text(
+                                    'Папка "${f.name}" будет удалена. Чаты останутся, просто без папки.',
+                                  ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Отмена')),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dctx, false),
+                                      child: const Text('Отмена'),
+                                    ),
                                     FilledButton(
-                                      onPressed: () => Navigator.pop(dctx, true),
-                                      style: FilledButton.styleFrom(backgroundColor: scheme.error),
+                                      onPressed: () =>
+                                          Navigator.pop(dctx, true),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: scheme.error,
+                                      ),
                                       child: const Text('Удалить'),
                                     ),
                                   ],
@@ -1093,10 +1257,18 @@ class _HomeScreenState extends State<HomeScreen> {
                               try {
                                 await _chatsService.deleteFolder(f.id);
                                 await _loadFolders();
-                                if (_folderFilterId == f.id && mounted) setState(() => _folderFilterId = null);
+                                if (_folderFilterId == f.id && mounted)
+                                  setState(() => _folderFilterId = null);
                               } catch (e) {
                                 messenger.showSnackBar(
-                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                                  SnackBar(
+                                    content: Text(
+                                      e.toString().replaceFirst(
+                                        'Exception: ',
+                                        '',
+                                      ),
+                                    ),
+                                  ),
                                 );
                               }
                             },
@@ -1110,12 +1282,16 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: FilledButton.icon(
-                  onPressed: _folders.length >= 5 ? null : () async {
-                    Navigator.pop(ctx);
-                    await _createFolderFlow();
-                  },
+                  onPressed: _folders.length >= 5
+                      ? null
+                      : () async {
+                          Navigator.pop(ctx);
+                          await _createFolderFlow();
+                        },
                   icon: const Icon(Icons.create_new_folder_rounded),
-                  label: Text(_folders.length >= 5 ? 'Лимит 5' : 'Создать папку'),
+                  label: Text(
+                    _folders.length >= 5 ? 'Лимит 5' : 'Создать папку',
+                  ),
                 ),
               ),
             ],
@@ -1131,10 +1307,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (otherId.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          userId: otherId,
-          fallbackLabel: chat.name,
-        ),
+        builder: (_) =>
+            UserProfileScreen(userId: otherId, fallbackLabel: chat.name),
       ),
     );
   }
@@ -1183,6 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> {
               await ChatKeyService.clearAll();
               await ChatImageCache.clearAll();
               await LocalMessagesService.clearAll();
+              BlockedUsersCache.clear();
               await StorageService.clearUserData();
               // Возвращаемся на экран входа
               if (mounted) {
@@ -1192,9 +1367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Выйти'),
           ),
         ],
@@ -1219,23 +1392,51 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _menuTile(ctx, scheme, Icons.person_rounded, AppColors.primaryGlow, 'Профиль', () async {
-                    Navigator.pop(ctx);
-                    await _openProfile();
-                  }),
-                  _menuTile(ctx, scheme, Icons.school_rounded, AppColors.primary, 'Учет занятий', () async {
-                    Navigator.pop(ctx);
-                    await _openAccounting();
-                  }),
-                  _menuTile(ctx, scheme, Icons.description_rounded, AppColors.primaryGlow, 'Отчеты', () async {
-                    Navigator.pop(ctx);
-                    await _openReports();
-                  }),
+                  _menuTile(
+                    ctx,
+                    scheme,
+                    Icons.person_rounded,
+                    AppColors.primaryGlow,
+                    'Профиль',
+                    () async {
+                      Navigator.pop(ctx);
+                      await _openProfile();
+                    },
+                  ),
+                  _menuTile(
+                    ctx,
+                    scheme,
+                    Icons.school_rounded,
+                    AppColors.primary,
+                    'Учет занятий',
+                    () async {
+                      Navigator.pop(ctx);
+                      await _openAccounting();
+                    },
+                  ),
+                  _menuTile(
+                    ctx,
+                    scheme,
+                    Icons.description_rounded,
+                    AppColors.primaryGlow,
+                    'Отчеты',
+                    () async {
+                      Navigator.pop(ctx);
+                      await _openReports();
+                    },
+                  ),
                   const Divider(height: 24),
-                  _menuTile(ctx, scheme, Icons.logout_rounded, AppColors.primaryGlow, 'Выйти', () {
-                    Navigator.pop(ctx);
-                    _logout();
-                  }),
+                  _menuTile(
+                    ctx,
+                    scheme,
+                    Icons.logout_rounded,
+                    AppColors.primaryGlow,
+                    'Выйти',
+                    () {
+                      Navigator.pop(ctx);
+                      _logout();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -1245,7 +1446,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _menuTile(BuildContext context, ColorScheme scheme, IconData icon, Color color, String label, VoidCallback onTap) {
+  Widget _menuTile(
+    BuildContext context,
+    ColorScheme scheme,
+    IconData icon,
+    Color color,
+    String label,
+    VoidCallback onTap,
+  ) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
@@ -1255,7 +1463,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Icon(icon, color: color, size: 20),
       ),
-      title: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface)),
+      title: Text(
+        label,
+        style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
+      ),
       onTap: onTap,
     );
   }
@@ -1277,7 +1488,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final oldPassword = result['oldPassword'];
     final newPassword = result['newPassword'];
 
-    if (oldPassword == null || newPassword == null || oldPassword.isEmpty || newPassword.isEmpty) {
+    if (oldPassword == null ||
+        newPassword == null ||
+        oldPassword.isEmpty ||
+        newPassword.isEmpty) {
       return;
     }
 
@@ -1286,15 +1500,17 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
     }
 
     try {
-      await _authService.changePassword(widget.userId, oldPassword, newPassword);
-      
+      await _authService.changePassword(
+        widget.userId,
+        oldPassword,
+        newPassword,
+      );
+
       // Закрываем индикатор загрузки
       if (mounted) {
         Navigator.pop(context);
@@ -1361,7 +1577,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   'Введите логин пользователя и новый пароль. Только администратор может сбросить пароль.',
-                  style: TextStyle(fontSize: 14, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -1369,7 +1588,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: InputDecoration(
                     labelText: 'Логин пользователя',
                     prefixIcon: const Icon(Icons.person_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   autofocus: true,
                 ),
@@ -1379,7 +1600,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: InputDecoration(
                     labelText: 'Новый пароль',
                     prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   obscureText: true,
                 ),
@@ -1389,7 +1612,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: InputDecoration(
                     labelText: 'Повторите пароль',
                     prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   obscureText: true,
                 ),
@@ -1409,7 +1634,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (username.isEmpty) return;
                 if (password.length < 6) return;
                 if (password != confirm) return;
-                Navigator.pop(ctx, {'username': username, 'newPassword': password});
+                Navigator.pop(ctx, {
+                  'username': username,
+                  'newPassword': password,
+                });
               },
               child: const Text('Сбросить пароль'),
             ),
@@ -1419,7 +1647,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (result == null || !mounted) return;
     try {
-      await AdminService().resetUserPassword(result['username']!, result['newPassword']!);
+      await AdminService().resetUserPassword(
+        result['username']!,
+        result['newPassword']!,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1436,7 +1667,11 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: ${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(
+          content: Text(
+            'Ошибка: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
       );
     }
   }
@@ -1471,9 +1706,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Да, удалить'),
           ),
         ],
@@ -1487,9 +1720,7 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -1503,6 +1734,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await ChatKeyService.clearAll();
       await ChatImageCache.clearAll();
       await LocalMessagesService.clearAll();
+      BlockedUsersCache.clear();
       // Закрываем индикатор загрузки
       if (mounted) {
         Navigator.pop(context);
@@ -1537,7 +1769,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при удалении аккаунта: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+              'Ошибка при удалении аккаунта: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
             duration: const Duration(seconds: 3),
             backgroundColor: Colors.red,
           ),
@@ -1572,7 +1806,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await _ensurePrivateAccess() || !mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => StudentsScreen(userId: widget.userId, userEmail: widget.userEmail)),
+      MaterialPageRoute(
+        builder: (_) =>
+            StudentsScreen(userId: widget.userId, userEmail: widget.userEmail),
+      ),
     );
   }
 
@@ -1580,7 +1817,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await _ensurePrivateAccess() || !mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ReportsChatScreen(userId: widget.userId, userEmail: widget.userEmail, isSuperuser: widget.isSuperuser)),
+      MaterialPageRoute(
+        builder: (_) => ReportsChatScreen(
+          userId: widget.userId,
+          userEmail: widget.userEmail,
+          isSuperuser: widget.isSuperuser,
+        ),
+      ),
     );
   }
 
@@ -1614,8 +1857,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final filteredChats = _filteredChats;
 
-    final displayLabel = (_displayName ?? widget.userEmail).trim().isEmpty ? widget.userEmail : (_displayName ?? widget.userEmail);
-    final initial = displayLabel.isNotEmpty ? displayLabel[0].toUpperCase() : '?';
+    final displayLabel = (_displayName ?? widget.userEmail).trim().isEmpty
+        ? widget.userEmail
+        : (_displayName ?? widget.userEmail);
+    final initial = displayLabel.isNotEmpty
+        ? displayLabel[0].toUpperCase()
+        : '?';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -1648,7 +1895,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.backgroundDark, width: 1.5),
+                    border: Border.all(
+                      color: AppColors.backgroundDark,
+                      width: 1.5,
+                    ),
                   ),
                   child: ClipOval(
                     child: _avatarUrl != null && _avatarUrl!.isNotEmpty
@@ -1656,7 +1906,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             imageUrl: _avatarUrl!,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => _avatarInitial(initial),
-                            errorWidget: (_, __, ___) => _avatarInitial(initial),
+                            errorWidget: (_, __, ___) =>
+                                _avatarInitial(initial),
                           )
                         : _avatarInitial(initial),
                   ),
@@ -1669,18 +1920,24 @@ class _HomeScreenState extends State<HomeScreen> {
           displayLabel,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w700,
-              ),
+            color: scheme.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
+            icon: Icon(
+              Icons.refresh_rounded,
+              color: scheme.onSurface.withValues(alpha: 0.8),
+            ),
             onPressed: _loadChats,
             tooltip: 'Обновить',
           ),
           IconButton(
-            icon: Icon(Icons.vpn_key_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
+            icon: Icon(
+              Icons.vpn_key_rounded,
+              color: scheme.onSurface.withValues(alpha: 0.8),
+            ),
             onPressed: _joinByInviteDialog,
             tooltip: 'Вступить по коду',
           ),
@@ -1690,7 +1947,10 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Создать чат',
           ),
           IconButton(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface.withValues(alpha: 0.8)),
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: scheme.onSurface.withValues(alpha: 0.8),
+            ),
             onPressed: () => _showMainMenu(context, scheme),
             tooltip: 'Меню',
           ),
@@ -1701,237 +1961,335 @@ class _HomeScreenState extends State<HomeScreen> {
         width: double.infinity,
         child: AnimatedHomeBody(
           child: SafeArea(
-          child: _isLoading
-          ? _buildChatsLoadingSkeleton(scheme)
-          : _loadError != null && _chats.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.wifi_off_rounded, size: 64, color: AppColors.warningDark),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Не удалось загрузить чаты',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: scheme.onSurface,
+            child: _isLoading
+                ? _buildChatsLoadingSkeleton(scheme)
+                : _loadError != null && _chats.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.wifi_off_rounded,
+                            size: 64,
+                            color: AppColors.warningDark,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _loadError!,
-                          style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
-                          textAlign: TextAlign.center,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: _loadChats,
-                          icon: const Icon(Icons.refresh_rounded, size: 20),
-                          label: const Text('Повторить'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-          : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.glassOverlay(scheme),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: scheme.primary.withValues(alpha: 0.14),
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.06),
-                              blurRadius: 18,
-                              offset: const Offset(0, 6),
+                          const SizedBox(height: 24),
+                          Text(
+                            'Не удалось загрузить чаты',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: scheme.onSurface,
                             ),
-                          ],
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: _onSearchChanged,
-                          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w500),
-                          decoration: InputDecoration(
-                            hintText: 'Поиск по чатам',
-                            hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.48)),
-                            prefixIcon: Icon(Icons.search_rounded, color: scheme.primary.withValues(alpha: 0.75), size: 22),
-                            suffixIcon: _query.isEmpty
-                                ? null
-                                : IconButton(
-                                    icon: Icon(Icons.close_rounded, color: scheme.onSurface.withValues(alpha: 0.70)),
-                                    onPressed: () {
-                                      _searchDebounce?.cancel();
-                                      setState(() {
-                                        _query = '';
-                                        _searchController.clear();
-                                        _invalidateFilteredChatsCache();
-                                      });
-                                    },
-                                  ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            textAlign: TextAlign.center,
                           ),
-                        ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _loadError!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: _loadChats,
+                            icon: const Icon(Icons.refresh_rounded, size: 20),
+                            label: const Text('Повторить'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _folderChip(scheme, 'Все', null, Icons.all_inbox_rounded),
-                            for (final f in _folders) ...[
-                              const SizedBox(width: 8),
-                              _folderChip(scheme, f.name, f.id, Icons.folder_rounded),
+                  )
+                : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.glassOverlay(scheme),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: scheme.primary.withValues(alpha: 0.14),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(
+                                  alpha: 0.06,
+                                ),
+                                blurRadius: 18,
+                                offset: const Offset(0, 6),
+                              ),
                             ],
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _folders.length >= 5 ? null : _createFolderFlow,
-                              icon: const Icon(Icons.add_circle_rounded),
-                              tooltip: _folders.length >= 5 ? 'Лимит 5 папок' : 'Создать папку',
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: _onSearchChanged,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w500,
                             ),
-                            IconButton(
-                              onPressed: _manageFoldersFlow,
-                              icon: const Icon(Icons.tune_rounded),
-                              tooltip: 'Управление папками',
+                            decoration: InputDecoration(
+                              hintText: 'Поиск по чатам',
+                              hintStyle: TextStyle(
+                                color: scheme.onSurface.withValues(alpha: 0.48),
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: scheme.primary.withValues(alpha: 0.75),
+                                size: 22,
+                              ),
+                              suffixIcon: _query.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      icon: Icon(
+                                        Icons.close_rounded,
+                                        color: scheme.onSurface.withValues(
+                                          alpha: 0.70,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        _searchDebounce?.cancel();
+                                        setState(() {
+                                          _query = '';
+                                          _searchController.clear();
+                                          _invalidateFilteredChatsCache();
+                                        });
+                                      },
+                                    ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: filteredChats.isEmpty
-                          ? RefreshIndicator(
-                              onRefresh: _loadChats,
-                              color: AppColors.primary,
-                              child: SingleChildScrollView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                child: SizedBox(
-                                  height: MediaQuery.of(context).size.height * 0.5,
-                                  child: Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(24),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (_chats.isEmpty) ...[
-                                            const GlowEmptyState(
-                                              icon: Icons.chat_bubble_outline_rounded,
-                                              title: 'Нет чатов',
-                                              subtitle: 'Создайте чат кнопкой + или обновите список',
-                                            ),
-                                            const SizedBox(height: 24),
-                                            OutlinedButton.icon(
-                                              onPressed: _showCreateChatDialog,
-                                              icon: const Icon(Icons.add_rounded, size: 20),
-                                              label: const Text('Создать чат'),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppColors.primary,
-                                                side: BorderSide(
-                                                  color: AppColors.primary.withValues(alpha: 0.45),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _folderChip(
+                                scheme,
+                                'Все',
+                                null,
+                                Icons.all_inbox_rounded,
+                              ),
+                              for (final f in _folders) ...[
+                                const SizedBox(width: 8),
+                                _folderChip(
+                                  scheme,
+                                  f.name,
+                                  f.id,
+                                  Icons.folder_rounded,
+                                ),
+                              ],
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: _folders.length >= 5
+                                    ? null
+                                    : _createFolderFlow,
+                                icon: const Icon(Icons.add_circle_rounded),
+                                tooltip: _folders.length >= 5
+                                    ? 'Лимит 5 папок'
+                                    : 'Создать папку',
+                              ),
+                              IconButton(
+                                onPressed: _manageFoldersFlow,
+                                icon: const Icon(Icons.tune_rounded),
+                                tooltip: 'Управление папками',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: filteredChats.isEmpty
+                            ? RefreshIndicator(
+                                onRefresh: _loadChats,
+                                color: AppColors.primary,
+                                child: SingleChildScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height *
+                                        0.5,
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(24),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (_chats.isEmpty) ...[
+                                              const GlowEmptyState(
+                                                icon: Icons
+                                                    .chat_bubble_outline_rounded,
+                                                title: 'Нет чатов',
+                                                subtitle:
+                                                    'Создайте чат кнопкой + или обновите список',
+                                              ),
+                                              const SizedBox(height: 24),
+                                              OutlinedButton.icon(
+                                                onPressed:
+                                                    _showCreateChatDialog,
+                                                icon: const Icon(
+                                                  Icons.add_rounded,
+                                                  size: 20,
+                                                ),
+                                                label: const Text(
+                                                  'Создать чат',
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      AppColors.primary,
+                                                  side: BorderSide(
+                                                    color: AppColors.primary
+                                                        .withValues(
+                                                          alpha: 0.45,
+                                                        ),
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                          ] else ...[
-                                            const GlowEmptyState(
-                                              icon: Icons.search_off_rounded,
-                                              title: 'По запросу ничего не найдено',
-                                              subtitle: 'Очистите поиск, чтобы увидеть все чаты',
-                                            ),
-                                            const SizedBox(height: 20),
-                                            OutlinedButton.icon(
-                                              onPressed: () {
-                                                _searchDebounce?.cancel();
-                                                setState(() {
-                                                  _query = '';
-                                                  _searchController.clear();
-                                                  _invalidateFilteredChatsCache();
-                                                });
-                                              },
-                                              icon: const Icon(Icons.clear_all_rounded, size: 20),
-                                              label: const Text('Показать все чаты'),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppColors.primary,
-                                                side: BorderSide(
-                                                  color: AppColors.primary.withValues(alpha: 0.45),
+                                            ] else ...[
+                                              const GlowEmptyState(
+                                                icon: Icons.search_off_rounded,
+                                                title:
+                                                    'По запросу ничего не найдено',
+                                                subtitle:
+                                                    'Очистите поиск, чтобы увидеть все чаты',
+                                              ),
+                                              const SizedBox(height: 20),
+                                              OutlinedButton.icon(
+                                                onPressed: () {
+                                                  _searchDebounce?.cancel();
+                                                  setState(() {
+                                                    _query = '';
+                                                    _searchController.clear();
+                                                    _invalidateFilteredChatsCache();
+                                                  });
+                                                },
+                                                icon: const Icon(
+                                                  Icons.clear_all_rounded,
+                                                  size: 20,
+                                                ),
+                                                label: const Text(
+                                                  'Показать все чаты',
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      AppColors.primary,
+                                                  side: BorderSide(
+                                                    color: AppColors.primary
+                                                        .withValues(
+                                                          alpha: 0.45,
+                                                        ),
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                            ],
                                           ],
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _loadChats,
+                                color: AppColors.primary,
+                                child: _query.isEmpty
+                                    ? ReorderableListView.builder(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        buildDefaultDragHandles: true,
+                                        onReorder: _onReorderChats,
+                                        itemCount: filteredChats.length,
+                                        cacheExtent: 500,
+                                        itemBuilder: (context, index) {
+                                          final chat = filteredChats[index];
+                                          // ReorderableListView требует key на ВЕРХНЕМ уровне элемента
+                                          return RepaintBoundary(
+                                            key: ValueKey(
+                                              'chat_tile_${chat.id}',
+                                            ),
+                                            child: _buildChatTile(
+                                              context,
+                                              chat,
+                                            ),
+                                          );
+                                        },
+                                      )
+                                    : ListView.builder(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        itemCount: filteredChats.length,
+                                        cacheExtent: 500,
+                                        itemBuilder: (context, index) {
+                                          final chat = filteredChats[index];
+                                          return RepaintBoundary(
+                                            key: ValueKey(
+                                              'chat_tile_${chat.id}',
+                                            ),
+                                            child: _buildChatTile(
+                                              context,
+                                              chat,
+                                            ),
+                                          );
+                                        },
+                                      ),
                               ),
-                            )
-                          : RefreshIndicator(
-                              onRefresh: _loadChats,
-                              color: AppColors.primary,
-                              child: _query.isEmpty
-                                  ? ReorderableListView.builder(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      buildDefaultDragHandles: true,
-                                      onReorder: _onReorderChats,
-                                      itemCount: filteredChats.length,
-                                      cacheExtent: 500,
-                                      itemBuilder: (context, index) {
-                                        final chat = filteredChats[index];
-                                        // ReorderableListView требует key на ВЕРХНЕМ уровне элемента
-                                        return RepaintBoundary(
-                                          key: ValueKey('chat_tile_${chat.id}'),
-                                          child: _buildChatTile(context, chat),
-                                        );
-                                      },
-                                    )
-                                  : ListView.builder(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      itemCount: filteredChats.length,
-                                      cacheExtent: 500,
-                                      itemBuilder: (context, index) {
-                                        final chat = filteredChats[index];
-                                        return RepaintBoundary(
-                                          key: ValueKey('chat_tile_${chat.id}'),
-                                          child: _buildChatTile(context, chat),
-                                        );
-                                      },
-                                    ),
-                            ),
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),
     );
   }
 
-  Widget _folderChip(ColorScheme scheme, String label, String? value, IconData icon) {
-    final selected = (_folderFilterId == value) || (_folderFilterId == null && value == null);
+  Widget _folderChip(
+    ColorScheme scheme,
+    String label,
+    String? value,
+    IconData icon,
+  ) {
+    final selected =
+        (_folderFilterId == value) ||
+        (_folderFilterId == null && value == null);
     return ChoiceChip(
       selected: selected,
       label: Text(label),
-      avatar: Icon(icon, size: 18, color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.75)),
+      avatar: Icon(
+        icon,
+        size: 18,
+        color: selected
+            ? scheme.onPrimary
+            : scheme.onSurface.withValues(alpha: 0.75),
+      ),
       selectedColor: scheme.primary,
       backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
       labelStyle: TextStyle(
-        color: selected ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.9),
+        color: selected
+            ? scheme.onPrimary
+            : scheme.onSurface.withValues(alpha: 0.9),
         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
       ),
       onSelected: (_) => setState(() {

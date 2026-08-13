@@ -20,8 +20,19 @@ extension _ChatScreenWebSocketPart on _ChatScreenState {
           if (data == null) return;
           if (kDebugMode) print('WebSocket received: $data');
 
-          // Проверяем тип сообщения
           final messageType = data['type'];
+          final senderId = data['user_id']?.toString();
+          if (senderId != null &&
+              senderId != widget.userId.toString() &&
+              BlockedUsersCache.isBlocked(senderId) &&
+              (messageType == null ||
+                  messageType == 'message' ||
+                  messageType == 'message_edited' ||
+                  messageType == 'typing' ||
+                  messageType == 'reaction_added' ||
+                  messageType == 'reaction_removed')) {
+            return;
+          }
 
           // ✅ Переподключение WebSocket — заново подписываемся на чат
           if (messageType == '_ws_reconnected') {

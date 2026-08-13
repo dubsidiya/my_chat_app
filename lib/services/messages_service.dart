@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -19,11 +20,14 @@ export 'messages/messages_types.dart';
 class MessagesService {
   final String baseUrl = ApiConfig.baseUrl;
 
-  static Uri connectivityProbeUri(String baseUrl) => Uri.parse('$baseUrl/healthz');
+  static Uri connectivityProbeUri(String baseUrl) =>
+      Uri.parse('$baseUrl/healthz');
 
   /// Расшифровывает одно сообщение (включая replyToMessage) для отображения в UI.
-  static Future<Message> decryptMessageForChat(String chatId, Message raw) async =>
-      MessagesDecrypt.decryptMessageForChat(chatId, raw);
+  static Future<Message> decryptMessageForChat(
+    String chatId,
+    Message raw,
+  ) async => MessagesDecrypt.decryptMessageForChat(chatId, raw);
 
   /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
   Future<bool> _isOnline() async {
@@ -38,9 +42,7 @@ class MessagesService {
 
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     } else {
@@ -53,7 +55,11 @@ class MessagesService {
   }
 
   Future<List<Message>> fetchMessages(String chatId) async {
-    return fetchMessagesPaginated(chatId, limit: 50, offset: 0).then((result) => result.messages);
+    return fetchMessagesPaginated(
+      chatId,
+      limit: 50,
+      offset: 0,
+    ).then((result) => result.messages);
   }
 
   Future<MessagesPaginationResult> fetchMessagesPaginated(
@@ -65,7 +71,7 @@ class MessagesService {
   }) async {
     // ✅ Проверяем подключение к интернету (без сторонних плагинов — для соответствия Apple privacy manifest)
     final isOnline = await _isOnline();
-    
+
     // ✅ Если есть кэш и мы офлайн, возвращаем из кэша (расшифровываем — в кэше хранится ciphertext)
     if (!isOnline && useCache) {
       if (kDebugMode) {
@@ -73,14 +79,17 @@ class MessagesService {
         print('MessagesService: offline, using cache');
       }
       final cachedMessages = await LocalMessagesService.getMessages(chatId);
-      final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+      final decrypted = await MessagesDecrypt.decryptMessages(
+        chatId,
+        cachedMessages,
+      );
       return buildPaginatedCacheResult(
         decrypted,
         limit: limit,
         beforeMessageId: beforeMessageId,
       );
     }
-    
+
     try {
       final uri = Uri.parse('$baseUrl/messages/$chatId').replace(
         queryParameters: {
@@ -96,13 +105,15 @@ class MessagesService {
       if (response.statusCode == 200) {
         try {
           final dynamic decodedData = jsonDecode(response.body);
-          
+
           // Поддержка старого формата (без пагинации) для обратной совместимости
-          if (decodedData is Map<String, dynamic> && decodedData.containsKey('messages')) {
+          if (decodedData is Map<String, dynamic> &&
+              decodedData.containsKey('messages')) {
             // Новый формат с пагинацией
             final messagesData = decodedData['messages'] as List<dynamic>;
-            final paginationData = decodedData['pagination'] as Map<String, dynamic>;
-            
+            final paginationData =
+                decodedData['pagination'] as Map<String, dynamic>;
+
             final List<Message> messages = [];
             for (var msgJson in messagesData) {
               try {
@@ -114,12 +125,13 @@ class MessagesService {
                 }
               }
             }
-            if (useCache && isOnline) {
-              Future.delayed(const Duration(milliseconds: 100), () {
-                LocalMessagesService.saveMessages(chatId, messages);
-              });
+            if (useCache && isOnline && messages.isNotEmpty) {
+              unawaited(LocalMessagesService.saveMessages(chatId, messages));
             }
-            final decrypted = await MessagesDecrypt.decryptMessages(chatId, messages);
+            final decrypted = await MessagesDecrypt.decryptMessages(
+              chatId,
+              messages,
+            );
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: paginationData['hasMore'] ?? false,
@@ -140,10 +152,13 @@ class MessagesService {
                 }
               }
             }
-            if (useCache && isOnline) {
-              await LocalMessagesService.saveMessages(chatId, messages);
+            if (useCache && isOnline && messages.isNotEmpty) {
+              unawaited(LocalMessagesService.saveMessages(chatId, messages));
             }
-            final decrypted = await MessagesDecrypt.decryptMessages(chatId, messages);
+            final decrypted = await MessagesDecrypt.decryptMessages(
+              chatId,
+              messages,
+            );
             return MessagesPaginationResult(
               messages: decrypted,
               hasMore: false,
@@ -171,7 +186,10 @@ class MessagesService {
           }
           final cachedMessages = await LocalMessagesService.getMessages(chatId);
           if (cachedMessages.isNotEmpty) {
-            final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+            final decrypted = await MessagesDecrypt.decryptMessages(
+              chatId,
+              cachedMessages,
+            );
             return buildPaginatedCacheResult(
               decrypted,
               limit: limit,
@@ -179,12 +197,15 @@ class MessagesService {
             );
           }
         }
-        throw Exception('Ошибка при получении сообщений: ${response.statusCode}');
+        throw Exception(
+          'Ошибка при получении сообщений: ${response.statusCode}',
+        );
       }
     } catch (e) {
       // ✅ Если ошибка сети, пытаемся загрузить из кэша
       final es = e.toString();
-      final looksNet = es.contains('SocketException') ||
+      final looksNet =
+          es.contains('SocketException') ||
           es.contains('Failed host lookup') ||
           es.contains('TimeoutException');
       if (useCache && looksNet) {
@@ -194,7 +215,10 @@ class MessagesService {
         }
         final cachedMessages = await LocalMessagesService.getMessages(chatId);
         if (cachedMessages.isNotEmpty) {
-          final decrypted = await MessagesDecrypt.decryptMessages(chatId, cachedMessages);
+          final decrypted = await MessagesDecrypt.decryptMessages(
+            chatId,
+            cachedMessages,
+          );
           return buildPaginatedCacheResult(
             decrypted,
             limit: limit,
@@ -207,9 +231,9 @@ class MessagesService {
   }
 
   Future<Message?> sendMessage(
-    String chatId, 
+    String chatId,
     String content, {
-    String? imageUrl, 
+    String? imageUrl,
     String? imageStorageKey,
     String? originalImageUrl,
     String? originalImageStorageKey,
@@ -284,15 +308,16 @@ class MessagesService {
           errorMessage = response.body;
         }
       } catch (e) {
-        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+        errorMessage =
+            'Ошибка сервера (${response.statusCode}): ${response.body}';
       }
       throw Exception(errorMessage);
     }
-    
+
     // ✅ После успешной отправки обновляем кэш
     try {
       final responseData = jsonDecode(response.body);
-      
+
       final rawMessage = Message.fromJson(responseData);
       await LocalMessagesService.addMessage(chatId, rawMessage);
       final sentMessage = await MessagesDecrypt.decryptOne(chatId, rawMessage);
@@ -327,11 +352,17 @@ class MessagesService {
     List<int>? originalToSend = originalBytes;
     final String sendFileName = fileName;
     if (chatId != null) {
-      final enc = await ChatKeyService.encryptBytes(chatId, Uint8List.fromList(imageBytes));
+      final enc = await ChatKeyService.encryptBytes(
+        chatId,
+        Uint8List.fromList(imageBytes),
+      );
       if (enc != null) {
         bytesToSend = enc;
         if (originalBytes != null) {
-          final encOrig = await ChatKeyService.encryptBytes(chatId, Uint8List.fromList(originalBytes));
+          final encOrig = await ChatKeyService.encryptBytes(
+            chatId,
+            Uint8List.fromList(originalBytes),
+          );
           if (encOrig != null) originalToSend = encOrig;
         }
       }
@@ -344,15 +375,25 @@ class MessagesService {
       );
       request.headers['Authorization'] = 'Bearer $token';
       request.files.add(
-        http.MultipartFile.fromBytes('image', bytesToSend, filename: sendFileName),
+        http.MultipartFile.fromBytes(
+          'image',
+          bytesToSend,
+          filename: sendFileName,
+        ),
       );
       if (originalToSend != null) {
         request.files.add(
-          http.MultipartFile.fromBytes('original', originalToSend, filename: 'original-$sendFileName'),
+          http.MultipartFile.fromBytes(
+            'original',
+            originalToSend,
+            filename: 'original-$sendFileName',
+          ),
         );
         if (kDebugMode) {
           // ignore: avoid_print
-          print('Uploading original image: size: ${originalToSend.length} bytes');
+          print(
+            'Uploading original image: size: ${originalToSend.length} bytes',
+          );
         }
       }
 
@@ -374,7 +415,9 @@ class MessagesService {
 
       if (response.statusCode == 200) {
         if (response.body.trim().startsWith('<')) {
-          throw Exception('Сервер вернул HTML вместо JSON. Возможно, эндпоинт не найден или произошла ошибка на сервере.');
+          throw Exception(
+            'Сервер вернул HTML вместо JSON. Возможно, эндпоинт не найден или произошла ошибка на сервере.',
+          );
         }
 
         try {
@@ -388,13 +431,11 @@ class MessagesService {
               imageUrl: data['image_url'] as String,
               imageStorageKey: data['image_storage_key']?.toString(),
               originalImageUrl: data['original_image_url'] as String?,
-              originalImageStorageKey: data['original_image_storage_key']?.toString(),
+              originalImageStorageKey: data['original_image_storage_key']
+                  ?.toString(),
             );
             // Локальные plaintext-байты — чтобы в ленте не качать/не расшифровывать снова.
-            ChatImageCache.warm(
-              urls.imageUrl,
-              Uint8List.fromList(imageBytes),
-            );
+            ChatImageCache.warm(urls.imageUrl, Uint8List.fromList(imageBytes));
             return urls;
           }
           throw Exception('Сервер не вернул image_url');
@@ -402,13 +443,15 @@ class MessagesService {
           throw Exception('Ошибка парсинга ответа сервера: $e');
         }
       } else {
-        String errorMessage = 'Не удалось загрузить изображение (${response.statusCode})';
+        String errorMessage =
+            'Не удалось загрузить изображение (${response.statusCode})';
         try {
           if (response.body.trim().startsWith('{')) {
             final error = jsonDecode(response.body);
             errorMessage = error['message'] ?? errorMessage;
           } else {
-            errorMessage = 'Сервер вернул ошибку: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}';
+            errorMessage =
+                'Сервер вернул ошибку: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}';
           }
         } catch (_) {
           errorMessage = 'Ошибка сервера: ${response.statusCode}';
@@ -423,13 +466,26 @@ class MessagesService {
     }
   }
 
-  Future<String> uploadImage(List<int> imageBytes, String fileName, {List<int>? originalBytes, String? chatId}) async {
-    final u = await uploadImageWithUrls(imageBytes, fileName, originalBytes: originalBytes, chatId: chatId);
+  Future<String> uploadImage(
+    List<int> imageBytes,
+    String fileName, {
+    List<int>? originalBytes,
+    String? chatId,
+  }) async {
+    final u = await uploadImageWithUrls(
+      imageBytes,
+      fileName,
+      originalBytes: originalBytes,
+      chatId: chatId,
+    );
     return u.imageUrl;
   }
 
   // Загрузка файла (attachment)
-  Future<Map<String, dynamic>> uploadFile(List<int> fileBytes, String fileName) async {
+  Future<Map<String, dynamic>> uploadFile(
+    List<int> fileBytes,
+    String fileName,
+  ) async {
     final token = await StorageService.getToken();
     if (token == null) {
       throw Exception('Токен не найден');
@@ -444,11 +500,7 @@ class MessagesService {
       request.headers['Authorization'] = 'Bearer $token';
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          fileBytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
       );
 
       final response = await timedMultipart(request);
@@ -461,7 +513,8 @@ class MessagesService {
         return data;
       }
 
-      String errorMessage = 'Не удалось загрузить файл (${response.statusCode})';
+      String errorMessage =
+          'Не удалось загрузить файл (${response.statusCode})';
       try {
         if (response.body.trim().startsWith('{')) {
           final error = jsonDecode(response.body);
@@ -485,7 +538,7 @@ class MessagesService {
       final url = Uri.parse(
         '$baseUrl/messages/message/$messageId?scope=${Uri.encodeQueryComponent(scope)}',
       );
-      
+
       final headers = await _getAuthHeaders();
       final response = await timedDelete(
         url,
@@ -553,7 +606,12 @@ class MessagesService {
   }
 
   // ✅ Редактирование сообщения. [chatId] нужен для шифрования нового текста.
-  Future<void> editMessage(String messageId, {String? content, String? imageUrl, String? chatId}) async {
+  Future<void> editMessage(
+    String messageId, {
+    String? content,
+    String? imageUrl,
+    String? chatId,
+  }) async {
     final headers = await _getAuthHeaders();
     final body = <String, dynamic>{};
     if (content != null) {
@@ -600,9 +658,12 @@ class MessagesService {
     }
 
     final hasImage =
-        sourceMessage.imageUrl != null && sourceMessage.imageUrl!.trim().isNotEmpty;
-    final hasMedia = hasImage ||
-        (sourceMessage.fileUrl != null && sourceMessage.fileUrl!.trim().isNotEmpty);
+        sourceMessage.imageUrl != null &&
+        sourceMessage.imageUrl!.trim().isNotEmpty;
+    final hasMedia =
+        hasImage ||
+        (sourceMessage.fileUrl != null &&
+            sourceMessage.fileUrl!.trim().isNotEmpty);
 
     if (!hasMedia && plain.trim().isEmpty) {
       throw Exception('Не удалось переслать: пустой текст (и нет вложения)');
@@ -700,7 +761,9 @@ class MessagesService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       final messagesData = data['messages'] as List<dynamic>;
-      final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      final list = messagesData
+          .map((json) => Message.fromJson(json as Map<String, dynamic>))
+          .toList();
       return MessagesDecrypt.decryptMessages(chatId, list);
     } else {
       throw Exception('Ошибка при получении закрепленных сообщений');
@@ -708,7 +771,12 @@ class MessagesService {
   }
 
   // 🔎 Поиск сообщений в чате. Сервер отдаёт последние сообщения с content; фильтруем по query на клиенте.
-  Future<List<Map<String, dynamic>>> searchMessages(String chatId, String query, {int limit = 20, String? before}) async {
+  Future<List<Map<String, dynamic>>> searchMessages(
+    String chatId,
+    String query, {
+    int limit = 20,
+    String? before,
+  }) async {
     final headers = await _getAuthHeaders();
     final uri = Uri.parse('$baseUrl/messages/chat/$chatId/search').replace(
       queryParameters: {
@@ -722,7 +790,8 @@ class MessagesService {
       throw Exception('Ошибка поиска: ${response.statusCode}');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final list = (data['results'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final list = (data['results'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
     final queryTrimmed = query.trim();
     final queryLower = queryTrimmed.toLowerCase();
     final int takeLimit = limit > 0 ? limit : 30;
@@ -732,10 +801,12 @@ class MessagesService {
       String plain = rawContent;
       if (ChatKeyService.isEncryptedText(rawContent)) {
         final decrypted = await ChatKeyService.decryptText(chatId, rawContent);
-        if (decrypted == null) continue; // нечитаемый legacy-шифротекст — пропускаем
+        if (decrypted == null)
+          continue; // нечитаемый legacy-шифротекст — пропускаем
         plain = decrypted;
       }
-      if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower)) continue;
+      if (queryTrimmed.isNotEmpty && !plain.toLowerCase().contains(queryLower))
+        continue;
       out.add(searchResultToSnippet(item, plain, queryLower));
       if (out.length >= takeLimit) break;
     }
@@ -743,36 +814,47 @@ class MessagesService {
   }
 
   // 🎯 Получить окно сообщений вокруг messageId
-  Future<List<Message>> fetchMessagesAround(String chatId, String messageId, {int limit = 50}) async {
+  Future<List<Message>> fetchMessagesAround(
+    String chatId,
+    String messageId, {
+    int limit = 50,
+  }) async {
     final headers = await _getAuthHeaders();
-    final uri = Uri.parse('$baseUrl/messages/chat/$chatId/around/$messageId').replace(
-      queryParameters: {
-        'limit': limit.toString(),
-      },
-    );
+    final uri = Uri.parse(
+      '$baseUrl/messages/chat/$chatId/around/$messageId',
+    ).replace(queryParameters: {'limit': limit.toString()});
     final response = await timedGet(uri, headers: headers);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final messagesData = (data['messages'] as List<dynamic>? ?? []);
-      final list = messagesData.map((json) => Message.fromJson(json as Map<String, dynamic>)).toList();
+      final list = messagesData
+          .map((json) => Message.fromJson(json as Map<String, dynamic>))
+          .toList();
       return MessagesDecrypt.decryptMessages(chatId, list);
     }
     throw Exception('Ошибка загрузки контекста: ${response.statusCode}');
   }
 
-  Future<List<ChatMediaItem>> fetchChatMedia(String chatId, {String? beforeMessageId, int limit = 60}) async {
+  Future<List<ChatMediaItem>> fetchChatMedia(
+    String chatId, {
+    String? beforeMessageId,
+    int limit = 60,
+  }) async {
     final headers = await _getAuthHeaders();
     final uri = Uri.parse('$baseUrl/messages/chat/$chatId/media').replace(
       queryParameters: {
         'limit': limit.toString(),
-        if (beforeMessageId != null && beforeMessageId.trim().isNotEmpty) 'before': beforeMessageId.trim(),
+        if (beforeMessageId != null && beforeMessageId.trim().isNotEmpty)
+          'before': beforeMessageId.trim(),
       },
     );
     final response = await timedGet(uri, headers: headers);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List<dynamic>? ?? []);
-      return items.map((e) => ChatMediaItem.fromJson(e as Map<String, dynamic>)).toList();
+      return items
+          .map((e) => ChatMediaItem.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
     String msg = 'Ошибка загрузки медиа';
     try {
@@ -787,11 +869,9 @@ class MessagesService {
     final headers = await _getAuthHeaders();
     // ✅ Убеждаемся, что Content-Type установлен
     headers['Content-Type'] = 'application/json';
-    
-    final body = jsonEncode({
-      'reaction': reaction,
-    });
-    
+
+    final body = jsonEncode({'reaction': reaction});
+
     final response = await timedPost(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
@@ -808,7 +888,8 @@ class MessagesService {
           errorMessage = response.body;
         }
       } catch (e) {
-        errorMessage = 'Ошибка сервера (${response.statusCode}): ${response.body}';
+        errorMessage =
+            'Ошибка сервера (${response.statusCode}): ${response.body}';
       }
       throw Exception(errorMessage);
     }
@@ -819,13 +900,11 @@ class MessagesService {
     final headers = await _getAuthHeaders();
     // ✅ Убеждаемся, что Content-Type установлен
     headers['Content-Type'] = 'application/json';
-    
+
     final response = await timedDelete(
       Uri.parse('$baseUrl/messages/message/$messageId/reaction'),
       headers: headers,
-      body: jsonEncode({
-        'reaction': reaction,
-      }),
+      body: jsonEncode({'reaction': reaction}),
     );
 
     if (response.statusCode != 200) {
@@ -843,7 +922,7 @@ class MessagesService {
   Future<void> clearChat(String chatId, String userId) async {
     try {
       final url = Uri.parse('$baseUrl/messages/$chatId?userId=$userId');
-      
+
       final headers = await _getAuthHeaders();
       final response = await timedDelete(
         url,

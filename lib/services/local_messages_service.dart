@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:hive_flutter/hive_flutter.dart';
+import '../features/chat/message_cache_merge.dart';
 import '../models/message.dart';
 
 /// ✅ Сервис для локального кэширования сообщений
@@ -7,7 +8,31 @@ import '../models/message.dart';
 class LocalMessagesService {
   static const String _boxName = 'messages_cache';
   static Box? _box;
-  static String _pendingUploadsKey(String chatId) => 'chat_${chatId}_pending_upload_drafts';
+  static final Map<String, Future<void>> _chatLocks = {};
+  static String _pendingUploadsKey(String chatId) =>
+      'chat_${chatId}_pending_upload_drafts';
+
+  static Future<T> _withChatLock<T>(
+    String chatId,
+    Future<T> Function() action,
+  ) {
+    final previous = _chatLocks[chatId] ?? Future<void>.value();
+    final result = previous.catchError((_) {}).then((_) => action());
+    _chatLocks[chatId] = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  static Future<void> _putChatMessages(
+    String chatId,
+    List<Message> messages,
+  ) async {
+    if (_box == null) await init();
+    await _box!.put('chat_$chatId', messages.map((m) => m.toJson()).toList());
+    await _box!.put(
+      'chat_${chatId}_timestamp',
+      DateTime.now().toIso8601String(),
+    );
+  }
 
   /// Инициализация Hive и открытие бокса
   static Future<void> init() async {
@@ -19,20 +44,30 @@ class LocalMessagesService {
     }
   }
 
-  /// Сохранение сообщений чата в кэш
-  static Future<void> saveMessages(String chatId, List<Message> messages) async {
+  /// Сохранение страницы сообщений: merge по id, без затирания более старой истории.
+  static Future<void> saveMessages(
+    String chatId,
+    List<Message> messages,
+  ) async {
     if (_box == null) await init();
-    
+    if (messages.isEmpty) return;
+
     try {
-      // Сохраняем сообщения по ключу chatId (сохраняем ВСЕ поля)
-      final messagesJson = messages.map((m) => m.toJson()).toList();
-      
-      await _box!.put('chat_$chatId', messagesJson);
-      await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('Cache saved: ${messages.length} messages for $chatId');
-      }
+      await _withChatLock(chatId, () async {
+        final existing = await getMessages(chatId);
+        final merged = mergeMessageCache(
+          existing: existing,
+          incoming: messages,
+          evictMissingInWindow: true,
+        );
+        await _putChatMessages(chatId, merged);
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print(
+            'Cache merged: +${messages.length} → ${merged.length} messages for $chatId',
+          );
+        }
+      });
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -44,7 +79,7 @@ class LocalMessagesService {
   /// Получение сообщений чата из кэша
   static Future<List<Message>> getMessages(String chatId) async {
     if (_box == null) await init();
-    
+
     try {
       final messagesJson = _box!.get('chat_$chatId') as List?;
       if (messagesJson == null) {
@@ -54,7 +89,7 @@ class LocalMessagesService {
         }
         return [];
       }
-      
+
       // ✅ Преобразуем Map<dynamic, dynamic> в Map<String, dynamic>
       final messages = messagesJson.map((json) {
         if (json is Map) {
@@ -84,56 +119,23 @@ class LocalMessagesService {
   /// Добавление одного сообщения в кэш
   static Future<void> addMessage(String chatId, Message message) async {
     if (_box == null) await init();
-    
+
     try {
-      // ✅ Получаем сообщения напрямую из бокса, без преобразования в Message
-      final messagesJson = _box!.get('chat_$chatId') as List?;
-      List<Map<String, dynamic>> messages = [];
-      
-      if (messagesJson != null) {
-        // Преобразуем в список Map, исключая временные сообщения
-        messages = messagesJson.map((json) {
-          if (json is Map) {
-            final Map<String, dynamic> messageMap = {};
-            json.forEach((key, value) {
-              messageMap[key.toString()] = value;
-            });
-            return messageMap;
-          }
-          return json as Map<String, dynamic>;
-        }).where((m) {
-          final id = m['id']?.toString() ?? '';
-          return !id.startsWith('temp_');
-        }).toList();
-      }
-      
-      // Проверяем, нет ли уже такого сообщения
-      final existingIndex = messages.indexWhere((m) => m['id']?.toString() == message.id);
-      if (existingIndex != -1) {
-        // Обновляем существующее сообщение (сохраняем ВСЕ поля через toJson)
-        messages[existingIndex] = message.toJson();
-      } else {
-        // Добавляем новое сообщение (сохраняем ВСЕ поля через toJson)
-        messages.add(message.toJson());
-      }
-      
-      // Сортируем по времени
-      messages.sort((a, b) {
-        try {
-          final aTime = DateTime.parse(a['created_at']?.toString() ?? '');
-          final bTime = DateTime.parse(b['created_at']?.toString() ?? '');
-          return aTime.compareTo(bTime);
-        } catch (e) {
-          return 0;
+      await _withChatLock(chatId, () async {
+        var existing = await getMessages(chatId);
+        if (!message.id.startsWith('temp_')) {
+          existing = existing.where((m) => !m.id.startsWith('temp_')).toList();
+        }
+        final merged = mergeMessageCache(
+          existing: existing,
+          incoming: [message],
+        );
+        await _putChatMessages(chatId, merged);
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Cache: message ${message.id} added/updated');
         }
       });
-      
-      await _box!.put('chat_$chatId', messages);
-      await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('Cache: message ${message.id} added/updated');
-      }
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -145,15 +147,17 @@ class LocalMessagesService {
   /// Удаление сообщения из кэша
   static Future<void> removeMessage(String chatId, String messageId) async {
     if (_box == null) await init();
-    
+
     try {
-      final messages = await getMessages(chatId);
-      messages.removeWhere((m) => m.id == messageId);
-      await saveMessages(chatId, messages);
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('Cache: message $messageId removed');
-      }
+      await _withChatLock(chatId, () async {
+        final messages = await getMessages(chatId);
+        messages.removeWhere((m) => m.id == messageId);
+        await _putChatMessages(chatId, messages);
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Cache: message $messageId removed');
+        }
+      });
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -162,46 +166,46 @@ class LocalMessagesService {
     }
   }
 
+  /// Убрать из кэша все сообщения отправителя (после блокировки).
+  static Future<void> removeMessagesFromUser(
+    String chatId,
+    String userId,
+  ) async {
+    if (_box == null) await init();
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+
+    try {
+      await _withChatLock(chatId, () async {
+        final messages = await getMessages(chatId);
+        messages.removeWhere((m) => m.userId == uid);
+        await _putChatMessages(chatId, messages);
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('Cache remove-by-user error: $e');
+      }
+    }
+  }
+
   /// Обновление сообщения в кэше
   static Future<void> updateMessage(String chatId, Message message) async {
     if (_box == null) await init();
-    
+
     try {
-      final messagesJson = _box!.get('chat_$chatId') as List?;
-      if (messagesJson == null) {
-        // Если кэша нет, просто добавляем сообщение
-        await addMessage(chatId, message);
-        return;
-      }
-      
-      // Преобразуем в список Map
-      final List<Map<String, dynamic>> messages = messagesJson.map((json) {
-        if (json is Map) {
-          final Map<String, dynamic> messageMap = {};
-          json.forEach((key, value) {
-            messageMap[key.toString()] = value;
-          });
-          return messageMap;
-        }
-        return json as Map<String, dynamic>;
-      }).toList();
-      
-      // Находим и обновляем сообщение
-      final index = messages.indexWhere((m) => m['id']?.toString() == message.id);
-      if (index != -1) {
-        // Обновляем сообщение напрямую в JSON (сохраняем ВСЕ поля через toJson)
-        messages[index] = message.toJson();
-        
-        await _box!.put('chat_$chatId', messages);
-        await _box!.put('chat_${chatId}_timestamp', DateTime.now().toIso8601String());
+      await _withChatLock(chatId, () async {
+        final existing = await getMessages(chatId);
+        final merged = mergeMessageCache(
+          existing: existing,
+          incoming: [message],
+        );
+        await _putChatMessages(chatId, merged);
         if (kDebugMode) {
           // ignore: avoid_print
           print('Cache: message ${message.id} updated');
         }
-      } else {
-        // Если сообщение не найдено, добавляем его
-        await addMessage(chatId, message);
-      }
+      });
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -213,15 +217,17 @@ class LocalMessagesService {
   /// Очистка кэша чата
   static Future<void> clearChat(String chatId) async {
     if (_box == null) await init();
-    
+
     try {
-      await _box!.delete('chat_$chatId');
-      await _box!.delete('chat_${chatId}_timestamp');
-      await _box!.delete(_pendingUploadsKey(chatId));
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('Cache cleared for $chatId');
-      }
+      await _withChatLock(chatId, () async {
+        await _box!.delete('chat_$chatId');
+        await _box!.delete('chat_${chatId}_timestamp');
+        await _box!.delete(_pendingUploadsKey(chatId));
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Cache cleared for $chatId');
+        }
+      });
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -233,7 +239,7 @@ class LocalMessagesService {
   /// Получение времени последнего обновления кэша
   static Future<DateTime?> getLastUpdateTime(String chatId) async {
     if (_box == null) await init();
-    
+
     try {
       final timestamp = _box!.get('chat_${chatId}_timestamp') as String?;
       if (timestamp != null) {
@@ -251,7 +257,7 @@ class LocalMessagesService {
   /// Очистка всего кэша
   static Future<void> clearAll() async {
     if (_box == null) await init();
-    
+
     try {
       await _box!.clear();
       if (kDebugMode) {
@@ -269,7 +275,7 @@ class LocalMessagesService {
   /// Получение размера кэша (приблизительно)
   static Future<int> getCacheSize() async {
     if (_box == null) await init();
-    
+
     try {
       return _box!.length;
     } catch (e) {
@@ -302,7 +308,9 @@ class LocalMessagesService {
   }
 
   /// Получить все черновики отложенной отправки для чата.
-  static Future<Map<String, Map<String, dynamic>>> getPendingUploadDrafts(String chatId) async {
+  static Future<Map<String, Map<String, dynamic>>> getPendingUploadDrafts(
+    String chatId,
+  ) async {
     if (_box == null) await init();
     try {
       final key = _pendingUploadsKey(chatId);
@@ -327,7 +335,10 @@ class LocalMessagesService {
   }
 
   /// Удалить один черновик отложенной отправки.
-  static Future<void> removePendingUploadDraft(String chatId, String tempId) async {
+  static Future<void> removePendingUploadDraft(
+    String chatId,
+    String tempId,
+  ) async {
     if (_box == null) await init();
     try {
       final key = _pendingUploadsKey(chatId);
@@ -362,4 +373,3 @@ class LocalMessagesService {
     }
   }
 }
-

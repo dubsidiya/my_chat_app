@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../config/api_config.dart';
+import '../features/moderation/blocked_users_cache.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
 
@@ -35,17 +36,24 @@ class ModerationService {
       final body = jsonDecode(response.body);
       throw Exception(body['message'] ?? 'Ошибка блокировки');
     }
+    BlockedUsersCache.add(userId);
   }
 
   Future<List<String>> getBlockedUserIds() async {
+    final versionAtRequestStart = BlockedUsersCache.mutationVersion;
     final response = await timedGet(
       Uri.parse('$baseUrl/moderation/blocked-ids'),
       headers: await _headers(),
     );
-    if (response.statusCode != 200) return [];
+    if (response.statusCode != 200) return BlockedUsersCache.snapshot();
     final data = jsonDecode(response.body);
     final list = data['blocked_ids'];
-    if (list is! List) return [];
-    return list.map((e) => e.toString()).toList();
+    if (list is! List) return BlockedUsersCache.snapshot();
+    final ids = list.map((e) => e.toString()).toList();
+    BlockedUsersCache.applyServerList(
+      ids,
+      versionAtRequestStart: versionAtRequestStart,
+    );
+    return BlockedUsersCache.snapshot();
   }
 }

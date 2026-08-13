@@ -19,6 +19,7 @@ import 'package:http/http.dart' show ClientException;
 
 import '../models/message.dart';
 import '../services/messages_service.dart';
+import '../services/messages/messages_decrypt.dart';
 import '../services/chats_service.dart';
 import '../services/moderation_service.dart';
 import '../services/local_messages_service.dart'; // ✅ Импорт сервиса кэширования
@@ -52,6 +53,8 @@ import '../widgets/chat_fullscreen_image_viewer.dart';
 import '../widgets/chat_voice_bubble.dart';
 import '../features/chat/chat_scroll_policy.dart';
 import '../features/chat/chat_sync_policy.dart';
+import '../features/chat/message_cache_merge.dart';
+import '../features/moderation/blocked_users_cache.dart';
 
 part 'chat_screen_models.dart';
 part 'chat_screen_export.dart';
@@ -584,6 +587,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _initWebSocket();
 
     _loadMessages();
+    unawaited(_moderationService.getBlockedUserIds());
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
 
@@ -615,12 +619,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         widget.chatId,
         limit: 25,
         offset: 0,
-        useCache: false,
+        useCache: true,
       );
       if (!mounted) return;
       final existingIds = _messages.map((m) => m.id).toSet();
       final toAdd = <Message>[];
       for (final msg in result.messages) {
+        if (BlockedUsersCache.isBlocked(msg.userId)) continue;
         if (!existingIds.contains(msg.id)) {
           toAdd.add(msg);
           existingIds.add(msg.id);
@@ -901,8 +906,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ],
               ),
               child: widget.isGroup
-                  ? const Icon(Icons.group_rounded,
-                      color: Colors.white, size: 20)
+                  ? const Icon(
+                      Icons.group_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    )
                   : Center(
                       child: Text(
                         _chatTitle.trim().isNotEmpty
@@ -948,13 +956,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           _buildChatStatusLine(),
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight:
-                                isTyping ? FontWeight.w600 : FontWeight.w400,
+                            fontWeight: isTyping
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                             color: isTyping
                                 ? AppColors.cyberAccent
                                 : onlineOthers > 0
-                                    ? AppColors.online.withValues(alpha: 0.95)
-                                    : scheme.onSurface.withValues(alpha: 0.65),
+                                ? AppColors.online.withValues(alpha: 0.95)
+                                : scheme.onSurface.withValues(alpha: 0.65),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1224,11 +1233,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   Padding(
                                     padding: EdgeInsets.only(top: pinnedHeight),
                                     child: RefreshIndicator(
-                                        onRefresh: () async {
-                                          await _loadMessages();
-                                        },
-                                        color: _accent1,
-                                        child: ListView.builder(
+                                      onRefresh: () async {
+                                        await _loadMessages();
+                                      },
+                                      color: _accent1,
+                                      child: ListView.builder(
                                         key: ValueKey(
                                           'messages_list_${widget.chatId}',
                                         ),

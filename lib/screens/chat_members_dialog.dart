@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_colors.dart';
+import '../features/moderation/blocked_users_cache.dart';
 import '../services/chats_service.dart';
+import '../services/local_messages_service.dart';
 import '../services/moderation_service.dart';
 import 'user_profile_screen.dart';
 
@@ -12,7 +15,8 @@ class ChatMembersDialog extends StatefulWidget {
   final String chatId;
   final ChatsService chatsService;
 
-  const ChatMembersDialog({super.key, 
+  const ChatMembersDialog({
+    super.key,
     required this.members,
     required this.currentUserId,
     required this.chatId,
@@ -33,7 +37,11 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
   bool _isLoading = false;
   final ModerationService _moderationService = ModerationService();
 
-  Widget _memberAvatar(Map<String, dynamic> member, String displayName, bool isCreator) {
+  Widget _memberAvatar(
+    Map<String, dynamic> member,
+    String displayName,
+    bool isCreator,
+  ) {
     final avatarUrl = (member['avatar_url'] ?? member['avatarUrl'])?.toString();
     final hasAvatar = avatarUrl != null && avatarUrl.trim().isNotEmpty;
     Widget placeholder = Container(
@@ -48,7 +56,11 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
       child: Center(
         child: Text(
           displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -71,10 +83,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     if (id.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          userId: id,
-          fallbackLabel: label,
-        ),
+        builder: (_) => UserProfileScreen(userId: id, fallbackLabel: label),
       ),
     );
   }
@@ -107,9 +116,9 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
       (m) => m['id'] == userId,
       orElse: () => {},
     );
-    
+
     final isCreator = member['is_creator'] == true || member['is_creator'] == 1;
-    
+
     // Не позволяем удалить создателя чата
     if (isCreator) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -125,18 +134,20 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha:0.12),
+                color: Colors.red.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 22),
+              child: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 12),
             const Expanded(
@@ -153,7 +164,10 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               'Отмена',
-              style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           ElevatedButton(
@@ -180,14 +194,14 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
 
     try {
       await widget.chatsService.removeMemberFromChat(widget.chatId, userId);
-      
+
       if (mounted) {
         // Удаляем участника из списка
         setState(() {
           _members.removeWhere((m) => m['id'] == userId);
           _isLoading = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Участник "$userEmail" удален из чата'),
@@ -201,10 +215,12 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         setState(() {
           _isLoading = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при удалении участника: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+              'Ошибка при удалении участника: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -219,7 +235,10 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
         title: const Text('Заблокировать пользователя?'),
         content: Text('Сообщения от $displayName будут скрыты.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
@@ -231,16 +250,26 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     if (confirm != true || !mounted) return;
     try {
       await _moderationService.blockUser(userId);
+      BlockedUsersCache.add(userId);
+      unawaited(
+        LocalMessagesService.removeMessagesFromUser(widget.chatId, userId),
+      );
       if (mounted) {
         setState(() => _members.removeWhere((m) => m['id'] == userId));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(duration: Duration(seconds: 3), content: Text('Пользователь заблокирован. Его сообщения скрыты.')),
+          const SnackBar(
+            duration: Duration(seconds: 3),
+            content: Text('Пользователь заблокирован. Его сообщения скрыты.'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+          ),
         );
       }
     }
@@ -258,9 +287,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     final canRemoveMembers = myRole == 'owner' || myRole == 'admin';
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -273,13 +300,17 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: _accent1.withValues(alpha:0.25),
+                  color: _accent1.withValues(alpha: 0.25),
                   blurRadius: 10,
                   offset: const Offset(0, 6),
                 ),
               ],
             ),
-            child: const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
+            child: const Icon(
+              Icons.groups_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -295,15 +326,12 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: _accent1.withValues(alpha:0.12),
+              color: _accent1.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Text(
               '${_members.length}',
-              style: TextStyle(
-                color: _accent1,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: _accent1, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -329,8 +357,8 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  _accent1.withValues(alpha:0.15),
-                                  _accent3.withValues(alpha:0.15),
+                                  _accent1.withValues(alpha: 0.15),
+                                  _accent3.withValues(alpha: 0.15),
                                 ],
                               ),
                               shape: BoxShape.circle,
@@ -338,7 +366,7 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             child: Icon(
                               Icons.group_off_rounded,
                               size: 42,
-                              color: _accent1.withValues(alpha:0.7),
+                              color: _accent1.withValues(alpha: 0.7),
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -360,8 +388,14 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                         final member = _members[index];
                         final userId = member['id'] as String;
                         final email = member['email'] as String;
-                        final displayName = (member['displayName'] ?? member['display_name'] ?? email).toString();
-                        final isCreator = member['is_creator'] == true || member['is_creator'] == 1;
+                        final displayName =
+                            (member['displayName'] ??
+                                    member['display_name'] ??
+                                    email)
+                                .toString();
+                        final isCreator =
+                            member['is_creator'] == true ||
+                            member['is_creator'] == 1;
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -369,31 +403,45 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                             color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: scheme.outline.withValues(alpha:isDark ? 0.18 : 0.12),
+                              color: scheme.outline.withValues(
+                                alpha: isDark ? 0.18 : 0.12,
+                              ),
                               width: 1.2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha:isDark ? 0.25 : 0.06),
+                                color: Colors.black.withValues(
+                                  alpha: isDark ? 0.25 : 0.06,
+                                ),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               ),
                             ],
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
                             child: Row(
                               children: [
                                 GestureDetector(
-                                  onTap: () => _openUserProfile(userId, displayName),
-                                  child: _memberAvatar(member, displayName, isCreator),
+                                  onTap: () =>
+                                      _openUserProfile(userId, displayName),
+                                  child: _memberAvatar(
+                                    member,
+                                    displayName,
+                                    isCreator,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: GestureDetector(
-                                    onTap: () => _openUserProfile(userId, displayName),
+                                    onTap: () =>
+                                        _openUserProfile(userId, displayName),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           displayName,
@@ -408,10 +456,16 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                         const SizedBox(height: 6),
                                         if (isCreator)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: _accent1.withValues(alpha:0.12),
-                                              borderRadius: BorderRadius.circular(10),
+                                              color: _accent1.withValues(
+                                                alpha: 0.12,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
                                             ),
                                             child: Text(
                                               'Создатель чата',
@@ -429,12 +483,18 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                 if (userId != widget.currentUserId) ...[
                                   Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.orange.withValues(alpha: 0.10),
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.10,
+                                      ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: IconButton(
-                                      icon: Icon(Icons.block_rounded, color: Colors.orange.shade700),
-                                      onPressed: () => _blockMember(userId, displayName),
+                                      icon: Icon(
+                                        Icons.block_rounded,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                      onPressed: () =>
+                                          _blockMember(userId, displayName),
                                       tooltip: 'Заблокировать',
                                     ),
                                   ),
@@ -443,12 +503,16 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
                                 if (canRemoveMembers && !isCreator)
                                   Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha:0.10),
+                                      color: Colors.red.withValues(alpha: 0.10),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: IconButton(
-                                      icon: Icon(Icons.delete_outline_rounded, color: Colors.red.shade500),
-                                      onPressed: () => _removeMember(userId, displayName),
+                                      icon: Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: Colors.red.shade500,
+                                      ),
+                                      onPressed: () =>
+                                          _removeMember(userId, displayName),
                                       tooltip: 'Удалить участника',
                                     ),
                                   ),
@@ -478,4 +542,3 @@ class _ChatMembersDialogState extends State<ChatMembersDialog> {
     );
   }
 }
-

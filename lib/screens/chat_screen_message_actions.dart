@@ -274,6 +274,13 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
     if (confirm != true || !mounted) return;
     try {
       await _moderationService.blockUser(message.userId);
+      BlockedUsersCache.add(message.userId);
+      unawaited(
+        LocalMessagesService.removeMessagesFromUser(
+          widget.chatId,
+          message.userId,
+        ),
+      );
       if (mounted) {
         setState(() {
           _messages.removeWhere((m) => m.userId == message.userId);
@@ -609,8 +616,7 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
   Future<void> _showDeleteMessageDialog(Message message) async {
     if (!mounted) return;
 
-    final isMine =
-        message.userId.toString() == widget.userId.toString();
+    final isMine = message.userId.toString() == widget.userId.toString();
 
     final String? scope;
     if (!widget.isGroup) {

@@ -28,6 +28,10 @@ import {
   isDirectChat,
   notHiddenForUserSql,
 } from '../services/messages/messageUserDeletions.js';
+import {
+  getUserIdsWhoBlocked,
+  recipientIdsForChatEvent,
+} from '../utils/userBlocks.js';
 
 // Лимит длины текста сообщения (защита от DoS и переполнения БД)
 const MAX_MESSAGE_CONTENT_LENGTH = 65535;
@@ -46,6 +50,26 @@ const signMediaUrlIfNeeded = async (value) => {
 const getSenderDisplayName = async (userId) => {
   const r = await findSenderDisplayName(pool, userId);
   return r.rows[0]?.n ?? null;
+};
+
+const sendWsToChatMembers = async (memberRows, payload, senderUserId) => {
+  const clients = getWebSocketClients();
+  const usersWhoBlockedSender = await getUserIdsWhoBlocked(pool, senderUserId);
+  const recipientIds = recipientIdsForChatEvent(memberRows, { usersWhoBlockedSender });
+  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  let sentCount = 0;
+  for (const userIdStr of recipientIds) {
+    const client = clients.get(userIdStr);
+    if (client && client.readyState === 1) {
+      try {
+        client.send(data);
+        sentCount += 1;
+      } catch (sendError) {
+        console.error(`Error sending to user ${userIdStr}:`, sendError);
+      }
+    }
+  }
+  return { sentCount, recipientIds };
 };
 
 const ensureChatMember = async (chatId, userId) => {
@@ -861,28 +885,12 @@ export const sendMessage = async (req, res) => {
       }
 
       const wsMessageString = JSON.stringify(wsMessage);
-      
-      let sentCount = 0;
-      members.rows.forEach(row => {
-        const userIdStr = row.user_id.toString();
-        const client = clients.get(userIdStr);
-        if (client && client.readyState === 1) { // WebSocket.OPEN
-          try {
-            client.send(wsMessageString);
-            sentCount++;
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`Message sent to user ${userIdStr}`);
-            }
-          } catch (sendError) {
-            console.error(`Error sending to user ${userIdStr}:`, sendError);
-          }
-        } else {
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`User ${userIdStr} not connected or connection not open (readyState: ${client?.readyState})`);
-          }
-        }
-      });
-      
+      const { sentCount } = await sendWsToChatMembers(
+        members.rows,
+        wsMessageString,
+        message.user_id
+      );
+
       if (process.env.NODE_ENV === 'development') {
         console.log(`WebSocket message sent to ${sentCount} out of ${members.rows.length} members`);
       }
@@ -894,9 +902,12 @@ export const sendMessage = async (req, res) => {
     // Push-уведомления: все активные установки участников, плюс legacy
     // users.fcm_token для клиентов, которые ещё не перешли на device API.
     try {
-      const otherMemberIds = members.rows
-        .map(r => r.user_id)
-        .filter(id => id !== user_id);
+      const usersWhoBlockedSender = await getUserIdsWhoBlocked(pool, user_id);
+      const otherMemberIds = recipientIdsForChatEvent(members.rows, {
+        excludeUserId: user_id,
+        usersWhoBlockedSender,
+      }).map((id) => Number.parseInt(id, 10))
+        .filter((id) => Number.isFinite(id));
       if (otherMemberIds.length > 0) {
         const chatInfo = await pool.query('SELECT name, is_group FROM chats WHERE id = $1', [chatIdNum]);
         const chatName = chatInfo.rows[0]?.name || 'Чат';
@@ -1087,7 +1098,6 @@ export const editMessage = async (req, res) => {
 
     // Отправляем обновленное сообщение через WebSocket всем участникам чата
     try {
-      const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',
         [updatedMessage.chat_id]
@@ -1111,13 +1121,8 @@ export const editMessage = async (req, res) => {
         edited_at: updatedMessage.edited_at,
         sender_email: senderDisplay
       };
-      
-      members.rows.forEach(row => {
-        const client = clients.get(row.user_id.toString());
-        if (client && client.readyState === 1) {
-          client.send(JSON.stringify(wsMessage));
-        }
-      });
+
+      await sendWsToChatMembers(members.rows, wsMessage, updatedMessage.user_id);
     } catch (wsError) {
       console.error('Ошибка отправки через WebSocket:', wsError);
     }
@@ -1574,13 +1579,13 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
       `, [newMessage.id, original.original_chat_id, fromMessageId, userId]);
       
       const senderDisplay = (await getSenderDisplayName(req.user.userId)) || req.user.email;
-      const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',
         [toChatId]
       );
       
       const wsMessage = {
+        type: 'message',
         id: newMessage.id,
         chat_id: newMessage.chat_id.toString(),
         user_id: newMessage.user_id,
@@ -1595,13 +1600,8 @@ const forwardMessages = async (req, res, fromMessageId, toChatIds, userId) => {
         original_chat_name: original.original_chat_name,
         sender_email: senderDisplay
       };
-      
-      members.rows.forEach(row => {
-        const client = clients.get(row.user_id.toString());
-        if (client && client.readyState === 1) {
-          client.send(JSON.stringify(wsMessage));
-        }
-      });
+
+      await sendWsToChatMembers(members.rows, wsMessage, newMessage.user_id);
       
       forwardedMessages.push({ ...newMessage, sender_email: senderDisplay });
     }
@@ -1809,7 +1809,6 @@ export const addReaction = async (req, res) => {
     }
     
     // Отправляем через WebSocket
-    const clients = getWebSocketClients();
     const members = await pool.query(
       'SELECT user_id FROM chat_users WHERE chat_id = $1',
       [chatId]
@@ -1822,13 +1821,8 @@ export const addReaction = async (req, res) => {
       user_id: userId,
       user_email: req.user.email,
     };
-    
-    members.rows.forEach(row => {
-      const client = clients.get(row.user_id.toString());
-      if (client && client.readyState === 1) {
-        client.send(JSON.stringify(wsMessage));
-      }
-    });
+
+    await sendWsToChatMembers(members.rows, wsMessage, userId);
     
     res.status(200).json({
       success: true,
@@ -1891,7 +1885,6 @@ export const removeReaction = async (req, res) => {
     
     // Отправляем через WebSocket
     if (chatId) {
-      const clients = getWebSocketClients();
       const members = await pool.query(
         'SELECT user_id FROM chat_users WHERE chat_id = $1',
         [chatId]
@@ -1903,13 +1896,8 @@ export const removeReaction = async (req, res) => {
         reaction: reaction,
         user_id: userId,
       };
-      
-      members.rows.forEach(row => {
-        const client = clients.get(row.user_id.toString());
-        if (client && client.readyState === 1) {
-          client.send(JSON.stringify(wsMessage));
-        }
-      });
+
+      await sendWsToChatMembers(members.rows, wsMessage, userId);
     }
     
     res.status(200).json({ success: true, message: 'Реакция удалена' });
