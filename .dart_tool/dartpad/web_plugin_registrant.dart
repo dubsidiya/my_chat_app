@@ -19,6 +19,7 @@ import 'package:just_audio_web/just_audio_web.dart';
 import 'package:livekit_client/livekit_client_web.dart';
 import 'package:package_info_plus/src/package_info_plus_web.dart';
 import 'package:permission_handler_html/permission_handler_html.dart';
+import 'package:pointer_interceptor_web/pointer_interceptor_web.dart';
 import 'package:record_web/record_web.dart';
 import 'package:shared_preferences_web/shared_preferences_web.dart';
 import 'package:url_launcher_web/url_launcher_web.dart';
@@ -40,6 +41,7 @@ void registerPlugins([final Registrar? pluginRegistrar]) {
   LiveKitWebPlugin.registerWith(registrar);
   PackageInfoPlusWebPlugin.registerWith(registrar);
   WebPermissionHandler.registerWith(registrar);
+  PointerInterceptorWeb.registerWith(registrar);
   RecordPluginWeb.registerWith(registrar);
   SharedPreferencesPlugin.registerWith(registrar);
   UrlLauncherPlugin.registerWith(registrar);

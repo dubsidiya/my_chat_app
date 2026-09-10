@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
@@ -236,12 +238,14 @@ class ChatInputBar extends StatelessWidget {
                   width: 1,
                 ),
               ),
-              child: IconButton(
-                icon: Icon(Icons.add_rounded, color: AppColors.cyberAccent, size: 22),
-                onPressed: canOpenAttachmentMenu
-                    ? () => _showAttachmentSheet(context)
-                    : null,
-                tooltip: 'Вложения',
+              child: PointerInterceptor(
+                child: IconButton(
+                  icon: Icon(Icons.add_rounded, color: AppColors.cyberAccent, size: 22),
+                  onPressed: canOpenAttachmentMenu
+                      ? () => _showAttachmentSheet(context)
+                      : null,
+                  tooltip: 'Вложения',
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -256,7 +260,9 @@ class ChatInputBar extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Focus(
-                        onKeyEvent: (node, event) {
+                        onKeyEvent: kIsWeb
+                            ? null
+                            : (node, event) {
                           if (event is! KeyDownEvent) {
                             return KeyEventResult.ignored;
                           }
@@ -264,7 +270,6 @@ class ChatInputBar extends StatelessWidget {
                               event.logicalKey == LogicalKeyboardKey.enter ||
                               event.logicalKey == LogicalKeyboardKey.numpadEnter;
                           if (!isEnter) return KeyEventResult.ignored;
-                          // Shift+Enter — новая строка, как в обычных десктоп-чатах.
                           if (HardwareKeyboard.instance.isShiftPressed) {
                             return KeyEventResult.ignored;
                           }
@@ -357,10 +362,12 @@ class ChatInputBar extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: IconButton(
-                  icon: const Icon(Icons.send_rounded, color: Colors.white),
-                  onPressed: (isRecordingVoice || isSendingMessage) ? null : onSend,
-                  tooltip: 'Отправить',
+                child: PointerInterceptor(
+                  child: IconButton(
+                    icon: const Icon(Icons.send_rounded, color: Colors.white),
+                    onPressed: (isRecordingVoice || isSendingMessage) ? null : onSend,
+                    tooltip: 'Отправить',
+                  ),
                 ),
               ),
           ],

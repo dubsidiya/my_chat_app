@@ -30,6 +30,7 @@
         "package_info_plus",
         "path_provider",
         "permission_handler",
+        "pointer_interceptor",
         "record",
         "shared_preferences",
         "url_launcher",
@@ -153,6 +154,17 @@
         "video_player_avfoundation",
         "video_player_platform_interface",
         "video_player_web"
+      ]
+    },
+    {
+      "name": "pointer_interceptor",
+      "version": "0.10.1+2",
+      "dependencies": [
+        "flutter",
+        "flutter_web_plugins",
+        "pointer_interceptor_ios",
+        "pointer_interceptor_platform_interface",
+        "pointer_interceptor_web"
       ]
     },
     {
@@ -768,6 +780,34 @@
       "dependencies": [
         "csslib",
         "source_span"
+      ]
+    },
+    {
+      "name": "pointer_interceptor_web",
+      "version": "0.10.3",
+      "dependencies": [
+        "flutter",
+        "flutter_web_plugins",
+        "plugin_platform_interface",
+        "pointer_interceptor_platform_interface",
+        "web"
+      ]
+    },
+    {
+      "name": "pointer_interceptor_platform_interface",
+      "version": "0.10.0+1",
+      "dependencies": [
+        "flutter",
+        "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "pointer_interceptor_ios",
+      "version": "0.10.1+1",
+      "dependencies": [
+        "flutter",
+        "plugin_platform_interface",
+        "pointer_interceptor_platform_interface"
       ]
     },
     {

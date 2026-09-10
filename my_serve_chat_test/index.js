@@ -162,6 +162,9 @@ app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: false, // API не отдаёт HTML
   crossOriginEmbedderPolicy: false,
+  // API читает Flutter web с другого origin (Vercel). same-origin CORP
+  // ломает часть запросов в Edge (POST /messages после preflight).
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 // Дополнительно: жёсткий DENY для iframe и HSTS в production
 app.use((req, res, next) => {

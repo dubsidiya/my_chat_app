@@ -33,6 +33,7 @@ import '../theme/app_colors.dart';
 import '../widgets/theme_motion.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
+import '../utils/web_composer_enter.dart';
 import '../utils/web_file_drop.dart';
 import '../utils/download_text_file.dart';
 import '../utils/voice_message_utils.dart';
@@ -589,6 +590,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     _loadMessages();
     registerWebFileDrop(_onWebFilesDropped);
+    registerWebComposerEnterToSend(_sendMessage);
     unawaited(_moderationService.getBlockedUserIds());
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
@@ -853,6 +855,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _sendTyping(false);
     }
     _sendWsJson({'type': 'unsubscribe', 'chat_id': widget.chatId});
+    unregisterWebComposerEnterToSend();
     unregisterWebFileDrop();
     _controller.dispose();
     super.dispose();

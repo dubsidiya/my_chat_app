@@ -256,8 +256,13 @@ class MessagesService {
     // отправляем как есть — без блокировок и баннеров «ожидаем ключ».
     String contentToSend = content;
     if (content.isNotEmpty) {
-      final encrypted = await ChatKeyService.encryptText(chatId, content);
-      if (encrypted != null) contentToSend = encrypted;
+      try {
+        final encrypted = await ChatKeyService.encryptText(chatId, content)
+            .timeout(const Duration(seconds: 3));
+        if (encrypted != null) contentToSend = encrypted;
+      } catch (_) {
+        // WebCrypto/Edge иногда зависает — не блокируем POST.
+      }
     }
 
     final bodyMap = <String, dynamic>{
