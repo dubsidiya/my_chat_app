@@ -33,8 +33,11 @@ import '../theme/app_colors.dart';
 import '../widgets/theme_motion.dart';
 import '../utils/file_name_display.dart';
 import '../utils/network_error_helper.dart';
+import '../config/api_config.dart';
+import '../services/storage_service.dart';
 import '../utils/web_composer_enter.dart';
 import '../utils/web_file_drop.dart';
+import '../utils/web_native_send.dart';
 import '../utils/download_text_file.dart';
 import '../utils/voice_message_utils.dart';
 import '../utils/microphone_permission.dart';
@@ -593,6 +596,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _loadMessages();
     registerWebFileDrop(_onWebFilesDropped);
     registerWebComposerEnterToSend(_sendMessage);
+    if (kIsWeb) {
+      mountWebNativeSend(
+        apiBase: ApiConfig.baseUrl,
+        chatId: widget.chatId,
+        getToken: StorageService.getToken,
+        onSent: _onNativeWebMessageSent,
+        onError: (message) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(duration: const Duration(seconds: 3), content: Text(message)),
+          );
+        },
+      );
+    }
     unawaited(_moderationService.getBlockedUserIds());
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
@@ -859,6 +876,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _sendWsJson({'type': 'unsubscribe', 'chat_id': widget.chatId});
     unregisterWebComposerEnterToSend();
     unregisterWebFileDrop();
+    unmountWebNativeSend();
     _controller.dispose();
     super.dispose();
   }
@@ -2054,6 +2072,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             // ✅ Индикатор записи голосового
+                            if (kIsWeb)
+                              const SizedBox(height: 72)
+                            else
                             ChatInputBar(
                               scheme: scheme,
                               accent1: _accent1,
