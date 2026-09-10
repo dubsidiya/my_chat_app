@@ -89,7 +89,7 @@ class Report {
     return Report(
       id: reportId,
       reportDate: parseCalendarDate(json['report_date']),
-      content: json['content'] as String,
+      content: json['content']?.toString() ?? '',
       isLate: json['is_late'] == true,
       createdAt: parseServerInstant(json['created_at']),
       updatedAt: json['updated_at'] != null

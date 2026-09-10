@@ -33,6 +33,15 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   final TextEditingController _dateController = TextEditingController();
   List<Report> _reports = [];
   bool _isLoading = false;
+
+  /// Токен поколения для последовательности загрузок списка (M38): ответ
+  /// применяется только если он всё ещё самый свежий, иначе отбрасывается.
+  int _reportsLoadToken = 0;
+
+  /// id отчёта, для которого сейчас выполняется «Считать вовремя» (M39):
+  /// защищает от двойного тапа и блокирует кнопки на время запроса.
+  int? _settingNotLateReportId;
+
   DateTime _selectedDate = DateTime.now();
 
   /// «Сегодня» в timezone преподавателя (из GET /auth/me → today), date-only.
@@ -74,10 +83,15 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     }).toList();
   }
 
+  /// Право на правку/удаление отчёта: автор или суперпользователь.
+  /// `createdBy` может отсутствовать в «моём» списке (GET /reports всегда свой) —
+  /// тогда считаем отчёт своим. Для чужого отчёта false, и UI ведёт на просмотр
+  /// (read-only), а не просто прячет кнопку.
   bool _canEditReport(Report report) {
     if (widget.isSuperuser) return true;
-    if (!_allReportsMode) return true;
-    return report.createdBy?.toString() == widget.userId;
+    final owner = report.createdBy?.toString();
+    if (owner == null) return true;
+    return owner == widget.userId;
   }
 
   @override
@@ -251,6 +265,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
 
   Future<void> _loadReportsList({bool refreshTeachers = false}) async {
     if (!mounted) return;
+    final token = ++_reportsLoadToken;
     setState(() => _isLoading = true);
     try {
       if (refreshTeachers) await _loadTeacherOptions(showErrors: true);
@@ -260,62 +275,61 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         isLate: _filterOnlyLate,
         createdBy: _filterTeacherId,
       );
-      if (mounted) {
-        setState(() {
-          _reports = reports;
-          _syncYesterdayReminder();
-        });
-        if (_teacherOptions.isEmpty && reports.isNotEmpty) {
-          _mergeTeachersFromReports(reports);
-        }
+      if (!mounted || token != _reportsLoadToken) return;
+      setState(() {
+        _reports = reports;
+        _syncYesterdayReminder();
+      });
+      if (_teacherOptions.isEmpty && reports.isNotEmpty) {
+        _mergeTeachersFromReports(reports);
       }
     } catch (e) {
       if (kDebugMode) print('Ошибка загрузки списка отчётов: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(networkErrorMessage(e)),
-            backgroundColor: Colors.red,
-            action: SnackBarAction(label: 'Повторить', onPressed: () => _loadReportsList()),
-          ),
-        );
-      }
+      if (!mounted || token != _reportsLoadToken) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(networkErrorMessage(e)),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(label: 'Повторить', onPressed: () => _loadReportsList()),
+        ),
+      );
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && token == _reportsLoadToken) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _loadReports() async {
     if (!mounted) return;
+    // Общий с _loadReportsList токен: переключение режимов «Мои/Все» и гонки
+    // между двумя загрузками не дают устаревшему ответу перезаписать свежий.
+    final token = ++_reportsLoadToken;
     setState(() => _isLoading = true);
 
     try {
       await _ensureTeacherToday();
       final reports = await _reportsService.getAllReports();
-      if (mounted) {
-        setState(() {
-          _reports = reports;
-          _syncYesterdayReminder();
-        });
-      }
+      if (!mounted || token != _reportsLoadToken) return;
+      setState(() {
+        _reports = reports;
+        _syncYesterdayReminder();
+      });
     } catch (e) {
       if (kDebugMode) print('Ошибка загрузки отчетов: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(networkErrorMessage(e)),
-            backgroundColor: Colors.red,
-            action: SnackBarAction(
-              label: 'Повторить',
-              onPressed: () => _loadReports(),
-            ),
+      if (!mounted || token != _reportsLoadToken) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(networkErrorMessage(e)),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Повторить',
+            onPressed: () => _loadReports(),
           ),
-        );
-      }
+        ),
+      );
     } finally {
-      if (mounted) {
+      if (mounted && token == _reportsLoadToken) {
         setState(() => _isLoading = false);
       }
     }
@@ -330,11 +344,15 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   }
 
   Future<void> _selectDate() async {
+    // «Сегодня» — в TZ преподавателя (M42), а не устройства, иначе баннер «за вчера»
+    // может требовать день, который пикер не даёт выбрать.
+    final last = _teacherToday ?? DateTime.now();
+    final initial = _selectedDate.isAfter(last) ? last : _selectedDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: initial,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: last,
     );
     if (picked != null && mounted) {
       setState(() {
@@ -348,7 +366,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ReportBuilderScreen(initialDate: _selectedDate),
+        builder: (_) => ReportBuilderScreen(initialDate: _selectedDate, maxDate: _teacherToday),
       ),
     );
     if (result == true) {
@@ -360,7 +378,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ReportBuilderScreen(reportId: reportId),
+        builder: (_) => ReportBuilderScreen(reportId: reportId, maxDate: _teacherToday),
       ),
     );
     if (result == true) {
@@ -375,19 +393,23 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
   /// Открыть конструктор, предзаполненный отчётом ровно 14 дней назад от выбранной даты.
   /// Учитель чаще всего ведёт занятия с тем же расписанием по дням недели —
   /// шаблон ускоряет ввод, а отмены он внесёт точечно сам.
+  /// Дата отчёта-шаблона: ровно 14 календарных дней назад от выбранной даты.
+  /// Календарное вычитание (а не Duration(days:14)) устойчиво к DST; DateTime сам
+  /// нормализует отрицательный день месяца. Единый источник и для подписи кнопки,
+  /// и для самого поиска шаблона (L28).
+  DateTime get _templateTargetDate =>
+      DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14);
+
   Future<void> _openBuilderFromTwoWeeksAgo() async {
     if (_openingTemplate) return;
     _openingTemplate = true;
     try {
-      // Календарное вычитание (а не Duration(days:14)) — устойчиво к DST.
-      // DateTime сам нормализует отрицательный день месяца.
-      final target = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14);
+      final target = _templateTargetDate;
 
-      // report_date приходит из Postgres типа `date`; pg-драйвер часто отдаёт его
-      // как UTC-метку (XX:00:00Z), и сырая дата может «съезжать» на ±1 день
-      // относительно локального дня пользователя. Сравниваем по локальным компонентам.
+      // report.reportDate уже разобрана parseCalendarDate в календарный день
+      // (DateTime(y,m,d), не UTC), поэтому сравниваем компоненты напрямую (L29).
       bool sameLocalDay(Report r) {
-        final d = r.reportDate.toLocal();
+        final d = r.reportDate;
         return d.year == target.year && d.month == target.month && d.day == target.day;
       }
       bool ownedByMe(Report r) {
@@ -410,6 +432,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
       // «Все отчёты» (нам всё равно нужен именно свой шаблон). Это же закрывает
       // потенциальную пагинацию /reports в будущем и устаревший кэш после правок
       // отчётов в другой сессии/устройстве.
+      Object? fallbackError;
       if (template == null) {
         try {
           final fresh = await _reportsService.getAllReports();
@@ -419,8 +442,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
               break;
             }
           }
-        } catch (_) {
-          // молча: ниже покажем «не найден»; настоящие сетевые ошибки уже видны в _loadReports.
+        } catch (e) {
+          // Не глотаем: если сам добор упал — покажем сетевую ошибку, а не
+          // вводящее в заблуждение «отчёт не найден» (L26).
+          fallbackError = e;
         }
       }
 
@@ -430,8 +455,10 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           SnackBar(
             duration: const Duration(seconds: 3),
             content: Text(
-              'Ваш отчёт за ${DateFormat('dd.MM.yyyy').format(target)} не найден. '
-              'Шаблон взять не из чего.',
+              fallbackError != null
+                  ? networkErrorMessage(fallbackError)
+                  : 'Ваш отчёт за ${DateFormat('dd.MM.yyyy').format(target)} не найден. '
+                      'Шаблон взять не из чего.',
             ),
           ),
         );
@@ -444,6 +471,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
           builder: (_) => ReportBuilderScreen(
             initialDate: _selectedDate,
             templateReportId: template!.id,
+            maxDate: _teacherToday,
           ),
         ),
       );
@@ -462,6 +490,37 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         builder: (_) => ReportTextViewScreen(report: report),
       ),
     );
+  }
+
+  /// «Считать вовремя» (снять пометку «поздний»). Гард от двойного тапа по id +
+  /// сообщения через контекст State (переживает _onRefresh, в отличие от контекста
+  /// элемента списка) и networkErrorMessage(e). (M39)
+  Future<void> _setReportNotLate(Report report) async {
+    if (_settingNotLateReportId != null) return;
+    setState(() => _settingNotLateReportId = report.id);
+    try {
+      await _reportsService.setReportNotLate(report.id);
+      if (!mounted) return;
+      await _onRefresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Отчёт учтён как сдан вовремя'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(networkErrorMessage(e)),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _settingNotLateReportId = null);
+    }
   }
 
   Future<void> _deleteReport(Report report) async {
@@ -498,7 +557,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка: $e'),
+            content: Text(networkErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
@@ -667,10 +726,13 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             Expanded(
                               child: InkWell(
                                 onTap: () async {
-                                  final d = await showDatePicker(context: context, initialDate: _filterDateFrom, firstDate: DateTime(2020), lastDate: DateTime.now());
+                                  final last = _teacherToday ?? DateTime.now();
+                                  final initial = _filterDateFrom.isAfter(last) ? last : _filterDateFrom;
+                                  final d = await showDatePicker(context: context, initialDate: initial, firstDate: DateTime(2020), lastDate: last);
                                   if (d != null && mounted) {
                                     setState(() => _filterDateFrom = d);
-                                    unawaited(_loadTeacherOptions());
+                                    // Смена периода перезагружает список (M37), как и «Показать».
+                                    unawaited(_loadReportsList(refreshTeachers: true));
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(10),
@@ -684,10 +746,13 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                             Expanded(
                               child: InkWell(
                                 onTap: () async {
-                                  final d = await showDatePicker(context: context, initialDate: _filterDateTo, firstDate: DateTime(2020), lastDate: DateTime.now());
+                                  final last = _teacherToday ?? DateTime.now();
+                                  final initial = _filterDateTo.isAfter(last) ? last : _filterDateTo;
+                                  final d = await showDatePicker(context: context, initialDate: initial, firstDate: DateTime(2020), lastDate: last);
                                   if (d != null && mounted) {
                                     setState(() => _filterDateTo = d);
-                                    unawaited(_loadTeacherOptions());
+                                    // Смена периода перезагружает список (M37), как и «Показать».
+                                    unawaited(_loadReportsList(refreshTeachers: true));
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(10),
@@ -738,7 +803,11 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   DropdownMenuItem(value: true, child: Text('Только поздние')),
                                   DropdownMenuItem(value: false, child: Text('Только вовремя')),
                                 ],
-                                onChanged: (v) => setState(() { _filterOnlyLate = v; }),
+                                onChanged: (v) {
+                                  setState(() { _filterOnlyLate = v; });
+                                  // Как фильтр по преподавателю — сразу перезагружаем список (M37).
+                                  unawaited(_loadReportsList());
+                                },
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -911,7 +980,7 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                         const SizedBox(height: 6),
                         Text(
                           'Заполнит шаблон отчета за '
-                          '${DateFormat('dd.MM.yyyy').format(DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day - 14))}. '
+                          '${DateFormat('dd.MM.yyyy').format(_templateTargetDate)}. '
                           'У всех будет стоять ПРОВЕДЕНО!!!. Обязательно к ручной проверке! ',
                           style: TextStyle(
                             fontSize: 11,
@@ -1104,24 +1173,13 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                                   minimumSize: Size.zero,
                                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                                 ),
-                                                onPressed: () async {
-                                                  try {
-                                                    await _reportsService.setReportNotLate(report.id);
-                                                    if (!context.mounted) return;
-                                                    await _onRefresh();
-                                                    if (!context.mounted) return;
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      const SnackBar(duration: Duration(seconds: 3), content: Text('Отчёт учтён как сдан вовремя')),
-                                                    );
-                                                  } catch (e) {
-                                                    if (!context.mounted) return;
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      SnackBar(duration: const Duration(seconds: 3), content: Text(e.toString()), backgroundColor: Colors.red),
-                                                    );
-                                                  }
-                                                },
+                                                onPressed: _settingNotLateReportId != null
+                                                    ? null
+                                                    : () => _setReportNotLate(report),
                                                 child: Text(
-                                                  'Считать вовремя',
+                                                  _settingNotLateReportId == report.id
+                                                      ? 'Сохранение…'
+                                                      : 'Считать вовремя',
                                                   style: TextStyle(fontSize: 12, color: scheme.primary),
                                                 ),
                                               ),
@@ -1224,6 +1282,17 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                             Text('Редактировать (конструктор)'),
                                           ],
                                         ),
+                                      )
+                                    else
+                                      const PopupMenuItem(
+                                        value: 'view_readonly',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.visibility_rounded, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('Открыть (только просмотр)'),
+                                          ],
+                                        ),
                                       ),
                                     const PopupMenuItem(
                                       value: 'view_text',
@@ -1250,7 +1319,15 @@ class _ReportsChatScreenState extends State<ReportsChatScreen> {
                                   ],
                                   onSelected: (value) {
                                     if (value == 'edit') {
-                                      _openBuilderEdit(report.id);
+                                      // Защитно: правку открываем только автору/суперу,
+                                      // иначе — просмотр (read-only).
+                                      if (canEdit) {
+                                        _openBuilderEdit(report.id);
+                                      } else {
+                                        _openReportText(report);
+                                      }
+                                    } else if (value == 'view_readonly') {
+                                      _openReportText(report);
                                     } else if (value == 'view_text') {
                                       _openReportText(report);
                                     } else if (value == 'delete') {

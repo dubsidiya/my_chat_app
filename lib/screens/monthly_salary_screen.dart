@@ -4,6 +4,8 @@ import '../theme/app_colors.dart';
 import '../models/monthly_salary_report.dart';
 import '../services/reports_service.dart';
 import '../services/teacher_balance_service.dart';
+import '../utils/network_error_helper.dart';
+import '../utils/date_parse.dart';
 
 class MonthlySalaryScreen extends StatefulWidget {
   const MonthlySalaryScreen({super.key});
@@ -18,6 +20,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
   MonthlySalaryReport? _report;
   double? _workBalance;
   bool _isLoading = false;
+  String? _error;
   DateTime _selected = DateTime.now();
   static Color get _accent1 => AppColors.primary;
   static Color get _accent2 => AppColors.primaryGlow;
@@ -46,6 +49,7 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
         _selected = DateTime(picked.year, picked.month);
         _report = null;
         _workBalance = null;
+        _error = null;
       });
       _load();
     }
@@ -60,9 +64,24 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
     }
   }
 
+  /// Короткое сообщение об ошибке: 401 → перелогин, 403 → нет прав, иначе общий helper (M58).
+  String _friendlyError(Object e) {
+    final base = networkErrorMessage(e);
+    if (base.contains('401') || base.toLowerCase().contains('unauthorized')) {
+      return 'Сессия истекла. Войдите в приложение заново.';
+    }
+    if (base.contains('403') || base.contains('прав') || base.contains('доступ')) {
+      return 'Недостаточно прав для просмотра зарплаты за месяц.';
+    }
+    return base;
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final results = await Future.wait([
         _reportsService.getMonthlySalaryReport(_selected.year, _selected.month),
@@ -76,8 +95,10 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final message = _friendlyError(e);
+        setState(() => _error = message);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Ошибка: $message'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -91,8 +112,9 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
     _load();
   }
 
+  // 2 знака после запятой, чтобы построчные суммы «По дням» сходились с итогом (L32).
   String _formatMoney(num value) {
-    return '${NumberFormat('#,##0', 'ru_RU').format(value.round())} ₽';
+    return '${NumberFormat('#,##0.00', 'ru_RU').format(value)} ₽';
   }
 
   static String _lessonsLabel(int n) {
@@ -203,10 +225,47 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                     ),
                   )
                 : _report == null
-                    ? const SizedBox.shrink()
+                    ? (_error != null
+                        ? _buildErrorState(scheme)
+                        : const SizedBox.shrink())
                     : _buildReportBody(context, _report!, scheme, isDark),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(ColorScheme scheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 56, color: scheme.onSurface.withValues(alpha: 0.35)),
+            const SizedBox(height: 12),
+            Text(
+              'Не удалось загрузить зарплату',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface.withValues(alpha: 0.80),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _error ?? '',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _isLoading ? null : _load,
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -455,7 +514,13 @@ class _MonthlySalaryScreenState extends State<MonthlySalaryScreen> {
                     )
                   else
                     ...r.reportBreakdown.map((row) {
-                      final date = DateTime.tryParse(row.reportDate);
+                      // Берём только календарную дату (без сдвига дня из-за TZ) — L33.
+                      DateTime? date;
+                      try {
+                        date = parseCalendarDate(row.reportDate);
+                      } catch (_) {
+                        date = null;
+                      }
                       final dateStr = date != null
                           ? DateFormat('dd.MM.yyyy').format(date)
                           : row.reportDate;

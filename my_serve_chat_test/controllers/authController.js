@@ -18,6 +18,11 @@ import { DEFAULT_USER_TIMEZONE, normalizeTimeZone, getDateInTimeZoneISO } from '
 import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 import { claimLegacyFcmToken } from '../repositories/pushDevicesRepository.js';
+import {
+  ACCOUNT_DELETE_BLOCKED_MESSAGE,
+  accountingFootprintBlocksDelete,
+  loadAccountingFootprint,
+} from '../utils/accountDeletionGuard.js';
 
 let _authSessionsTableEnsured = false;
 
@@ -783,6 +788,13 @@ export const deleteAccount = async (req, res) => {
     try {
       try { await client.query('ROLLBACK'); } catch (_) {}
       await client.query('BEGIN');
+
+      await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const footprint = await loadAccountingFootprint(client, userId);
+      if (accountingFootprintBlocksDelete(footprint)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ message: ACCOUNT_DELETE_BLOCKED_MESSAGE });
+      }
 
       // Собираем ссылки на медиа заранее, чтобы после коммита очистить Object Storage.
       const ownMediaRows = await client.query(

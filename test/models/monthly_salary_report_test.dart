@@ -71,4 +71,45 @@ void main() {
       expect(row.amount, 2500.5);
     });
   });
+
+  // Реальные wire-формы: сервер отдаёт денежные агрегаты и цены как строки
+  // ("100000", "2000.00"), а не как числа (см. аудит M64/H15). Модель обязана
+  // распарсить строку в корректное числовое значение.
+  group('MonthlySalaryReport.fromJson — деньги строкой (реальный wire-shape)', () {
+    test('total_all/late/income/salary/price/amount строками', () {
+      final r = MonthlySalaryReport.fromJson({
+        'year': 2025,
+        'month': 3,
+        'first_day': '2025-03-01',
+        'last_day': '2025-03-31',
+        'total_all': '100000',
+        'late_reports_amount': '10000.00',
+        'income_counted': '90000.00',
+        'bank_transfer_deduction': '300.00',
+        'salary': '45000',
+        'lessons_without_report_amount': '0.00',
+        'report_breakdown': [
+          {
+            'report_id': 1,
+            'report_date': '2025-03-01',
+            'is_late': false,
+            'amount': '5000.00',
+          },
+        ],
+        'lessons_by_price': [
+          {'price': '2000.00', 'lessons_count': '120'},
+        ],
+      });
+      expect(r.totalAll, 100000.0);
+      expect(r.lateReportsAmount, 10000.0);
+      expect(r.incomeCounted, 90000.0);
+      expect(r.bankTransferDeduction, 300.0);
+      expect(r.salary, 45000);
+      expect(r.lessonsWithoutReportAmount, 0.0);
+      expect(r.reportBreakdown.single.amount, 5000.0);
+      expect(r.lessonsByPrice.single.price, 2000.0);
+      expect(r.lessonsByPrice.single.lessonsCount, 120);
+      expect(r.totalLessonsInMonth, 120);
+    });
+  });
 }

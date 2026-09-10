@@ -1,5 +1,5 @@
 import pool from '../db.js';
-import { sqlUserAccountingName, sqlUserAccountingNameOrEmpty } from '../utils/userAccountingDisplaySql.js';
+import { sqlUserAccountingName } from '../utils/userAccountingDisplaySql.js';
 import { closedOriginLessonIds } from '../utils/makeupDebts.js';
 import {
   buildAccountingExport,
@@ -8,24 +8,20 @@ import {
   defaultLessonCoverage,
 } from '../services/accounting/buildAccountingExport.js';
 import { buildAccountingWorkbookBuffer } from '../services/accounting/buildAccountingWorkbook.js';
+import { asCsv } from '../utils/csvEscape.js';
+import { DEFAULT_USER_TIMEZONE } from '../utils/timezone.js';
 
 const isValidISODate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+// M22: границы периода по created_at (TIMESTAMP без зоны, UTC в БД) режем по
+// календарю бухгалтерской таймзоны, а не по midnight сессии БД. Тип колонки не
+// меняем (M34) — только SQL-конвертация: created_at AT TIME ZONE 'UTC' AT TIME ZONE $tz.
+const ACCOUNTING_TZ = DEFAULT_USER_TIMEZONE;
 
 const toNumber = (v) => {
   if (v == null) return 0;
   const n = typeof v === 'number' ? v : parseFloat(v.toString());
   return Number.isFinite(n) ? n : 0;
-};
-
-const asCsv = (rows) => {
-  const escape = (v) => {
-    const s = (v ?? '').toString();
-    if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-  };
-  return rows.map((r) => r.map(escape).join(',')).join('\n');
 };
 
 const toIsoDate = (v) => {
@@ -106,9 +102,9 @@ export const exportAccounting = async (req, res) => {
               target_teacher_id AS teacher_id,
               COALESCE(SUM(CASE WHEN type IN ('deposit','refund') THEN amount ELSE 0 END), 0) as credit
        FROM transactions
-       WHERE created_at < ($1::date + interval '1 day')
+       WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE $2) < ($1::date + interval '1 day')
        GROUP BY student_id, target_teacher_id`,
-      [to]
+      [to, ACCOUNTING_TZ]
     );
     const creditByWallet = new Map();
     const unallocatedCreditByStudent = new Map();
@@ -128,10 +124,10 @@ export const exportAccounting = async (req, res) => {
               COALESCE(SUM(amount), 0) as deposits
        FROM transactions
        WHERE type = 'deposit'
-         AND created_at >= $1::date
-         AND created_at < ($2::date + interval '1 day')
+         AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) >= $1::date
+         AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) < ($2::date + interval '1 day')
        GROUP BY student_id, target_teacher_id`,
-      [from, to]
+      [from, to, ACCOUNTING_TZ]
     );
     const depositsInPeriodByWallet = new Map();
     const unallocatedDepositsInPeriodByStudent = new Map();
@@ -530,31 +526,10 @@ export const exportAccountingTransactions = async (req, res) => {
       return res.status(400).json({ message: 'to должен быть >= from' });
     }
 
-    const txRes = await pool.query(
-      `SELECT t.id,
-              t.student_id,
-              COALESCE(s.name, '') as student_name,
-              COALESCE(s.pay_by_bank_transfer, false) as pay_by_bank_transfer,
-              t.type,
-              t.amount,
-              t.description,
-              t.lesson_id,
-              t.created_at,
-              t.created_by,
-              COALESCE(u.email, '') AS created_by_email,
-              ${sqlUserAccountingNameOrEmpty('u')} AS created_by_display_name
-       FROM transactions t
-       LEFT JOIN students s ON s.id = t.student_id
-       LEFT JOIN users u ON u.id = t.created_by
-       WHERE t.created_at >= $1::date
-         AND t.created_at < ($2::date + interval '1 day')
-       ORDER BY t.created_at ASC, t.id ASC`,
-      [from, to]
-    );
-
-    const rows = bankTransferOnly
-      ? txRes.rows.filter((r) => r.pay_by_bank_transfer === true)
-      : txRes.rows;
+    // L12: единый источник транзакций — тот же queryAccountingTransactions, что и лист
+    // «Транзакции» в XLSX. Раньше здесь был свой SQL, который разошёлся (не отдавал
+    // target_teacher_id и таймзонную границу периода). Теперь дрейф невозможен.
+    const rows = await queryAccountingTransactions(pool, { from, to, bankTransferOnly });
 
     if (format === 'csv') {
       const header = [
@@ -574,16 +549,16 @@ export const exportAccountingTransactions = async (req, res) => {
       for (const r of rows) {
         csvRows.push([
           r.id,
-          r.student_id,
-          r.student_name,
+          r.studentId,
+          r.studentName,
           r.type,
           toNumber(r.amount),
           r.description || '',
-          r.lesson_id || '',
-          (r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at || '').toString()),
-          r.created_by || '',
-          r.created_by_display_name || r.created_by_email || '',
-          r.created_by_email || '',
+          r.lessonId || '',
+          (r.createdAt instanceof Date ? r.createdAt.toISOString() : (r.createdAt || '').toString()),
+          r.createdBy || '',
+          r.createdByDisplayName || r.createdByEmail || '',
+          r.createdByEmail || '',
         ]);
       }
       const csv = asCsv(csvRows);
@@ -598,21 +573,12 @@ export const exportAccountingTransactions = async (req, res) => {
       to,
       bankTransferOnly,
       count: rows.length,
-      transactions: rows.map((r) => ({
-        id: r.id,
-        studentId: r.student_id,
-        studentName: r.student_name,
-        type: r.type,
-        amount: toNumber(r.amount),
-        description: r.description || null,
-        lessonId: r.lesson_id || null,
-        createdAt: r.created_at,
-        createdBy: r.created_by || null,
-        createdByDisplayName: r.created_by_display_name || r.created_by_email || null,
-        createdByEmail: r.created_by_email || null,
-      })),
+      transactions: rows,
     });
   } catch (error) {
+    if (error?.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
     console.error('Ошибка выгрузки транзакций:', error);
     return res.status(500).json({ message: 'Ошибка выгрузки транзакций' });
   }

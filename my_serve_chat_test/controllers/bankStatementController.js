@@ -78,6 +78,9 @@ const detectDelimiter = (text) => {
   return ',';
 };
 
+// Максимум обрабатываемых строк выписки (общий лимит для CSV и Excel).
+const MAX_STATEMENT_ROWS = 10000;
+
 // Парсинг CSV файла (с поддержкой cp1251 и таб/; разделителей)
 const parseCSV = (buffer) => {
   return new Promise((resolve, reject) => {
@@ -102,7 +105,10 @@ const parseCSV = (buffer) => {
           return h;
         }
       }))
-      .on('data', (data) => results.push(data))
+      // Тот же лимит строк, что и у Excel-пути (см. parseExcel), — защита от гигантских файлов.
+      .on('data', (data) => {
+        if (results.length < MAX_STATEMENT_ROWS) results.push(data);
+      })
       .on('end', () => resolve(results))
       .on('error', (error) => reject(error));
   });
@@ -116,7 +122,7 @@ const parseExcel = async (buffer) => {
   if (!worksheet) return [];
 
   const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
-  const maxRows = 10000;
+  const maxRows = MAX_STATEMENT_ROWS;
   const rows = [];
   worksheet.eachRow((row, rowNumber) => {
     if (rows.length >= maxRows + 1) return;
@@ -166,45 +172,71 @@ const getStudentsForPaymentMatching = async (teacherId, canAccessAllStudents) =>
   return studentsResult.rows;
 };
 
-// Поиск студента по описанию платежа (по заранее загруженному списку доступных студентов)
+// Минимальная длина токена для анкорного (по целым словам) сопоставления.
+// Короче — слишком много ложных совпадений (частицы, инициалы и т.п.).
+const MIN_MATCH_TOKEN_LEN = 4;
+
+// Токенизация по не-буквенно-цифровым символам (Unicode: работает и для кириллицы).
+const tokenizeDescription = (text) =>
+  new Set((text || '').split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+
+// Совпадение по целому слову: хотя бы один значимый токен значения (>= MIN_MATCH_TOKEN_LEN)
+// присутствует в описании как отдельное слово (а не как подстрока внутри другого слова).
+const matchesWholeWord = (descTokens, value) => {
+  if (!value) return false;
+  const tokens = value
+    .toString()
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= MIN_MATCH_TOKEN_LEN);
+  return tokens.some((t) => descTokens.has(t));
+};
+
+// Поиск студента по описанию платежа (по заранее загруженному списку доступных студентов).
+// Возвращает { student, ambiguous }:
+//  - student: единственный уверенно найденный ученик или null;
+//  - ambiguous: true, если по имени/родителю/email совпало несколько разных учеников.
 const findStudentByPaymentDescription = (students, description) => {
   if (!description || typeof description !== 'string') {
-    return null;
+    return { student: null, ambiguous: false };
   }
 
   const desc = description.toLowerCase().trim();
   const descClean = desc.replace(/\D/g, '');
+  const descTokens = tokenizeDescription(desc);
 
-  // Ищем совпадения по имени, имени родителя, телефону или email
+  // 1) Телефон — сильный уникальный идентификатор, оставляем прежнее поведение
+  //    (первое совпадение с длиной >= 10 цифр).
   for (const student of students) {
-    const studentName = student.name?.toLowerCase() || '';
-    const parentName = student.parent_name?.toLowerCase() || '';
     const phone = student.phone?.replace(/\D/g, '') || '';
-    const email = student.email?.toLowerCase().trim() || '';
-    const emailLocal = email.includes('@') ? email.split('@')[0] : '';
-
-    // Проверяем совпадение по имени студента
-    if (studentName && desc.includes(studentName)) {
-      return student;
-    }
-
-    // Проверяем совпадение по имени родителя
-    if (parentName && desc.includes(parentName)) {
-      return student;
-    }
-
-    // Проверяем совпадение по телефону (если есть в описании)
-    if (phone && descClean.includes(phone) && phone.length >= 10) {
-      return student;
-    }
-
-    // Проверяем совпадение по email (или "нику" = local-part)
-    if (email && (desc.includes(email) || (emailLocal && desc.includes(emailLocal)))) {
-      return student;
+    if (phone && phone.length >= 10 && descClean.includes(phone)) {
+      return { student, ambiguous: false };
     }
   }
 
-  return null;
+  // 2) Имя / имя родителя / локальная часть email — только по целым словам
+  //    с минимальной длиной токена. Первый попавшийся больше не выигрывает:
+  //    если совпало несколько разных учеников — помечаем строку неоднозначной.
+  const matched = [];
+  for (const student of students) {
+    const email = student.email?.toLowerCase().trim() || '';
+    const emailLocal = email.includes('@') ? email.split('@')[0] : '';
+    const nameHit = matchesWholeWord(descTokens, student.name);
+    const parentHit = matchesWholeWord(descTokens, student.parent_name);
+    const emailHit =
+      emailLocal.length >= MIN_MATCH_TOKEN_LEN && descTokens.has(emailLocal);
+    if (nameHit || parentHit || emailHit) {
+      matched.push(student);
+    }
+  }
+
+  if (matched.length === 1) {
+    return { student: matched[0], ambiguous: false };
+  }
+  if (matched.length > 1) {
+    return { student: null, ambiguous: true };
+  }
+  return { student: null, ambiguous: false };
 };
 
 // Извлечение суммы из строки
@@ -337,7 +369,8 @@ export const processBankStatement = async (req, res) => {
         }
 
         // Ищем студента по описанию платежа
-        const student = findStudentByPaymentDescription(matchStudents, description);
+        const match = findStudentByPaymentDescription(matchStudents, description);
+        const student = match.student;
 
         processedPayments.push({
           row: i + 1,
@@ -348,7 +381,9 @@ export const processBankStatement = async (req, res) => {
             id: student.id,
             name: student.name
           } : null,
-          raw: row
+          // M29: несколько учеников совпало по описанию — не выбираем первого,
+          // помечаем строку как неоднозначную для ручного разбора оператором.
+          ambiguous: match.ambiguous,
         });
       } catch (error) {
         errors.push({
@@ -412,6 +447,7 @@ export const applyPayments = async (req, res) => {
 
     const results = [];
     const errors = [];
+    const skipped = [];
     const seenPaymentFingerprints = new Set();
     for (const payment of payments) {
       try {
@@ -503,19 +539,36 @@ export const applyPayments = async (req, res) => {
           [userId, studentIdNum, amountNum, finalDescription, paymentDateIso]
         );
         if (dupInDb.rows.length > 0) {
-          results.push({
+          // M21: идентичный депозит уже есть в БД. Раньше он уходил в results как
+          // reused:true и считался успехом — оператор видел «2 успешно» при одном
+          // реальном депозите. Настоящий второй платёж на ту же сумму в тот же день
+          // нельзя отличить от повторного импорта без per-row идентификатора (в parsed-
+          // строке его нет), поэтому не создаём дубль, но и не выдаём за успех:
+          // сообщаем отдельно в skipped, чтобы оператор разобрал вручную.
+          skipped.push({
             transaction: dupInDb.rows[0],
             student: studentCheck.rows[0],
-            reused: true,
+            reason: 'duplicate',
           });
           continue;
         }
 
+        // M28: если у ученика ровно один активный (не архивный) преподаватель —
+        // адресуем депозит ему. При неоднозначности (0 или >1 связей) оставляем NULL.
+        const teacherLinksRes = await client.query(
+          `SELECT teacher_id
+           FROM teacher_students
+           WHERE student_id = $1 AND is_archived = false`,
+          [studentIdNum]
+        );
+        const targetTeacherId =
+          teacherLinksRes.rows.length === 1 ? teacherLinksRes.rows[0].teacher_id : null;
+
         const result = await client.query(
-          `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at)
-           VALUES ($1, $2, 'deposit', $3, $4, $5)
+          `INSERT INTO transactions (student_id, amount, type, description, created_by, created_at, target_teacher_id)
+           VALUES ($1, $2, 'deposit', $3, $4, $5, $6)
            RETURNING *`,
-          [studentIdNum, amountNum, finalDescription, userId, createdAt]
+          [studentIdNum, amountNum, finalDescription, userId, createdAt, targetTeacherId]
         );
 
         results.push({
@@ -535,8 +588,11 @@ export const applyPayments = async (req, res) => {
     const responsePayload = {
       success: results.length,
       failed: errors.length,
+      // M21: пропущенные дубликаты считаются отдельно, а не как success.
+      skipped: skipped.length,
       results: results,
-      errors: errors
+      errors: errors,
+      skippedDuplicates: skipped
     };
     await completeIdempotent(client, {
       userId,
@@ -554,6 +610,7 @@ export const applyPayments = async (req, res) => {
         total: payments.length,
         success: results.length,
         failed: errors.length,
+        skipped: skipped.length,
       },
     });
     await client.query('COMMIT');

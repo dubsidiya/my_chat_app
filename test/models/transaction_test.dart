@@ -62,4 +62,47 @@ void main() {
       expect(t.depositTypeLabel, '');
     });
   });
+
+  // Реальные wire-формы: сервер отдаёт DECIMAL как строку ("2000.00"),
+  // а не как число (см. аудит M64/H15). Модель обязана распарсить строку
+  // в корректное числовое значение.
+  group('Transaction.fromJson — деньги строкой (реальный wire-shape)', () {
+    test('amount как строка "2000.00" → 2000.0', () {
+      final t = Transaction.fromJson({
+        'id': 1,
+        'student_id': 10,
+        'amount': '2000.00',
+        'type': 'lesson',
+        'created_by': 1,
+        'created_at': '2025-03-01T12:00:00.000Z',
+      });
+      expect(t.amount, 2000.0);
+    });
+
+    test('amount как строка "-500.50" → -500.5', () {
+      final t = Transaction.fromJson({
+        'id': 2,
+        'student_id': 10,
+        'amount': '-500.50',
+        'type': 'lesson',
+        'created_by': 1,
+        'created_at': '2025-03-01T12:00:00.000Z',
+      });
+      expect(t.amount, -500.5);
+    });
+
+    test('deposit amount как строка "5000.00" → 5000.0', () {
+      final t = Transaction.fromJson({
+        'id': 3,
+        'student_id': 10,
+        'amount': '5000.00',
+        'type': 'deposit',
+        'description': 'Наличные',
+        'created_by': 1,
+        'created_at': '2025-03-01T12:00:00.000Z',
+      });
+      expect(t.amount, 5000.0);
+      expect(t.isManualDeposit, true);
+    });
+  });
 }

@@ -19,6 +19,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _notesController = TextEditingController();
   final _studentsService = StudentsService();
   bool _isLoading = false;
+  bool _saveInFlight = false;
   bool _payByBankTransfer = false;
   Timer? _searchDebounce;
   bool _isSearchingByName = false;
@@ -161,7 +162,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Future<void> _saveStudent() async {
+    if (_saveInFlight) return;
     if (!_formKey.currentState!.validate()) return;
+    _saveInFlight = true;
 
     setState(() => _isLoading = true);
 
@@ -212,6 +215,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         );
       }
     } finally {
+      _saveInFlight = false;
       if (mounted) {
         setState(() => _isLoading = false);
       }

@@ -12,7 +12,7 @@ import { parsePositiveInt } from '../utils/sanitize.js';
 import {
   buildReportContentFromSlots,
   getTodayByUserTimezone,
-  isValidISODate,
+  MAX_LESSONS_PER_DAY,
   normalizeSlots,
   parseReportContent,
   resolveChargeableByStatus,
@@ -45,8 +45,10 @@ import {
   deleteLessonIncomeForReport,
   syncReportLessonIncome,
 } from '../services/accounting/teacherBalanceService.js';
+import { matchPreservedMakeupOrigins, isMakeupOriginUniqueViolation, lockMakeupForStudent } from '../utils/makeupDebts.js';
 
 const isoDate = (value) => String(value || '').slice(0, 10);
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const resolveStudentForReportLesson = async (client, { teacherId, studentIdRaw, studentNameRaw }) => {
   const parsedStudentId = parsePositiveInt(studentIdRaw);
@@ -143,6 +145,7 @@ const resolveMakeupOriginForReport = async (
     if (!['missed', 'cancel_same_day'].includes(origin.status)) {
       return { errorStatus: 400, errorMessage: wrongStatusMessage };
     }
+    await lockMakeupForStudent(client, { teacherId, studentId });
     const alreadyMakeup = await client.query(
       `SELECT id
        FROM lessons
@@ -159,6 +162,7 @@ const resolveMakeupOriginForReport = async (
     return { originLessonId: origin.id, originLessonDate: isoDate(origin.lesson_date) || null };
   }
 
+  await lockMakeupForStudent(client, { teacherId, studentId });
   const pendingResult = await client.query(
     `SELECT l.id, l.lesson_date
      FROM lessons l
@@ -214,10 +218,21 @@ export const getReportsList = async (req, res) => {
     const dateTo = req.query.date_to;
     const isLate = req.query.is_late; // 'true' | 'false' | не задан
     const createdByRaw = req.query.created_by;
-    const createdBy =
-      createdByRaw != null && String(createdByRaw).trim() !== ''
-        ? parsePositiveInt(createdByRaw)
-        : null;
+
+    // L1: некорректные фильтры не игнорируем молча — возвращаем 400.
+    if (dateFrom != null && String(dateFrom).trim() !== '' && !ISO_DATE_RE.test(String(dateFrom).trim())) {
+      return res.status(400).json({ message: 'date_from должен быть в формате YYYY-MM-DD' });
+    }
+    if (dateTo != null && String(dateTo).trim() !== '' && !ISO_DATE_RE.test(String(dateTo).trim())) {
+      return res.status(400).json({ message: 'date_to должен быть в формате YYYY-MM-DD' });
+    }
+    let createdBy = null;
+    if (createdByRaw != null && String(createdByRaw).trim() !== '') {
+      createdBy = parsePositiveInt(createdByRaw);
+      if (!createdBy) {
+        return res.status(400).json({ message: 'created_by должен быть положительным целым' });
+      }
+    }
 
     const result = await findReportsList(pool, {
       dateFrom,
@@ -253,9 +268,18 @@ export const getReportsList = async (req, res) => {
 /** GET /reports/list/teachers?date_from=&date_to= — авторы с отчётами в периоде (суперпользователь). */
 export const getReportAuthors = async (req, res) => {
   try {
+    const dateFrom = req.query.date_from;
+    const dateTo = req.query.date_to;
+    // L1: некорректные фильтры дат не игнорируем молча — возвращаем 400.
+    if (dateFrom != null && String(dateFrom).trim() !== '' && !ISO_DATE_RE.test(String(dateFrom).trim())) {
+      return res.status(400).json({ message: 'date_from должен быть в формате YYYY-MM-DD' });
+    }
+    if (dateTo != null && String(dateTo).trim() !== '' && !ISO_DATE_RE.test(String(dateTo).trim())) {
+      return res.status(400).json({ message: 'date_to должен быть в формате YYYY-MM-DD' });
+    }
     const result = await findReportAuthors(pool, {
-      dateFrom: req.query.date_from,
-      dateTo: req.query.date_to,
+      dateFrom,
+      dateTo,
     });
     res.json(
       result.rows.map((row) => ({
@@ -506,6 +530,20 @@ export const createReport = async (req, res) => {
     // Парсим содержание отчета (старый способ) если slots не передавали
     if (!hasSlots) {
       parsedLessons = parseReportContent(finalContent);
+      // M6: тот же потолок занятий в день, что и для slots.
+      if (parsedLessons.length > MAX_LESSONS_PER_DAY) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Максимум ${MAX_LESSONS_PER_DAY} занятий в день` });
+      }
+    }
+
+    // M10: заранее берём блокировки строк учеников в детерминированном порядке (по возрастанию id),
+    // чтобы параллельные операции не давали взаимную блокировку (40P01) на per-student FOR UPDATE.
+    const lockStudentIds = [...new Set(
+      parsedLessons.map((it) => Number(it.studentId)).filter((v) => Number.isInteger(v) && v > 0)
+    )].sort((a, b) => a - b);
+    for (const sid of lockStudentIds) {
+      await client.query('SELECT id FROM students WHERE id = $1 FOR UPDATE', [sid]);
     }
 
     // Создаем занятия для каждого найденного ученика
@@ -623,8 +661,10 @@ export const createReport = async (req, res) => {
       responseStatus: 201,
       responseBody: apiReport,
     });
-    // Аудит на отдельном соединении, чтобы ошибка/отсутствие audit_events не переводило транзакцию в 25P02
+    // Аудит внутри той же транзакции (SAVEPOINT-изоляция) — не открываем второе соединение
+    // и не оставляем «висящую» запись, если транзакция откатится.
     await logAccountingEvent({
+      client,
       userId,
       eventType: 'report_created',
       entityType: 'report',
@@ -643,8 +683,20 @@ export const createReport = async (req, res) => {
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     if (error?.code === '23505') {
+      if (isMakeupOriginUniqueViolation(error)) {
+        return res.status(400).json({ message: 'Этот пропуск уже отработан' });
+      }
       return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
     }
+    // M7: числовое переполнение DECIMAL — это невалидный ввод (400), а не сбой сервера.
+    if (error?.code === '22003') {
+      return res.status(400).json({ message: 'Слишком большая сумма (превышен допустимый диапазон)' });
+    }
+    // M10: взаимная блокировка — операция повторяема (409), а не 500.
+    if (error?.code === '40P01') {
+      return res.status(409).json({ message: 'Конфликт параллельного изменения, повторите попытку' });
+    }
+    // Аудит ошибки — уже после ROLLBACK, поэтому пишем на отдельном соединении (pool).
     await logAccountingEvent({
       userId,
       eventType: 'report_create_error',
@@ -659,12 +711,10 @@ export const createReport = async (req, res) => {
         has_slots: Array.isArray(req.body?.slots),
       },
     });
-    // Даем пользователю минимально полезную диагностику, без stack trace.
-    if (error?.code === '42P01') {
-      return res.status(500).json({ message: 'Ошибка создания отчета: БД не мигрирована (нет таблицы/индекса). Примените миграции.' });
-    }
-    if (error?.code === '42501') {
-      return res.status(500).json({ message: 'Ошибка создания отчета: недостаточно прав на объекты БД. Проверьте роль пользователя БД и миграции.' });
+    // L4: не раскрываем клиенту состояние миграций/прав БД. Детали — только в лог сервера.
+    if (error?.code === '42P01' || error?.code === '42501') {
+      console.error('createReport DB object/permission error:', error?.code, error?.message);
+      return res.status(500).json({ message: 'Ошибка создания отчета' });
     }
     console.error('Ошибка создания отчета:', error);
     return res.status(500).json({ message: 'Ошибка создания отчета' });
@@ -675,7 +725,7 @@ export const createReport = async (req, res) => {
   }
 };
 
-// Обновление отчета (удаляет старые занятия и создает новые)
+// Обновление отчета: пересобирает занятия, сохраняя id пропусков с внешней отработкой.
 export const updateReport = async (req, res) => {
   const userId = req.user.userId;
   const superuser = isSuperuser(req.user);
@@ -717,13 +767,14 @@ export const updateReport = async (req, res) => {
     }
 
     // Автор может редактировать свой отчёт, суперпользователь — любой.
+    // M2: блокируем строку отчёта (FOR UPDATE), чтобы параллельные PUT сериализовались.
     const checkResult = superuser
       ? await client.query(
-          'SELECT id, created_by FROM reports WHERE id = $1 LIMIT 1',
+          'SELECT id, created_by, report_date::text AS report_date, is_late FROM reports WHERE id = $1 LIMIT 1 FOR UPDATE',
           [reportId]
         )
       : await client.query(
-          'SELECT id, created_by FROM reports WHERE id = $1 AND created_by = $2',
+          'SELECT id, created_by, report_date::text AS report_date, is_late FROM reports WHERE id = $1 AND created_by = $2 FOR UPDATE',
           [reportId, userId]
         );
     if (checkResult.rows.length === 0) {
@@ -731,6 +782,13 @@ export const updateReport = async (req, res) => {
       return res.status(404).json({ message: 'Отчет не найден' });
     }
     const reportOwnerId = checkResult.rows[0].created_by;
+    const previousDate = isoDate(checkResult.rows[0].report_date);
+    const previouslyLate = checkResult.rows[0].is_late === true;
+    const dateChanged = previousDate !== report_date;
+    // Дата не менялась — оставляем is_late с создания, чтобы правка спустя дни не наказывала.
+    // Дата сменилась — OR с (новая дата < сегодня): нельзя задним числом обойти дедлайн
+    // и нельзя снять «поздний» переносом на сегодня (это только set-not-late).
+    const nextIsLate = previouslyLate || (dateChanged && report_date < todayIso);
 
     // Защита от конфликта даты: нельзя сменить дату на уже существующий отчет
     const dateConflict = await client.query(
@@ -741,29 +799,6 @@ export const updateReport = async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ message: 'Отчет за эту дату уже существует' });
     }
-
-    // Получаем старые занятия из отчета
-    const oldLessonsResult = await client.query(
-      `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
-      [reportId]
-    );
-    const oldLessonIds = oldLessonsResult.rows.map((row) => row.lesson_id);
-
-    // Удаляем старые транзакции и занятия (только свои)
-    if (oldLessonIds.length > 0) {
-      await deleteLessonIncomeForLessons(client, oldLessonIds);
-      await client.query(
-        'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
-        [reportOwnerId, oldLessonIds]
-      );
-      await client.query(
-        'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
-        [reportOwnerId, oldLessonIds]
-      );
-    }
-
-    // Удаляем связи
-    await client.query('DELETE FROM report_lessons WHERE report_id = $1', [reportId]);
 
     let finalContent = content;
     let parsedLessons = [];
@@ -779,14 +814,39 @@ export const updateReport = async (req, res) => {
       const studentIds = [...new Set(slots.flatMap((s) => s.students.map((x) => parseInt(x.studentId, 10))))];
       const studentsResult = await client.query(
         `SELECT s.id, s.name
-         FROM teacher_students ts
-         JOIN students s ON s.id = ts.student_id
-         WHERE ts.teacher_id = $1 AND s.id = ANY($2::int[])`,
-        [reportOwnerId, studentIds]
+         FROM students s
+         WHERE s.id = ANY($2::int[])
+           AND (
+             EXISTS (
+               SELECT 1 FROM teacher_students ts
+               WHERE ts.teacher_id = $1 AND ts.student_id = s.id
+                 AND ts.is_archived = false
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM report_lessons rl
+               JOIN lessons l ON l.id = rl.lesson_id
+               WHERE rl.report_id = $3 AND l.student_id = s.id
+             )
+           )`,
+        [reportOwnerId, studentIds, reportId]
       );
       if (studentsResult.rows.length !== studentIds.length) {
+        const found = new Set(studentsResult.rows.map((r) => Number(r.id)));
+        const missing = studentIds.filter((id) => Number.isFinite(id) && !found.has(id));
+        const namesRes = await client.query(
+          'SELECT id, name FROM students WHERE id = ANY($1::int[])',
+          [missing]
+        );
+        const nameById = new Map(namesRes.rows.map((r) => [Number(r.id), r.name]));
+        const labels = missing.map((id) => {
+          const nm = nameById.get(id);
+          return nm ? `${nm} (id ${id})` : `id ${id}`;
+        });
         await client.query('ROLLBACK');
-        return res.status(400).json({ message: 'В отчете есть ученики, которых нет в списке доступных' });
+        return res.status(400).json({
+          message: `В отчете есть ученики, которых нет в списке доступных: ${labels.join(', ')}`,
+        });
       }
       const idToName = new Map(studentsResult.rows.map((r) => [r.id, r.name]));
       finalContent = buildReportContentFromSlots(report_date, slots, idToName);
@@ -807,55 +867,133 @@ export const updateReport = async (req, res) => {
           notes: null,
         }));
       });
+    } else {
+      parsedLessons = parseReportContent(finalContent);
+      // M6: тот же потолок занятий в день, что и для slots.
+      if (parsedLessons.length > MAX_LESSONS_PER_DAY) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Максимум ${MAX_LESSONS_PER_DAY} занятий в день` });
+      }
     }
 
-    // is_late определяется при создании отчёта; при редактировании не пересчитываем,
-    // чтобы вовремя сданный отчёт не становился «поздним» из-за правки спустя дни.
+    for (const item of parsedLessons) {
+      if (item.studentId) continue;
+      const resolved = await resolveStudentForReportLesson(client, {
+        teacherId: reportOwnerId,
+        studentIdRaw: item.studentId,
+        studentNameRaw: item.studentName,
+      });
+      if (resolved.errorMessage) {
+        await client.query('ROLLBACK');
+        return res.status(resolved.errorStatus || 400).json({ message: resolved.errorMessage });
+      }
+      item.studentId = resolved.studentId;
+      item.studentName = resolved.studentName;
+    }
+
+    const oldLessonsResult = await client.query(
+      `SELECT lesson_id FROM report_lessons WHERE report_id = $1`,
+      [reportId]
+    );
+    const oldLessonIds = oldLessonsResult.rows.map((row) => Number(row.lesson_id)).filter(Number.isFinite);
+
+    let preserveByParsedIndex = new Map();
+    if (oldLessonIds.length > 0) {
+      const oldLessonsRes = await client.query(
+        `SELECT id, student_id, status, lesson_time, is_chargeable
+         FROM lessons
+         WHERE id = ANY($1::int[]) AND created_by = $2`,
+        [oldLessonIds, reportOwnerId]
+      );
+      const makeupOriginRes = await client.query(
+        `SELECT DISTINCT origin_lesson_id
+         FROM lessons
+         WHERE status = 'makeup'
+           AND origin_lesson_id = ANY($1::int[])
+           AND NOT (id = ANY($1::int[]))`,
+        [oldLessonIds]
+      );
+      const matched = matchPreservedMakeupOrigins({
+        oldLessons: oldLessonsRes.rows,
+        parsedLessons,
+        referencedOriginIds: makeupOriginRes.rows.map((row) => row.origin_lesson_id),
+      });
+      if (matched.unmatched.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'Нельзя изменить или удалить пропуск, который уже отработан',
+        });
+      }
+      preserveByParsedIndex = matched.preservedByParsedIndex;
+    }
+
+    const preservedIds = new Set(
+      [...preserveByParsedIndex.values()].map((row) => Number(row.id)).filter(Number.isFinite)
+    );
+    const idsToDelete = oldLessonIds.filter((id) => !preservedIds.has(Number(id)));
+
+    if (oldLessonIds.length > 0) {
+      await deleteLessonIncomeForLessons(client, oldLessonIds);
+      await client.query(
+        'DELETE FROM transactions WHERE created_by = $1 AND lesson_id = ANY($2::int[])',
+        [reportOwnerId, oldLessonIds]
+      );
+      if (idsToDelete.length > 0) {
+        await client.query(
+          'DELETE FROM lessons WHERE created_by = $1 AND id = ANY($2::int[])',
+          [reportOwnerId, idsToDelete]
+        );
+      }
+    }
+
+    await client.query('DELETE FROM report_lessons WHERE report_id = $1', [reportId]);
+
     const reportResult = superuser
       ? await client.query(
           `UPDATE reports 
-           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $3
+           SET report_date = $1, content = $2, is_late = $3, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $4
            RETURNING *`,
-          [report_date, finalContent, reportId]
+          [report_date, finalContent, nextIsLate, reportId]
         )
       : await client.query(
           `UPDATE reports 
-           SET report_date = $1, content = $2, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $3 AND created_by = $4
+           SET report_date = $1, content = $2, is_late = $3, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $4 AND created_by = $5
            RETURNING *`,
-          [report_date, finalContent, reportId, reportOwnerId]
+          [report_date, finalContent, nextIsLate, reportId, reportOwnerId]
         );
+    // M11: отчёт могли удалить параллельно между блокировкой и UPDATE — тогда 404, а не 500.
+    if (reportResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Отчет не найден' });
+    }
     const report = reportResult.rows[0];
 
-    // Парсим новое содержание и создаем занятия заново
-    if (!hasSlots) {
-      parsedLessons = parseReportContent(finalContent);
+    // M10: блокируем строки учеников в детерминированном порядке (по возрастанию id) до
+    // per-lesson обработки, чтобы параллельные операции не давали взаимную блокировку (40P01).
+    const lockStudentIds = [...new Set(
+      parsedLessons.map((it) => Number(it.studentId)).filter((v) => Number.isInteger(v) && v > 0)
+    )].sort((a, b) => a - b);
+    for (const sid of lockStudentIds) {
+      await client.query('SELECT id FROM students WHERE id = $1 FOR UPDATE', [sid]);
     }
-    const createdLessons = [];
 
-    for (const item of parsedLessons) {
+    const createdByIndex = new Array(parsedLessons.length);
+    const persistOrder = parsedLessons.map((_, index) => index).sort((a, b) => {
+      const rank = (item) => ((item?.status || '').toString() === 'makeup' ? 1 : 0);
+      return rank(parsedLessons[a]) - rank(parsedLessons[b]);
+    });
+
+    for (const index of persistOrder) {
+      const item = parsedLessons[index];
       const { price, notes } = item;
       const status = typeof item.status === 'string' ? item.status : 'attended';
       let originLessonId = item.originLessonId == null ? null : parseInt(item.originLessonId, 10);
       let makeupOriginDate = null;
-
-      let studentId = item.studentId;
-      let studentName = item.studentName;
-
-      if (!studentId) {
-        const resolved = await resolveStudentForReportLesson(client, {
-          teacherId: reportOwnerId,
-          studentIdRaw: item.studentId,
-          studentNameRaw: item.studentName,
-        });
-        if (resolved.errorMessage) {
-          await client.query('ROLLBACK');
-          return res.status(resolved.errorStatus || 400).json({ message: resolved.errorMessage });
-        }
-        studentId = resolved.studentId;
-        studentName = resolved.studentName;
-      }
+      const studentId = item.studentId;
+      const studentName = item.studentName;
+      const preserveRow = preserveByParsedIndex.get(index) || null;
 
       const lessonTime = item.lessonTimeHHMM ? String(item.lessonTimeHHMM).substring(0, 5) : null;
 
@@ -884,26 +1022,53 @@ export const updateReport = async (req, res) => {
         makeupOriginDate = originResolved.originLessonDate;
         if (makeupOriginDate) description += ` за пропуск ${makeupOriginDate}`;
       }
-      const isChargeable = await resolveChargeableByStatus(client, { studentId, status, teacherId: reportOwnerId });
 
-      const lessonResult = await client.query(
-        `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING *`,
-        [
-          studentId,
-          report_date,
-          lessonTime,
-          item.durationMinutes || 60,
-          price,
-          status,
-          isChargeable,
-          originLessonId,
-          notes || null,
-          reportOwnerId,
-        ]
-      );
-      const lesson = lessonResult.rows[0];
+      let lesson;
+      let isChargeable;
+      if (preserveRow) {
+        const updated = await client.query(
+          `UPDATE lessons
+           SET lesson_date = $1, lesson_time = $2, duration_minutes = $3, price = $4, status = $5, notes = $6
+           WHERE id = $7 AND created_by = $8
+           RETURNING *`,
+          [
+            report_date,
+            lessonTime,
+            item.durationMinutes || 60,
+            price,
+            status,
+            notes || null,
+            preserveRow.id,
+            reportOwnerId,
+          ]
+        );
+        if (updated.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(500).json({ message: 'Ошибка обновления занятия отчёта' });
+        }
+        lesson = updated.rows[0];
+        isChargeable = lesson.is_chargeable === true;
+      } else {
+        isChargeable = await resolveChargeableByStatus(client, { studentId, status, teacherId: reportOwnerId });
+        const lessonResult = await client.query(
+          `INSERT INTO lessons (student_id, lesson_date, lesson_time, duration_minutes, price, status, is_chargeable, origin_lesson_id, notes, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`,
+          [
+            studentId,
+            report_date,
+            lessonTime,
+            item.durationMinutes || 60,
+            price,
+            status,
+            isChargeable,
+            originLessonId,
+            notes || null,
+            reportOwnerId,
+          ]
+        );
+        lesson = lessonResult.rows[0];
+      }
 
       if (isChargeable) {
         await client.query(
@@ -919,8 +1084,9 @@ export const updateReport = async (req, res) => {
         [report.id, lesson.id]
       );
 
-      createdLessons.push({ ...lesson, student_name: studentName });
+      createdByIndex[index] = { ...lesson, student_name: studentName };
     }
+    const createdLessons = createdByIndex.filter(Boolean);
 
     report.lessons = createdLessons;
     report.lessons_count = createdLessons.length;
@@ -933,8 +1099,10 @@ export const updateReport = async (req, res) => {
     apiReport.lessons_count = createdLessons.length;
     apiReport.parsed_count = parsedLessons.length;
     apiReport.created_count = createdLessons.length;
-    // Аудит на отдельном соединении — не трогаем client-транзакцию
+    // Аудит внутри той же транзакции (SAVEPOINT-изоляция) — без второго соединения
+    // и без «висящей» записи при откате транзакции.
     await logAccountingEvent({
+      client,
       userId,
       eventType: 'report_updated',
       entityType: 'report',
@@ -953,8 +1121,20 @@ export const updateReport = async (req, res) => {
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     if (error?.code === '23505') {
+      if (isMakeupOriginUniqueViolation(error)) {
+        return res.status(400).json({ message: 'Этот пропуск уже отработан' });
+      }
       return res.status(409).json({ message: 'Конфликт данных: возможно дубликат отчета или занятия' });
     }
+    // M7: числовое переполнение DECIMAL — невалидный ввод (400), а не сбой сервера.
+    if (error?.code === '22003') {
+      return res.status(400).json({ message: 'Слишком большая сумма (превышен допустимый диапазон)' });
+    }
+    // M10: взаимная блокировка — операция повторяема (409), а не 500.
+    if (error?.code === '40P01') {
+      return res.status(409).json({ message: 'Конфликт параллельного изменения, повторите попытку' });
+    }
+    // Аудит ошибки — уже после ROLLBACK, поэтому на отдельном соединении (pool).
     await logAccountingEvent({
       userId,
       eventType: 'report_update_error',
@@ -1033,8 +1213,9 @@ export const deleteReport = async (req, res) => {
     } else {
       await client.query('DELETE FROM reports WHERE id = $1 AND created_by = $2', [reportId, userId]);
     }
-    // Аудит на отдельном соединении
+    // Аудит внутри той же транзакции (SAVEPOINT-изоляция) — без второго соединения.
     await logAccountingEvent({
+      client,
       userId,
       eventType: 'report_deleted',
       entityType: 'report',
@@ -1066,11 +1247,12 @@ export const setReportNotLate = async (req, res) => {
   if (!isSuperuser(req.user)) {
     return res.status(403).json({ message: 'Требуется доступ суперпользователя' });
   }
-  const reportId = parseInt(req.params.id, 10);
-  if (!Number.isFinite(reportId)) {
+  const reportId = parsePositiveInt(req.params.id);
+  if (!reportId) {
     return res.status(400).json({ message: 'Некорректный id отчёта' });
   }
   const client = await pool.connect();
+  let updatedRow;
   try {
     await client.query('BEGIN');
     const result = await client.query(
@@ -1081,6 +1263,7 @@ export const setReportNotLate = async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Отчёт не найден' });
     }
+    updatedRow = result.rows[0];
     await syncReportLessonIncome(client, reportId, req.user.userId);
     await logAccountingEvent({
       client,
@@ -1088,17 +1271,24 @@ export const setReportNotLate = async (req, res) => {
       eventType: 'report_set_not_late',
       entityType: 'report',
       entityId: reportId,
-      payload: { report_date: result.rows[0].report_date },
+      payload: { report_date: updatedRow.report_date },
     });
     await client.query('COMMIT');
-    const enriched = await findReportByIdWithLabels(pool, reportId);
-    return res.json(serializeReportRow(enriched.rows[0] ?? result.rows[0]));
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('setReportNotLate:', error);
     return res.status(500).json({ message: 'Ошибка при снятии пометки «поздний отчёт»' });
   } finally {
     client.release();
+  }
+
+  // L5: обогащение — уже после COMMIT и вне транзакции; при сбое отдаём обновлённую строку.
+  try {
+    const enriched = await findReportByIdWithLabels(pool, reportId);
+    return res.json(serializeReportRow(enriched.rows[0] ?? updatedRow));
+  } catch (error) {
+    console.error('setReportNotLate enrichment:', error);
+    return res.json(serializeReportRow(updatedRow));
   }
 };
 
@@ -1108,8 +1298,8 @@ export const setReportNotLate = async (req, res) => {
  */
 export const getReportAudit = async (req, res) => {
   const userId = req.user.userId;
-  const id = parseInt(req.params.id, 10);
-  if (!Number.isFinite(id)) {
+  const id = parsePositiveInt(req.params.id);
+  if (!id) {
     return res.status(400).json({ message: 'Некорректный id отчёта' });
   }
   try {
@@ -1139,9 +1329,10 @@ export const getReportAudit = async (req, res) => {
     );
     return res.json({ events: result.rows });
   } catch (error) {
-    const msg = error?.message || String(error);
-    if (/relation "audit_events" does not exist/i.test(msg)) {
-      return res.json({ events: [], message: 'Таблица аудита не развёрнута на сервере' });
+    // L3: отсутствие таблицы аудита определяем по коду 42P01, а не по подстроке.
+    // Клиентский empty-state опирается на 200 + serverMessage — статус не меняем.
+    if (error?.code === '42P01') {
+      return res.json({ events: [], message: 'Таблица аудита не развёрнута на сервере', available: false });
     }
     console.error('getReportAudit:', error);
     return res.status(500).json({ message: 'Ошибка загрузки журнала' });

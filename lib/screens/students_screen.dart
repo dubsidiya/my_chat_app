@@ -5,6 +5,7 @@ import '../widgets/theme_motion.dart';
 import '../models/student.dart';
 import '../services/students_service.dart';
 import '../services/storage_service.dart';
+import '../utils/network_error_helper.dart';
 import 'student_detail_screen.dart';
 import 'add_student_screen.dart';
 import 'lessons_calendar_screen.dart';
@@ -66,23 +67,44 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Set<int> get _archivedStudentIds =>
       _students.where((s) => s.isArchived).map((s) => s.id).toSet();
 
+  /// Короткое сообщение об ошибке: 401 → перелогин, 403 → нет прав, иначе общий helper (M58).
+  String _friendlyError(Object e) {
+    final base = networkErrorMessage(e);
+    if (base.contains('401') || base.toLowerCase().contains('unauthorized')) {
+      return 'Сессия истекла. Войдите в приложение заново.';
+    }
+    if (base.contains('403') || base.contains('прав') || base.contains('доступ')) {
+      return 'Недостаточно прав для этого действия.';
+    }
+    return base;
+  }
+
   /// Одноразово переносим старые локальные «скрытых» в серверный архив.
   Future<void> _migrateLocalHiddenToServerArchive() async {
     final localIds = await StorageService.getHiddenStudentIds(widget.userId);
     if (localIds.isEmpty) return;
+    // Показываем загрузку на время миграции (M57).
+    if (mounted) setState(() => _isLoading = true);
+    // Чистим только реально заархивированные id; неудачные оставляем на след. раз.
+    final remaining = <int>{...localIds};
     for (final id in localIds) {
       try {
         await _studentsService.archiveStudent(id);
+        remaining.remove(id);
       } catch (_) {
-        // Нет связи / уже архив / сеть — пропускаем, локальный список всё равно очистим.
+        // Нет связи / сеть — оставляем id локально, повторим при следующем запуске.
       }
     }
-    await StorageService.clearHiddenStudentIds(widget.userId);
+    if (remaining.isEmpty) {
+      await StorageService.clearHiddenStudentIds(widget.userId);
+    } else {
+      await StorageService.setHiddenStudentIds(widget.userId, remaining);
+    }
   }
 
-  Future<void> _loadStudents() async {
+  Future<void> _loadStudents({bool silent = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (!silent) setState(() => _isLoading = true);
 
     try {
       final students = await _studentsService.getAllStudents();
@@ -104,26 +126,29 @@ class _StudentsScreenState extends State<StudentsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка при загрузке студентов: $e'),
+            content: Text('Ошибка при загрузке студентов: ${_friendlyError(e)}'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && !silent) {
         setState(() => _isLoading = false);
       }
     }
   }
 
   void _openStudentDetail(Student student) async {
-    await Navigator.push(
+    // Перезагружаем список только если в карточке что-то изменилось (M61).
+    final changed = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
+      MaterialPageRoute<bool>(
         builder: (_) => StudentDetailScreen(student: student),
       ),
     );
-    _loadStudents();
+    if (changed == true && mounted) {
+      _loadStudents();
+    }
   }
 
   Future<void> _archiveStudent(Student student) async {
@@ -145,7 +170,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
               await _unarchiveStudent(student, silent: true);
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(duration: Duration(seconds: 2), content: Text('Возврат отменён')),
+                const SnackBar(duration: Duration(seconds: 2), content: Text('Перенос в выпускники отменён')),
               );
             },
           ),
@@ -156,7 +181,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text('Не удалось перенести в выпускники: $e'),
+          content: Text('Не удалось перенести в выпускники: ${_friendlyError(e)}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -185,7 +210,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text('Не удалось вернуть из выпускников: $e'),
+          content: Text('Не удалось вернуть из выпускников: ${_friendlyError(e)}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -208,51 +233,30 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Future<bool> _deleteStudent(Student student) async {
     try {
       await _studentsService.deleteStudent(student.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ученик "${student.name}" удален'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadStudents();
-      }
+      if (!mounted) return true;
+      // Убираем строку из списка локально, чтобы анимация свайпа завершилась
+      // на согласованном списке, а не во время полной перезагрузки (M60).
+      setState(() {
+        _students = _students.where((s) => s.id != student.id).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text('Ученик "${student.name}" удален'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Тихая синхронизация после завершения анимации свайпа (M60).
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) _loadStudents(silent: true);
+      });
       return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка удаления: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-  }
-
-  Future<bool> _deleteStudentFully(Student student) async {
-    try {
-      await _studentsService.deleteStudentFull(student.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ученик "${student.name}" удален полностью'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadStudents();
-      }
-      return true;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка полного удаления: $e'),
+            content: Text('Ошибка удаления: ${_friendlyError(e)}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -374,10 +378,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
           );
     final filteredStudents = _students.where((s) {
       if (!_showArchived && s.isArchived) return false;
-      if (_showOnlyDebtors && s.balance >= 0) return false;
+      // Долг считаем по округлённому балансу, чтобы −0.40 ₽ не попадал в должники (L31).
+      if (_showOnlyDebtors && s.balance.round() >= 0) return false;
       return _matchesStudent(s, q);
     }).toList();
-    final addedChildrenCount = _students.length;
+    // «Детей: N» — та же коллекция, что рисует список (без учёта выпускников, L37).
+    final addedChildrenCount = _showArchived
+        ? _students.length
+        : _students.where((s) => !s.isArchived).length;
     final archivedVisibleCount = _students.where((s) => s.isArchived).length;
     return Scaffold(
       appBar: AppBar(
@@ -723,6 +731,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     itemBuilder: (context, index) {
                       final student = filteredStudents[index];
                       final isArchivedStudent = student.isArchived;
+                      // Округляем баланс и от него же берём признак должника (L31),
+                      // чтобы не было «-0 ₽» с красным «Долг».
+                      final balanceRounded = student.balance.round();
+                      final isDebtor = balanceRounded < 0;
                       return Dismissible(
                         key: Key('student_${student.id}'),
                         direction: DismissDirection.endToStart,
@@ -765,11 +777,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                     onPressed: () => Navigator.pop(context, 'archive'),
                                     child: const Text('В выпускники'),
                                   ),
-                                if (_isSuperuser)
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, 'delete_full'),
-                                    child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
-                                  ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, 'delete'),
                                   child: const Text('Удалить связь'),
@@ -784,33 +791,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                           }
                           if (result == 'unarchive') {
                             await _unarchiveStudent(student);
-                            return false;
-                          }
-                          if (result == 'delete_full') {
-                            final confirmFull = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Подтвердите полное удаление'),
-                                content: Text(
-                                  'Ученик "${student.name}" будет удален полностью из базы.\n\n'
-                                  'Будут удалены все занятия и транзакции по этому ученику.\n'
-                                  'Действие необратимо.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
-                                    child: const Text('Отмена'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, true),
-                                    child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirmFull == true) {
-                              return await _deleteStudentFully(student);
-                            }
                             return false;
                           }
                           if (result == 'delete') {
@@ -831,14 +811,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
                               gradient: LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
-                                colors: student.isDebtor
+                                colors: isDebtor
                                     ? [Colors.red.shade400, Colors.red.shade700]
                                     : [_accent1, _accent2],
                               ),
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: (student.isDebtor ? Colors.red : _accent1).withValues(alpha:0.25),
+                                  color: (isDebtor ? Colors.red : _accent1).withValues(alpha:0.25),
                                   blurRadius: 10,
                                   offset: const Offset(0, 6),
                                 ),
@@ -876,13 +856,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                 FittedBox(
                                   fit: BoxFit.scaleDown,
                                   child: Text(
-                                    '${student.balance.toStringAsFixed(0)} ₽',
+                                    '$balanceRounded ₽',
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
-                                      color: student.balance < 0
+                                      color: balanceRounded < 0
                                           ? Colors.red
-                                          : student.balance > 0
+                                          : balanceRounded > 0
                                               ? Colors.green.shade700
                                               : scheme.onSurface.withValues(alpha: 0.65),
                                     ),
@@ -901,7 +881,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                     child: const Text('Вернуть'),
                                   ),
                                 ],
-                                if (student.isDebtor) ...[
+                                if (isDebtor) ...[
                                   const SizedBox(height: 4),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

@@ -96,6 +96,9 @@ export const getNagavisor = async (req, res) => {
       from: period.from,
       to: period.to,
       bankTransferOnly: false,
+      // M35: карточка одного преподавателя — считаем рабочий профиль только ему,
+      // а не всем (иначе на каждый /nagavisor гоняется 84-дневная агрегация по всем).
+      profileTeacherId: teacherId,
     });
 
     const stats =
@@ -121,7 +124,13 @@ export const getNagavisor = async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка nagavisor:', error);
-    const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 500;
-    return res.status(status).json({ message: error.message || 'Ошибка загрузки карточки преподавателя' });
+    // M27: наружу отдаём error.message только для намеренных 4xx (валидация периода и т.п.).
+    // Прочие ошибки (500) не раскрываем — детали пишем в лог, клиенту общий текст.
+    const status =
+      Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (status >= 400 && status < 500) {
+      return res.status(status).json({ message: error.message || 'Некорректный запрос' });
+    }
+    return res.status(500).json({ message: 'Ошибка загрузки карточки преподавателя' });
   }
 };

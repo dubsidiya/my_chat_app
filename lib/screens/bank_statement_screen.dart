@@ -16,6 +16,7 @@ class BankStatementScreen extends StatefulWidget {
 class _BankStatementScreenState extends State<BankStatementScreen> {
   final StudentsService _studentsService = StudentsService();
   bool _isLoading = false;
+  bool _applyInFlight = false;
   Map<String, dynamic>? _previewData;
   List<Map<String, dynamic>> _selectedPayments = [];
 
@@ -137,6 +138,8 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
     if (confirm != true) return;
 
     if (!mounted) return;
+    if (_applyInFlight) return;
+    _applyInFlight = true;
     setState(() => _isLoading = true);
 
     try {
@@ -170,6 +173,7 @@ class _BankStatementScreenState extends State<BankStatementScreen> {
         );
       }
     } finally {
+      _applyInFlight = false;
       if (mounted) {
         setState(() => _isLoading = false);
       }

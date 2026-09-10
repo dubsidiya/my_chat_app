@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/lesson.dart';
@@ -7,6 +6,7 @@ import '../models/transaction.dart';
 import '../services/students_service.dart';
 import '../services/reports_service.dart';
 import '../services/storage_service.dart';
+import '../utils/network_error_helper.dart';
 import 'edit_student_screen.dart';
 import 'report_text_view_screen.dart';
 
@@ -28,14 +28,19 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
   List<Transaction> _transactions = [];
   double _balance = 0;
   bool _isLoading = false;
+  /// Успешно получили занятия, транзакции и баланс с сервера хотя бы раз.
+  bool _accountingLoaded = false;
+  String? _loadError;
   bool _showAllAccountingData = false;
+  /// Были ли изменения (правка/удаление/отмена депозита) — чтобы список учеников
+  /// перезагружался только когда это действительно нужно (M61).
+  bool _changed = false;
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _student = widget.student;
-    _balance = _student.balance;
     _tabController = TabController(length: 2, vsync: this);
     _initViewerModeAndLoad();
   }
@@ -70,46 +75,63 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         : _studentsService.getStudentBalanceMine(_student.id);
   }
 
-  Future<void> _loadData() async {
+  /// Короткое сообщение об ошибке: 401 → перелогин, 403 → нет прав, иначе общий helper (M58).
+  String _friendlyError(Object e) {
+    final base = networkErrorMessage(e);
+    if (base.contains('401') || base.toLowerCase().contains('unauthorized')) {
+      return 'Сессия истекла. Войдите в приложение заново.';
+    }
+    if (base.contains('403') || base.contains('прав') || base.contains('доступ')) {
+      return 'Недостаточно прав для просмотра этих данных.';
+    }
+    return base;
+  }
+
+  Future<void> _loadData({bool showSpinner = true}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (showSpinner) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
 
     try {
-      final lessons = await _loadLessons();
-      final transactions = await _loadTransactions();
-      await _updateBalance();
-      if (mounted) {
-        setState(() {
-          _lessons = lessons;
-          _transactions = transactions;
-        });
-      }
+      // Три набора данных грузим параллельно, а не последовательно (M61).
+      final results = await Future.wait([
+        _loadLessons(),
+        _loadTransactions(),
+        _loadBalance(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _lessons = results[0] as List<Lesson>;
+        _transactions = results[1] as List<Transaction>;
+        _balance = results[2] as double;
+        _accountingLoaded = true;
+        _loadError = null;
+      });
     } catch (e) {
-      if (kDebugMode) print('Ошибка загрузки данных: $e');
+      if (!mounted) return;
+      final message = _friendlyError(e);
+      setState(() => _loadError = message);
+      if (_accountingLoaded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Не удалось обновить данные: $message'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
-      if (mounted) {
+      if (mounted && showSpinner) {
         setState(() => _isLoading = false);
       }
     }
   }
 
-  // Обновление данных без показа индикатора загрузки
-  Future<void> _refreshData() async {
-    if (!mounted) return;
-    try {
-      final lessons = await _loadLessons();
-      final transactions = await _loadTransactions();
-      await _updateBalance();
-      if (mounted) {
-        setState(() {
-          _lessons = lessons;
-          _transactions = transactions;
-        });
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка обновления данных: $e');
-    }
-  }
+  Future<void> _refreshData() => _loadData(showSpinner: false);
 
   void _editStudent() async {
     final updated = await Navigator.push<Student>(
@@ -121,22 +143,45 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     if (updated != null && mounted) {
       setState(() {
         _student = updated;
+        _changed = true;
       });
-      _updateBalance();
+      await _refreshData();
     }
   }
 
-  Future<void> _updateBalance() async {
-    try {
-      final updatedBalance = await _loadBalance();
-      if (mounted) {
-        setState(() {
-          _balance = updatedBalance;
-        });
-      }
-    } catch (e) {
-      if (kDebugMode) print('Ошибка обновления баланса: $e');
-    }
+  Widget _buildAccountingLoadError(ColorScheme scheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 56, color: scheme.onSurface.withValues(alpha: 0.35)),
+            const SizedBox(height: 12),
+            Text(
+              'Не удалось загрузить данные',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface.withValues(alpha: 0.80),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _loadError ?? '',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _isLoading ? null : () => _loadData(),
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _statusLabel(String status) {
@@ -179,6 +224,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
     try {
       await _studentsService.deleteTransaction(tx.id);
+      _changed = true;
       await _refreshData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -187,7 +233,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: ${_friendlyError(e)}'), backgroundColor: Colors.red),
       );
     }
   }
@@ -235,57 +281,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка удаления: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteStudentFully() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить ученика полностью?'),
-        content: Text(
-          'Ученик "${_student.name}" будет удален полностью из базы.\n\n'
-          'Будут удалены все занятия и транзакции по этому ученику.\n'
-          'Действие необратимо.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      await _studentsService.deleteStudentFull(_student.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ученик "${_student.name}" удален полностью'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text('Ошибка полного удаления: $e'),
+            content: Text('Ошибка удаления: ${_friendlyError(e)}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -331,6 +327,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
     try {
       await _studentsService.deleteLesson(lesson.id);
+      _changed = true;
       // Быстрое обновление данных после удаления занятия
       await _refreshData();
     } catch (e) {
@@ -338,7 +335,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 3),
-            content: Text('Ошибка: $e'),
+            content: Text('Ошибка: ${_friendlyError(e)}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -361,7 +358,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text('Не удалось открыть отчёт: $e'),
+          content: Text('Не удалось открыть отчёт: ${_friendlyError(e)}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -384,6 +381,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_loadError != null && !_accountingLoaded)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildAccountingLoadError(scheme),
                 )
               else ...[
                 SliverToBoxAdapter(
@@ -533,6 +535,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                   hasScrollBody: false,
                   child: Center(child: CircularProgressIndicator()),
                 )
+              else if (_loadError != null && !_accountingLoaded)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildAccountingLoadError(scheme),
+                )
               else if (_transactions.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
@@ -552,6 +559,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                         final transaction = _transactions[index];
                         final isDeposit = transaction.type == 'deposit';
                         final isLesson = transaction.type == 'lesson';
+                        // Знак берём из общего правила: депозит и возврат — плюс,
+                        // занятие — минус (совпадает с сервером, M55).
+                        final isCredit = transaction.isCredit;
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -646,6 +656,15 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
+                                if (isCredit && transaction.targetTeacherId != null)
+                                  Text(
+                                    'В кошелёк: ${(transaction.targetTeacherUsername ?? '').trim().isNotEmpty ? transaction.targetTeacherUsername!.trim() : 'ID ${transaction.targetTeacherId}'}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: scheme.onSurface.withValues(alpha: 0.72),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 Text(
                                   DateFormat('dd.MM.yyyy HH:mm').format(transaction.createdAt),
                                   style: TextStyle(
@@ -659,11 +678,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '${isDeposit ? '+' : '-'}${transaction.amount.toStringAsFixed(0)} ₽',
+                                  '${isCredit ? '+' : '-'}${transaction.amount.toStringAsFixed(0)} ₽',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    color: isDeposit ? Colors.green : Colors.red,
+                                    color: isCredit ? Colors.green : Colors.red,
                                   ),
                                 ),
                                 if (_showAllAccountingData && isDeposit) ...[
@@ -694,12 +713,21 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    final isDebtor = _balance < 0;
+    // Округляем баланс и от него берём признак должника (L31), чтобы −0.40 ₽
+    // не показывался как «-0 ₽ / Долг».
+    final balanceRounded = _balance.round();
+    final isDebtor = _accountingLoaded && balanceRounded < 0;
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final makeupPending = Lesson.countOpenMakeupDebts(_lessons);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        Navigator.of(context).pop(_changed);
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_student.name),
         actions: [
@@ -710,41 +738,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: () async {
-              if (_showAllAccountingData) {
-                final action = await showModalBottomSheet<String>(
-                  context: context,
-                  showDragHandle: true,
-                  builder: (context) => SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.link_off_rounded),
-                          title: const Text('Удалить связь'),
-                          subtitle: const Text('Только отвязать от текущего пользователя'),
-                          onTap: () => Navigator.pop(context, 'unlink'),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
-                          title: const Text('Удалить полностью', style: TextStyle(color: Colors.red)),
-                          subtitle: const Text('Только суперпользователь'),
-                          onTap: () => Navigator.pop(context, 'full'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-                if (action == 'full') {
-                  await _deleteStudentFully();
-                } else if (action == 'unlink') {
-                  await _deleteStudent();
-                }
-              } else {
-                await _deleteStudent();
-              }
-            },
-            tooltip: 'Удаление ученика',
+            onPressed: _deleteStudent,
+            tooltip: 'Удалить связь',
           ),
         ],
       ),
@@ -757,12 +752,16 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: isDebtor
-                      ? Colors.red.withValues(alpha: isDark ? 0.14 : 0.10)
-                      : Colors.green.withValues(alpha: isDark ? 0.14 : 0.10),
+                  color: !_accountingLoaded
+                      ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                      : isDebtor
+                          ? Colors.red.withValues(alpha: isDark ? 0.14 : 0.10)
+                          : Colors.green.withValues(alpha: isDark ? 0.14 : 0.10),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: (isDebtor ? Colors.red : Colors.green).withValues(alpha: isDark ? 0.55 : 0.65),
+                    color: !_accountingLoaded
+                        ? scheme.outline.withValues(alpha: 0.35)
+                        : (isDebtor ? Colors.red : Colors.green).withValues(alpha: isDark ? 0.55 : 0.65),
                     width: 1.5,
                   ),
                 ),
@@ -777,15 +776,17 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${_balance.toStringAsFixed(0)} ₽',
+                      _accountingLoaded ? '$balanceRounded ₽' : '—',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
-                        color: isDebtor
-                            ? Colors.red.shade400
-                            : _balance > 0
-                                ? Colors.green.shade500
-                                : scheme.onSurface.withValues(alpha: 0.70),
+                        color: !_accountingLoaded
+                            ? scheme.onSurface.withValues(alpha: 0.55)
+                            : isDebtor
+                                ? Colors.red.shade400
+                                : balanceRounded > 0
+                                    ? Colors.green.shade500
+                                    : scheme.onSurface.withValues(alpha: 0.70),
                       ),
                     ),
                     if (isDebtor)
@@ -797,6 +798,29 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
                             fontSize: 14,
                             color: Colors.red.shade400,
                             fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (_loadError != null && _accountingLoaded)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Не удалось обновить данные',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ),
+                    if (_loadError != null && !_accountingLoaded)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Баланс не загружен',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface.withValues(alpha: 0.65),
                           ),
                         ),
                       ),
@@ -915,6 +939,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             _buildTransactionsPane(scheme, isDark),
           ],
         ),
+      ),
       ),
     );
   }

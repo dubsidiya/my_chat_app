@@ -118,6 +118,9 @@ CREATE INDEX IF NOT EXISTS idx_lessons_student_id ON lessons(student_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons(lesson_date DESC);
 CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
 CREATE INDEX IF NOT EXISTS idx_lessons_origin_lesson_id ON lessons(origin_lesson_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_lessons_makeup_origin
+ON lessons (origin_lesson_id)
+WHERE status = 'makeup' AND origin_lesson_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_lessons_student_status_chargeable ON lessons(student_id, status, is_chargeable);
 CREATE INDEX IF NOT EXISTS idx_transactions_student_id ON transactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
@@ -159,6 +162,9 @@ CREATE INDEX IF NOT EXISTS idx_reports_created_by ON reports(created_by);
 CREATE INDEX IF NOT EXISTS idx_reports_is_late ON reports(is_late);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_report_id ON report_lessons(report_id);
 CREATE INDEX IF NOT EXISTS idx_report_lessons_lesson_id ON report_lessons(lesson_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_lessons_lesson_id
+ON report_lessons (lesson_id)
+WHERE lesson_id IS NOT NULL;
 
 -- Бизнес-уникальность для защиты от дублей
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reports_created_by_report_date

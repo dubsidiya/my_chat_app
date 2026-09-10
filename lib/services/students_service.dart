@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/lesson.dart';
 import '../models/transaction.dart';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
+import '../utils/idempotency_retry_store.dart';
 import 'storage_service.dart';
 
 class CreateStudentResult {
@@ -50,15 +50,22 @@ class DepositTeacherOption {
 
 class StudentsService {
   final String baseUrl = ApiConfig.baseUrl;
-  final Random _rnd = Random();
-  static const int _idempotencyRandomMax = 1000000000;
   static const bool _enableIdempotencyHeaders =
       bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: true);
 
-  String _newIdempotencyKey(String scope) {
-    final t = DateTime.now().microsecondsSinceEpoch;
-    final r = _rnd.nextInt(_idempotencyRandomMax);
-    return '$scope-$t-$r';
+  void _putIdempotencyHeader(
+    Map<String, String> headers, {
+    required String scope,
+    required String fingerprint,
+  }) {
+    if (!_enableIdempotencyHeaders) return;
+    headers['Idempotency-Key'] =
+        IdempotencyRetryStore.keyFor(scope: scope, fingerprint: fingerprint);
+  }
+
+  void _completeIdempotency({required String scope, required String fingerprint}) {
+    if (!_enableIdempotencyHeaders) return;
+    IdempotencyRetryStore.complete(scope: scope, fingerprint: fingerprint);
   }
 
   Future<Map<String, String>> _getAuthHeaders() async {
@@ -133,9 +140,16 @@ class StudentsService {
     bool payByBankTransfer = false,
   }) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('student-create');
-    }
+    const scope = 'student-create';
+    final fingerprint = jsonEncode({
+      'name': name,
+      'parent_name': parentName,
+      'phone': phone,
+      'email': email,
+      'notes': notes,
+      'pay_by_bank_transfer': payByBankTransfer,
+    });
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/students'),
       headers: headers,
@@ -152,6 +166,7 @@ class StudentsService {
     // 201 = создан новый студент
     // 200 = студент уже существовал в базе и был добавлен (привязан) к текущему преподавателю
     if (response.statusCode == 201 || response.statusCode == 200) {
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       final data = jsonDecode(response.body);
       return CreateStudentResult(
         student: Student.fromJson({...data, 'balance': data['balance'] ?? 0.0}),
@@ -189,9 +204,9 @@ class StudentsService {
     required int studentId,
   }) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('student-link-existing');
-    }
+    const scope = 'student-link-existing';
+    final fingerprint = jsonEncode({'student_id': studentId});
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/students/link-existing'),
       headers: headers,
@@ -199,6 +214,7 @@ class StudentsService {
     );
 
     if (response.statusCode == 200) {
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       final data = jsonDecode(response.body);
       return CreateStudentResult(
         student: Student.fromJson({...data, 'balance': data['balance'] ?? 0.0}),
@@ -218,6 +234,7 @@ class StudentsService {
     String? email,
     String? notes,
     bool payByBankTransfer = false,
+    double? previousBalance,
   }) async {
     final headers = await _getAuthHeaders();
     final response = await timedPut(
@@ -233,24 +250,34 @@ class StudentsService {
       }),
     );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      // Для суперпользователя нужен общий баланс, для преподавателя — только свои операции.
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractErrorMessage(response.body, 'Не удалось обновить студента'),
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) {
+      throw Exception('Некорректный ответ сервера при сохранении ученика');
+    }
+    final data = Map<String, dynamic>.from(decoded);
+    // PUT не возвращает баланс. Если догрузка не удалась, не обнуляем должника
+    // и не выдаём сохранение за ошибку — строка уже записана.
+    var student = Student.fromJson({
+      ...data,
+      'balance': data['balance'] ?? previousBalance ?? 0.0,
+    });
+
+    try {
       final userData = await StorageService.getUserData();
       final isSuperuser = userData?['isSuperuser'] == 'true';
-      final balanceUrl = isSuperuser
-          ? '$baseUrl/students/$id/balance'
-          : '$baseUrl/students/$id/balance?mine=1';
-      final balanceResponse = await timedGet(
-        Uri.parse(balanceUrl),
-        headers: headers,
-      );
-      final balanceData = jsonDecode(balanceResponse.body);
-      return Student.fromJson({...data, 'balance': balanceData['balance']});
-    } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось обновить студента');
-    }
+      final balance = isSuperuser
+          ? await getStudentBalance(id)
+          : await getStudentBalanceMine(id);
+      student = student.copyWith(balance: balance);
+    } catch (_) {}
+
+    return student;
   }
 
   // Удаление студента
@@ -294,21 +321,6 @@ class StudentsService {
     if (response.statusCode != 200) {
       throw Exception(
         '${_extractErrorMessage(response.body, 'Не удалось вернуть из выпускников')} (${response.statusCode})',
-      );
-    }
-  }
-
-  /// Полное каскадное удаление ученика (только суперпользователь).
-  Future<void> deleteStudentFull(int id) async {
-    final headers = await _getAuthHeaders();
-    final response = await timedDelete(
-      Uri.parse('$baseUrl/students/$id/full'),
-      headers: headers,
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        '${_extractErrorMessage(response.body, 'Не удалось удалить ученика полностью')} (${response.statusCode})',
       );
     }
   }
@@ -397,9 +409,18 @@ class StudentsService {
     int? originLessonId,
   }) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('lesson-create');
-    }
+    const scope = 'lesson-create';
+    final fingerprint = jsonEncode({
+      'student_id': studentId,
+      'lesson_date': lessonDate.toIso8601String().split('T')[0],
+      'lesson_time': lessonTime,
+      'duration_minutes': durationMinutes,
+      'price': price,
+      'notes': notes,
+      'status': status,
+      'origin_lesson_id': originLessonId,
+    });
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/students/$studentId/lessons'),
       headers: headers,
@@ -415,6 +436,7 @@ class StudentsService {
     );
 
     if (response.statusCode == 201) {
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       final data = jsonDecode(response.body);
       return Lesson.fromJson(data);
     } else {
@@ -446,9 +468,14 @@ class StudentsService {
     int? targetTeacherId,
   }) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('deposit-create');
-    }
+    const scope = 'deposit-create';
+    final fingerprint = jsonEncode({
+      'student_id': studentId,
+      'amount': amount,
+      'description': description,
+      'target_teacher_id': targetTeacherId,
+    });
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/students/$studentId/deposit'),
       headers: headers,
@@ -468,6 +495,7 @@ class StudentsService {
           'Операция не засчитана.',
         );
       }
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       return tx;
     }
 
@@ -542,9 +570,9 @@ class StudentsService {
   // Применение платежей из выписки
   Future<Map<String, dynamic>> applyPayments(List<Map<String, dynamic>> payments) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('bank-statement-apply');
-    }
+    const scope = 'bank-statement-apply';
+    final fingerprint = jsonEncode({'payments': payments});
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/bank-statement/apply'),
       headers: headers,
@@ -554,6 +582,7 @@ class StudentsService {
     );
 
     if (response.statusCode == 200) {
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       return jsonDecode(response.body);
     } else {
       final error = jsonDecode(response.body);

@@ -23,7 +23,7 @@ router.put('/:id', updateStudent);
 router.post('/:id/archive', archiveStudent);
 router.post('/:id/unarchive', unarchiveStudent);
 router.delete('/:id', deleteStudent);
-router.delete('/:id/full', deleteStudentFull);
+router.delete('/:id/full', deleteStudentFull); // 410: каскадное удаление отключено
 router.get('/:id/balance', getStudentBalance);
 router.get('/:id/transactions', getStudentTransactions);
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import '../services/students_service.dart';
 import '../utils/download_text_file.dart';
 import '../utils/download_binary_file.dart';
 import '../utils/save_download_file.dart';
+import '../utils/network_error_helper.dart';
 import 'bank_statement_screen.dart';
 import 'deposit_pick_student_screen.dart';
 import 'deposit_screen.dart';
@@ -27,33 +29,56 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
 
   bool _isLoading = false;
   String? _error;
-  Map<String, dynamic>? _data;
+  int? _errorStatus;
+  AccountingExport? _data;
 
   DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _to = DateTime.now();
 
-  String _query = '';
+  // Период/фильтры, с которыми реально загружены данные (для экспорта «как на экране»).
+  DateTime? _loadedFrom;
+  DateTime? _loadedTo;
+  bool _loadedBankTransferOnly = false;
+
+  String _committedQuery = '';
+  Timer? _queryDebounce;
   bool _onlyDebts = false;
+  bool _bankTransferOnly = false;
+
+  // Мемоизированное отфильтрованное дерево (не пересобираем в build).
+  List<AccountingTreeTeacher> _filteredTree = const [];
 
   String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
   String _fmtHuman(DateTime d) => DateFormat('dd.MM.yyyy').format(d);
 
   String _norm(String s) => s.toLowerCase().trim();
 
-  double _asDouble(dynamic v) {
-    if (v == null) return 0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0;
+  /// Единый денежный форматтер экрана: ₽ + фиксированные знаки (M44/M45).
+  String _money(num v) => '₽${v.toStringAsFixed(0)}';
+
+  bool _sameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Данные на экране не соответствуют текущему выбору периода/фильтра —
+  /// экспорт заблокирован до нажатия «Сформировать» (M43).
+  bool get _isDirty {
+    if (_data == null || _loadedFrom == null || _loadedTo == null) return true;
+    return !_sameDate(_loadedFrom!, _from) ||
+        !_sameDate(_loadedTo!, _to) ||
+        _loadedBankTransferOnly != _bankTransferOnly;
   }
 
-  String _money0(dynamic v) => _asDouble(v).toStringAsFixed(0);
+  bool get _isSuperuserDenied => _errorStatus == 403;
 
-  int? _parseStudentId(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v > 0 ? v : null;
-    if (v is double) return v.toInt() > 0 ? v.toInt() : null;
-    final n = int.tryParse(v.toString());
-    return n != null && n > 0 ? n : null;
+  /// Короткое сообщение об ошибке: по HTTP-коду (401/403), иначе через общий helper (M58/M59).
+  String _errorText(Object e) {
+    if (e is AdminApiException) {
+      if (e.statusCode == 401) return 'Сессия истекла. Войдите в приложение заново.';
+      if (e.statusCode == 403) {
+        return 'Недостаточно прав. Этот раздел доступен только суперпользователю.';
+      }
+    }
+    return networkErrorMessage(e);
   }
 
   Widget _chip({
@@ -150,7 +175,9 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                     _chip(icon: Icons.event_note_rounded, label: 'занятий: $lessonsCount', color: accent1),
                     _chip(
                       icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
-                      label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
+                      label: unpaidCount > 0
+                          ? 'долг по фильтру: $unpaidCount • ${_money(unpaidSum)}'
+                          : 'всё оплачено',
                       color: unpaidCount > 0 ? debtColor : okColor,
                     ),
                   ],
@@ -163,40 +190,25 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     );
   }
 
-  bool _isNonBillableLesson(Map<String, dynamic> l) {
-    final status = (l['status'] ?? 'attended').toString();
-    if (status == 'missed') return true;
-    if (status == 'cancel_same_day' && l['isChargeable'] != true) return true;
-    return false;
-  }
-
-  bool _countsAsPeriodDebt(Map<String, dynamic> l) {
-    if (_isNonBillableLesson(l)) return false;
-    return l['isPaid'] != true;
-  }
-
-  double _periodDebtSum(Iterable<Map<String, dynamic>> lessons) {
+  double _periodDebtSum(Iterable<AccountingLesson> lessons) {
     var sum = 0.0;
     for (final l in lessons) {
-      if (!_countsAsPeriodDebt(l)) continue;
-      sum += _asDouble(l['unpaidAmount']);
+      if (!l.countsAsPeriodDebt) continue;
+      sum += l.unpaidAmount;
     }
     return sum;
   }
 
-  int _periodDebtCount(Iterable<Map<String, dynamic>> lessons) {
-    return lessons.where(_countsAsPeriodDebt).length;
+  int _periodDebtCount(Iterable<AccountingLesson> lessons) {
+    return lessons.where((l) => l.countsAsPeriodDebt).length;
   }
 
-  Widget _lessonTile(Map<String, dynamic> l) {
+  Widget _lessonTile(AccountingLesson l) {
     final scheme = Theme.of(context).colorScheme;
-    final date = (l['lessonDate'] ?? '').toString();
-    final time = (l['lessonTime'] ?? '').toString();
-    final price = _money0(l['price']);
-    final paid = _money0(l['paidAmount']);
-    final unpaid = _money0(l['unpaidAmount']);
-    final isPaid = l['isPaid'] == true;
-    final isNonBillable = _isNonBillableLesson(l);
+    final date = l.lessonDate;
+    final time = l.lessonTime;
+    final isPaid = l.isPaid;
+    final isNonBillable = l.isNonBillable;
     final Color color;
     final Color bg;
     if (isNonBillable) {
@@ -206,8 +218,8 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       color = isPaid ? Colors.green.shade700 : Colors.red.shade700;
       bg = isPaid ? Colors.green.withAlpha(16) : Colors.red.withAlpha(16);
     }
-    final status = (l['status'] ?? 'attended').toString();
-    final originLessonDate = (l['originLessonDate'] ?? '').toString();
+    final status = l.status;
+    final originLessonDate = l.originLessonDate;
     String statusLabel;
     switch (status) {
       case 'missed':
@@ -252,7 +264,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
                 if (!isNonBillable) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'цена: ₽$price • опл: ₽$paid • долг: ₽$unpaid',
+                    'цена: ${_money(l.price)} • опл: ${_money(l.paidAmount)} • долг: ${_money(l.unpaidAmount)}',
                     style: TextStyle(color: scheme.onSurface.withValues(alpha:0.75)),
                   ),
                 ],
@@ -315,19 +327,95 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     });
   }
 
+  void _onQueryChanged(String v) {
+    _queryDebounce?.cancel();
+    _queryDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      setState(() {
+        _committedQuery = v;
+        _recomputeFilteredTree();
+      });
+    });
+  }
+
+  /// Пересобрать отфильтрованное дерево из типизированных данных (M46).
+  void _recomputeFilteredTree() {
+    final data = _data;
+    if (data == null) {
+      _filteredTree = const [];
+      return;
+    }
+    final q = _norm(_committedQuery);
+    final onlyDebts = _onlyDebts;
+    final out = <AccountingTreeTeacher>[];
+    for (final t in data.tree) {
+      final teacherMatches = q.isEmpty || _norm(t.teacherUsername).contains(q);
+      final studentsFiltered = <AccountingTreeStudent>[];
+      for (final s in t.students) {
+        final lessonsFiltered = s.lessons
+            .where((l) => !(onlyDebts && l.isPaid))
+            .toList();
+
+        final studentMatches = q.isEmpty || _norm(s.studentName).contains(q);
+        final lessonMatches = q.isEmpty
+            ? true
+            : lessonsFiltered
+                .any((l) => _norm('${l.lessonDate} ${l.lessonTime}').contains(q));
+
+        if (q.isNotEmpty && !(teacherMatches || studentMatches || lessonMatches)) {
+          continue;
+        }
+        // Ученика без строк занятий оставляем, кроме режима «только долги».
+        if (lessonsFiltered.isEmpty && onlyDebts) continue;
+
+        studentsFiltered.add(AccountingTreeStudent(
+          studentId: s.studentId,
+          studentName: s.studentName,
+          walletDebt: s.walletDebt,
+          walletPrepaid: s.walletPrepaid,
+          lessons: lessonsFiltered,
+        ));
+      }
+      if (studentsFiltered.isEmpty) continue;
+      out.add(AccountingTreeTeacher(
+        teacherUsername: t.teacherUsername,
+        students: studentsFiltered,
+      ));
+    }
+    _filteredTree = out;
+  }
+
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
       _error = null;
+      _errorStatus = null;
       _data = null;
+      _filteredTree = const [];
     });
+    final from = _from;
+    final to = _to;
+    final bankOnly = _bankTransferOnly;
     try {
-      final res = await _adminService.exportAccountingJson(from: _fmt(_from), to: _fmt(_to));
+      final res = await _adminService.exportAccountingJson(
+        from: _fmt(from),
+        to: _fmt(to),
+        bankTransferOnly: bankOnly,
+      );
       if (!mounted) return;
-      setState(() => _data = res);
+      setState(() {
+        _data = res;
+        _loadedFrom = from;
+        _loadedTo = to;
+        _loadedBankTransferOnly = bankOnly;
+        _recomputeFilteredTree();
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() {
+        _error = _errorText(e);
+        _errorStatus = e is AdminApiException ? e.statusCode : null;
+      });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -335,7 +423,11 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
 
   Future<void> _copyCsv() async {
     try {
-      final csv = await _adminService.exportAccountingCsv(from: _fmt(_from), to: _fmt(_to));
+      final csv = await _adminService.exportAccountingCsv(
+        from: _fmt(_loadedFrom ?? _from),
+        to: _fmt(_loadedTo ?? _to),
+        bankTransferOnly: _loadedBankTransferOnly,
+      );
       await Clipboard.setData(ClipboardData(text: csv));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -344,15 +436,21 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка CSV: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка CSV: ${_errorText(e)}'), backgroundColor: Colors.red),
       );
     }
   }
 
   Future<void> _downloadCsvFile() async {
     try {
-      final csv = await _adminService.exportAccountingCsv(from: _fmt(_from), to: _fmt(_to));
-      final filename = 'accounting_${_fmt(_from)}_${_fmt(_to)}.csv';
+      final loadedFrom = _loadedFrom ?? _from;
+      final loadedTo = _loadedTo ?? _to;
+      final csv = await _adminService.exportAccountingCsv(
+        from: _fmt(loadedFrom),
+        to: _fmt(loadedTo),
+        bankTransferOnly: _loadedBankTransferOnly,
+      );
+      final filename = 'accounting_${_fmt(loadedFrom)}_${_fmt(loadedTo)}.csv';
 
       // Web: нормальная загрузка файлом
       final okWeb = await downloadTextFile(
@@ -398,18 +496,21 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка скачивания: $e'), backgroundColor: Colors.red),
+        SnackBar(duration: const Duration(seconds: 3), content: Text('Ошибка скачивания: ${_errorText(e)}'), backgroundColor: Colors.red),
       );
     }
   }
 
   Future<void> _downloadXlsxFile() async {
     try {
+      final loadedFrom = _loadedFrom ?? _from;
+      final loadedTo = _loadedTo ?? _to;
       final bytes = await _adminService.exportAccountingXlsxBytes(
-        from: _fmt(_from),
-        to: _fmt(_to),
+        from: _fmt(loadedFrom),
+        to: _fmt(loadedTo),
+        bankTransferOnly: _loadedBankTransferOnly,
       );
-      final filename = 'buhgalteriya_${_fmt(_from)}_${_fmt(_to)}.xlsx';
+      final filename = 'buhgalteriya_${_fmt(loadedFrom)}_${_fmt(loadedTo)}.xlsx';
       const mimeType =
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -458,7 +559,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text('Ошибка Excel-выгрузки: $e'),
+          content: Text('Ошибка Excel-выгрузки: ${_errorText(e)}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -508,7 +609,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
             } catch (e) {
               if (!mounted) return;
               messenger.showSnackBar(
-                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: ${_errorText(e)}'), backgroundColor: Colors.red),
               );
             }
           },
@@ -563,7 +664,7 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
             } catch (e) {
               if (!mounted) return;
               messenger.showSnackBar(
-                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: $e'), backgroundColor: Colors.red),
+                SnackBar(duration: const Duration(seconds: 3), content: Text('Не удалось отменить: ${_errorText(e)}'), backgroundColor: Colors.red),
               );
             }
           },
@@ -593,82 +694,142 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
   }
 
   @override
+  void dispose() {
+    _queryDebounce?.cancel();
+    super.dispose();
+  }
+
+  /// Одна карточка преподавателя в дереве (строится лениво — M46).
+  Widget _teacherNode(AccountingTreeTeacher t) {
+    final bankTransferStudentIds =
+        _data?.bankTransferStudentIds ?? const <int>{};
+    final teacherName = t.teacherUsername;
+    final students = t.students;
+
+    final lessonsCount =
+        students.fold<int>(0, (acc, s) => acc + s.lessons.length);
+    int unpaidCount = 0;
+    double unpaidSum = 0;
+    for (final s in students) {
+      unpaidCount += _periodDebtCount(s.lessons);
+      unpaidSum += _periodDebtSum(s.lessons);
+    }
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(top: 10),
+      title: _teacherHeader(
+        teacherName: teacherName,
+        studentsCount: students.length,
+        lessonsCount: lessonsCount,
+        unpaidCount: unpaidCount,
+        unpaidSum: unpaidSum,
+      ),
+      subtitle: const SizedBox.shrink(),
+      children: [
+        ...students.map((s) {
+          final studentName = s.studentName;
+          final studentId = s.studentId;
+          final isBankTransferStudent =
+              studentId != null && bankTransferStudentIds.contains(studentId);
+          final lessons = s.lessons;
+          final unpaidCount = _periodDebtCount(lessons);
+          final unpaidSum = _periodDebtSum(lessons);
+          final walletDebt = s.walletDebt;
+          final walletPrepaid = s.walletPrepaid;
+          return ExpansionTile(
+            tilePadding: const EdgeInsets.only(left: 4, right: 4),
+            childrenPadding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isBankTransferStudent
+                    ? Colors.indigo.withAlpha(24)
+                    : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(18),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isBankTransferStudent
+                      ? Colors.indigo.withAlpha(70)
+                      : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(40),
+                ),
+              ),
+              child: Icon(
+                isBankTransferStudent ? Icons.account_balance_rounded : Icons.person_rounded,
+                color: isBankTransferStudent
+                    ? Colors.indigo.shade700
+                    : (unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700),
+              ),
+            ),
+            title: Text(
+              studentName.isEmpty ? '—' : studentName,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _chip(
+                    icon: Icons.event_note_rounded,
+                    label: 'занятий: ${lessons.length}',
+                    color: AppColors.primary,
+                  ),
+                  _chip(
+                    icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                    label: unpaidCount > 0
+                        ? 'долг по фильтру: $unpaidCount • ${_money(unpaidSum)}'
+                        : 'всё оплачено',
+                    color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                  ),
+                  if (isBankTransferStudent)
+                    _chip(
+                      icon: Icons.account_balance_rounded,
+                      label: 'расчётный счёт',
+                      color: Colors.indigo.shade700,
+                    ),
+                  if (walletDebt > 0)
+                    _chip(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: 'долг у этого препода: ${_money(walletDebt)}',
+                      color: Colors.red.shade700,
+                    )
+                  else if (walletPrepaid > 0)
+                    _chip(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: 'предоплата: ${_money(walletPrepaid)}',
+                      color: Colors.green.shade700,
+                    ),
+                  if (studentId != null)
+                    InkWell(
+                      onTap: () => _openDepositForStudent(studentId, studentName),
+                      borderRadius: BorderRadius.circular(999),
+                      child: _chip(
+                        icon: Icons.add_circle_outline_rounded,
+                        label: 'Пополнить баланс',
+                        color: AppColors.primary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            children: [
+              ...lessons.map(_lessonTile),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final totals = _data?['totals'] as Map<String, dynamic>?;
-    final teachers = (_data?['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final students = (_data?['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final tree = (_data?['tree'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final bankTransferStudentIds = students
-        .where((s) => s['payByBankTransfer'] == true)
-        .map((s) => _parseStudentId(s['id']))
-        .whereType<int>()
-        .toSet();
-
-    final q = _norm(_query);
-
-    // Фильтрация дерева: поиск по преподавателю/ребенку, и опционально только долги
-    final filteredTree = tree
-        .map((t) {
-          final teacherName = (t['teacherUsername'] ?? '').toString();
-          final studentsRaw = (t['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-
-          final studentsFiltered = studentsRaw
-              .map((s) {
-                final studentName = (s['studentName'] ?? '').toString();
-                final lessonsRaw = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-
-                final lessonsFiltered = lessonsRaw.where((l) {
-                  final isPaid = l['isPaid'] == true;
-                  if (_onlyDebts && isPaid) return false;
-                  return true;
-                }).toList();
-
-                // Поиск: если есть query — оставляем либо совпало имя ученика,
-                // либо совпало имя преподавателя (тогда оставляем всех его учеников),
-                // либо совпало что-то в строке занятия (дата/время).
-                final hayTeacher = _norm(teacherName);
-                final hayStudent = _norm(studentName);
-                final teacherMatches = q.isEmpty ? true : hayTeacher.contains(q);
-                final studentMatches = q.isEmpty ? true : hayStudent.contains(q);
-                final lessonMatches = q.isEmpty
-                    ? true
-                    : lessonsFiltered.any((l) {
-                        final date = (l['lessonDate'] ?? '').toString();
-                        final time = (l['lessonTime'] ?? '').toString();
-                        return _norm('$date $time').contains(q);
-                      });
-
-                if (q.isNotEmpty && !(teacherMatches || studentMatches || lessonMatches)) {
-                  return null;
-                }
-
-                // Оставляем ученика без строк занятий (ещё не было уроков / нет уроков в периоде),
-                // кроме режима «только долги» — тогда нужны только неоплаченные занятия.
-                if (lessonsFiltered.isEmpty && _onlyDebts) return null;
-
-                return {
-                  ...s,
-                  'lessons': lessonsFiltered,
-                };
-              })
-              .whereType<Map<String, dynamic>>()
-              .toList();
-
-          if (studentsFiltered.isEmpty) return null;
-
-          // Если query задан и совпал только преподаватель — оставим всех его детей (уже есть)
-          return {
-            ...t,
-            'students': studentsFiltered,
-          };
-        })
-        .whereType<Map<String, dynamic>>()
-        .toList();
-
-    final isSuperuserDenied = (_error ?? '').contains('Требуется доступ суперпользователя') ||
-        (_error ?? '').contains('HTTP 403');
+    final totals = _data?.totals;
+    final teachers = _data?.teachers ?? const <AccountingTeacherAgg>[];
+    final exportsDisabled = _isLoading || _isDirty;
 
     return Scaffold(
       appBar: AppBar(
@@ -681,368 +842,282 @@ class _AccountingExportScreenState extends State<AccountingExportScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Бухгалтерия', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  if (isSuperuserDenied)
-                    Text(
-                      'Недостаточно прав. Этот раздел доступен только суперпользователю.',
-                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
-                    )
-                  else
-                    Row(
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _openDepositFromAccounting,
-                            icon: const Icon(Icons.add_circle_outline_rounded),
-                            label: const Text('Пополнить баланс'),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        const Text('Бухгалтерия', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 10),
+                        if (_isSuperuserDenied)
+                          Text(
+                            'Недостаточно прав. Этот раздел доступен только суперпользователю.',
+                            style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _openDepositFromAccounting,
+                                  icon: const Icon(Icons.add_circle_outline_rounded),
+                                  label: const Text('Пополнить баланс'),
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _openBankStatementFromAccounting,
+                                  icon: const Icon(Icons.upload_file_rounded),
+                                  label: const Text('Загрузить выписку'),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _openBankStatementFromAccounting,
-                            icon: const Icon(Icons.upload_file_rounded),
-                            label: const Text('Загрузить выписку'),
-                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Пополнение баланса и выписки доступны только здесь.',
+                          style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
                         ),
                       ],
                     ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Пополнение баланса и выписки доступны только здесь.',
-                    style: TextStyle(color: scheme.onSurface.withValues(alpha:0.65)),
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Период', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Поиск (преподаватель / ребенок / дата)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (v) => setState(() => _query = v),
-                  ),
-                  const SizedBox(height: 10),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _onlyDebts,
-                    onChanged: _isLoading ? null : (v) => setState(() => _onlyDebts = v),
-                    title: const Text('Показывать только долги'),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _pickFrom,
-                          icon: const Icon(Icons.date_range),
-                          label: Text('С: ${_fmtHuman(_from)}'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _pickTo,
-                          icon: const Icon(Icons.date_range),
-                          label: Text('По: ${_fmtHuman(_to)}'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _load,
-                          icon: const Icon(Icons.playlist_add_check_rounded),
-                          label: const Text('Сформировать'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _copyCsv,
-                          icon: const Icon(Icons.copy),
-                          label: const Text('CSV копия'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _downloadCsvFile,
-                          icon: const Icon(Icons.download_rounded),
-                          label: const Text('CSV файл'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Excel для бухгалтерии (сводка, преподаватели, ученики, занятия, транзакции):',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _downloadXlsxFile,
-                      icon: const Icon(Icons.table_view_rounded),
-                      label: const Text('Excel для бухгалтерии'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4F46E5),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Доступно только суперпользователю.',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-          if (!_isLoading && _error != null)
-            Card(
-              color: Colors.red.withValues(alpha:isDark ? 0.16 : 0.10),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(_error!, style: TextStyle(color: Colors.red.shade800)),
-              ),
-            ),
-          if (!_isLoading && totals != null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Итого', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text('Занятий: ${totals['lessonsCount'] ?? 0}'),
-                    Text('Сумма занятий: ${(totals['lessonsAmount'] ?? 0).toString()}'),
-                    Text('Оплачено: ${(totals['paidAmount'] ?? 0).toString()}'),
-                    Text('Долг: ${(totals['unpaidAmount'] ?? 0).toString()}'),
-                    const SizedBox(height: 6),
-                    Text('Пропусков: ${totals['missedCount'] ?? 0}'),
-                    Text('Отработок: ${totals['makeupCount'] ?? 0}'),
-                    Text('Отмен в день: ${totals['cancelSameDayCount'] ?? 0}'),
-                    Text('Бесплатных отмен в день: ${totals['cancelSameDayFreeCount'] ?? 0}'),
-                    Text('Платных отмен в день: ${totals['cancelSameDayPaidCount'] ?? 0}'),
-                    Text('К отработке: ${totals['makeupPendingCount'] ?? 0}'),
-                    if ((totals['lessonsCount'] ?? 0) == 0) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'В выбранном периоде занятий не найдено. Попробуйте выбрать более широкий период.',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ],
                 ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          if (!_isLoading && filteredTree.isNotEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Преподаватель → дети → занятия',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 10),
-                    ...filteredTree.map((t) {
-                      final teacherName = (t['teacherUsername'] ?? '').toString();
-                      final students = (t['students'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-
-                      final lessonsCount = students.fold<int>(
-                        0,
-                        (acc, s) => acc + ((s['lessons'] as List?)?.length ?? 0),
-                      );
-                      int unpaidCount = 0;
-                      double unpaidSum = 0;
-                      for (final s in students) {
-                        final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-                        unpaidCount += _periodDebtCount(lessons);
-                        unpaidSum += _periodDebtSum(lessons);
-                      }
-
-                      return ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        childrenPadding: const EdgeInsets.only(top: 10),
-                        title: _teacherHeader(
-                          teacherName: teacherName,
-                          studentsCount: students.length,
-                          lessonsCount: lessonsCount,
-                          unpaidCount: unpaidCount,
-                          unpaidSum: unpaidSum,
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Период', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 10),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: 'Поиск (преподаватель / ребенок / дата)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                          onChanged: _onQueryChanged,
                         ),
-                        subtitle: const SizedBox.shrink(),
-                        children: [
-                          ...students.map((s) {
-                            final studentName = (s['studentName'] ?? '').toString();
-                            final studentId = _parseStudentId(s['studentId']);
-                            final isBankTransferStudent = studentId != null && bankTransferStudentIds.contains(studentId);
-                            final lessons = (s['lessons'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-                            final unpaidCount = _periodDebtCount(lessons);
-                            final unpaidSum = _periodDebtSum(lessons);
-                            final walletDebt = _asDouble(s['walletDebtAsOfTo'] ?? s['overallDebtAsOfTo']);
-                            final walletPrepaid = _asDouble(s['walletPrepaidAsOfTo'] ?? s['overallPrepaidAsOfTo']);
-                            return ExpansionTile(
-                              tilePadding: const EdgeInsets.only(left: 4, right: 4),
-                              childrenPadding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                              leading: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: isBankTransferStudent
-                                      ? Colors.indigo.withAlpha(24)
-                                      : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(18),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isBankTransferStudent
-                                        ? Colors.indigo.withAlpha(70)
-                                        : (unpaidCount > 0 ? Colors.red : Colors.green).withAlpha(40),
-                                  ),
-                                ),
-                                child: Icon(
-                                  isBankTransferStudent ? Icons.account_balance_rounded : Icons.person_rounded,
-                                  color: isBankTransferStudent
-                                      ? Colors.indigo.shade700
-                                      : (unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700),
-                                ),
-                              ),
-                              title: Text(
-                                studentName.isEmpty ? '—' : studentName,
-                                style: const TextStyle(fontWeight: FontWeight.w800),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _chip(
-                                      icon: Icons.event_note_rounded,
-                                      label: 'занятий: ${lessons.length}',
-                                      color: AppColors.primary,
-                                    ),
-                                    _chip(
-                                      icon: unpaidCount > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
-                                      label: unpaidCount > 0 ? 'долг: $unpaidCount • ₽${unpaidSum.toStringAsFixed(0)}' : 'всё оплачено',
-                                      color: unpaidCount > 0 ? Colors.red.shade700 : Colors.green.shade700,
-                                    ),
-                                    if (isBankTransferStudent)
-                                      _chip(
-                                        icon: Icons.account_balance_rounded,
-                                        label: 'расчётный счёт',
-                                        color: Colors.indigo.shade700,
-                                      ),
-                                    if (walletDebt > 0)
-                                      _chip(
-                                        icon: Icons.account_balance_wallet_rounded,
-                                        label: 'долг у этого препода: ₽${walletDebt.toStringAsFixed(0)}',
-                                        color: Colors.red.shade700,
-                                      )
-                                    else if (walletPrepaid > 0)
-                                      _chip(
-                                        icon: Icons.account_balance_wallet_rounded,
-                                        label: 'предоплата: ₽${walletPrepaid.toStringAsFixed(0)}',
-                                        color: Colors.green.shade700,
-                                      ),
-                                    if (studentId != null)
-                                      InkWell(
-                                        onTap: () => _openDepositForStudent(studentId, studentName),
-                                        borderRadius: BorderRadius.circular(999),
-                                        child: _chip(
-                                          icon: Icons.add_circle_outline_rounded,
-                                          label: 'Пополнить баланс',
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              children: [
-                                ...lessons.map(_lessonTile),
-                              ],
-                            );
-                          }),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          if (!_isLoading && teachers.isNotEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('По преподавателям', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
-                    ...teachers.map((t) {
-                      final username = (t['teacherUsername'] ?? '').toString();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _onlyDebts,
+                          onChanged: _isLoading
+                              ? null
+                              : (v) => setState(() {
+                                    _onlyDebts = v;
+                                    _recomputeFilteredTree();
+                                  }),
+                          title: const Text('Показывать только долги'),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _bankTransferOnly,
+                          onChanged: _isLoading
+                              ? null
+                              : (v) => setState(() => _bankTransferOnly = v),
+                          title: const Text('Только расчётный счёт'),
+                          subtitle: const Text(
+                            'Учитывать только учеников, платящих на расчётный счёт',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
                           children: [
-                            Expanded(child: Text(username.isEmpty ? '—' : username)),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading ? null : _pickFrom,
+                                icon: const Icon(Icons.date_range),
+                                label: Text('С: ${_fmtHuman(_from)}'),
+                              ),
+                            ),
                             const SizedBox(width: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text('занятий: ${t['lessonsCount'] ?? 0}'),
-                                Text('сумма: ${t['amount'] ?? 0}'),
-                                Text('опл: ${t['paidAmount'] ?? 0}'),
-                                Text('долг: ${t['unpaidAmount'] ?? 0}'),
-                              ],
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading ? null : _pickTo,
+                                icon: const Icon(Icons.date_range),
+                                label: Text('По: ${_fmtHuman(_to)}'),
+                              ),
                             ),
                           ],
                         ),
-                      );
-                    }),
-                  ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoading ? null : _load,
+                                icon: const Icon(Icons.playlist_add_check_rounded),
+                                label: const Text('Сформировать'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: exportsDisabled ? null : _copyCsv,
+                                icon: const Icon(Icons.copy),
+                                label: const Text('CSV копия'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: exportsDisabled ? null : _downloadCsvFile,
+                                icon: const Icon(Icons.download_rounded),
+                                label: const Text('CSV файл'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_isDirty && !_isLoading) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Период или фильтр изменены. Нажмите «Сформировать», чтобы обновить данные — тогда экспорт совпадёт с тем, что на экране.',
+                            style: TextStyle(fontSize: 12, color: Colors.orange.shade800, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Excel для бухгалтерии (сводка, преподаватели, ученики, занятия, транзакции):',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: exportsDisabled ? null : _downloadXlsxFile,
+                            icon: const Icon(Icons.table_view_rounded),
+                            label: const Text('Excel для бухгалтерии'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4F46E5),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Доступно только суперпользователю.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+                const SizedBox(height: 12),
+                if (_isLoading) const Center(child: CircularProgressIndicator()),
+                if (!_isLoading && _error != null)
+                  Card(
+                    color: Colors.red.withValues(alpha:isDark ? 0.16 : 0.10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(_error!, style: TextStyle(color: Colors.red.shade800)),
+                    ),
+                  ),
+                if (!_isLoading && totals != null)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Итого', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Text('Занятий: ${totals.lessonsCount}'),
+                          Text('Сумма занятий: ${_money(totals.lessonsAmount)}'),
+                          Text('Оплачено: ${_money(totals.paidAmount)}'),
+                          Text('Долг: ${_money(totals.unpaidAmount)}'),
+                          const SizedBox(height: 6),
+                          Text('Пропусков: ${totals.missedCount}'),
+                          Text('Отработок: ${totals.makeupCount}'),
+                          Text('Отмен в день: ${totals.cancelSameDayCount}'),
+                          Text('Бесплатных отмен в день: ${totals.cancelSameDayFreeCount}'),
+                          Text('Платных отмен в день: ${totals.cancelSameDayPaidCount}'),
+                          Text('К отработке: ${totals.makeupPendingCount}'),
+                          if (totals.lessonsCount == 0) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              'В выбранном периоде занятий не найдено. Попробуйте выбрать более широкий период.',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                if (!_isLoading && _filteredTree.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'Преподаватель → дети → занятия',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+          if (!_isLoading && _filteredTree.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList.builder(
+                itemCount: _filteredTree.length,
+                itemBuilder: (context, i) => _teacherNode(_filteredTree[i]),
               ),
             ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                if (!_isLoading && teachers.isNotEmpty)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('По преподавателям', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 10),
+                          ...teachers.map((t) {
+                            final username = t.teacherUsername;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: Text(username.isEmpty ? '—' : username)),
+                                  const SizedBox(width: 8),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('занятий: ${t.lessonsCount}'),
+                                      Text('сумма: ${_money(t.amount)}'),
+                                      Text('опл: ${_money(t.paidAmount)}'),
+                                      Text('долг: ${_money(t.unpaidAmount)}'),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
         ],
       ),
     );
   }
 }
-

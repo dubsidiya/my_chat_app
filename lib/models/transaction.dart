@@ -11,6 +11,12 @@ class Transaction {
   final DateTime? lessonDate;
   final String? lessonTime;
 
+  /// В кошелёк какого преподавателя зачислен депозит/возврат (может быть null).
+  final int? targetTeacherId;
+
+  /// Отображаемое имя целевого преподавателя, если сервер его прислал.
+  final String? targetTeacherUsername;
+
   Transaction({
     required this.id,
     required this.studentId,
@@ -23,7 +29,13 @@ class Transaction {
     required this.createdAt,
     this.lessonDate,
     this.lessonTime,
+    this.targetTeacherId,
+    this.targetTeacherUsername,
   });
+
+  /// Знак по балансу: сервер ПРИБАВЛЯЕТ депозиты и возвраты, ВЫЧИТАЕТ занятия.
+  /// Единый источник знака для UI (см. аудит M55).
+  bool get isCredit => type == 'deposit' || type == 'refund';
 
   // Определяет, является ли пополнение ручным (наличка) или из банка
   bool get isManualDeposit {
@@ -85,6 +97,10 @@ class Transaction {
           ? DateTime.parse(json['lesson_date'])
           : null,
       lessonTime: json['lesson_time'] as String?,
+      targetTeacherId: _parseOptionalInt(json['target_teacher_id']),
+      targetTeacherUsername:
+          (json['target_teacher_username'] ?? json['target_teacher_name'])
+              ?.toString(),
     );
   }
 }

@@ -9,6 +9,8 @@ class Student {
   final bool payByBankTransfer;
   /// Выпускник для текущего пользователя (серверный флаг на teacher_students).
   final bool isArchived;
+  /// Нет в списке преподавателя (отвязан), но уже есть в редактируемом отчёте.
+  final bool isUnavailableForPicker;
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -22,6 +24,7 @@ class Student {
     required this.balance,
     this.payByBankTransfer = false,
     this.isArchived = false,
+    this.isUnavailableForPicker = false,
     required this.createdAt,
     this.updatedAt,
   });
@@ -77,6 +80,7 @@ class Student {
     double? balance,
     bool? payByBankTransfer,
     bool? isArchived,
+    bool? isUnavailableForPicker,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -90,6 +94,7 @@ class Student {
       balance: balance ?? this.balance,
       payByBankTransfer: payByBankTransfer ?? this.payByBankTransfer,
       isArchived: isArchived ?? this.isArchived,
+      isUnavailableForPicker: isUnavailableForPicker ?? this.isUnavailableForPicker,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

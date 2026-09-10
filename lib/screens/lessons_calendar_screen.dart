@@ -31,6 +31,8 @@ class _LessonsCalendarScreenState extends State<LessonsCalendarScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      // Сбрасываем счётчики прошлого месяца, чтобы они не «прилипали» к новому (M56).
+      _counts = {};
     });
     try {
       final from = DateTime(_focused.year, _focused.month, 1);
@@ -111,7 +113,7 @@ class _LessonsCalendarScreenState extends State<LessonsCalendarScreen> {
             ),
           ),
           Expanded(
-            child: _loading && _counts.isEmpty
+            child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 8),

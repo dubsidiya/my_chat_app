@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:math';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
+import '../utils/idempotency_retry_store.dart';
 import '../models/report.dart';
 import '../models/report_author_option.dart';
 import '../models/monthly_salary_report.dart';
@@ -10,15 +10,22 @@ import 'storage_service.dart';
 
 class ReportsService {
   final String baseUrl = ApiConfig.baseUrl;
-  final Random _rnd = Random();
-  static const int _idempotencyRandomMax = 1000000000;
   static const bool _enableIdempotencyHeaders =
       bool.fromEnvironment('ENABLE_IDEMPOTENCY_HEADERS', defaultValue: true);
 
-  String _newIdempotencyKey(String scope) {
-    final t = DateTime.now().microsecondsSinceEpoch;
-    final r = _rnd.nextInt(_idempotencyRandomMax);
-    return '$scope-$t-$r';
+  void _putIdempotencyHeader(
+    Map<String, String> headers, {
+    required String scope,
+    required String fingerprint,
+  }) {
+    if (!_enableIdempotencyHeaders) return;
+    headers['Idempotency-Key'] =
+        IdempotencyRetryStore.keyFor(scope: scope, fingerprint: fingerprint);
+  }
+
+  void _completeIdempotency({required String scope, required String fingerprint}) {
+    if (!_enableIdempotencyHeaders) return;
+    IdempotencyRetryStore.complete(scope: scope, fingerprint: fingerprint);
   }
 
   Future<Map<String, String>> _getAuthHeaders() async {
@@ -56,17 +63,31 @@ class ReportsService {
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => Report.fromJson(json)).toList();
+      return _parseReportRows(data);
     } else if (response.statusCode == 403) {
-      try {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Требуется приватный доступ');
-      } catch (_) {
-        throw Exception('Требуется приватный доступ');
-      }
+      throw Exception(
+        _extractErrorMessage(response.body, 'Требуется приватный доступ'),
+      );
     } else {
-      throw Exception('Не удалось загрузить отчеты: ${response.statusCode}');
+      throw Exception(
+        _extractErrorMessage(response.body, 'Не удалось загрузить отчеты'),
+      );
     }
+  }
+
+  /// Разбор списка отчётов: одна битая строка не должна ронять весь список
+  /// (как это уже делает getReportAuthors) — пропускаем непарсящиеся элементы.
+  List<Report> _parseReportRows(List<dynamic> data) {
+    final out = <Report>[];
+    for (final item in data) {
+      if (item is! Map) continue;
+      try {
+        out.add(Report.fromJson(Map<String, dynamic>.from(item)));
+      } catch (_) {
+        /* skip malformed row */
+      }
+    }
+    return out;
   }
 
   /// Авторы отчётов для фильтра по преподавателю (суперпользователь).
@@ -142,13 +163,14 @@ class ReportsService {
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => Report.fromJson(json)).toList();
+      return _parseReportRows(data);
     }
     if (response.statusCode == 403) {
       throw Exception('Требуется доступ суперпользователя');
     }
-    final error = jsonDecode(response.body);
-    throw Exception(error['message'] ?? 'Не удалось загрузить список отчётов');
+    throw Exception(
+      _extractErrorMessage(response.body, 'Не удалось загрузить список отчётов'),
+    );
   }
 
   static String _dateToIso(DateTime d) =>
@@ -166,35 +188,9 @@ class ReportsService {
       final data = jsonDecode(response.body);
       return Report.fromJson(data);
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось загрузить отчет');
-    }
-  }
-
-  // Создание отчета
-  Future<Report> createReport({
-    required DateTime reportDate,
-    required String content,
-  }) async {
-    final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('report-create');
-    }
-    final response = await timedPost(
-      Uri.parse('$baseUrl/reports'),
-      headers: headers,
-      body: jsonEncode({
-        'report_date': reportDate.toIso8601String().split('T')[0],
-        'content': content,
-      }),
-    );
-
-    if (response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      return Report.fromJson(data);
-    } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось создать отчет');
+      throw Exception(
+        _extractErrorMessage(response.body, 'Не удалось загрузить отчет'),
+      );
     }
   }
 
@@ -205,9 +201,12 @@ class ReportsService {
     required List<Map<String, dynamic>> slots,
   }) async {
     final headers = await _getAuthHeaders();
-    if (_enableIdempotencyHeaders) {
-      headers['Idempotency-Key'] = _newIdempotencyKey('report-create-structured');
-    }
+    const scope = 'report-create-structured';
+    final fingerprint = jsonEncode({
+      'report_date': reportDate.toIso8601String().split('T')[0],
+      'slots': slots,
+    });
+    _putIdempotencyHeader(headers, scope: scope, fingerprint: fingerprint);
     final response = await timedPost(
       Uri.parse('$baseUrl/reports'),
       headers: headers,
@@ -218,37 +217,14 @@ class ReportsService {
     );
 
     if (response.statusCode == 201) {
+      _completeIdempotency(scope: scope, fingerprint: fingerprint);
       final data = jsonDecode(response.body);
       return Report.fromJson(data);
     }
 
-    final error = jsonDecode(response.body);
-    throw Exception(error['message'] ?? 'Не удалось создать отчет');
-  }
-
-  // Обновление отчета
-  Future<Report> updateReport({
-    required int id,
-    required DateTime reportDate,
-    required String content,
-  }) async {
-    final headers = await _getAuthHeaders();
-    final response = await timedPut(
-      Uri.parse('$baseUrl/reports/$id'),
-      headers: headers,
-      body: jsonEncode({
-        'report_date': reportDate.toIso8601String().split('T')[0],
-        'content': content,
-      }),
+    throw Exception(
+      _extractErrorMessage(response.body, 'Не удалось создать отчет'),
     );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return Report.fromJson(data);
-    } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось обновить отчет');
-    }
   }
 
   /// Обновление отчета через конструктор (структурные slots)
@@ -272,8 +248,9 @@ class ReportsService {
       return Report.fromJson(data);
     }
 
-    final error = jsonDecode(response.body);
-    throw Exception(error['message'] ?? 'Не удалось обновить отчет');
+    throw Exception(
+      _extractErrorMessage(response.body, 'Не удалось обновить отчет'),
+    );
   }
 
   /// Зарплата за месяц: 50% от дохода, поздние отчёты не входят в доход.
@@ -292,15 +269,13 @@ class ReportsService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return MonthlySalaryReport.fromJson(data);
     } else if (response.statusCode == 403) {
-      try {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Требуется приватный доступ');
-      } catch (_) {
-        throw Exception('Требуется приватный доступ');
-      }
+      throw Exception(
+        _extractErrorMessage(response.body, 'Требуется приватный доступ'),
+      );
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Не удалось загрузить отчёт по зарплате');
+      throw Exception(
+        _extractErrorMessage(response.body, 'Не удалось загрузить отчёт по зарплате'),
+      );
     }
   }
 
@@ -315,12 +290,9 @@ class ReportsService {
     );
 
     if (response.statusCode != 200) {
-      try {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Не удалось загрузить журнал');
-      } catch (_) {
-        throw Exception('Не удалось загрузить журнал');
-      }
+      throw Exception(
+        _extractErrorMessage(response.body, 'Не удалось загрузить журнал'),
+      );
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['events'] as List<dynamic>? ?? [];
@@ -350,9 +322,27 @@ class ReportsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        '${_extractErrorMessage(response.body, 'Не удалось удалить отчет')} (${response.statusCode})',
-      );
+      throw Exception(_deleteErrorMessage(response.statusCode, response.body));
+    }
+  }
+
+  /// Отдельные сообщения по статусам, чтобы UI мог отличить «нет прав» от
+  /// «уже удалён» и от сетевой ошибки (последнюю ловит networkErrorMessage).
+  String _deleteErrorMessage(int statusCode, String body) {
+    switch (statusCode) {
+      case 401:
+        return 'Сессия истекла. Войдите снова и повторите удаление.';
+      case 403:
+        return 'Недостаточно прав для удаления этого отчёта.';
+      case 404:
+        return 'Отчёт не найден — возможно, он уже удалён.';
+      case 409:
+        return _extractErrorMessage(
+          body,
+          'Отчёт нельзя удалить: есть связанные записи.',
+        );
+      default:
+        return _extractErrorMessage(body, 'Не удалось удалить отчет');
     }
   }
 
@@ -371,8 +361,9 @@ class ReportsService {
     if (response.statusCode == 403) {
       throw Exception('Требуется доступ суперпользователя');
     }
-    final error = jsonDecode(response.body);
-    throw Exception(error['message'] ?? 'Не удалось снять пометку «поздний отчёт»');
+    throw Exception(
+      _extractErrorMessage(response.body, 'Не удалось снять пометку «поздний отчёт»'),
+    );
   }
 }
 

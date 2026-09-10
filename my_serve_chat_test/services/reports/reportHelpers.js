@@ -2,6 +2,10 @@ import { getDateInTimeZoneISO, getUserTimeZone } from '../../utils/timezone.js';
 
 const MAX_SLOTS_PER_DAY = 10;
 const MAX_STUDENTS_PER_SLOT = 4;
+// Верхний предел занятий в день для текстового пути (тот же потолок, что и у slots).
+export const MAX_LESSONS_PER_DAY = MAX_SLOTS_PER_DAY * MAX_STUDENTS_PER_SLOT;
+// Правдоподобная верхняя граница цены занятия (ниже диапазона DECIMAL(10,2)).
+const MAX_LESSON_PRICE = 1000000;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LESSON_STATUSES = new Set(['attended', 'missed', 'makeup', 'cancel_same_day']);
 
@@ -46,6 +50,8 @@ export const parseReportContent = (content) => {
           price,
           timeStart: startTime,
           timeEnd: endTime,
+          // Текстовый путь тоже должен проставлять время занятия (нормализуем к HH:MM).
+          lessonTimeHHMM: `${String(startTime).padStart(2, '0')}:00`,
           status: isCancelled ? 'cancel_same_day' : 'attended',
           originLessonId: null,
           notes: isCancelled ? 'Отмена в день проведения' : null,
@@ -66,8 +72,9 @@ export const toMinutes = (t) => {
 
 const formatPriceK = (priceRub) => {
   const n = typeof priceRub === 'string' ? parseFloat(priceRub) : priceRub;
-  if (!Number.isFinite(n)) return '0.0';
-  return (n / 1000).toFixed(1);
+  if (!Number.isFinite(n)) return '0';
+  // Показываем точную цену (без потери до сотен). Целое — без дробной части.
+  return String(Number(n.toFixed(2)));
 };
 
 export const buildReportContentFromSlots = (reportDate, slots, studentIdToName) => {
@@ -97,13 +104,16 @@ export const sortSlotsByTime = (slots) => {
 
 export const normalizeSlots = (rawSlots) => {
   if (!Array.isArray(rawSlots)) return [];
-  const normalized = rawSlots
-    .map((s) => ({
-      timeStart: typeof s?.timeStart === 'string' ? s.timeStart.trim() : '',
-      timeEnd: typeof s?.timeEnd === 'string' ? s.timeEnd.trim() : '',
-      students: Array.isArray(s?.students) ? s.students : [],
-    }))
-    .filter((s) => s.timeStart && s.timeEnd);
+  // Не выбрасываем слоты без времени — их валидирует validateSlots и возвращает 400
+  // (иначе занятие тихо теряется). studentId нормализуем к int один раз здесь.
+  const normalized = rawSlots.map((s) => ({
+    timeStart: typeof s?.timeStart === 'string' ? s.timeStart.trim() : '',
+    timeEnd: typeof s?.timeEnd === 'string' ? s.timeEnd.trim() : '',
+    students: (Array.isArray(s?.students) ? s.students : []).map((st) => ({
+      ...st,
+      studentId: parseInt(st?.studentId, 10),
+    })),
+  }));
   return sortSlotsByTime(normalized);
 };
 
@@ -139,8 +149,10 @@ export const validateSlots = (slots) => {
       const originLessonId = st?.originLessonId == null ? null : parseInt(st.originLessonId, 10);
       if (!id || Number.isNaN(id)) return 'Некорректный ученик в занятии';
       if (!Number.isFinite(price) || price <= 0) return 'Укажите стоимость для каждого ученика';
+      if (price > MAX_LESSON_PRICE) return `Слишком большая стоимость занятия (максимум ${MAX_LESSON_PRICE})`;
       if (!LESSON_STATUSES.has(status)) return 'Некорректный статус занятия';
       if (originLessonId != null && Number.isNaN(originLessonId)) return 'Некорректный originLessonId';
+      if (originLessonId != null && status !== 'makeup') return 'originLessonId допустим только для статуса makeup';
     }
   }
   return null;

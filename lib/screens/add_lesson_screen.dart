@@ -25,6 +25,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
   DateTime _selectedDate = DateTime.now();
   int _durationMinutes = 60;
   bool _isLoading = false;
+  bool _saveInFlight = false;
   String _lessonStatus = 'attended';
   /// Дополнительные копии занятия через 1…N недель (0 — только выбранная дата).
   int _repeatExtraWeeks = 0;
@@ -74,7 +75,9 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
   // Удаляем метод _selectTime, так как теперь время вводится вручную
 
   Future<void> _saveLesson() async {
+    if (_saveInFlight) return;
     if (!_formKey.currentState!.validate()) return;
+    _saveInFlight = true;
 
     setState(() => _isLoading = true);
 
@@ -117,6 +120,7 @@ class _AddLessonScreenState extends State<AddLessonScreen> {
         );
       }
     } finally {
+      _saveInFlight = false;
       if (mounted) {
         setState(() => _isLoading = false);
       }

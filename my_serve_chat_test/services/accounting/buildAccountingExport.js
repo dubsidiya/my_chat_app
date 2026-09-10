@@ -7,6 +7,13 @@ import {
   computeTeacherQuality,
 } from './teacherWorkProfile.js';
 import { SALARY_SHARE, sqlLessonSalaryBase } from './salaryRules.js';
+import { DEFAULT_USER_TIMEZONE } from '../../utils/timezone.js';
+
+// M22: created_at — TIMESTAMP без зоны (UTC-время в БД). Границы периода режем
+// по календарю бухгалтерской таймзоны, а не по midnight сессии БД. Тип колонки
+// не меняем (это M34) — только query-side конвертация в SQL:
+// created_at AT TIME ZONE 'UTC' AT TIME ZONE $tz сравниваем с датами периода.
+const ACCOUNTING_TZ = DEFAULT_USER_TIMEZONE;
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -50,8 +57,13 @@ export const defaultLessonCoverage = (lesson) => {
  * @param {string} opts.from YYYY-MM-DD
  * @param {string} opts.to YYYY-MM-DD
  * @param {boolean} [opts.bankTransferOnly]
+ * @param {number|null} [opts.profileTeacherId] Если задан — рабочий профиль/индекс
+ *   качества считаем только для этого преподавателя (путь /nagavisor), а не для всех.
  */
-export const buildAccountingExport = async (pool, { from, to, bankTransferOnly = false }) => {
+export const buildAccountingExport = async (
+  pool,
+  { from, to, bankTransferOnly = false, profileTeacherId = null }
+) => {
   if (!isValidISODate(from) || !isValidISODate(to)) {
     throw Object.assign(new Error('Параметры from/to обязательны в формате YYYY-MM-DD'), {
       statusCode: 400,
@@ -97,9 +109,9 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
             target_teacher_id AS teacher_id,
             COALESCE(SUM(CASE WHEN type IN ('deposit','refund') THEN amount ELSE 0 END), 0) as credit
      FROM transactions
-     WHERE created_at < ($1::date + interval '1 day')
+     WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE $2) < ($1::date + interval '1 day')
      GROUP BY student_id, target_teacher_id`,
-    [to]
+    [to, ACCOUNTING_TZ]
   );
   const creditByWallet = new Map();
   const unallocatedCreditByStudent = new Map();
@@ -115,10 +127,10 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
             COALESCE(SUM(amount), 0) as deposits
      FROM transactions
      WHERE type = 'deposit'
-       AND created_at >= $1::date
-       AND created_at < ($2::date + interval '1 day')
+       AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) >= $1::date
+       AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) < ($2::date + interval '1 day')
      GROUP BY student_id, target_teacher_id`,
-    [from, to]
+    [from, to, ACCOUNTING_TZ]
   );
   const depositsInPeriodByWallet = new Map();
   const unallocatedDepositsInPeriodByStudent = new Map();
@@ -458,6 +470,9 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
        LEFT JOIN report_lessons rl ON rl.lesson_id = l.id
        LEFT JOIN reports r ON r.id = rl.report_id AND r.created_by = l.created_by
        WHERE l.lesson_date >= $1::date AND l.lesson_date <= $2::date
+         -- M23: при bank_transfer_only лист «Зарплаты» должен совпадать с шапкой
+         -- («Только расчётный счёт: Да») — считаем только учеников с оплатой на р/с.
+         AND ($3 = false OR COALESCE(s.pay_by_bank_transfer, false) = true)
      )
      SELECT
        created_by AS teacher_id,
@@ -481,7 +496,7 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
      FROM period_lessons
      WHERE created_by IS NOT NULL
      GROUP BY created_by`,
-    [from, to]
+    [from, to, bankTransferOnly]
   );
 
   const emptySalary = (tid) => ({
@@ -549,13 +564,28 @@ export const buildAccountingExport = async (pool, { from, to, bankTransferOnly =
   // Скрытый профиль работы + индекс качества по каждому преподавателю.
   // Используется ТОЛЬКО в admin-выгрузке (требует requireSuperuser).
   // Никогда не отдаётся в teacher-facing API — см. teacherWorkProfile.js.
+  // M35: раньше профиль каждого преподавателя считался последовательным await в цикле
+  // (по 84-дневной агрегации на каждого). Теперь:
+  //  - для /nagavisor (profileTeacherId задан) считаем профиль ТОЛЬКО этого преподавателя;
+  //  - для полной выгрузки считаем всех, но конкурентно (Promise.all), а не по одному.
+  // Грудный (grouped) rewrite не делаем: он потребовал бы правки teacherWorkProfile.js,
+  // который вне области этой задачи; профили отсутствующих преподов безопасно undefined
+  // (computeTeacherQuality/expectedLessonsInPeriod/countMissedOnTypicalDow это учитывают).
   const profilesByTeacher = new Map();
-  for (const s of teacherStatsBase) {
-    const profile = await computeTeacherWorkProfile(pool, s.teacherId, {
-      anchorDate: from,
-      lookbackDays: 84,
-    });
-    profilesByTeacher.set(s.teacherId, profile);
+  const statsForProfiles =
+    profileTeacherId != null
+      ? teacherStatsBase.filter((s) => Number(s.teacherId) === Number(profileTeacherId))
+      : teacherStatsBase;
+  const profileResults = await Promise.all(
+    statsForProfiles.map((s) =>
+      computeTeacherWorkProfile(pool, s.teacherId, {
+        anchorDate: from,
+        lookbackDays: 84,
+      }).then((profile) => ({ teacherId: s.teacherId, profile }))
+    )
+  );
+  for (const { teacherId, profile } of profileResults) {
+    profilesByTeacher.set(teacherId, profile);
   }
 
   const teacherStatsOut = teacherStatsBase
@@ -697,10 +727,10 @@ export const queryAccountingTransactions = async (pool, { from, to, bankTransfer
      LEFT JOIN students s ON s.id = t.student_id
      LEFT JOIN users u ON u.id = t.created_by
      LEFT JOIN users tu ON tu.id = t.target_teacher_id
-     WHERE t.created_at >= $1::date
-       AND t.created_at < ($2::date + interval '1 day')
+     WHERE (t.created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) >= $1::date
+       AND (t.created_at AT TIME ZONE 'UTC' AT TIME ZONE $3) < ($2::date + interval '1 day')
      ORDER BY t.created_at ASC, t.id ASC`,
-    [from, to]
+    [from, to, ACCOUNTING_TZ]
   );
 
   const rows = bankTransferOnly

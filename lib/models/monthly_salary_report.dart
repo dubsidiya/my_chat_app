@@ -35,10 +35,10 @@ class MonthlySalaryReport {
     final list = json['report_breakdown'] as List<dynamic>?;
     final byPrice = json['lessons_by_price'] as List<dynamic>?;
     return MonthlySalaryReport(
-      year: json['year'] as int,
-      month: json['month'] as int,
-      firstDay: json['first_day'] as String,
-      lastDay: json['last_day'] as String,
+      year: _numToInt(json['year']),
+      month: _numToInt(json['month']),
+      firstDay: _toStr(json['first_day']),
+      lastDay: _toStr(json['last_day']),
       totalAll: _numToDouble(json['total_all']),
       lateReportsAmount: _numToDouble(json['late_reports_amount']),
       incomeCounted: _numToDouble(json['income_counted']),
@@ -64,6 +64,15 @@ double _numToDouble(dynamic v) {
   if (v is double) return v;
   return double.tryParse(v.toString()) ?? 0;
 }
+
+int _numToInt(dynamic v) {
+  if (v == null) return 0;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString()) ?? (double.tryParse(v.toString())?.round() ?? 0);
+}
+
+String _toStr(dynamic v) => v?.toString() ?? '';
 
 /// Одна строка: цена занятия и сколько таких занятий в месяце.
 class LessonPriceCountRow {

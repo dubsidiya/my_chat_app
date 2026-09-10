@@ -10,7 +10,7 @@ export const findAllReportsByUser = async (db, userId) => {
     `SELECT r.*,
             ${sqlReportDateText('r')},
             ${sqlFormationLabel('r', 'u')},
-            COUNT(rl.lesson_id) as lessons_count,
+            COUNT(rl.lesson_id)::int as lessons_count,
             COUNT(rl.lesson_id) FILTER (WHERE l.status = 'cancel_same_day')::int AS cancel_same_day_count,
             COUNT(rl.lesson_id) FILTER (WHERE l.status = 'missed')::int AS missed_count
      FROM reports r
@@ -130,7 +130,7 @@ export const findMonthlyBreakdown = async (db, { userId, firstDay, lastDayStr })
      LEFT JOIN report_lessons rl ON rl.report_id = r.id
      LEFT JOIN lessons l ON l.id = rl.lesson_id
      WHERE r.created_by = $1
-       AND r.report_date >= $2::date AND r.report_date <= $3::date
+       AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
      GROUP BY r.id, r.report_date, r.is_late
      ORDER BY r.report_date ASC`,
     [userId, firstDay, lastDayStr]
@@ -152,7 +152,7 @@ export const findMonthlyNoReportAmount = async (db, { userId, firstDay, lastDayS
 /** Сколько занятий в месяце на каждом ценнике (как в расчёте выручки за месяц). */
 export const findMonthlyLessonCountsByPrice = async (db, { userId, firstDay, lastDayStr }) => {
   return db.query(
-    `SELECT l.price::float8 AS price, COUNT(*)::int AS lessons_count
+    `SELECT l.price::text AS price, COUNT(*)::int AS lessons_count
      FROM lessons l
      WHERE l.created_by = $1
        AND l.lesson_date >= $2::date AND l.lesson_date <= $3::date
@@ -203,11 +203,4 @@ export const findReportLessons = async (db, reportId) => {
 
 export const findUserEmailById = async (db, userId) => {
   return db.query('SELECT email FROM users WHERE id = $1', [userId]);
-};
-
-export const markReportAsNotLate = async (db, reportId) => {
-  return db.query(
-    `UPDATE reports SET is_late = false WHERE id = $1 RETURNING *`,
-    [reportId]
-  );
 };

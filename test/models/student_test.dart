@@ -61,5 +61,56 @@ void main() {
       expect(s.isArchived, true);
       expect(s.copyWith(isArchived: false).isArchived, false);
     });
+
+    test('заглушка отвязанного ученика в пикере', () {
+      final s = Student(
+        id: 9,
+        name: 'Пётр (нет в списке)',
+        balance: 0,
+        createdAt: DateTime.utc(1970),
+        isUnavailableForPicker: true,
+      );
+      expect(s.isUnavailableForPicker, true);
+      expect(s.copyWith(name: 'Пётр').isUnavailableForPicker, true);
+      expect(s.copyWith(isUnavailableForPicker: false).isUnavailableForPicker, false);
+    });
+  });
+
+  // Реальные wire-формы: GET /students отдаёт balance как строку ("1500.00",
+  // "-500.50"), а не число (см. аудит M64/H15). Модель обязана распарсить
+  // строку в корректный double, чтобы isDebtor работал.
+  group('Student.fromJson — баланс строкой (реальный wire-shape)', () {
+    test('balance как строка "1500.00" → 1500.0', () {
+      final s = Student.fromJson({
+        'id': 1,
+        'name': 'Иван',
+        'balance': '1500.00',
+        'created_at': '2025-03-01T10:00:00.000Z',
+      });
+      expect(s.balance, 1500.0);
+      expect(s.isDebtor, false);
+    });
+
+    test('balance как строка "-500.50" → -500.5 и isDebtor', () {
+      final s = Student.fromJson({
+        'id': 2,
+        'name': 'Мария',
+        'balance': '-500.50',
+        'created_at': '2025-03-01T10:00:00.000Z',
+      });
+      expect(s.balance, -500.5);
+      expect(s.isDebtor, true);
+    });
+
+    test('balance как строка "0.00" → 0.0, не должник', () {
+      final s = Student.fromJson({
+        'id': 3,
+        'name': 'Пётр',
+        'balance': '0.00',
+        'created_at': '2025-03-01T10:00:00.000Z',
+      });
+      expect(s.balance, 0.0);
+      expect(s.isDebtor, false);
+    });
   });
 }

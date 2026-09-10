@@ -8,6 +8,9 @@ export const validateMonthlySalaryQuery = ({ year, month }) => {
   if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
     return { error: 'Укажите год и месяц: year, month (1–12)' };
   }
+  if (parsedYear < 2000 || parsedYear > 2100) {
+    return { error: 'Год должен быть в диапазоне 2000–2100' };
+  }
   return { year: parsedYear, month: parsedMonth };
 };
 

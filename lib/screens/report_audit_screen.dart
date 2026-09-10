@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/report_audit_event.dart';
 import '../services/reports_service.dart';
+import '../utils/date_parse.dart';
 
 /// Журнал событий аудита по отчёту (создание, обновление, ошибки и т.д.).
 class ReportAuditScreen extends StatefulWidget {
@@ -66,6 +67,87 @@ class _ReportAuditScreenState extends State<ReportAuditScreen> {
     }
   }
 
+  /// Русские подписи известных ключей payload аудита (см. reportsController.js).
+  static const Map<String, String> _payloadLabels = {
+    'reportDate': 'Дата отчёта',
+    'report_date': 'Дата отчёта',
+    'lessonsCreated': 'Создано занятий',
+    'lessonsDeleted': 'Удалено занятий',
+    'timezone': 'Часовой пояс',
+    'has_slots': 'Структурный формат',
+    'code': 'Код ошибки БД',
+    'constraint': 'Ограничение БД',
+    'detail': 'Детали',
+    'where': 'Контекст',
+  };
+
+  static String _formatPayloadValue(String key, dynamic value) {
+    if (value == null) return '—';
+    if (value is bool) return value ? 'Да' : 'Нет';
+    final lower = key.toLowerCase();
+    if (lower.contains('date')) {
+      try {
+        return DateFormat('dd.MM.yyyy').format(parseCalendarDate(value));
+      } catch (_) {
+        return value.toString();
+      }
+    }
+    if (lower.contains('amount') ||
+        lower.contains('price') ||
+        lower.contains('sum') ||
+        lower.contains('balance')) {
+      final n = value is num ? value.toDouble() : double.tryParse(value.toString());
+      if (n != null) {
+        final s = n == n.roundToDouble()
+            ? n.toStringAsFixed(0)
+            : n.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+        return '$s ₽';
+      }
+    }
+    return value.toString();
+  }
+
+  Widget _payloadRow(BuildContext context, String label, String value) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: RichText(
+        text: TextSpan(
+          style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.75)),
+          children: [
+            TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
+            TextSpan(text: value),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPayload(BuildContext context, Map<String, dynamic> payload) {
+    final scheme = Theme.of(context).colorScheme;
+    final rows = <Widget>[];
+    final unknown = <String, dynamic>{};
+    payload.forEach((key, value) {
+      final label = _payloadLabels[key];
+      if (label == null) {
+        unknown[key] = value;
+        return;
+      }
+      rows.add(_payloadRow(context, label, _formatPayloadValue(key, value)));
+    });
+    // Неизвестные ключи оставляем сырым дампом, чтобы ничего не потерять.
+    if (unknown.isNotEmpty) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          unknown.toString(),
+          style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: scheme.onSurface.withValues(alpha: 0.55)),
+        ),
+      ));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -108,7 +190,10 @@ class _ReportAuditScreenState extends State<ReportAuditScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
                         final e = _events![i];
-                        final when = DateFormat('dd.MM.yyyy HH:mm').format(e.createdAt.toLocal());
+                        final when = e.hasCreatedAt
+                            ? DateFormat('dd.MM.yyyy HH:mm')
+                                .format(serverInstantToLocal(e.createdAt))
+                            : 'время неизвестно';
                         return Card(
                           child: Padding(
                             padding: const EdgeInsets.all(12),
@@ -132,10 +217,7 @@ class _ReportAuditScreenState extends State<ReportAuditScreen> {
                                 ],
                                 if (e.payload != null && e.payload!.isNotEmpty) ...[
                                   const SizedBox(height: 8),
-                                  Text(
-                                    e.payload.toString(),
-                                    style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: scheme.onSurface.withValues(alpha: 0.65)),
-                                  ),
+                                  _buildPayload(context, e.payload!),
                                 ],
                               ],
                             ),

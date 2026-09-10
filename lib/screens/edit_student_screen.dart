@@ -66,6 +66,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             ? null
             : _notesController.text.trim(),
         payByBankTransfer: _payByBankTransfer,
+        previousBalance: widget.student.balance,
       );
 
       if (mounted) {

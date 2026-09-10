@@ -157,6 +157,16 @@ class AuthService {
           }
         } catch (_) {}
         throw Exception(errorMessage);
+      } else if (response.statusCode == 409) {
+        String errorMessage =
+            'Нельзя удалить аккаунт с занятиями или оплатами. Данные сохранятся. Выйдите из аккаунта или обратитесь к администратору.';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
       } else {
         String errorMessage = 'Не удалось удалить аккаунт';
         try {

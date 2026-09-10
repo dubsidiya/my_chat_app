@@ -2,11 +2,13 @@
  * Regression smoke tests for reports/lessons integrity fixes.
  *
  * Covers:
- * 1) owner updateReport with changed report_date does NOT flip is_late (submitted on time)
- * 2) deleteLesson is blocked for lessons linked to report_lessons
- * 3) invalid IDs for report/lesson mutations are rejected with 400
- * 4) text report create does not silently skip unknown students (returns 400)
- * 5) structured report slots are stored sorted by lesson time
+ * 1) owner updateReport: same-date edit keeps is_late; moving date into the past marks late;
+ *    moving a late report onto today cannot clear is_late
+ * 2) rebuild of a missed report keeps origin_lesson_id of an existing makeup
+ * 3) deleteLesson is blocked for lessons linked to report_lessons
+ * 4) invalid IDs for report/lesson mutations are rejected with 400
+ * 5) text report create does not silently skip unknown students (returns 400)
+ * 6) structured report slots are stored sorted by lesson time
  *
  * Run:
  *   node scripts/smoke-reports-regressions.js
@@ -133,6 +135,8 @@ const run = async () => {
 
   let reportId1 = null;
   let reportId2 = null;
+  let reportIdMiss = null;
+  let reportIdMakeup = null;
   try {
     // 0) Invalid IDs must fail fast with 400.
     const badUpdateRes = makeRes();
@@ -274,8 +278,8 @@ const run = async () => {
     );
     assert(cleanupPast.statusCode === 200, `cleanup past report статус ${cleanupPast.statusCode}`);
 
-    // 1) Owner updateReport: сдвиг report_date в прошлое не делает отчёт «поздним»,
-    //    если он был сдан вовремя (is_late фиксируется при create).
+    // 1) Owner updateReport: правка без смены даты не трогает is_late;
+    //    перенос на прошлую дату делает отчёт поздним; перенос позднего на сегодня не снимает флаг.
     const createRes1 = makeRes();
     await createReport(
       {
@@ -299,6 +303,30 @@ const run = async () => {
     assert(Number.isFinite(reportId1), 'createReport#1 не вернул report.id');
     assert(createRes1.body?.is_late === false, 'Новый отчет за today должен быть is_late=false');
 
+    const sameDateUpdateRes = makeRes();
+    await updateReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportId1) },
+        body: {
+          report_date: todayIso,
+          slots: [
+            {
+              timeStart: '09:05',
+              timeEnd: '10:05',
+              students: [{ studentId: ownerStudentId, price: 1150, status: 'attended' }],
+            },
+          ],
+        },
+      },
+      sameDateUpdateRes
+    );
+    assert(sameDateUpdateRes.statusCode === 200, `same-date updateReport статус ${sameDateUpdateRes.statusCode}`);
+    assert(
+      sameDateUpdateRes.body?.is_late === false,
+      'правка без смены даты не должна ставить is_late=true'
+    );
+
     const ownerUpdateRes = makeRes();
     await updateReport(
       {
@@ -319,8 +347,8 @@ const run = async () => {
     );
     assert(ownerUpdateRes.statusCode === 200, `owner updateReport статус ${ownerUpdateRes.statusCode}`);
     assert(
-      ownerUpdateRes.body?.is_late === false,
-      'owner updateReport не должен ставить is_late=true, если отчёт был сдан вовремя'
+      ownerUpdateRes.body?.is_late === true,
+      'перенос вовремя сданного отчёта на прошлую дату должен ставить is_late=true'
     );
 
     const dbLateCheck = await pool.query(
@@ -329,9 +357,206 @@ const run = async () => {
     );
     assert(dbLateCheck.rowCount === 1, 'Не найден обновленный отчет для проверки is_late');
     assert(dbLateCheck.rows[0].report_date === freePastDate, 'report_date в БД не обновился');
+    assert(dbLateCheck.rows[0].is_late === true, 'is_late в БД должен стать true после переноса даты в прошлое');
+
+    const incomeAfterBackdate = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0)::float8 AS total
+       FROM teacher_balance_transactions
+       WHERE type = 'lesson_income' AND report_id = $1`,
+      [reportId1]
+    );
     assert(
-      dbLateCheck.rows[0].is_late === false,
-      'is_late в БД не должен меняться при правке вовремя сданного отчёта'
+      Number(incomeAfterBackdate.rows[0]?.total || 0) === 0,
+      'поздний отчёт после переноса даты не должен давать lesson_income'
+    );
+
+    const moveBackToTodayRes = makeRes();
+    await updateReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportId1) },
+        body: {
+          report_date: todayIso,
+          slots: [
+            {
+              timeStart: '09:20',
+              timeEnd: '10:20',
+              students: [{ studentId: ownerStudentId, price: 1250, status: 'attended' }],
+            },
+          ],
+        },
+      },
+      moveBackToTodayRes
+    );
+    assert(moveBackToTodayRes.statusCode === 200, `updateReport back to today статус ${moveBackToTodayRes.statusCode}`);
+    assert(
+      moveBackToTodayRes.body?.is_late === true,
+      'перенос позднего отчёта на сегодня не должен снимать is_late'
+    );
+
+    // H2) Пересборка отчёта с пропуском не должна рвать origin_lesson_id внешней отработки.
+    const missDate = await pickFreeReportDate(ownerUserId, todayIso, 1, 60);
+    assert(missDate, 'Не найдена свободная дата для сценария makeup origin');
+    const createMissRes = makeRes();
+    await createReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        body: {
+          report_date: missDate,
+          slots: [
+            {
+              timeStart: '12:00',
+              timeEnd: '13:00',
+              students: [{ studentId: ownerStudentId, price: 1500, status: 'missed' }],
+            },
+          ],
+        },
+        headers: { 'idempotency-key': `smoke-regression-create-miss-${Date.now()}` },
+      },
+      createMissRes
+    );
+    assert(createMissRes.statusCode === 201, `createReport(miss) статус ${createMissRes.statusCode}`);
+    reportIdMiss = Number(createMissRes.body?.id);
+    assert(Number.isFinite(reportIdMiss), 'createReport(miss) не вернул report.id');
+    const missLessonId = Number(createMissRes.body?.lessons?.[0]?.id);
+    assert(Number.isFinite(missLessonId), 'createReport(miss) не вернул lesson id');
+
+    const makeupDate = await pickFreeReportDate(ownerUserId, todayIso, 1, 60);
+    assert(makeupDate, 'Не найдена свободная дата для отработки');
+    const createMakeupRes = makeRes();
+    await createReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        body: {
+          report_date: makeupDate,
+          slots: [
+            {
+              timeStart: '12:00',
+              timeEnd: '13:00',
+              students: [{
+                studentId: ownerStudentId,
+                price: 1500,
+                status: 'makeup',
+                originLessonId: missLessonId,
+              }],
+            },
+          ],
+        },
+        headers: { 'idempotency-key': `smoke-regression-create-makeup-${Date.now()}` },
+      },
+      createMakeupRes
+    );
+    assert(createMakeupRes.statusCode === 201, `createReport(makeup) статус ${createMakeupRes.statusCode}`);
+    reportIdMakeup = Number(createMakeupRes.body?.id);
+    assert(Number.isFinite(reportIdMakeup), 'createReport(makeup) не вернул report.id');
+    const makeupLessonId = Number(createMakeupRes.body?.lessons?.[0]?.id);
+    assert(Number.isFinite(makeupLessonId), 'createReport(makeup) не вернул lesson id');
+    const linkBefore = await pool.query(
+      'SELECT origin_lesson_id FROM lessons WHERE id = $1',
+      [makeupLessonId]
+    );
+    assert(Number(linkBefore.rows[0]?.origin_lesson_id) === missLessonId, 'отработка должна ссылаться на пропуск');
+
+    const rebuildMissRes = makeRes();
+    await updateReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportIdMiss) },
+        body: {
+          report_date: missDate,
+          slots: [
+            {
+              timeStart: '12:00',
+              timeEnd: '13:00',
+              students: [{ studentId: ownerStudentId, price: 1600, status: 'missed' }],
+            },
+          ],
+        },
+      },
+      rebuildMissRes
+    );
+    assert(rebuildMissRes.statusCode === 200, `rebuild miss report статус ${rebuildMissRes.statusCode}`);
+    const missAfterRebuild = await pool.query(
+      'SELECT id, status FROM lessons WHERE id = $1',
+      [missLessonId]
+    );
+    assert(missAfterRebuild.rowCount === 1, 'id пропуска должен сохраниться после пересборки отчёта');
+    assert(missAfterRebuild.rows[0].status === 'missed', 'статус пропуска должен остаться missed');
+    const linkAfterRebuild = await pool.query(
+      'SELECT origin_lesson_id FROM lessons WHERE id = $1',
+      [makeupLessonId]
+    );
+    assert(
+      Number(linkAfterRebuild.rows[0]?.origin_lesson_id) === missLessonId,
+      'пересборка отчёта с пропуском не должна обнулять origin_lesson_id отработки'
+    );
+
+    const dupMakeupDate = await pickFreeReportDate(ownerUserId, todayIso, 1, 60);
+    assert(dupMakeupDate, 'Не найдена свободная дата для повторной отработки');
+    const dupMakeupRes = makeRes();
+    await createReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        body: {
+          report_date: dupMakeupDate,
+          slots: [
+            {
+              timeStart: '14:00',
+              timeEnd: '15:00',
+              students: [{
+                studentId: ownerStudentId,
+                price: 1500,
+                status: 'makeup',
+                originLessonId: missLessonId,
+              }],
+            },
+          ],
+        },
+        headers: { 'idempotency-key': `smoke-regression-dup-makeup-${Date.now()}` },
+      },
+      dupMakeupRes
+    );
+    assert(dupMakeupRes.statusCode === 400, `повторная отработка статус ${dupMakeupRes.statusCode}, ожидался 400`);
+    if (dupMakeupRes.statusCode === 201 && dupMakeupRes.body?.id) {
+      const dupCleanup = makeRes();
+      await deleteReport(
+        {
+          user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+          params: { id: String(dupMakeupRes.body.id) },
+        },
+        dupCleanup
+      );
+    }
+
+    const convertMissRes = makeRes();
+    await updateReport(
+      {
+        user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+        params: { id: String(reportIdMiss) },
+        body: {
+          report_date: missDate,
+          slots: [
+            {
+              timeStart: '12:00',
+              timeEnd: '13:00',
+              students: [{ studentId: ownerStudentId, price: 1600, status: 'attended' }],
+            },
+          ],
+        },
+      },
+      convertMissRes
+    );
+    assert(
+      convertMissRes.statusCode === 409,
+      `перевод отработанного пропуска в attended статус ${convertMissRes.statusCode}, ожидался 409`
+    );
+    const linkAfterConvert = await pool.query(
+      'SELECT origin_lesson_id FROM lessons WHERE id = $1',
+      [makeupLessonId]
+    );
+    assert(
+      Number(linkAfterConvert.rows[0]?.origin_lesson_id) === missLessonId,
+      'отклонённая правка не должна рвать связь пропуск→отработка'
     );
 
     // 2) deleteLesson must reject lessons linked to reports.
@@ -382,6 +607,28 @@ const run = async () => {
 
     console.log('✅ smoke-reports-regressions: ok');
   } finally {
+    if (reportIdMakeup) {
+      const cleanupMakeup = makeRes();
+      await deleteReport(
+        {
+          user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+          params: { id: String(reportIdMakeup) },
+        },
+        cleanupMakeup
+      );
+      assert(cleanupMakeup.statusCode === 200, `cleanup makeup report статус ${cleanupMakeup.statusCode}`);
+    }
+    if (reportIdMiss) {
+      const cleanupMiss = makeRes();
+      await deleteReport(
+        {
+          user: { userId: ownerUserId, email: ownerUser.email, username: ownerUser.username },
+          params: { id: String(reportIdMiss) },
+        },
+        cleanupMiss
+      );
+      assert(cleanupMiss.statusCode === 200, `cleanup miss report статус ${cleanupMiss.statusCode}`);
+    }
     if (reportId2) {
       const cleanup2 = makeRes();
       await deleteReport(

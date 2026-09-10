@@ -11,6 +11,25 @@ import '../services/storage_service.dart';
 import '../services/report_builder_draft_storage.dart';
 import '../utils/network_error_helper.dart';
 
+/// Парсит денежное значение из API (число или строка вида "2000.00") в double.
+/// Возвращает null, если распарсить нельзя (тогда поле не обнуляем — L17).
+double? _parseMoney(dynamic raw) {
+  if (raw is num) return raw.toDouble();
+  final s = raw?.toString().trim().replaceAll(',', '.');
+  if (s == null || s.isEmpty) return null;
+  return double.tryParse(s);
+}
+
+/// Форматирует деньги без хвостовых нулей: 2000.00 → "2000", 2500.50 → "2500.5".
+/// Единый форматтер для префилла и предупреждений о ценах (L17/L18/L19).
+String _formatMoney(double value) {
+  if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
 class ReportBuilderScreen extends StatefulWidget {
   final DateTime? initialDate;
   final int? reportId; // если задан — режим редактирования
@@ -20,11 +39,17 @@ class ReportBuilderScreen extends StatefulWidget {
   /// чтобы преподаватель сам отметил отмены/пропуски точечно.
   final int? templateReportId;
 
+  /// Верхняя граница пикера даты — «сегодня» в TZ преподавателя (M42).
+  /// Прокидывается из reports_chat_screen (_teacherToday). null → используем
+  /// дату устройства как фолбэк.
+  final DateTime? maxDate;
+
   const ReportBuilderScreen({
     super.key,
     this.initialDate,
     this.reportId,
     this.templateReportId,
+    this.maxDate,
   });
 
   @override
@@ -33,6 +58,12 @@ class ReportBuilderScreen extends StatefulWidget {
 }
 
 class _SlotDraft {
+  /// Стабильный идентификатор строки-слота: нужен для ValueKey, чтобы при
+  /// удалении слота состояние виджетов (в т.ч. строка поиска ученика) не
+  /// «съезжало» к соседу по позиции (L25).
+  static int _seq = 0;
+  final int id = _seq++;
+
   final TextEditingController startController = TextEditingController();
   final List<TextEditingController> priceControllers =
       List.generate(_ReportBuilderScreenState._maxStudentsPerSlot, (_) => TextEditingController());
@@ -62,8 +93,8 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   bool _isLoading = false;
   /// Реентрант-гард для _save: блокирует повторный вход до завершения текущего
   /// запроса. Защищает от двойного клика «Сохранить» в тот же фрейм, когда
-  /// onPressed ещё видит старое (false) значение _isLoading и Idempotency-Key
-  /// успел бы быть выписан второй раз → дубль отчёта на ту же дату.
+  /// onPressed ещё видит старое (false) значение _isLoading. Ключ идемпотентности
+  /// при таймауте переиспользуется (тот же состав отчёта) — см. IdempotencyRetryStore.
   bool _saveInFlight = false;
   List<Student> _students = [];
   final List<_SlotDraft> _slots = [];
@@ -117,11 +148,12 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         // В шаблонном режиме ученика, которого больше нет в видимом списке
         // (удалён или скрыт), нельзя выставлять в Dropdown — он упадёт с assertion.
         // Поэтому такие пишем как null, а цену/время оставляем — учитель выберет ученика руками.
-        // В режиме редактирования старого отчёта поведение не меняем: подмешиваем
-        // отсутствующих учеников через фолбэк в _StudentPickerRow, чтобы не потерять данные.
+        // В режиме редактирования подмешиваем выпускников из полного списка и
+        // заглушку, если ученик отвязан и его нет в getAllStudents.
         final visibleIds = <int>{for (final s in visibleStudents) s.id};
         final slotDrafts = <_SlotDraft>[];
         final grouped = <String, List<Map<String, dynamic>>>{};
+        final namesByStudentId = <int, String>{};
         for (final l in lessons) {
           final timeRaw = (l['lesson_time'] ?? '').toString();
           final start = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
@@ -130,6 +162,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
               : int.tryParse(l['duration_minutes'].toString()) ?? 60;
           final key = '$start|$duration';
           grouped.putIfAbsent(key, () => []).add(l);
+          final sid = int.tryParse(l['student_id']?.toString() ?? '');
+          final nm = (l['student_name'] ?? '').toString().trim();
+          if (sid != null && nm.isNotEmpty) namesByStudentId[sid] = nm;
         }
 
         int droppedUnknownStudents = 0;
@@ -159,9 +194,13 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
               // отмены/пропуски учитель отметит точечно сам.
               slot.statuses[childIndex] =
                   isTemplateMode ? 'attended' : (item['status'] ?? 'attended').toString();
-              final price = item['price'];
-              slot.priceControllers[childIndex].text =
-                  price is num ? price.toString() : (double.tryParse(price.toString())?.toString() ?? '');
+              // "2000.00" → "2000", 2500.5 → "2500.5"; при неудачном парсе
+              // оставляем сырую строку, а не пустое поле (L17).
+              final rawPrice = item['price'];
+              final parsedPrice = _parseMoney(rawPrice);
+              slot.priceControllers[childIndex].text = parsedPrice != null
+                  ? _formatMoney(parsedPrice)
+                  : (rawPrice?.toString().trim() ?? '');
             }
             slotDrafts.add(slot);
           }
@@ -182,8 +221,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
         }
 
         if (!mounted) return;
-        // В редактировании подмешиваем выпускников, уже стоящих в отчёте — иначе Dropdown падает.
+        // В редактировании: выпускники из полного списка + отвязанные как заглушка в пикере.
         final pickerStudents = List<Student>.from(visibleStudents);
+        var detachedCount = 0;
         if (!isTemplateMode) {
           final byId = {for (final s in students) s.id: s};
           final already = <int>{for (final s in pickerStudents) s.id};
@@ -194,7 +234,21 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
               if (extra != null) {
                 pickerStudents.add(extra);
                 already.add(sid);
+                continue;
               }
+              final baseName = namesByStudentId[sid];
+              final label = (baseName != null && baseName.isNotEmpty) ? baseName : 'Ученик №$sid';
+              pickerStudents.add(
+                Student(
+                  id: sid,
+                  name: '$label (нет в списке)',
+                  balance: 0,
+                  createdAt: DateTime.utc(1970),
+                  isUnavailableForPicker: true,
+                ),
+              );
+              already.add(sid);
+              detachedCount++;
             }
           }
           pickerStudents.sort((a, b) => a.name.compareTo(b.name));
@@ -216,6 +270,17 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
               content: Text(
                 'В шаблоне $droppedUnknownStudents ученик(а) больше недоступен(ы) — '
                 'выберите вручную.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else if (!isTemplateMode && detachedCount > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 5),
+              content: Text(
+                '$detachedCount ученик(а) больше нет в вашем списке. '
+                'Можно заменить в слоте или сохранить отчёт как есть.',
               ),
               backgroundColor: Colors.orange,
             ),
@@ -344,11 +409,15 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 
   Future<void> _pickDate() async {
+    // «Сегодня» преподавателя, не устройства (M42); initialDate клампим,
+    // чтобы не нарушить инвариант showDatePicker (initial <= last).
+    final last = widget.maxDate ?? DateTime.now();
+    final initial = _selectedDate.isAfter(last) ? last : _selectedDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: initial,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: last,
     );
     if (picked == null) return;
     setState(() {
@@ -390,7 +459,10 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
   }
 
   String _minutesToHHMM(int mins) {
-    final m = mins.clamp(0, 23 * 60 + 59);
+    // Больше не «схлопываем» переполнение к 23:59 — это молча укорачивало
+    // поздние занятия (22:00 + 180 → 23:59 = 119 мин вместо 180). Значения за
+    // пределами суток отсекаются валидацией слота (M41).
+    final m = mins < 0 ? 0 : mins;
     final hh = (m ~/ 60).toString().padLeft(2, '0');
     final mm = (m % 60).toString().padLeft(2, '0');
     return '$hh:$mm';
@@ -420,7 +492,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
 
     final cached = _lastPriceByStudent[studentId];
     if (cached != null && cached > 0) {
-      controller.text = cached.toStringAsFixed(0);
+      controller.text = _formatMoney(cached);
       return;
     }
 
@@ -436,10 +508,41 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       if (!isStillSameSelection()) return;
       if (controller.text.trim().isNotEmpty) return;
       _lastPriceByStudent[studentId] = price;
-      controller.text = price.toStringAsFixed(0);
+      controller.text = _formatMoney(price);
     } catch (_) {
       // если не удалось — просто оставим пусто
     }
+  }
+
+  /// Заполняет [_lastPriceByStudent] последней известной ценой для ВСЕХ выбранных
+  /// учеников, не трогая поля ввода. Нужно для проверки «цена заметно отличается»
+  /// в режиме правки, где поля уже заполнены и авто-префилл не срабатывает (L19).
+  Future<void> _ensureLastPricesForSelected() async {
+    final ids = <int>{};
+    for (final slot in _slots) {
+      for (final sid in slot.studentIds) {
+        if (sid != null) ids.add(sid);
+      }
+    }
+    for (final id in ids) {
+      if (_lastPriceByStudent.containsKey(id)) continue;
+      try {
+        final lessons = await _studentsService.getStudentLessonsMine(id);
+        if (lessons.isEmpty) continue;
+        final price = lessons.first.price;
+        if (price > 0) _lastPriceByStudent[id] = price;
+      } catch (_) {
+        // проверка цен не критична — пропускаем ученика при ошибке
+      }
+    }
+  }
+
+  /// Имя ученика по id (для предупреждений о ценах вместо «Ученик #id») — L19.
+  String _studentLabel(int studentId) {
+    for (final s in _students) {
+      if (s.id == studentId) return s.name;
+    }
+    return 'Ученик #$studentId';
   }
 
   List<String> _priceWarningsForBuilt(List<ReportStructuredSlot> built) {
@@ -452,7 +555,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
           final ratio = st.price / prev;
           if (ratio > 1.35 || ratio < 0.65) {
             w.add(
-              'Ученик #${st.studentId}: ${st.price.toStringAsFixed(0)} ₽ заметно отличается от последней цены (${prev.toStringAsFixed(0)} ₽).',
+              '${_studentLabel(st.studentId)}: ${_formatMoney(st.price)} ₽ заметно отличается от последней цены (${_formatMoney(prev)} ₽).',
             );
           }
         }
@@ -481,23 +584,41 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
     for (int i = 0; i < _slots.length; i++) {
       final slot = _slots[i];
       final start = slot.startController.text.trim();
-      final end = _computeEndTimeHHMM(start, slot.durationMinutes);
 
       final startErr = _validateTime(start);
-      final endErr = _validateTime(end);
-      if (startErr != null || endErr != null) {
+      if (startErr != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: проверьте время'), backgroundColor: Colors.orange),
+          SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: проверьте время начала'), backgroundColor: Colors.orange),
         );
         return null;
       }
 
-      if (_toMinutes(end) <= _toMinutes(start)) {
+      final startMin = _toMinutes(start);
+      final endMin = startMin + slot.durationMinutes;
+      if (endMin <= startMin) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(duration: const Duration(seconds: 3), content: Text('Слот ${i + 1}: конец должен быть позже начала'), backgroundColor: Colors.orange),
         );
         return null;
       }
+      // Конец не должен выходить за пределы суток. Раньше он молча клампился к
+      // 23:59, и сервер (duration = timeEnd − timeStart) записывал занятие короче
+      // реального (M41). Сервер принимает timeEnd ≤ 23:59, поэтому отклоняем здесь
+      // с понятным сообщением, а не отправляем «укороченный» слот.
+      if (endMin > 23 * 60 + 59) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 4),
+            content: Text(
+              'Слот ${i + 1}: занятие заканчивается позже 23:59 (${_minutesToHHMM(endMin)}). '
+              'Уменьшите длительность или сдвиньте время начала.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return null;
+      }
+      final end = _minutesToHHMM(endMin);
 
       if (!slot.studentIds.any((id) => id != null)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -570,6 +691,9 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
       final built = _buildStructuredSlotsOrNull();
       if (built == null) return;
 
+      // Подтягиваем последние цены для всех выбранных учеников независимо от
+      // состояния полей, иначе проверка цен не сработает в режиме правки (L19).
+      await _ensureLastPricesForSelected();
       final warnings = _priceWarningsForBuilt(built);
       if (warnings.isNotEmpty && mounted) {
         final ok = await showDialog<bool>(
@@ -681,6 +805,7 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                       ? _computeEndTimeHHMM(startText, slot.durationMinutes)
                       : '';
                   return Card(
+                    key: ValueKey('slot_${slot.id}'),
                     margin: const EdgeInsets.only(bottom: 12),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -738,6 +863,15 @@ class _ReportBuilderScreenState extends State<ReportBuilderScreen> {
                                           if (!v) return;
                                           setState(() => slot.durationMinutes = m);
                                         },
+                                ),
+                              // Нестандартная длительность (напр. из шаблона/черновика)
+                              // не совпадает с пресетами — показываем её отдельным
+                              // выбранным чипом, чтобы значение было видно (L27).
+                              if (!const [60, 90, 120, 180].contains(slot.durationMinutes))
+                                ChoiceChip(
+                                  label: Text('${slot.durationMinutes} мин'),
+                                  selected: true,
+                                  onSelected: _isLoading ? null : (_) {},
                                 ),
                             ],
                           ),
@@ -880,7 +1014,12 @@ class _StudentPickerRowState extends State<_StudentPickerRow> {
                   ...filtered.map(
                     (s) => DropdownMenuItem<int?>(
                       value: s.id,
-                      child: Text(s.name),
+                      child: Text(
+                        s.name,
+                        style: s.isUnavailableForPicker
+                            ? TextStyle(color: Colors.orange.shade800)
+                            : null,
+                      ),
                     ),
                   ),
                   if (filtered.isEmpty && widget.students.isNotEmpty)

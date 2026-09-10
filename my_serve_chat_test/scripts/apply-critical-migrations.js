@@ -25,6 +25,12 @@ const CRITICAL = [
   'migrations/add_user_blocks_and_reports.sql',
   'migrations/add_chat_invites.sql',
   'migrations/add_custom_chat_folders.sql',
+  'migrations/add_report_lessons_unique_lesson.sql',
+  'migrations/add_accounting_uniqueness_indexes.sql',
+  // Additive accounting performance indexes (idempotent, CREATE INDEX IF NOT EXISTS):
+  'migrations/add_lessons_created_by_date_index.sql',
+  'migrations/add_transactions_lesson_created_by_indexes.sql',
+  'migrations/add_students_normalized_contact_indexes.sql',
   // Needs CREATE EXTENSION privilege on Managed PG — run manually if missing:
   // 'migrations/add_accounting_reliability_features.sql',
 ];

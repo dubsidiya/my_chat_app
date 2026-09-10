@@ -10,9 +10,17 @@ import {
   hashIdempotencyPayload,
 } from '../utils/idempotency.js';
 import { SQL_OPEN_MAKEUP_DEBT_ON_LESSON } from '../utils/makeupDebts.js';
+import { sqlTeacherVisibleStudentBalance } from '../services/accounting/teacherStudentBalance.js';
 
 const normalizePhoneDigits = (v) => (v || '').toString().replace(/\D/g, '');
 const normalizeEmail = (v) => (v || '').toString().trim().toLowerCase();
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
+const parsePayByBankFlag = (value) => value === true || value === 'true';
+const optionalTrimToNull = (value) => {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s ? s : null;
+};
 const normalizeText = (v) =>
   (v || '')
     .toString()
@@ -21,6 +29,46 @@ const normalizeText = (v) =>
     .replace(/[^a-zа-я0-9\s]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+// Максимум строк на страницу для списков (M17).
+const LIST_MAX_LIMIT = 1000;
+
+// M17: разбор необязательных limit/offset. При отсутствии параметров возвращаем
+// { limit: null, offset: null } — поведение прежнее (все строки), клиент не ломается.
+const parseLimitOffset = (req, maxLimit = LIST_MAX_LIMIT) => {
+  const out = { limit: null, offset: null };
+  const rawLimit = req.query?.limit;
+  const rawOffset = req.query?.offset;
+  if (rawLimit != null && String(rawLimit).trim() !== '') {
+    const n = parseInt(String(rawLimit), 10);
+    if (!Number.isInteger(n) || n < 1 || n > maxLimit) {
+      return { error: `limit должен быть целым числом от 1 до ${maxLimit}` };
+    }
+    out.limit = n;
+  }
+  if (rawOffset != null && String(rawOffset).trim() !== '') {
+    const n = parseInt(String(rawOffset), 10);
+    if (!Number.isInteger(n) || n < 0) {
+      return { error: 'offset должен быть неотрицательным целым числом' };
+    }
+    out.offset = n;
+  }
+  return out;
+};
+
+// Дописывает LIMIT/OFFSET к запросу и параметрам только при наличии значений.
+const buildLimitOffsetSql = (params, { limit, offset }) => {
+  let sql = '';
+  if (limit != null) {
+    params.push(limit);
+    sql += ` LIMIT $${params.length}`;
+  }
+  if (offset != null) {
+    params.push(offset);
+    sql += ` OFFSET $${params.length}`;
+  }
+  return sql;
+};
 
 /** Явная привязка снова делает ученика активным (снимает выпускники). */
 const ensureTeacherStudentLinkActive = async (client, teacherId, studentId) => {
@@ -49,10 +97,16 @@ const assertTeacherHasStudentAccess = async (client, teacherId, studentId) => {
 export const getAllStudents = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const pagination = parseLimitOffset(req); // M17 (необязательные limit/offset)
+    if (pagination.error) {
+      return res.status(400).json({ message: pagination.error });
+    }
 
     // Суперпользователь (бухгалтерия) должен видеть всех учеников.
     // is_archived — только личный архив суперюзера (его строка в teacher_students), иначе false.
     if (isSuperuser(req.user)) {
+      const params = [userId];
+      const pageClause = buildLimitOffsetSql(params, pagination);
       const result = await pool.query(
         `SELECT s.*,
                 COALESCE(BOOL_OR(ts.is_archived), false) AS is_archived,
@@ -62,33 +116,25 @@ export const getAllStudents = async (req, res) => {
          LEFT JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = $1
          LEFT JOIN transactions t ON s.id = t.student_id
          GROUP BY s.id
-         ORDER BY s.name`,
-        [userId]
+         ORDER BY s.name${pageClause}`,
+        params
       );
       return res.json(result.rows);
     }
 
+    const params = [userId];
+    const pageClause = buildLimitOffsetSql(params, pagination);
     const result = await pool.query(
       `SELECT s.*,
               BOOL_OR(ts.is_archived) AS is_archived,
               MAX(ts.archived_at) AS archived_at,
-              COALESCE(SUM(
-                CASE
-                  WHEN t.type IN ('deposit', 'refund')
-                    AND (t.target_teacher_id = $1 OR t.target_teacher_id IS NULL)
-                    THEN t.amount
-                  WHEN t.type = 'lesson' AND t.created_by = $1
-                    THEN -t.amount
-                  ELSE 0
-                END
-              ), 0) as balance
+              COALESCE((${sqlTeacherVisibleStudentBalance({ studentIdSql: 's.id', teacherIdSql: '$1' })}), 0) AS balance
        FROM teacher_students ts
        JOIN students s ON s.id = ts.student_id
-       LEFT JOIN transactions t ON s.id = t.student_id
        WHERE ts.teacher_id = $1
        GROUP BY s.id
-       ORDER BY s.name`,
-      [userId]
+       ORDER BY s.name${pageClause}`,
+      params
     );
 
     res.json(result.rows);
@@ -410,7 +456,19 @@ export const searchStudentSuggestions = async (req, res) => {
         [userId, normalizedQuery, likePattern, limit]
       );
     } catch (trgmError) {
-      // Fallback, если расширение pg_trgm ещё не применено.
+      // M18/L10: фолбэк только для случаев, когда недоступен pg_trgm:
+      //  42883 — оператор % не существует (расширение не создано);
+      //  42P01 — отсутствует таблица/отношение.
+      // Любую другую ошибку (сеть, права, таймаут) пробрасываем во внешний catch,
+      // а не превращаем молча во второй LIKE-скан.
+      if (trgmError?.code !== '42883' && trgmError?.code !== '42P01') {
+        throw trgmError;
+      }
+      console.warn(
+        'searchStudentSuggestions: pg_trgm недоступен, использую LIKE-фолбэк:',
+        trgmError?.code,
+        trgmError?.message
+      );
       result = await pool.query(
         `SELECT
            s.id,
@@ -515,46 +573,73 @@ export const linkExistingStudent = async (req, res) => {
 export const updateStudent = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { id } = req.params;
-    const { name, parent_name, phone, email, notes, pay_by_bank_transfer } = req.body;
-    const payByBank = pay_by_bank_transfer === true || pay_by_bank_transfer === 'true';
-
-    if (!name || !name.toString().trim()) {
-      return res.status(400).json({ message: 'Имя студента обязательно' });
+    const studentId = parsePositiveInt(req.params.id);
+    if (!studentId) {
+      return res.status(400).json({ message: 'Некорректный ID ученика' });
     }
+    const body = req.body || {};
 
-    // Суперпользователь может править любого; иначе — только при наличии связи teacher_students
     if (!isSuperuser(req.user)) {
       const checkResult = await pool.query(
         'SELECT 1 FROM teacher_students WHERE teacher_id = $1 AND student_id = $2 LIMIT 1',
-        [userId, id]
+        [userId, studentId]
       );
       if (checkResult.rows.length === 0) {
         return res.status(404).json({ message: 'Студент не найден' });
       }
     } else {
-      // Суперпользователь: проверяем, что студент вообще есть в базе
-      const exists = await pool.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
+      const exists = await pool.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [studentId]);
       if (exists.rows.length === 0) {
         return res.status(404).json({ message: 'Студент не найден' });
       }
     }
 
+    const sets = [];
+    const values = [];
+    const addSet = (column, value) => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    if (hasOwn(body, 'name')) {
+      const trimmedName = (body.name ?? '').toString().trim();
+      if (!trimmedName) {
+        return res.status(400).json({ message: 'Имя студента обязательно' });
+      }
+      addSet('name', trimmedName);
+    }
+    if (hasOwn(body, 'parent_name')) {
+      addSet('parent_name', optionalTrimToNull(body.parent_name));
+    }
+    if (hasOwn(body, 'phone')) {
+      addSet('phone', optionalTrimToNull(body.phone));
+    }
+    if (hasOwn(body, 'email')) {
+      const rawEmail = optionalTrimToNull(body.email);
+      addSet('email', rawEmail ? normalizeEmail(rawEmail) : null);
+    }
+    if (hasOwn(body, 'notes')) {
+      addSet('notes', optionalTrimToNull(body.notes));
+    }
+    if (hasOwn(body, 'pay_by_bank_transfer')) {
+      addSet('pay_by_bank_transfer', parsePayByBankFlag(body.pay_by_bank_transfer));
+    }
+
+    if (sets.length === 0) {
+      return res.status(400).json({ message: 'Нет полей для обновления' });
+    }
+
+    values.push(studentId);
     const result = await pool.query(
-      `UPDATE students 
-       SET name = $1, parent_name = $2, phone = $3, email = $4, notes = $5, pay_by_bank_transfer = $6, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
+      `UPDATE students
+       SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $${values.length}
        RETURNING *`,
-      [
-        name.toString().trim(),
-        parent_name?.trim() || null,
-        phone?.trim() || null,
-        email ? normalizeEmail(email) : null,
-        notes?.trim() || null,
-        payByBank,
-        id,
-      ]
+      values
     );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Студент не найден' });
+    }
 
     res.json(result.rows[0]);
   } catch (error) {
@@ -673,9 +758,13 @@ export const unarchiveStudent = async (req, res) => {
 // Удаление связи текущего пользователя с учеником (без полного удаления ученика из БД).
 export const deleteStudent = async (req, res) => {
   const userId = req.user.userId;
-  const { id } = req.params;
+  const id = parsePositiveInt(req.params?.id); // L9
+  if (!id) {
+    return res.status(400).json({ message: 'Некорректный ID ученика' });
+  }
 
   const client = await pool.connect();
+  let committed = false;
   try {
     try { await client.query('ROLLBACK'); } catch (_) {}
     await client.query('BEGIN');
@@ -716,58 +805,27 @@ export const deleteStudent = async (req, res) => {
     });
 
     await client.query('COMMIT');
+    committed = true;
     return res.json({ message: 'Связь с учеником удалена' });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Ошибка удаления студента:', error);
     return res.status(500).json({ message: 'Ошибка удаления студента' });
   } finally {
-    try { await client.query('ROLLBACK'); } catch (_) {}
+    // L11: не делаем повторный ROLLBACK после успешного COMMIT.
+    if (!committed) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
     client.release();
   }
 };
 
-// Полное каскадное удаление ученика (только суперпользователь).
-export const deleteStudentFull = async (req, res) => {
-  const userId = req.user.userId;
-  const { id } = req.params;
-
-  if (!isSuperuser(req.user)) {
-    return res.status(403).json({ message: 'Полное удаление доступно только суперпользователю' });
-  }
-
-  const client = await pool.connect();
-  try {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    await client.query('BEGIN');
-
-    const studentExists = await client.query('SELECT 1 FROM students WHERE id = $1 LIMIT 1', [id]);
-    if (studentExists.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Студент не найден' });
-    }
-
-    await client.query('DELETE FROM teacher_students WHERE student_id = $1', [id]);
-    await client.query('DELETE FROM students WHERE id = $1', [id]);
-
-    await logAccountingEvent({
-      userId,
-      eventType: 'student_deleted_full',
-      entityType: 'student',
-      entityId: id,
-      payload: { bySuperuser: true },
-    });
-
-    await client.query('COMMIT');
-    return res.json({ message: 'Ученик удален полностью' });
-  } catch (error) {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    console.error('Ошибка полного удаления студента:', error);
-    return res.status(500).json({ message: 'Ошибка полного удаления студента' });
-  } finally {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    client.release();
-  }
+// Полное каскадное удаление отключено: стирало занятия/депозиты всех преподавателей
+// и оставляло зарплату. В приложении — архив или удаление связи.
+export const deleteStudentFull = async (_req, res) => {
+  return res.status(410).json({
+    message: 'Полное удаление ученика отключено. Используйте архив («выпускники») или удаление связи.',
+  });
 };
 
 // Получение баланса студента
@@ -809,18 +867,7 @@ export const getStudentBalance = async (req, res) => {
             [id]
           ))
       : await pool.query(
-          `SELECT COALESCE(SUM(
-             CASE
-               WHEN type IN ('deposit', 'refund')
-                 AND (target_teacher_id = $2 OR target_teacher_id IS NULL)
-                 THEN amount
-               WHEN type = 'lesson' AND created_by = $2
-                 THEN -amount
-               ELSE 0
-             END
-           ), 0) as balance
-           FROM transactions
-           WHERE student_id = $1`,
+          `SELECT COALESCE((${sqlTeacherVisibleStudentBalance({ studentIdSql: '$1', teacherIdSql: '$2' })}), 0) AS balance`,
           [id, userId]
         );
 
@@ -838,6 +885,10 @@ export const getStudentTransactions = async (req, res) => {
     const id = parsePositiveInt(req.params?.id);
     const mine = req.query.mine === '1' || req.query.mine === 'true';
     if (!id) return res.status(400).json({ message: 'Некорректный ID ученика' });
+    const pagination = parseLimitOffset(req); // M17 (необязательные limit/offset)
+    if (pagination.error) {
+      return res.status(400).json({ message: pagination.error });
+    }
 
     // Суперпользователь (бухгалтерия) может смотреть транзакции любого ученика
     if (!isSuperuser(req.user)) {
@@ -851,40 +902,49 @@ export const getStudentTransactions = async (req, res) => {
     }
 
     const isSuper = isSuperuser(req.user);
-    const result = isSuper
-      ? (mine
-        ? await pool.query(
-            `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
-             FROM transactions t
-             LEFT JOIN lessons l ON t.lesson_id = l.id
-             LEFT JOIN users u ON t.created_by = u.id
-             WHERE t.student_id = $1 AND t.created_by = $2
-             ORDER BY t.created_at DESC`,
-            [id, userId]
-          )
-        : await pool.query(
-            `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
-             FROM transactions t
-             LEFT JOIN lessons l ON t.lesson_id = l.id
-             LEFT JOIN users u ON t.created_by = u.id
-             WHERE t.student_id = $1
-             ORDER BY t.created_at DESC`,
-            [id]
-          ))
-      : await pool.query(
-          `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
-           FROM transactions t
-           LEFT JOIN lessons l ON t.lesson_id = l.id
-           LEFT JOIN users u ON t.created_by = u.id
-           WHERE t.student_id = $1
-             AND (
-               (t.type IN ('deposit', 'refund')
-                 AND (t.target_teacher_id = $2 OR t.target_teacher_id IS NULL))
-               OR (t.type = 'lesson' AND t.created_by = $2)
-             )
-           ORDER BY t.created_at DESC`,
-          [id, userId]
-        );
+    let result;
+    if (isSuper && mine) {
+      const params = [id, userId];
+      const pageClause = buildLimitOffsetSql(params, pagination);
+      result = await pool.query(
+        `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
+         FROM transactions t
+         LEFT JOIN lessons l ON t.lesson_id = l.id
+         LEFT JOIN users u ON t.created_by = u.id
+         WHERE t.student_id = $1 AND t.created_by = $2
+         ORDER BY t.created_at DESC${pageClause}`,
+        params
+      );
+    } else if (isSuper) {
+      const params = [id];
+      const pageClause = buildLimitOffsetSql(params, pagination);
+      result = await pool.query(
+        `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
+         FROM transactions t
+         LEFT JOIN lessons l ON t.lesson_id = l.id
+         LEFT JOIN users u ON t.created_by = u.id
+         WHERE t.student_id = $1
+         ORDER BY t.created_at DESC${pageClause}`,
+        params
+      );
+    } else {
+      const params = [id, userId];
+      const pageClause = buildLimitOffsetSql(params, pagination);
+      result = await pool.query(
+        `SELECT t.*, l.lesson_date, l.lesson_time, ${sqlUserAccountingNameOrEmpty('u')} AS teacher_username
+         FROM transactions t
+         LEFT JOIN lessons l ON t.lesson_id = l.id
+         LEFT JOIN users u ON t.created_by = u.id
+         WHERE t.student_id = $1
+           AND (
+             (t.type IN ('deposit', 'refund')
+               AND (t.target_teacher_id = $2 OR t.target_teacher_id IS NULL))
+             OR (t.type = 'lesson' AND t.created_by = $2)
+           )
+         ORDER BY t.created_at DESC${pageClause}`,
+        params
+      );
+    }
 
     res.json(result.rows);
   } catch (error) {

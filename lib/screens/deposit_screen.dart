@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/students_service.dart';
 import '../models/transaction.dart';
+import '../utils/network_error_helper.dart';
 
 class DepositScreen extends StatefulWidget {
   final int studentId;
@@ -20,10 +22,15 @@ class _DepositScreenState extends State<DepositScreen> {
   final _descriptionController = TextEditingController();
   final _studentsService = StudentsService();
   bool _isLoading = false;
+  bool _depositInFlight = false;
   bool _manualCorrection = false;
   bool _teachersLoading = false;
+  String? _teachersError;
   List<DepositTeacherOption> _teachers = const [];
   int? _selectedTeacherId;
+
+  /// Список преподавателей загружен и не пуст — можно проводить пополнение.
+  bool get _teachersReady => _teachers.isNotEmpty && _teachersError == null;
 
   static const double _maxAmount = 1000000;
   static const int _recentDepositWindowDays = 5;
@@ -43,20 +50,26 @@ class _DepositScreenState extends State<DepositScreen> {
   }
 
   Future<void> _loadTeachers() async {
-    setState(() => _teachersLoading = true);
+    setState(() {
+      _teachersLoading = true;
+      _teachersError = null;
+    });
     try {
       final teachers = await _studentsService.getStudentDepositTeachers(widget.studentId);
       if (!mounted) return;
       setState(() {
         _teachers = teachers;
+        _teachersError = null;
         _selectedTeacherId = teachers.length == 1 ? teachers.first.id : null;
       });
     } catch (e) {
       if (!mounted) return;
+      final message = networkErrorMessage(e);
+      setState(() => _teachersError = message);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text('Не удалось загрузить преподавателей: $e'),
+          content: Text('Не удалось загрузить преподавателей: $message'),
           backgroundColor: Colors.red,
         ),
       );
@@ -67,10 +80,20 @@ class _DepositScreenState extends State<DepositScreen> {
     }
   }
 
-  Future<void> _deposit() async {
-    if (!_formKey.currentState!.validate()) return;
+  /// Нормализуем сумму: принимаем и русскую запятую, и точку (M54).
+  double? _parseAmount(String raw) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
 
-    final amount = double.parse(_amountController.text);
+  Future<void> _deposit() async {
+    if (_depositInFlight) return;
+    if (!_teachersReady) return;
+    if (!_formKey.currentState!.validate()) return;
+    _depositInFlight = true;
+
+    final amount = _parseAmount(_amountController.text)!;
 
     setState(() => _isLoading = true);
 
@@ -109,6 +132,7 @@ class _DepositScreenState extends State<DepositScreen> {
         );
       }
     } finally {
+      _depositInFlight = false;
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -119,9 +143,21 @@ class _DepositScreenState extends State<DepositScreen> {
     final cutoff = DateTime.now().toUtc().subtract(
       const Duration(days: _recentDepositWindowDays),
     );
+    // NB: сейчас это тянет всю историю транзакций ученика. Полноценный серверный
+    // запрос «недавние депозиты по преподавателю» — отдельная доработка (follow-up).
+    // Здесь как минимум отсекаем депозиты чужих преподавателей (M52).
+    final selected = _selectedTeacherId;
     final transactions = await _studentsService.getStudentTransactions(widget.studentId);
     return transactions.where((t) {
-      return t.type == 'deposit' && t.createdAt.toUtc().isAfter(cutoff);
+      if (t.type != 'deposit') return false;
+      if (!t.createdAt.toUtc().isAfter(cutoff)) return false;
+      // Только депозиты в кошелёк выбранного преподавателя (плюс не привязанные).
+      if (selected != null &&
+          t.targetTeacherId != null &&
+          t.targetTeacherId != selected) {
+        return false;
+      }
+      return true;
     }).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
@@ -244,6 +280,24 @@ class _DepositScreenState extends State<DepositScreen> {
                 return null;
               },
             ),
+            if (_teachersError != null && !_teachersLoading) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Список преподавателей недоступен. Пополнение отключено.',
+                      style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _loadTeachers,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Повторить'),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             SwitchListTile(
               value: _manualCorrection,
@@ -268,14 +322,17 @@ class _DepositScreenState extends State<DepositScreen> {
                       prefixText: '+ ',
                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                     ),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
                         return 'Введите сумму';
                       }
-                      final amount = double.tryParse(value);
+                      final amount = _parseAmount(value);
                       if (amount == null || amount <= 0) {
-                        return 'Введите корректную сумму';
+                        return 'Введите корректную сумму (например 1500 или 1500,50)';
                       }
                       if (amount > _maxAmount) {
                         return 'Слишком большая сумма';
@@ -286,7 +343,7 @@ class _DepositScreenState extends State<DepositScreen> {
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                    onPressed: _isLoading ? null : _deposit,
+                    onPressed: (_isLoading || !_teachersReady) ? null : _deposit,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                       backgroundColor: Colors.green.shade600,
