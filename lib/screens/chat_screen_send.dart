@@ -633,6 +633,18 @@ extension _ChatScreenSendPart on _ChatScreenState {
           }
         }
       }
+    } catch (e) {
+      if (kDebugMode) print('❌ _sendMessage: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(
+              'Ошибка отправки сообщения: ${networkErrorMessage(e)}',
+            ),
+          ),
+        );
+      }
     } finally {
       _isSendingMessage = false;
       _sendStartedAt = null;

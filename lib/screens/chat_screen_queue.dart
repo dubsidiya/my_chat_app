@@ -27,7 +27,9 @@ extension _ChatScreenQueuePart on _ChatScreenState {
 
   String _generateIdempotencyKey() {
     final now = DateTime.now().microsecondsSinceEpoch;
-    final rnd = Random.secure().nextInt(1 << 32);
+    // dart2js сворачивает `1 << 32` в 0, и Random.nextInt(0) бросает RangeError
+    // на web — сообщение не уходит, пузыря нет.
+    final rnd = Random.secure().nextInt(0x7fffffff);
     return '${widget.chatId}-$now-${rnd.toRadixString(16)}';
   }
 
