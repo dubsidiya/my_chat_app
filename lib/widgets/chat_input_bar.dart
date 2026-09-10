@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
@@ -254,24 +255,44 @@ class ChatInputBar extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: controller,
-                        decoration: InputDecoration(
-                          hintText: 'Сообщение',
-                          hintStyle: TextStyle(
-                            color: scheme.onSurface.withValues(alpha: 0.55),
+                      child: Focus(
+                        onKeyEvent: (node, event) {
+                          if (event is! KeyDownEvent) {
+                            return KeyEventResult.ignored;
+                          }
+                          final isEnter =
+                              event.logicalKey == LogicalKeyboardKey.enter ||
+                              event.logicalKey == LogicalKeyboardKey.numpadEnter;
+                          if (!isEnter) return KeyEventResult.ignored;
+                          // Shift+Enter — новая строка, как в обычных десктоп-чатах.
+                          if (HardwareKeyboard.instance.isShiftPressed) {
+                            return KeyEventResult.ignored;
+                          }
+                          if (isBusy || isRecordingVoice) {
+                            return KeyEventResult.ignored;
+                          }
+                          onSend();
+                          return KeyEventResult.handled;
+                        },
+                        child: TextField(
+                          controller: controller,
+                          decoration: InputDecoration(
+                            hintText: 'Сообщение',
+                            hintStyle: TextStyle(
+                              color: scheme.onSurface.withValues(alpha: 0.55),
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
+                          maxLines: 6,
+                          minLines: 1,
+                          textCapitalization: TextCapitalization.sentences,
+                          onChanged: onChanged,
                         ),
-                        maxLines: 6,
-                        minLines: 1,
-                        textCapitalization: TextCapitalization.sentences,
-                        onChanged: onChanged,
                       ),
                     ),
                     Tooltip(

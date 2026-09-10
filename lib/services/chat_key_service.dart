@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../utils/timed_http.dart';
 import 'storage_service.dart';
@@ -23,25 +25,54 @@ class ChatKeyService {
 
   static String _cacheKey(String chatId) => '$_keyPrefix$chatId';
 
-  /// Получить ключ чата: память → secure storage → сервер. null при недоступности.
+  /// Получить ключ чата: память → storage → сервер. null при недоступности.
+  /// На web не используем flutter_secure_storage: он завязан на WebCrypto и
+  /// может зависнуть/кинуть — тогда отправка текста не доходит до POST.
   static Future<SecretKey?> getChatKey(String chatId) async {
-    final cachedMem = _memCache[chatId];
-    if (cachedMem != null) return cachedMem;
+    try {
+      final cachedMem = _memCache[chatId];
+      if (cachedMem != null) return cachedMem;
 
-    final stored = await _secure.read(key: _cacheKey(chatId));
-    if (stored != null && stored.isNotEmpty) {
-      final key = SecretKey(base64Decode(stored));
+      final stored = await _readStoredKey(chatId);
+      if (stored != null && stored.isNotEmpty) {
+        final key = SecretKey(base64Decode(stored));
+        _memCache[chatId] = key;
+        return key;
+      }
+
+      final fetched = await _fetchKeyFromServer(chatId);
+      if (fetched == null) return null;
+      final bytes = base64Decode(fetched);
+      await _writeStoredKey(chatId, fetched);
+      final key = SecretKey(bytes);
       _memCache[chatId] = key;
       return key;
+    } catch (_) {
+      return null;
     }
+  }
 
-    final fetched = await _fetchKeyFromServer(chatId);
-    if (fetched == null) return null;
-    final bytes = base64Decode(fetched);
-    await _secure.write(key: _cacheKey(chatId), value: fetched);
-    final key = SecretKey(bytes);
-    _memCache[chatId] = key;
-    return key;
+  static Future<String?> _readStoredKey(String chatId) async {
+    try {
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        return prefs.getString(_cacheKey(chatId));
+      }
+      return await _secure.read(key: _cacheKey(chatId));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _writeStoredKey(String chatId, String value) async {
+    try {
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_cacheKey(chatId), value);
+        return;
+      }
+      await _secure.write(key: _cacheKey(chatId), value: value);
+    } catch (_) {}
   }
 
   static Future<String?> _fetchKeyFromServer(String chatId) async {
@@ -67,6 +98,14 @@ class ChatKeyService {
   /// Шифрует текст. Возвращает JSON-строку `{v,ct,n}` или null, если ключ недоступен.
   static Future<String?> encryptText(String chatId, String plaintext) async {
     if (plaintext.isEmpty) return null;
+    try {
+      return await _encryptText(chatId, plaintext);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> _encryptText(String chatId, String plaintext) async {
     final key = await getChatKey(chatId);
     if (key == null) return null;
     final nonce = _aesGcm.newNonce();
@@ -168,6 +207,15 @@ class ChatKeyService {
   static Future<void> clearAll() async {
     _memCache.clear();
     try {
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        for (final k in prefs.getKeys()) {
+          if (k.startsWith(_keyPrefix)) {
+            await prefs.remove(k);
+          }
+        }
+        return;
+      }
       final all = await _secure.readAll();
       for (final k in all.keys) {
         if (k.startsWith(_keyPrefix)) {

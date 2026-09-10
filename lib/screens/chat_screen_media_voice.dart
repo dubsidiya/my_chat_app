@@ -166,6 +166,11 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     }
   }
 
+  void _onWebFilesDropped(List<WebDroppedFile> files) {
+    if (files.isEmpty) return;
+    unawaited(_attachDroppedBytes(files.first.name, files.first.bytes));
+  }
+
   /// Обработка перетаскивания файлов (drag-and-drop). Вызывается только onDragDone — без оверлея, чтобы не перекрывать чат.
   Future<void> _handleFilesDropped(DropDoneDetails details) async {
     if (_isRecordingVoice || _isUploadingImage || _isUploadingFile) return;
@@ -179,8 +184,38 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     try {
       final bytes = await fileItem.readAsBytes();
       final fileName = fileItem.name;
-      if (bytes.isEmpty) return;
-      if (!mounted) return;
+      if (bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              duration: Duration(seconds: 4),
+              content: Text(
+                'Не удалось прочитать файл. Выберите его через «+».',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      await _attachDroppedBytes(fileName, bytes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text('Ошибка при добавлении файла: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _attachDroppedBytes(String fileName, List<int> bytes) async {
+    if (_isRecordingVoice || _isUploadingImage || _isUploadingFile) return;
+    if (bytes.isEmpty || !mounted) return;
+    final data = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    try {
       final parts = fileName.toLowerCase().split('.');
       final ext = parts.length > 1 ? parts.last : '';
       final imageExtensions = [
@@ -201,7 +236,7 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       ];
       if (imageExtensions.contains(ext)) {
         setState(() {
-          _selectedImageBytes = bytes;
+          _selectedImageBytes = data;
           _selectedImagePath = null;
           _selectedImageName = fileName;
           _selectedFilePath = null;
@@ -211,10 +246,10 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
         });
       } else {
         setState(() {
-          _selectedFileBytes = bytes;
+          _selectedFileBytes = data;
           _selectedFilePath = null;
           _selectedFileName = fileName;
-          _selectedFileSize = bytes.length;
+          _selectedFileSize = data.length;
           _selectedImagePath = null;
           _selectedImageBytes = null;
           _selectedImageName = null;
