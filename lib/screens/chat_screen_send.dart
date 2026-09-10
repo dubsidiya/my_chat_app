@@ -50,37 +50,6 @@ extension _ChatScreenSendPart on _ChatScreenState {
     return Icon(icon, size: 14, color: color);
   }
 
-  void _onNativeWebMessageSent(String text, Map<String, dynamic>? json) {
-    if (!mounted) return;
-    Message sent;
-    try {
-      if (json != null) {
-        sent = Message.fromJson(json);
-      } else {
-        throw StateError('no json');
-      }
-    } catch (_) {
-      sent = Message(
-        id: (json?['id'] ?? 'web_${DateTime.now().millisecondsSinceEpoch}')
-            .toString(),
-        chatId: widget.chatId,
-        userId: widget.userId,
-        content: text,
-        senderEmail: widget.userEmail,
-        senderAvatarUrl: widget.myAvatarUrl,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-    }
-    setState(() {
-      final next = List<Message>.from(_messages)
-        ..removeWhere((m) => m.id == sent.id)
-        ..add(sent);
-      _messages = next;
-    });
-    _scrollToBottom();
-    unawaited(_pollForNewMessages());
-  }
-
   Future<void> _sendMessage() async {
     if (kDebugMode) print('🔍 _sendMessage called');
     if (!mounted) {
