@@ -9,6 +9,10 @@ import 'package:web/web.dart' as web;
 /// он перехватывает клики по «отправить» и съедает Enter. Нативный textarea
 /// этого оверлея не создаёт — Enter и кнопка отправки работают как в обычном сайте.
 class WebChatComposer extends StatefulWidget {
+  /// Последний текст из нативного textarea. Flutter [TextEditingController]
+  /// на web часто пустой, пока поле в фокусе — отправка тогда молча отваливается.
+  static String pendingText = '';
+
   final TextEditingController controller;
   final VoidCallback onSend;
   final ValueChanged<String> onChanged;
@@ -61,6 +65,7 @@ class _WebChatComposerState extends State<WebChatComposer> {
   }
 
   void _syncToController(String value) {
+    WebChatComposer.pendingText = value;
     if (widget.controller.text == value) return;
     widget.controller.value = TextEditingValue(
       text: value,

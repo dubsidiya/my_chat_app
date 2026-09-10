@@ -57,6 +57,15 @@ extension _ChatScreenSendPart on _ChatScreenState {
       return;
     }
 
+    if (kIsWeb) {
+      final pending = WebChatComposer.pendingText.trim();
+      if (pending.isNotEmpty && _controller.text.trim() != pending) {
+        _controller.value = TextEditingValue(
+          text: pending,
+          selection: TextSelection.collapsed(offset: pending.length),
+        );
+      }
+    }
     final text = _controller.text.trim();
     final hasImage = _selectedImagePath != null || _selectedImageBytes != null;
     final hasFile = _selectedFilePath != null || _selectedFileBytes != null;
@@ -388,6 +397,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
 
         if (mounted) {
           _controller.clear();
+          WebChatComposer.pendingText = '';
           // ✅ Память уже очищена выше после загрузки изображения
           // Дополнительная очистка на случай, если изображения не было
           if (_selectedImagePath != null || _selectedImageBytes != null) {

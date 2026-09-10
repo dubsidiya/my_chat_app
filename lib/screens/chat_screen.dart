@@ -43,6 +43,7 @@ import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
+import '../widgets/web_chat_composer.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/fade_scale_in.dart';
 import '../widgets/typing_dots.dart';

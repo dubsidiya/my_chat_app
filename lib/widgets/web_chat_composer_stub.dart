@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Заглушка: на mobile/desktop используется обычный [TextField].
 class WebChatComposer extends StatelessWidget {
+  static String pendingText = '';
+
   final TextEditingController controller;
   final VoidCallback onSend;
   final ValueChanged<String> onChanged;
