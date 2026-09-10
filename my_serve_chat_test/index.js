@@ -32,6 +32,10 @@ const server = http.createServer(app);
 // Health check endpoint (для keep-alive пинга на Render free tier)
 // ?warm=1 — дополнительно прогревает соединение с БД, чтобы после пробуждения первый запрос не таймаутил
 app.get('/healthz', (req, res) => {
+  // До глобального cors(): Flutter web иначе считает CORS-ошибку «офлайном»
+  // и не ходит в GET /messages — чат после деплоя открывается пустым.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
   if (req.query.warm === '1') {
     pool.query('SELECT 1').then(() => res.status(200).send('ok')).catch(() => res.status(200).send('ok'));
     return;
@@ -40,6 +44,8 @@ app.get('/healthz', (req, res) => {
 });
 
 app.get('/readyz', async (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
   res.setHeader('Cache-Control', 'no-store');
   let databaseReady = false;
   try {

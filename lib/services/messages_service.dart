@@ -29,17 +29,6 @@ class MessagesService {
     Message raw,
   ) async => MessagesDecrypt.decryptMessageForChat(chatId, raw);
 
-  /// Проверка доступа в интернет без сторонних SDK (для соответствия требованиям Apple privacy manifest).
-  Future<bool> _isOnline() async {
-    try {
-      final uri = connectivityProbeUri(baseUrl);
-      await timedGet(uri, timeout: const Duration(seconds: 3));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   Future<Map<String, String>> _getAuthHeaders() async {
     final token = await StorageService.getToken();
     final headers = <String, String>{'Content-Type': 'application/json'};
@@ -69,26 +58,9 @@ class MessagesService {
     String? beforeMessageId,
     bool useCache = true, // ✅ Использовать кэш по умолчанию
   }) async {
-    // ✅ Проверяем подключение к интернету (без сторонних плагинов — для соответствия Apple privacy manifest)
-    final isOnline = await _isOnline();
-
-    // ✅ Если есть кэш и мы офлайн, возвращаем из кэша (расшифровываем — в кэше хранится ciphertext)
-    if (!isOnline && useCache) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('MessagesService: offline, using cache');
-      }
-      final cachedMessages = await LocalMessagesService.getMessages(chatId);
-      final decrypted = await MessagesDecrypt.decryptMessages(
-        chatId,
-        cachedMessages,
-      );
-      return buildPaginatedCacheResult(
-        decrypted,
-        limit: limit,
-        beforeMessageId: beforeMessageId,
-      );
-    }
+    // Не отсекаем загрузку по /healthz: на Flutter web CORS на probe
+    // выглядел как «офлайн», Hive после деплоя пустой — чат открывался пустым.
+    const isOnline = true;
 
     try {
       final uri = Uri.parse('$baseUrl/messages/$chatId').replace(
