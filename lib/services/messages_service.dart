@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../models/message.dart';
 import '../models/chat_media_item.dart';
 import '../config/api_config.dart';
@@ -227,14 +227,14 @@ class MessagesService {
     // Шифруем текст общим ключом чата. Если ключ недоступен (например, нет сети),
     // отправляем как есть — без блокировок и баннеров «ожидаем ключ».
     String contentToSend = content;
-    if (content.isNotEmpty) {
+    // На web не шифруем перед POST: WebCrypto в Edge зависает, и сообщение
+    // не уходит. Сервер принимает plaintext; старые шифротексты по-прежнему читаются.
+    if (content.isNotEmpty && !kIsWeb) {
       try {
         final encrypted = await ChatKeyService.encryptText(chatId, content)
             .timeout(const Duration(seconds: 3));
         if (encrypted != null) contentToSend = encrypted;
-      } catch (_) {
-        // WebCrypto/Edge иногда зависает — не блокируем POST.
-      }
+      } catch (_) {}
     }
 
     final bodyMap = <String, dynamic>{

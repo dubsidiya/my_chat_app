@@ -70,11 +70,20 @@ extension _ChatScreenSendPart on _ChatScreenState {
 
     if (text.isEmpty && !hasImage && !hasFile) {
       if (kDebugMode) print('⚠️ Text is empty and no attachments, returning');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Введите текст сообщения'),
+          ),
+        );
+      }
       return;
     }
 
     if (_isSendingMessage) return;
     _isSendingMessage = true;
+    _controller.clear();
 
     try {
       if (kDebugMode) print('✅ Proceeding with message send');
@@ -602,6 +611,9 @@ extension _ChatScreenSendPart on _ChatScreenState {
               ),
             ),
           );
+          if (text.isNotEmpty && _controller.text.isEmpty) {
+            _controller.text = text;
+          }
         }
       }
     } finally {

@@ -1197,6 +1197,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.homeBodyGradient),
         child: DropTarget(
+          enable: !kIsWeb,
           onDragDone: _handleFilesDropped,
           child: Stack(
             children: [

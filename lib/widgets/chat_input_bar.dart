@@ -282,7 +282,9 @@ class ChatInputBar extends StatelessWidget {
                         child: TextField(
                           controller: controller,
                           decoration: InputDecoration(
-                            hintText: 'Сообщение',
+                            hintText: kIsWeb
+                                ? 'Сообщение (Enter — отправить)'
+                                : 'Сообщение',
                             hintStyle: TextStyle(
                               color: scheme.onSurface.withValues(alpha: 0.55),
                             ),
@@ -293,8 +295,19 @@ class ChatInputBar extends StatelessWidget {
                               vertical: 12,
                             ),
                           ),
-                          maxLines: 6,
+                          // На web многострочное поле даёт HTML-textarea поверх
+                          // кнопки «отправить», а Enter делает перевод строки.
+                          maxLines: kIsWeb ? 1 : 6,
                           minLines: 1,
+                          textInputAction: kIsWeb
+                              ? TextInputAction.send
+                              : TextInputAction.newline,
+                          onSubmitted: kIsWeb
+                              ? (_) {
+                                  if (isBusy || isRecordingVoice) return;
+                                  onSend();
+                                }
+                              : null,
                           textCapitalization: TextCapitalization.sentences,
                           onChanged: onChanged,
                         ),
@@ -372,6 +385,20 @@ class ChatInputBar extends StatelessWidget {
               ),
           ],
         ),
+        if (kIsWeb) ...[
+          const SizedBox(height: 8),
+          PointerInterceptor(
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: (isBusy || isRecordingVoice) ? null : onSend,
+                icon: const Icon(Icons.send_rounded),
+                label: Text(isBusy ? 'Отправка…' : 'Отправить сообщение'),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
