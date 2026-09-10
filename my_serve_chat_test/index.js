@@ -203,8 +203,16 @@ const devDefaultOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:8080',
 ];
+const builtInFrontendOrigins = [
+  'https://reollity.vercel.app',
+  'https://my-chat-app.vercel.app',
+  'https://my-chat-app-estellias-projects.vercel.app',
+];
 const allAllowedOrigins = [
-  ...new Set(isProduction ? envAllowedOrigins : [...envAllowedOrigins, ...devDefaultOrigins]),
+  ...new Set([
+    ...builtInFrontendOrigins,
+    ...(isProduction ? envAllowedOrigins : [...envAllowedOrigins, ...devDefaultOrigins]),
+  ]),
 ];
 
 const allowedOriginPatterns = enablePreviewOrigins && process.env.ALLOWED_ORIGIN_PATTERNS
@@ -299,7 +307,9 @@ app.use(cors({
         console.log(`CORS: Разрешенные patterns: ${allowedOriginPatterns.join(', ')}`);
       }
     }
-    callback(new Error(`Not allowed by CORS: ${origin}`));
+    // Не бросаем Error: cors() иначе даёт 500 «Ошибка сервера» без
+    // Access-Control-Allow-Origin, и браузер показывает пустой network fail.
+    callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

@@ -296,9 +296,16 @@ class MessagesService {
       final responseData = jsonDecode(response.body);
 
       final rawMessage = Message.fromJson(responseData);
-      await LocalMessagesService.addMessage(chatId, rawMessage);
-      final sentMessage = await MessagesDecrypt.decryptOne(chatId, rawMessage);
-      return sentMessage;
+      try {
+        await LocalMessagesService.addMessage(chatId, rawMessage)
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+      try {
+        return await MessagesDecrypt.decryptOne(chatId, rawMessage)
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {
+        return rawMessage;
+      }
     } catch (e, stackTrace) {
       if (kDebugMode) {
         // ignore: avoid_print

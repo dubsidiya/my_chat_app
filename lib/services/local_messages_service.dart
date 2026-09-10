@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:hive_flutter/hive_flutter.dart';
 import '../features/chat/message_cache_merge.dart';
@@ -17,7 +19,10 @@ class LocalMessagesService {
     Future<T> Function() action,
   ) {
     final previous = _chatLocks[chatId] ?? Future<void>.value();
-    final result = previous.catchError((_) {}).then((_) => action());
+    final result = previous
+        .timeout(const Duration(seconds: 4), onTimeout: () {})
+        .catchError((_) {})
+        .then((_) => action());
     _chatLocks[chatId] = result.then((_) {}, onError: (_) {});
     return result;
   }

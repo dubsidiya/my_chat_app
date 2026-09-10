@@ -81,9 +81,16 @@ extension _ChatScreenSendPart on _ChatScreenState {
       return;
     }
 
-    if (_isSendingMessage) return;
+    if (_isSendingMessage) {
+      final started = _sendStartedAt;
+      if (started != null &&
+          DateTime.now().difference(started) < const Duration(seconds: 8)) {
+        return;
+      }
+    }
     _isSendingMessage = true;
-    _controller.clear();
+    _sendStartedAt = DateTime.now();
+    if (mounted) setState(() {});
 
     try {
       if (kDebugMode) print('✅ Proceeding with message send');
@@ -618,6 +625,7 @@ extension _ChatScreenSendPart on _ChatScreenState {
       }
     } finally {
       _isSendingMessage = false;
+      _sendStartedAt = null;
       if (mounted) setState(() {});
     }
   }

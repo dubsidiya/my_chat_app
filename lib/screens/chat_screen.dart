@@ -183,6 +183,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Защита от двойного нажатия «Отправить» пока идёт отправка.
   bool _isSendingMessage = false;
+  DateTime? _sendStartedAt;
   bool _isExportingChat = false;
   bool _isRetryingQueuedMessages = false;
   final Map<String, _OutgoingUiState> _tempMessageStates = {};
