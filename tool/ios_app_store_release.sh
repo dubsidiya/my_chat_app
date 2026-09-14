@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Resolve package-owned iOS dependencies and build a release IPA for App Store.
+# Resolve iOS dependencies and build a signed App Store IPA.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+if [[ ! -f "$ROOT/ios/Runner/GoogleService-Info.plist" ]]; then
+  echo "error: ios/Runner/GoogleService-Info.plist is missing (gitignored, required for the App Store IPA)."
+  echo "Download it from Firebase for bundle com.estellia.reol and place it at that path."
+  exit 1
+fi
 
 echo "== flutter pub get =="
 flutter pub get
@@ -26,6 +32,14 @@ else
 fi
 
 echo ""
-echo "Next: archive for App Store (codesign required):"
-echo "  flutter build ipa"
-echo "  or open ios/Runner.xcworkspace -> Product -> Archive"
+echo "== App Store IPA (codesign required) =="
+mkdir -p "$ROOT/build/debug-info/ios"
+flutter build ipa --release \
+  --obfuscate \
+  --split-debug-info="$ROOT/build/debug-info/ios" \
+  --export-options-plist="$ROOT/ios/ExportOptions.plist"
+
+echo ""
+echo "IPA: $ROOT/build/ios/ipa/"
+echo "Keep build/debug-info/ios to deobfuscate crash logs."
+echo "Upload via Transporter or Xcode Organizer. Checklist: docs/APP_STORE_RELEASE.md"

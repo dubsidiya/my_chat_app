@@ -19,7 +19,7 @@ import { getSignedObjectUrl, toStorageKey } from '../utils/yandexStorage.js';
 import { collectMessageMediaUrls, cleanupMessageMediaUrls } from '../utils/messageMediaCleanup.js';
 import { claimLegacyFcmToken } from '../repositories/pushDevicesRepository.js';
 import {
-  ACCOUNT_DELETE_BLOCKED_MESSAGE,
+  ACCOUNT_ANONYMIZED_MESSAGE,
   accountingFootprintBlocksDelete,
   loadAccountingFootprint,
 } from '../utils/accountDeletionGuard.js';
@@ -791,10 +791,7 @@ export const deleteAccount = async (req, res) => {
 
       await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
       const footprint = await loadAccountingFootprint(client, userId);
-      if (accountingFootprintBlocksDelete(footprint)) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ message: ACCOUNT_DELETE_BLOCKED_MESSAGE });
-      }
+      const keepAccountingRow = accountingFootprintBlocksDelete(footprint);
 
       // Собираем ссылки на медиа заранее, чтобы после коммита очистить Object Storage.
       const ownMediaRows = await client.query(
@@ -844,9 +841,32 @@ export const deleteAccount = async (req, res) => {
       // 5. Инвалидируем все токены перед удалением
       await client.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId]);
 
-      // 6. Удаляем самого пользователя
-      await client.query('DELETE FROM users WHERE id = $1', [userId]);
-      console.log(`Удален пользователь ${userId}`);
+      // 6. Личность всегда удаляется. Строка users остаётся только если на ней
+      // висят занятия/оплаты (FK ON DELETE CASCADE иначе сотрёт учёт).
+      if (keepAccountingRow) {
+        const deletedEmail = `deleted_${userId}_${Date.now()}@deleted.invalid`;
+        const anonymizedHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+        await client.query(
+          `UPDATE users
+              SET email = $2,
+                  password = $3,
+                  display_name = NULL,
+                  avatar_url = NULL,
+                  fcm_token = NULL,
+                  token_version = token_version + 1
+            WHERE id = $1`,
+          [userId, deletedEmail, anonymizedHash]
+        );
+        try {
+          await client.query('DELETE FROM push_devices WHERE user_id = $1', [userId]);
+        } catch (_) {
+          /* таблица могла ещё не быть на старой БД */
+        }
+        console.log(`Аккаунт ${userId} анонимизирован, учёт сохранён`);
+      } else {
+        await client.query('DELETE FROM users WHERE id = $1', [userId]);
+        console.log(`Удален пользователь ${userId}`);
+      }
 
       await client.query('COMMIT'); // Подтверждаем транзакцию
       const cleanupResult = await cleanupMessageMediaUrls(mediaUrlsToCleanup, {
@@ -855,10 +875,11 @@ export const deleteAccount = async (req, res) => {
       if (cleanupResult.attempted > 0) {
         console.log(`deleteAccount: cleanup attempted for ${cleanupResult.attempted} media objects (user ${userId})`);
       }
-      securityEvent('account_deleted', req);
+      securityEvent('account_deleted', req, { keepAccountingRow });
       res.status(200).json({
-        message: 'Аккаунт успешно удален',
-        deletedChats: createdChats.rows.length
+        message: keepAccountingRow ? ACCOUNT_ANONYMIZED_MESSAGE : 'Аккаунт успешно удален',
+        deletedChats: createdChats.rows.length,
+        accountingRetained: keepAccountingRow,
       });
 
     } catch (error) {

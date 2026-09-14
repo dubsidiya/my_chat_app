@@ -41,17 +41,22 @@ class AuthService {
         }
         return data;
       } else if (response.statusCode == 500) {
-        // Пробуем распарсить сообщение об ошибке
-        try {
-          final errorData = jsonDecode(response.body);
-          throw Exception(errorData['message'] ?? 'Ошибка сервера (500)');
-        } catch (e) {
-          throw Exception('Ошибка сервера (500). Проверьте состояние базы данных на сервере.');
-        }
+        throw Exception('Сервер временно недоступен. Попробуйте позже.');
       } else if (response.statusCode == 401) {
         throw Exception('Неверный логин или пароль');
+      } else if (response.statusCode == 429) {
+        throw Exception('Слишком много попыток входа. Подождите несколько минут.');
+      } else if (response.statusCode == 400) {
+        String errorMessage = 'Неверные данные для входа';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'].toString();
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
       } else {
-        throw Exception('Ошибка подключения к серверу (${response.statusCode})');
+        throw Exception('Не удалось войти. Попробуйте ещё раз.');
       }
     } catch (e) {
       if (e is Exception) {

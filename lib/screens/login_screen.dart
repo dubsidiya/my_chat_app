@@ -7,6 +7,7 @@ import '../utils/network_error_helper.dart';
 import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
+import 'legal_document_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,13 +28,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _login() async {
     if (!mounted) return;
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Введите логин и пароль';
+      });
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
 
     try {
       final userData = await _authService.loginUser(username, password);
@@ -503,6 +509,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  const LegalLinks(),
                 ],
               ),
             ),

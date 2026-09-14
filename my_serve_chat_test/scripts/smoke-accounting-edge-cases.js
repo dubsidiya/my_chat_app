@@ -567,7 +567,8 @@ const run = async () => {
     'транзакции не должны каскадиться'
   );
 
-  // H8) Самоудаление с бухгалтерским следом — 409; без следа — аккаунт можно удалить.
+  // H8) Самоудаление с бухгалтерским следом — 200, строка users анонимизируется,
+  // ученик остаётся; без следа — аккаунт удаляется полностью.
   const seedFootprint = await loadAccountingFootprint(pool, teacherId);
   assert(accountingFootprintBlocksDelete(seedFootprint), 'у seed-преподавателя должен быть бухгалтерский след');
 
@@ -602,11 +603,16 @@ const run = async () => {
       },
       blockedRes
     );
-    assert(blockedRes.statusCode === 409, `аккаунт с учеником должен быть 409, получили ${blockedRes.statusCode}`);
-    const stillThere = await pool.query('SELECT id FROM users WHERE id = $1', [h8BlockUserId]);
-    assert(stillThere.rowCount === 1, 'пользователь с бухгалтерским следом не должен удалиться');
-    const studentStill = await pool.query('SELECT id FROM students WHERE id = $1', [h8StudentId]);
-    assert(studentStill.rowCount === 1, 'ученик не должен каскадиться при 409');
+    assert(blockedRes.statusCode === 200, `аккаунт с учеником должен удалиться (анонимизация), получили ${blockedRes.statusCode}`);
+    const stillThere = await pool.query('SELECT id, email FROM users WHERE id = $1', [h8BlockUserId]);
+    assert(stillThere.rowCount === 1, 'пользователь с бухгалтерским следом должен остаться анонимизированной строкой');
+    assert(
+      String(stillThere.rows[0].email).startsWith(`deleted_${h8BlockUserId}_`),
+      'email после удаления должен быть anonymized'
+    );
+    const studentStill = await pool.query('SELECT id, created_by FROM students WHERE id = $1', [h8StudentId]);
+    assert(studentStill.rowCount === 1, 'ученик не должен каскадиться при удалении аккаунта');
+    assert(Number(studentStill.rows[0].created_by) === Number(h8BlockUserId), 'created_by ученика сохраняется');
 
     const okUser = await pool.query(
       `INSERT INTO users (email, password)

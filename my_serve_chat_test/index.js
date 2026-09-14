@@ -380,7 +380,7 @@ app.use(globalLimiter);
 // Ключ = username + IP: один пользователь с неверным паролем не блокирует остальных (важно при общем IP за прокси)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
-  max: 5, // максимум 5 неудачных попыток
+  max: 15, // максимум 15 неудачных попыток
   message: 'Слишком много попыток входа, попробуйте позже',
   standardHeaders: true,
   legacyHeaders: false,
@@ -442,6 +442,16 @@ app.use('/setup', setupRoutes);
 app.use('/admin', adminRoutes);
 app.use('/moderation', moderationRoutes);
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use(
+  '/legal',
+  express.static(path.join(__dirname, 'public/legal'), {
+    index: 'index.html',
+    extensions: ['html'],
+  }),
+);
+
 // 404 — не раскрываем структуру API
 app.use((req, res) => {
   res.status(404).json({ message: 'Не найдено' });
@@ -473,6 +483,14 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  const hasApnsVoip = Boolean(
+    process.env.APNS_KEY_ID &&
+    process.env.APNS_TEAM_ID &&
+    (process.env.APNS_AUTH_KEY_PATH || process.env.APNS_AUTH_KEY_P8)
+  );
+  if (!hasApnsVoip) {
+    console.warn('CallKit VoIP: APNS_* is not set. Locked-screen iOS calls fall back to FCM.');
+  }
   // Не логируем наличие/отсутствие секретов и строк подключения в продакшене
   if (process.env.NODE_ENV === 'development') {
     console.log(`🌐 ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'по умолчанию'}`);

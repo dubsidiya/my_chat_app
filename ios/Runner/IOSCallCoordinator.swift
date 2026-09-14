@@ -337,7 +337,19 @@ final class IOSCallCoordinator: NSObject {
   ) {
     precondition(Thread.isMainThread)
     guard let payload = IOSCallPayload(dictionary: dictionary) else {
-      completion()
+      // TN3111: every VoIP push must report a CallKit call.
+      let uuid = UUID()
+      let update = CXCallUpdate()
+      update.localizedCallerName = "Reollity"
+      update.hasVideo = false
+      update.supportsDTMF = false
+      update.supportsHolding = false
+      update.supportsGrouping = false
+      update.supportsUngrouping = false
+      provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] _ in
+        self?.provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+        completion()
+      }
       return
     }
 

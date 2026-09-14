@@ -41,19 +41,35 @@ class _AutoHideScaffoldMessengerState extends ScaffoldMessengerState {
 }
 
 void main() {
-  // Обработка ошибок Flutter
   FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
     if (kDebugMode) {
+      FlutterError.presentError(details);
       print('Flutter Error: ${details.exception}');
       print('Stack trace: ${details.stack}');
     }
   };
 
-  // Обработка асинхронных ошибок
   runZonedGuarded(
     () {
       WidgetsFlutterBinding.ensureInitialized();
+      ErrorWidget.builder = (FlutterErrorDetails details) {
+        if (kDebugMode) {
+          return ErrorWidget(details.exception);
+        }
+        return const Material(
+          color: Color(0xFF0D0221),
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Произошла ошибка. Закройте экран и откройте снова.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ),
+        );
+      };
       unawaited(IOSCallKitService.instance.initialize());
       PushNotificationService.registerBackgroundHandler();
       // runApp сразу — иначе на iOS виден белый LaunchScreen/Main.storyboard,
@@ -293,6 +309,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           child: MaterialApp(
             navigatorKey: navigatorKey,
             title: 'Reollity',
+            debugShowCheckedModeBanner: false,
             theme: theme,
             home: FutureBuilder<Map<String, dynamic>?>(
               future: _sessionFuture,

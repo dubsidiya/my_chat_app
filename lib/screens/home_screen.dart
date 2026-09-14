@@ -61,6 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _folderFilterId; // null = all
   String? _displayName;
   String? _avatarUrl;
+  bool _privateAccess = false;
 
   @override
   void initState() {
@@ -71,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadFolders();
     _subscribeToNewMessages();
     unawaited(ModerationService().getBlockedUserIds());
+    unawaited(_loadPrivateAccess());
   }
 
   @override
@@ -259,6 +261,18 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  Future<void> _loadPrivateAccess() async {
+    final cached = await StorageService.isPrivateFeaturesUnlocked(widget.userId);
+    if (mounted) setState(() => _privateAccess = cached);
+    try {
+      final me = await _authService.fetchMe();
+      final allowed = me != null && me['privateAccess'] == true;
+      if (mounted) setState(() => _privateAccess = allowed);
+    } catch (_) {
+      /* оставляем кэш */
+    }
   }
 
   Future<void> _openProfile() async {
@@ -1403,6 +1417,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       await _openProfile();
                     },
                   ),
+                  if (_privateAccess) ...[
                   _menuTile(
                     ctx,
                     scheme,
@@ -1425,6 +1440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       await _openReports();
                     },
                   ),
+                  ],
                   const Divider(height: 24),
                   _menuTile(
                     ctx,

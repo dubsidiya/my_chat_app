@@ -71,10 +71,13 @@ async function sendVoipInviteToUser(
   return result;
 }
 
-function fcmIncomingTarget(target) {
-  // Android remains on FCM. iOS FCM is a fallback only for installations that
-  // do not advertise a valid native VoIP token.
-  return target.platform !== 'ios' || target.hasVoipToken !== true;
+function fcmIncomingTarget(target, { voipDelivered = false } = {}) {
+  // Android remains on FCM. iOS FCM is skipped only when a VoIP invite
+  // actually landed; otherwise CallKit never rings and the reviewer sees
+  // a dead voip background mode.
+  if (target.platform !== 'ios') return true;
+  if (target.hasVoipToken !== true) return true;
+  return voipDelivered !== true;
 }
 
 async function buildCredential(admin) {
@@ -490,7 +493,9 @@ export async function sendIncomingCallPushToUser(
       {
         provider: options.provider,
         targetFilter: (target) =>
-          fcmIncomingTarget(target) &&
+          fcmIncomingTarget(target, {
+            voipDelivered: Number(voipResult?.successCount || 0) > 0,
+          }) &&
           (typeof options.targetFilter !== 'function' ||
             options.targetFilter(target)),
         android: {
@@ -655,7 +660,9 @@ export async function sendLiveKitGroupCallPushToUser(
     {
       provider: options.provider,
       targetFilter: (target) =>
-        fcmIncomingTarget(target) &&
+        fcmIncomingTarget(target, {
+          voipDelivered: Number(voipResult?.successCount || 0) > 0,
+        }) &&
         (typeof options.targetFilter === 'function'
           ? options.targetFilter(target)
           : target.source === 'device' &&

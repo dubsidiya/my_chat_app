@@ -6,6 +6,7 @@ import '../utils/network_error_helper.dart';
 import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'login_screen.dart';
+import 'legal_document_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -25,13 +26,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _register() async {
     if (!mounted) return;
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (username.length < 4) {
+      setState(() {
+        _errorMessage = 'Логин должен быть не короче 4 символов';
+      });
+      return;
+    }
+    if (password.length < 6) {
+      setState(() {
+        _errorMessage = 'Пароль должен быть не короче 6 символов';
+      });
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
 
     try {
       final success = await _authService.registerUser(username, password);
@@ -417,6 +429,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       ),
                                     ),
                             ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Регистрируясь, вы принимаете условия использования и политику конфиденциальности.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.35,
+                                color: AppColors.onSurfaceVariantDark,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -494,6 +516,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  const LegalLinks(),
                 ],
               ),
             ),

@@ -4,6 +4,11 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!--
+	  AES-256-GCM for chat + TLS. Mass-market use of standard algorithms is
+	  typically exempt; keep false so uploads are not blocked pending an ERN.
+	  If App Store Connect still asks, answer that the app uses standard encryption.
+	-->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -17,7 +22,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>my_chat_app</string>
+	<string>Reollity</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -26,14 +31,33 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.education</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+		<string>mailto</string>
+		<string>itms-apps</string>
+		<string>itms</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Нужно для голосовых сообщений, голосовых и видеозвонков в чате.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нужно для выбора и отправки фото в чате.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Нужно, чтобы сохранить выбранное фото или видео в медиатеку при отправке файла в чат.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Нужно для съёмки фото/видео в чате и для видеозвонков.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Нужно, чтобы находить устройства в локальной сети для голосовых и видеозвонков.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp.</string>
+		<string>_https._tcp.</string>
+	</array>
 	<!--
 	  PushKit uses the same sandbox/production boundary as APS_ENVIRONMENT.
 	  Debug → development; Release/TestFlight/App Store → production.
@@ -47,6 +71,8 @@
 		<string>voip</string>
 	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIDesignRequiresCompatibility</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

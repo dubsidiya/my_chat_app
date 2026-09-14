@@ -531,13 +531,13 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Это действие необратимо! Все ваши данные будут удалены:',
+              'Это действие необратимо. Будут удалены логин, профиль, сообщения и чаты. Записи учёта занятий, если они есть, сохранятся без ваших персональных данных.',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('• Все ваши сообщения'),
-            const Text('• Все чаты, где вы создатель'),
-            const Text('• Ваше участие во всех чатах'),
+            const Text('• Сообщения и созданные вами чаты'),
+            const Text('• Участие в остальных чатах'),
+            const Text('• Вход в этот аккаунт больше будет невозможен'),
             const SizedBox(height: 16),
             TextField(
               controller: _passwordController,

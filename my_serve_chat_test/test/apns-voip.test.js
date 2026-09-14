@@ -125,7 +125,7 @@ test('provider routes sandbox/production and retries only transient failures', a
   assert.equal(result.failureCount, 1);
 });
 
-test('incoming call prunes definitive VoIP token and does not duplicate iOS FCM', async () => {
+test('incoming call prunes definitive VoIP token and falls back to iOS FCM', async () => {
   const updates = [];
   const fcmMessages = [];
   const pool = {
@@ -202,7 +202,8 @@ test('incoming call prunes definitive VoIP token and does not duplicate iOS FCM'
   );
 
   assert.equal(result.voipTargetCount, 1);
-  assert.equal(fcmMessages.length, 0);
+  assert.equal(fcmMessages.length, 1);
+  assert.deepEqual(fcmMessages[0].tokens, ['ios-fcm']);
   assert.deepEqual(updates, [[['invalid-voip']]]);
 });
 

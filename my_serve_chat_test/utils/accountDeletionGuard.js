@@ -1,6 +1,9 @@
 export const ACCOUNT_DELETE_BLOCKED_MESSAGE =
   'Нельзя удалить аккаунт с занятиями или оплатами. Данные сохранятся. Выйдите из аккаунта или обратитесь к администратору.';
 
+export const ACCOUNT_ANONYMIZED_MESSAGE =
+  'Аккаунт удалён. Записи учёта занятий сохранены без ваших персональных данных.';
+
 const FOOTPRINT_KEYS = [
   'students_created',
   'teacher_links',

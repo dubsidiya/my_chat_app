@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../services/storage_service.dart';
+import '../legal/app_legal.dart';
+import 'legal_document_screen.dart';
+import 'login_screen.dart';
 import 'main_tabs_screen.dart';
 
 /// Экран согласия с условиями использования (Guideline 1.2 — user-generated content).
@@ -20,22 +23,6 @@ class EulaConsentScreen extends StatelessWidget {
     this.avatarUrl,
     required this.isSuperuser,
   });
-
-  static const String _eulaText = '''
-Условия использования Reollity
-
-Используя приложение, вы соглашаетесь с тем, что:
-
-• В сервисе действует нулевая толерантность к оскорбительному контенту и к пользователям, нарушающим правила. Запрещены угрозы, оскорбления, спам, контент, нарушающий законы или права других пользователей.
-
-• Вы можете пожаловаться на сообщение (кнопка «Пожаловаться») и заблокировать пользователя. Заблокированный пользователь не сможет писать вам, а его сообщения будут скрыты.
-
-• Разработчик обязуется рассматривать жалобы и удалять нарушающий контент, а также применять меры к нарушителям (включая блокировку аккаунта) в разумные сроки.
-
-• Администрация вправе удалять контент и приостанавливать или удалять аккаунты при нарушении правил без предварительного уведомления.
-
-Нажимая «Принимаю», вы подтверждаете, что прочитали и согласны с этими условиями.
-''';
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +50,7 @@ class EulaConsentScreen extends StatelessWidget {
               children: [
                 const SizedBox(height: 16),
                 Text(
-                  'Условия использования',
+                  AppLegal.termsTitle,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
@@ -84,7 +71,7 @@ class EulaConsentScreen extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        _eulaText,
+                        AppLegal.termsText.trim(),
                         style: TextStyle(
                           color: scheme.onSurface,
                           height: 1.5,
@@ -94,7 +81,23 @@ class EulaConsentScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(LegalDocumentScreen.privacy()),
+                  child: const Text('Политика конфиденциальности'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    await StorageService.clearUserData();
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                  child: const Text('Выйти'),
+                ),
+                const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),

@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { parsePositiveInt } from '../utils/sanitize.js';
+import { securityEvent } from '../utils/auditLog.js';
 
 export const ensureUserBlocksTable = async () => {
   await pool.query(`
@@ -48,6 +49,7 @@ export const reportMessage = async (req, res) => {
       'INSERT INTO content_reports (message_id, reporter_id) VALUES ($1, $2) ON CONFLICT (message_id, reporter_id) DO NOTHING',
       [messageId, reporterId]
     );
+    securityEvent('content_report', req, { messageId });
     res.status(200).json({ reported: true, message: 'Жалоба отправлена. Модерация рассмотрит в течение 24 часов.' });
   } catch (err) {
     console.error('reportMessage:', err);

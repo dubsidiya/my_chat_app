@@ -7,6 +7,7 @@ import '../theme/theme_variant.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../utils/read_file_bytes.dart';
+import 'legal_document_screen.dart';
 
 /// Экран профиля в стиле Telegram: аватар, имя, настройки.
 class ProfileScreen extends StatefulWidget {
@@ -347,6 +348,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   );
                 },
               ),
+            ),
+            _sectionTitle(context, 'Информация'),
+            _listTile(
+              context,
+              icon: Icons.privacy_tip_outlined,
+              title: 'Политика конфиденциальности',
+              onTap: () => Navigator.of(context).push(LegalDocumentScreen.privacy()),
+            ),
+            _listTile(
+              context,
+              icon: Icons.description_outlined,
+              title: 'Условия использования',
+              onTap: () => Navigator.of(context).push(LegalDocumentScreen.terms()),
+            ),
+            _listTile(
+              context,
+              icon: Icons.support_agent_rounded,
+              title: 'Поддержка',
+              onTap: () => Navigator.of(context).push(LegalDocumentScreen.support()),
             ),
             _sectionTitle(context, 'Аккаунт'),
             _listTile(

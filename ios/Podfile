@@ -81,9 +81,12 @@ post_install do |installer|
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_CAMERA=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_PHOTOS=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_NOTIFICATIONS=1'
 
-      # flutter_webrtc: WebRTC.xcframework after m104 — see plugin README
-      if target.name == 'flutter_webrtc' || target.name == 'WebRTC-SDK'
+      # flutter_webrtc: WebRTC.xcframework after m104 — see plugin README.
+      # ONLY_ACTIVE_ARCH=YES in Release/Archive can drop arm64 slices; Debug only.
+      if config.name == 'Debug' && (target.name == 'flutter_webrtc' || target.name == 'WebRTC-SDK')
         config.build_settings['ONLY_ACTIVE_ARCH'] = 'YES'
       end
     end

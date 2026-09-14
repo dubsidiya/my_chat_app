@@ -151,6 +151,51 @@ test('incoming call fanout aligns Android and APNs expiry with ringing state', a
   assert.ok(Date.parse(message.data.sentAt) <= expiresAt);
 });
 
+test('iOS FCM invite is sent when VoIP provider does not deliver', async () => {
+  const pool = fakePool([
+    {
+      user_id: 7,
+      fcm_token: 'ios-fcm',
+      source: 'device',
+      platform: 'ios',
+      apns_voip_token: 'voip-token',
+      apns_environment: 'production',
+      capabilities: { voipPush: true },
+    },
+  ]);
+  const messages = [];
+  const provider = fakeProvider([{ success: true }], messages);
+  const apnsVoipProvider = {
+    async send() {
+      return {
+        attempted: 0,
+        successCount: 0,
+        failureCount: 0,
+        definitiveInvalidTokens: [],
+        skipped: 'provider_unavailable',
+      };
+    },
+  };
+
+  await sendIncomingCallPushToUser(
+    pool,
+    7,
+    {
+      callId: 'call-fb',
+      chatId: '8',
+      chatName: 'DM',
+      fromUserId: '6',
+      fromEmail: 'Caller',
+      mediaType: 'audio',
+      expiresAt: Date.now() + 30_000,
+    },
+    { provider, apnsVoipProvider }
+  );
+
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].tokens, ['ios-fcm']);
+});
+
 test('answered-elsewhere reconciliation is data-only normal push', async () => {
   const pool = fakePool([
     {

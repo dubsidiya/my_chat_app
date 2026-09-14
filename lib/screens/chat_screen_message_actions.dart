@@ -256,7 +256,7 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
       builder: (ctx) => AlertDialog(
         title: const Text('Заблокировать пользователя?'),
         content: Text(
-          'Сообщения от ${message.senderEmail} будут скрыты. Вы сможете разблокировать через настройки.',
+          'Сообщения от ${message.senderEmail} будут скрыты в ваших чатах.',
         ),
         actions: [
           TextButton(

@@ -655,6 +655,24 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ message: 'Вы не являетесь участником этого чата' });
     }
 
+    const otherMembers = await pool.query(
+      'SELECT user_id FROM chat_users WHERE chat_id = $1 AND user_id <> $2',
+      [chatIdNum, user_id]
+    );
+    if (otherMembers.rows.length === 1) {
+      try {
+        const blockedByPeer = await pool.query(
+          'SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
+          [otherMembers.rows[0].user_id, user_id]
+        );
+        if (blockedByPeer.rows.length > 0) {
+          return res.status(403).json({ message: 'Пользователь вас заблокировал' });
+        }
+      } catch (_) {
+        /* user_blocks может отсутствовать на старой БД */
+      }
+    }
+
     /** E2EE: клиент присылает уже зашифрованный под целевой чат content + метаданные пересылки */
     let forwardRegistry = null;
     const hasFwdMsg = forward_original_message_id != null && String(forward_original_message_id).trim() !== '';
