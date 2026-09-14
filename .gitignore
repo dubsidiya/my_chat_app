@@ -11,9 +11,7 @@ ios/Runner/GoogleService-Info.plist
 !.env.template
 # Разрешить только примеры (без реальных секретов)
 *yandex*credentials*
-!docs/YANDEX_DB_CREDENTIALS.example.txt
 **/.env.yandex
-docs/YANDEX_DB_CREDENTIALS.txt
 my_serve_chat_test/neon_dump_*.sql
 **/.env.yandex-vm
 **/env-yandex-vm.txt
@@ -57,16 +55,8 @@ windows/flutter/ephemeral/
 *.temp
 *.log
 
-# Туториалы (локально для чтения, не коммитить)
-docs/TUTORIAL_INDEX.md
-docs/DART_FLUTTER_TUTORIAL.md
-docs/tutorial/
-
-# Продуктовый аудит (локальный чеклист для починок, не коммитить)
-docs/PRODUCT_AUDIT_2026-05.md
-
-# Промт для Cursor Agent (релизный прогон, локально, не коммитить)
-docs/RELEASE_AGENT_PROMPT.md
+# Документация только локально — не пушить на GitHub
+docs/
 
 # Резервные копии
 *.backup
