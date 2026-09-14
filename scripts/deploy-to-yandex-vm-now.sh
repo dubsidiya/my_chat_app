@@ -36,9 +36,18 @@ rsync -avz \
   -e "ssh $SSH_OPTS" \
   "$REPO_ROOT/" "$VM:~/my_chat_app/"
 
-# 2. Копируем .env
+# 2. Копируем .env (сначала бэкап того, что уже на ВМ — список PRIVATE_ACCESS живёт только там)
 echo ""
 echo "=== 2/4 Копирование .env на ВМ..."
+ssh $SSH_OPTS "$VM" "bash -s" << 'REMOTE_ENV_BAK'
+set -e
+cd ~/my_chat_app/my_serve_chat_test
+if [ -f .env ]; then
+  bak=".env.bak-$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -a .env "$bak"
+  echo "Сохранён текущий .env ВМ: $bak"
+fi
+REMOTE_ENV_BAK
 scp $SSH_OPTS "$ENV_FILE" "$VM:~/my_chat_app/$APP_DIR/.env"
 
 # 3 и 4. На ВМ: установка и запуск
