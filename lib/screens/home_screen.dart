@@ -25,6 +25,7 @@ import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
 import 'reports_chat_screen.dart';
+import 'accounting_hub_screen.dart';
 import 'profile_screen.dart';
 import 'user_profile_screen.dart';
 import 'home_dialogs.dart';
@@ -1417,7 +1418,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       await _openProfile();
                     },
                   ),
-                  if (_privateAccess) ...[
                   _menuTile(
                     ctx,
                     scheme,
@@ -1426,8 +1426,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     'Учет занятий',
                     () async {
                       Navigator.pop(ctx);
+                      if (!_hasStaffAccess) {
+                        await _showRoleAccessDialog(
+                          title: 'Учет занятий',
+                          body:
+                              'Раздел для преподавателей школы: ученики, календарь, журнал оплат. '
+                              'Администратор выдаёт доступ конкретной учётной записи. '
+                              'Пункт всегда виден — это не скрытая функция.',
+                        );
+                        return;
+                      }
                       await _openAccounting();
                     },
+                    subtitle: 'Для преподавателей',
+                    locked: !_hasStaffAccess,
                   ),
                   _menuTile(
                     ctx,
@@ -1437,10 +1449,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     'Отчеты',
                     () async {
                       Navigator.pop(ctx);
+                      if (!_hasStaffAccess) {
+                        await _showRoleAccessDialog(
+                          title: 'Отчеты',
+                          body:
+                              'Ежедневные отчёты по занятиям видят преподаватели, которым открыли доступ. '
+                              'Пункт всегда виден — вход по роли, не по скрытому переключателю.',
+                        );
+                        return;
+                      }
                       await _openReports();
                     },
+                    subtitle: 'Для преподавателей',
+                    locked: !_hasStaffAccess,
                   ),
-                  ],
+                  _menuTile(
+                    ctx,
+                    scheme,
+                    Icons.business_center_rounded,
+                    AppColors.primaryGlow,
+                    'Бухгалтерия',
+                    () async {
+                      Navigator.pop(ctx);
+                      if (!widget.isSuperuser) {
+                        await _showRoleAccessDialog(
+                          title: 'Бухгалтерия',
+                          body:
+                              'Выплаты, график и выгрузки — для руководства школы. '
+                              'Обычный аккаунт пункт видит, но не открывает.',
+                        );
+                        return;
+                      }
+                      await _openAccountingHub();
+                    },
+                    subtitle: 'Для руководства',
+                    locked: !widget.isSuperuser,
+                  ),
                   const Divider(height: 24),
                   _menuTile(
                     ctx,
@@ -1468,8 +1512,10 @@ class _HomeScreenState extends State<HomeScreen> {
     IconData icon,
     Color color,
     String label,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    String? subtitle,
+    bool locked = false,
+  }) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
@@ -1483,6 +1529,22 @@ class _HomeScreenState extends State<HomeScreen> {
         label,
         style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
       ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+      trailing: locked
+          ? Icon(
+              Icons.lock_outline_rounded,
+              size: 18,
+              color: scheme.onSurface.withValues(alpha: 0.45),
+            )
+          : null,
       onTap: onTap,
     );
   }
@@ -1796,8 +1858,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Доступ к «Учет занятий» и «Отчеты» только по списку в env на сервере (Yandex Cloud, Render и т.д.). Без имени в списке не пропускаем.
+  bool get _hasStaffAccess => _privateAccess || widget.isSuperuser;
+
+  Future<void> _showRoleAccessDialog({
+    required String title,
+    required String body,
+  }) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Понятно'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Серверная проверка роли: privateAccess или суперпользователь.
   Future<bool> _ensurePrivateAccess() async {
+    if (widget.isSuperuser) return true;
     final me = await _authService.fetchMe();
     final allowed = me != null && me['privateAccess'] == true;
     if (allowed) {
@@ -1805,14 +1890,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Доступ к разделам «Учет занятий» и «Отчеты» только по списку. Обратитесь к администратору.',
-          ),
-          duration: const Duration(seconds: 4),
-          backgroundColor: Colors.orange.shade700,
-        ),
+      await _showRoleAccessDialog(
+        title: 'Нет доступа',
+        body:
+            'Разделы «Учет занятий» и «Отчеты» открывает администратор школы '
+            'для конкретной учётной записи преподавателя.',
       );
     }
     return false;
@@ -1840,6 +1922,14 @@ class _HomeScreenState extends State<HomeScreen> {
           isSuperuser: widget.isSuperuser,
         ),
       ),
+    );
+  }
+
+  Future<void> _openAccountingHub() async {
+    if (!widget.isSuperuser || !mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(builder: (_) => const AccountingHubScreen()),
     );
   }
 

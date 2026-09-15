@@ -34,8 +34,9 @@ fi
 echo ""
 echo "== App Store IPA (codesign required) =="
 mkdir -p "$ROOT/build/debug-info/ios"
+# Do not obfuscate App Store binaries: App Review flags hidden/undocumented
+# behavior more often when Dart symbols are stripped (guideline 5.6).
 flutter build ipa --release \
-  --obfuscate \
   --split-debug-info="$ROOT/build/debug-info/ios" \
   --export-options-plist="$ROOT/ios/ExportOptions.plist"
 

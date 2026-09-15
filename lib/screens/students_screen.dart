@@ -451,6 +451,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         );
                         break;
                       case 'accounting':
+                        if (!_isSuperuser) {
+                          if (!mounted) break;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              duration: Duration(seconds: 3),
+                              content: Text(
+                                'Бухгалтерия доступна руководству школы. Пункт виден всем преподавателям.',
+                              ),
+                            ),
+                          );
+                          break;
+                        }
                         await Navigator.push<void>(
                           context,
                           MaterialPageRoute<void>(builder: (_) => const AccountingHubScreen()),
@@ -497,17 +509,23 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         ],
                       ),
                     ),
-                    if (_isSuperuser)
-                      const PopupMenuItem<String>(
-                        value: 'accounting',
-                        child: Row(
-                          children: [
-                            Icon(Icons.business_center_rounded, color: Colors.deepPurple),
-                            SizedBox(width: 10),
-                            Text('Бухгалтерия'),
+                    PopupMenuItem<String>(
+                      value: 'accounting',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.business_center_rounded,
+                            color: _isSuperuser ? Colors.deepPurple : Colors.grey,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(_isSuperuser ? 'Бухгалтерия' : 'Бухгалтерия (руководство)'),
+                          if (!_isSuperuser) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.lock_outline_rounded, size: 16, color: Colors.grey),
                           ],
-                        ),
+                        ],
                       ),
+                    ),
                     PopupMenuItem<String>(
                       value: 'refresh',
                       child: Row(

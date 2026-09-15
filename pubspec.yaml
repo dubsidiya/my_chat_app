@@ -1,6 +1,6 @@
 name: my_chat_app
 description: Reollity — чаты, звонки и учёт занятий
-version: 1.0.0+5
+version: 1.0.0+6
 
 publish_to: 'none' # Remove this line if you want to publish to pub.dev
 
