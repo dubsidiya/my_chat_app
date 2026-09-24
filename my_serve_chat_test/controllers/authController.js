@@ -205,7 +205,7 @@ export const register = async (req, res) => {
     }
     return res.status(400).json({ message: validation.message });
   }
-
+//
   try {
     const timezoneFromHeader = normalizeTimeZone(req.headers['x-client-timezone']);
     const timezoneValue = timezoneFromHeader || DEFAULT_USER_TIMEZONE;
