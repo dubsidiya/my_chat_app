@@ -49,10 +49,15 @@ jobs:
           TW_KEY: ${{ secrets.REOLLITY_TW_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$JUMP_KEY" > ~/.ssh/jump_key
-          echo "$TW_KEY" > ~/.ssh/tw_key
+          # Нормализация: убрать \r, гарантировать финальный перенос строки
+          # (без него OpenSSH падает с "error in libcrypto")
+          printf '%s\n' "$JUMP_KEY" | tr -d '\r' > ~/.ssh/jump_key
+          printf '%s\n' "$TW_KEY" | tr -d '\r' > ~/.ssh/tw_key
           chmod 600 ~/.ssh/jump_key ~/.ssh/tw_key
           ssh-keyscan -H 93.77.185.6 >> ~/.ssh/known_hosts
+          # Проверка, что ключи валидны, до деплоя
+          ssh-keygen -y -f ~/.ssh/jump_key > /dev/null || { echo "::error::REOLLITY_JUMP_KEY повреждён (проверь вставку в секрет)"; exit 1; }
+          ssh-keygen -y -f ~/.ssh/tw_key > /dev/null || { echo "::error::REOLLITY_TW_KEY повреждён (проверь вставку в секрет)"; exit 1; }
 
       - name: Deploy via jump host
         run: |
