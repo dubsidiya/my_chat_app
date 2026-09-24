@@ -1,0 +1,77 @@
+name: Deploy web to reollity.ru
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "web/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "assets/**"
+      - ".github/workflows/deploy-web-reollity.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-reollity
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.9"
+          channel: stable
+          cache: true
+
+      - name: Build web
+        run: |
+          flutter pub get
+          flutter build web --release --no-wasm-dry-run \
+            --dart-define=API_BASE_URL=https://reollity.ru
+
+      - name: Setup SSH keys
+        env:
+          JUMP_KEY: ${{ secrets.REOLLITY_JUMP_KEY }}
+          TW_KEY: ${{ secrets.REOLLITY_TW_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$JUMP_KEY" > ~/.ssh/jump_key
+          echo "$TW_KEY" > ~/.ssh/tw_key
+          chmod 600 ~/.ssh/jump_key ~/.ssh/tw_key
+          ssh-keyscan -H 93.77.185.6 >> ~/.ssh/known_hosts
+
+      - name: Deploy via jump host
+        run: |
+          JUMP="ssh -i ~/.ssh/jump_key -o BatchMode=yes ubuntu@93.77.185.6"
+          # Раскладываем ключ для Timeweb на jump-хосте
+          scp -i ~/.ssh/jump_key -o BatchMode=yes ~/.ssh/tw_key ubuntu@93.77.185.6:/tmp/tw_deploy_key
+          $JUMP "chmod 600 /tmp/tw_deploy_key"
+          $JUMP "mkdir -p /tmp/webapp_ci"
+          rsync -az --delete -e "ssh -i ~/.ssh/jump_key -o BatchMode=yes" \
+            build/web/ ubuntu@93.77.185.6:/tmp/webapp_ci/
+          $JUMP "rsync -az --delete -e 'ssh -i /tmp/tw_deploy_key -o StrictHostKeyChecking=accept-new -o BatchMode=yes' /tmp/webapp_ci/ root@93.183.80.97:/var/www/reollity/"
+          $JUMP "rm -f /tmp/tw_deploy_key /tmp/webapp_ci -r"
+
+      - name: Smoke check
+        run: |
+          sleep 5
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://reollity.ru/)
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Site returned $CODE after deploy"
+            exit 1
+          fi
+          echo "✅ reollity.ru отвечает 200"

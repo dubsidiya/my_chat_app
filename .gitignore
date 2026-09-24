@@ -76,3 +76,6 @@ docs/
 build/*
 !build/web/
 !build/web/**
+scripts/.timeweb_pass
+scripts/.tw_deploy_key
+scripts/.gh_jump_key
