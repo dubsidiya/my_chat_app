@@ -318,6 +318,8 @@ class StudentsService {
       'deletedLessons': data['deletedData']?['lessons'] ?? 0,
       'deletedTransactions': data['deletedData']?['transactions'] ?? 0,
       'deletedTeacherLinks': data['deletedData']?['teacherLinks'] ?? 0,
+      'deletedTeacherBalanceTransactions':
+          data['deletedData']?['teacherBalanceTransactions'] ?? 0,
     };
   }
 

@@ -535,37 +535,79 @@ const run = async () => {
     }
   }
 
-  // H7) Полное удаление отключено: 410, занятия и транзакции на месте.
-  const beforeFull = await pool.query(
-    `SELECT
-       (SELECT COUNT(*)::int FROM lessons WHERE student_id = $1) AS lessons,
-       (SELECT COUNT(*)::int FROM transactions WHERE student_id = $1) AS txs
-     FROM students WHERE id = $1`,
-    [studentId]
-  );
-  assert(beforeFull.rowCount === 1, 'seed-ученик должен существовать до H7');
-  const fullRes = makeRes();
-  await deleteStudentFull(
-    { user: { userId: teacherId }, params: { id: String(studentId) } },
-    fullRes
-  );
-  assert(fullRes.statusCode === 410, `полное удаление должно быть 410, получили ${fullRes.statusCode}`);
-  const afterFull = await pool.query(
-    `SELECT
-       (SELECT COUNT(*)::int FROM lessons WHERE student_id = $1) AS lessons,
-       (SELECT COUNT(*)::int FROM transactions WHERE student_id = $1) AS txs
-     FROM students WHERE id = $1`,
-    [studentId]
-  );
-  assert(afterFull.rowCount === 1, 'ученик не должен исчезнуть после отключённого full delete');
-  assert(
-    Number(afterFull.rows[0].lessons) === Number(beforeFull.rows[0].lessons),
-    'занятия не должны каскадиться'
-  );
-  assert(
-    Number(afterFull.rows[0].txs) === Number(beforeFull.rows[0].txs),
-    'транзакции не должны каскадиться'
-  );
+  // H7) Полное удаление: преподаватель получает 403, бухгалтер удаляет все данные
+  // тестового ученика, включая запись рабочего баланса преподавателя.
+  let fullDeleteStudentId = null;
+  const savedSuperuserIds = process.env.SUPERUSER_USER_IDS;
+  try {
+    const fullDeleteStudent = await pool.query(
+      `INSERT INTO students (name, created_by)
+       VALUES ($1, $2)
+       RETURNING id`,
+      [`smoke-full-delete-${Date.now()}`, teacherId]
+    );
+    fullDeleteStudentId = Number(fullDeleteStudent.rows[0].id);
+    const fullDeleteLesson = await pool.query(
+      `INSERT INTO lessons (student_id, lesson_date, price, created_by)
+       VALUES ($1, CURRENT_DATE, 100, $2)
+       RETURNING id`,
+      [fullDeleteStudentId, teacherId]
+    );
+    const fullDeleteLessonId = Number(fullDeleteLesson.rows[0].id);
+    await pool.query(
+      'INSERT INTO teacher_students (teacher_id, student_id) VALUES ($1, $2)',
+      [teacherId, fullDeleteStudentId]
+    );
+    await pool.query(
+      `INSERT INTO transactions (student_id, amount, type, lesson_id, created_by)
+       VALUES ($1, 100, 'lesson', $2, $3)`,
+      [fullDeleteStudentId, fullDeleteLessonId, teacherId]
+    );
+    await pool.query(
+      `INSERT INTO teacher_balance_transactions (teacher_id, amount, type, lesson_id, created_by)
+       VALUES ($1, 100, 'lesson_income', $2, $1)`,
+      [teacherId, fullDeleteLessonId]
+    );
+
+    const deniedFullDelete = makeRes();
+    await deleteStudentFull(
+      { user: { userId: teacherId }, params: { id: String(fullDeleteStudentId) } },
+      deniedFullDelete
+    );
+    assert(deniedFullDelete.statusCode === 403, `преподаватель должен получить 403, получили ${deniedFullDelete.statusCode}`);
+
+    // isSuperuser читает env при каждом вызове, поэтому безопасно выдаём роль только на время smoke.
+    process.env.SUPERUSER_USER_IDS = String(teacherId);
+    const fullRes = makeRes();
+    await deleteStudentFull(
+      { user: { userId: teacherId }, params: { id: String(fullDeleteStudentId) } },
+      fullRes
+    );
+    assert(fullRes.statusCode === 200, `полное удаление должно быть 200, получили ${fullRes.statusCode}`);
+    assert(Number(fullRes.body?.deletedData?.teacherBalanceTransactions) === 1, 'должна удалиться запись рабочего баланса');
+
+    const leftovers = await pool.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM students WHERE id = $1) AS student_exists,
+         EXISTS (SELECT 1 FROM lessons WHERE student_id = $1) AS lessons_exist,
+         EXISTS (SELECT 1 FROM transactions WHERE student_id = $1) AS transactions_exist,
+         EXISTS (SELECT 1 FROM teacher_students WHERE student_id = $1) AS links_exist,
+         EXISTS (SELECT 1 FROM teacher_balance_transactions WHERE lesson_id = $2) AS teacher_balance_exists`,
+      [fullDeleteStudentId, fullDeleteLessonId]
+    );
+    assert(!leftovers.rows[0].student_exists, 'после полного удаления остался ученик');
+    assert(!leftovers.rows[0].lessons_exist, 'после полного удаления остались занятия');
+    assert(!leftovers.rows[0].transactions_exist, 'после полного удаления остались транзакции');
+    assert(!leftovers.rows[0].links_exist, 'после полного удаления остались связи преподавателей');
+    assert(!leftovers.rows[0].teacher_balance_exists, 'после полного удаления осталась запись рабочего баланса');
+    fullDeleteStudentId = null;
+  } finally {
+    if (savedSuperuserIds == null) delete process.env.SUPERUSER_USER_IDS;
+    else process.env.SUPERUSER_USER_IDS = savedSuperuserIds;
+    if (fullDeleteStudentId) {
+      await pool.query('DELETE FROM students WHERE id = $1', [fullDeleteStudentId]);
+    }
+  }
 
   // H8) Самоудаление с бухгалтерским следом — 200, строка users анонимизируется,
   // ученик остаётся; без следа — аккаунт удаляется полностью.

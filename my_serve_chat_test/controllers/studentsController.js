@@ -843,7 +843,7 @@ export const deleteStudentFull = async (req, res) => {
 
     // Проверяем существование ученика
     const studentCheck = await client.query(
-      'SELECT id, name FROM students WHERE id = $1 LIMIT 1',
+      'SELECT id, name FROM students WHERE id = $1 FOR UPDATE',
       [id]
     );
     if (studentCheck.rows.length === 0) {
@@ -866,23 +866,38 @@ export const deleteStudentFull = async (req, res) => {
       'SELECT COUNT(*) as count FROM teacher_students WHERE student_id = $1',
       [id]
     );
+    const lessonBalanceCount = await client.query(
+      `SELECT COUNT(*) as count
+       FROM teacher_balance_transactions tbt
+       JOIN lessons l ON l.id = tbt.lesson_id
+       WHERE l.student_id = $1`,
+      [id]
+    );
 
-    // Удаляем ученика (каскадно удалятся lessons, transactions, teacher_students)
-    // Благодаря ON DELETE CASCADE в миграциях также удалятся:
-    // - report_lessons (через lessons)
-    // - teacher_balance (через lessons, если есть lesson_id)
+    // teacher_balance_transactions.lesson_id настроен на ON DELETE SET NULL,
+    // поэтому удаляем эти финансовые строки явно, чтобы не оставить их без ученика.
+    await client.query(
+      `DELETE FROM teacher_balance_transactions tbt
+       USING lessons l
+       WHERE tbt.lesson_id = l.id AND l.student_id = $1`,
+      [id]
+    );
+
+    // После этого удаление students каскадно удалит lessons, transactions и teacher_students.
     await client.query('DELETE FROM students WHERE id = $1', [id]);
 
     await logAccountingEvent({
+      client,
       userId,
       eventType: 'student_deleted_full',
       entityType: 'student',
-      entityId: id,
+      // Не сохраняем studentId/name в аудите: операция должна удалить персональные данные.
+      entityId: null,
       payload: {
-        studentName,
         deletedLessons: parseInt(lessonsCount.rows[0].count, 10),
         deletedTransactions: parseInt(transactionsCount.rows[0].count, 10),
         deletedTeacherLinks: parseInt(teacherLinksCount.rows[0].count, 10),
+        deletedTeacherBalanceTransactions: parseInt(lessonBalanceCount.rows[0].count, 10),
       },
     });
 
@@ -897,6 +912,7 @@ export const deleteStudentFull = async (req, res) => {
         lessons: parseInt(lessonsCount.rows[0].count, 10),
         transactions: parseInt(transactionsCount.rows[0].count, 10),
         teacherLinks: parseInt(teacherLinksCount.rows[0].count, 10),
+        teacherBalanceTransactions: parseInt(lessonBalanceCount.rows[0].count, 10),
       },
     });
   } catch (error) {

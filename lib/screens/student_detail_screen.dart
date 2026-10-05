@@ -331,7 +331,8 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
               '${result['message']}\n'
               'Удалено: ${result['deletedLessons']} занятий, '
               '${result['deletedTransactions']} транзакций, '
-              '${result['deletedTeacherLinks']} связей',
+              '${result['deletedTeacherLinks']} связей, '
+              '${result['deletedTeacherBalanceTransactions']} записей зарплаты',
             ),
             backgroundColor: Colors.orange.shade800,
           ),
