@@ -295,6 +295,32 @@ class StudentsService {
     }
   }
 
+  /// Полное удаление ученика из системы (только для бухгалтера/суперпользователя).
+  /// Удаляет ученика и ВСЕ связанные данные: занятия, транзакции, связи с преподавателями.
+  /// ВНИМАНИЕ: необратимая операция!
+  Future<Map<String, dynamic>> deleteStudentFull(int id) async {
+    final headers = await _getAuthHeaders();
+    final response = await timedDelete(
+      Uri.parse('$baseUrl/students/$id/full'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        '${_extractErrorMessage(response.body, 'Не удалось полностью удалить студента')} (${response.statusCode})',
+      );
+    }
+
+    final data = jsonDecode(response.body);
+    return {
+      'message': data['message']?.toString() ?? 'Ученик удалён',
+      'studentName': data['studentName']?.toString() ?? '',
+      'deletedLessons': data['deletedData']?['lessons'] ?? 0,
+      'deletedTransactions': data['deletedData']?['transactions'] ?? 0,
+      'deletedTeacherLinks': data['deletedData']?['teacherLinks'] ?? 0,
+    };
+  }
+
   /// Перенести ученика в выпускники (серверный архив на связи).
   Future<void> archiveStudent(int id) async {
     final headers = await _getAuthHeaders();

@@ -289,6 +289,68 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     }
   }
 
+  Future<void> _deleteStudentFull() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Полное удаление ученика'),
+        content: Text(
+          'ВЫ УВЕРЕНЫ, ЧТО ХОТИТЕ ПОЛНОСТЬЮ УДАЛИТЬ "${_student.name}"?\n\n'
+          '⚠️ ЭТО ДЕЙСТВИЕ НЕОБРАТИМО!\n\n'
+          'Будут удалены:\n'
+          '• Все занятия ученика\n'
+          '• Все транзакции (пополнения/списания)\n'
+          '• Связи со всеми преподавателями\n'
+          '• Запись ученика из системы\n\n'
+          'Это действие используется только для полного удаления данных ученика из системы учёта.',
+          style: const TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('УДАЛИТЬ ВСЁ'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final result = await _studentsService.deleteStudentFull(_student.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 5),
+            content: Text(
+              '${result['message']}\n'
+              'Удалено: ${result['deletedLessons']} занятий, '
+              '${result['deletedTransactions']} транзакций, '
+              '${result['deletedTeacherLinks']} связей',
+            ),
+            backgroundColor: Colors.orange.shade800,
+          ),
+        );
+        Navigator.pop(context, true); // Возвращаемся назад с результатом
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 4),
+            content: Text('Ошибка полного удаления: ${_friendlyError(e)}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteLesson(Lesson lesson) async {
     final fromReport = lesson.isFromDailyReport;
     final confirm = await showDialog<bool>(
@@ -736,11 +798,46 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
             onPressed: _editStudent,
             tooltip: 'Редактировать',
           ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            onPressed: _deleteStudent,
-            tooltip: 'Удалить связь',
-          ),
+          if (!_showAllAccountingData)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _deleteStudent,
+              tooltip: 'Удалить связь',
+            ),
+          if (_showAllAccountingData)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'Действия',
+              onSelected: (value) {
+                if (value == 'delete_link') {
+                  _deleteStudent();
+                } else if (value == 'delete_full') {
+                  _deleteStudentFull();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'delete_link',
+                  child: Row(
+                    children: [
+                      Icon(Icons.link_off, size: 20),
+                      SizedBox(width: 12),
+                      Text('Удалить связь'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete_full',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_forever, size: 20, color: Colors.red),
+                      SizedBox(width: 12),
+                      Text('Удалить полностью', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: NestedScrollView(

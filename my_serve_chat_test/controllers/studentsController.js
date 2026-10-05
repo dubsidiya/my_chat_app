@@ -820,12 +820,95 @@ export const deleteStudent = async (req, res) => {
   }
 };
 
-// Полное каскадное удаление отключено: стирало занятия/депозиты всех преподавателей
-// и оставляло зарплату. В приложении — архив или удаление связи.
-export const deleteStudentFull = async (_req, res) => {
-  return res.status(410).json({
-    message: 'Полное удаление ученика отключено. Используйте архив («выпускники») или удаление связи.',
-  });
+// Полное каскадное удаление ученика (только для суперпользователя-бухгалтера).
+// Удаляет ученика и ВСЕ связанные данные: занятия, транзакции, связи с преподавателями.
+// ВНИМАНИЕ: это необратимая операция, используется только для полного удаления данных ученика.
+export const deleteStudentFull = async (req, res) => {
+  const userId = req.user.userId;
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) {
+    return res.status(400).json({ message: 'Некорректный ID ученика' });
+  }
+
+  // Только суперпользователь может выполнить полное удаление
+  if (!isSuperuser(req.user)) {
+    return res.status(403).json({ message: 'Требуется доступ суперпользователя (бухгалтера)' });
+  }
+
+  const client = await pool.connect();
+  let committed = false;
+  try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    await client.query('BEGIN');
+
+    // Проверяем существование ученика
+    const studentCheck = await client.query(
+      'SELECT id, name FROM students WHERE id = $1 LIMIT 1',
+      [id]
+    );
+    if (studentCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Ученик не найден' });
+    }
+
+    const studentName = studentCheck.rows[0].name;
+
+    // Собираем статистику перед удалением (для логирования и ответа)
+    const lessonsCount = await client.query(
+      'SELECT COUNT(*) as count FROM lessons WHERE student_id = $1',
+      [id]
+    );
+    const transactionsCount = await client.query(
+      'SELECT COUNT(*) as count FROM transactions WHERE student_id = $1',
+      [id]
+    );
+    const teacherLinksCount = await client.query(
+      'SELECT COUNT(*) as count FROM teacher_students WHERE student_id = $1',
+      [id]
+    );
+
+    // Удаляем ученика (каскадно удалятся lessons, transactions, teacher_students)
+    // Благодаря ON DELETE CASCADE в миграциях также удалятся:
+    // - report_lessons (через lessons)
+    // - teacher_balance (через lessons, если есть lesson_id)
+    await client.query('DELETE FROM students WHERE id = $1', [id]);
+
+    await logAccountingEvent({
+      userId,
+      eventType: 'student_deleted_full',
+      entityType: 'student',
+      entityId: id,
+      payload: {
+        studentName,
+        deletedLessons: parseInt(lessonsCount.rows[0].count, 10),
+        deletedTransactions: parseInt(transactionsCount.rows[0].count, 10),
+        deletedTeacherLinks: parseInt(teacherLinksCount.rows[0].count, 10),
+      },
+    });
+
+    await client.query('COMMIT');
+    committed = true;
+
+    return res.json({
+      message: 'Ученик полностью удалён из системы',
+      studentId: id,
+      studentName,
+      deletedData: {
+        lessons: parseInt(lessonsCount.rows[0].count, 10),
+        transactions: parseInt(transactionsCount.rows[0].count, 10),
+        teacherLinks: parseInt(teacherLinksCount.rows[0].count, 10),
+      },
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Ошибка полного удаления ученика:', error);
+    return res.status(500).json({ message: 'Ошибка полного удаления ученика' });
+  } finally {
+    if (!committed) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    client.release();
+  }
 };
 
 // Получение баланса студента

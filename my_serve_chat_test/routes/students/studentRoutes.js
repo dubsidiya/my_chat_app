@@ -1,4 +1,5 @@
 import express from 'express';
+import { requireSuperuser } from '../../middleware/auth.js';
 import {
   archiveStudent,
   createStudent,
@@ -23,7 +24,7 @@ router.put('/:id', updateStudent);
 router.post('/:id/archive', archiveStudent);
 router.post('/:id/unarchive', unarchiveStudent);
 router.delete('/:id', deleteStudent);
-router.delete('/:id/full', deleteStudentFull); // 410: каскадное удаление отключено
+router.delete('/:id/full', requireSuperuser, deleteStudentFull); // Полное удаление — только суперпользователь
 router.get('/:id/balance', getStudentBalance);
 router.get('/:id/transactions', getStudentTransactions);
 
