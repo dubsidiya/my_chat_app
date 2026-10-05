@@ -51,12 +51,13 @@ class MessagesDecrypt {
     );
   }
 
-  static Future<List<Message>> decryptMessages(String chatId, List<Message> messages) async {
-    final result = <Message>[];
-    for (final m in messages) {
-      result.add(await decryptOne(chatId, m));
-    }
-    return result;
+  static Future<List<Message>> decryptMessages(
+    String chatId,
+    List<Message> messages,
+  ) {
+    // Each decrypt operation is independent. Running a page concurrently avoids
+    // serial crypto/storage waits while preserving the message-list order.
+    return Future.wait(messages.map((message) => decryptOne(chatId, message)));
   }
 
   /// Расшифровывает одно сообщение (включая replyToMessage) для отображения в UI.

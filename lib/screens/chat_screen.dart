@@ -229,6 +229,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _subscribedToChatRealtime = false;
   Timer?
   _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
+  bool _pollInFlight = false;
   late String _chatTitle;
 
   // ✅ Mentions (@handle)
@@ -562,12 +563,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // ✅ Voice player streams (single player for whole chat)
     _voicePositionSub = _voicePlayer.positionStream.listen((pos) {
       if (!mounted) return;
-      if (_voicePlayingMessageId == null) return;
+      if (_voicePlayingMessageId == null || pos == _voicePosition) return;
       setState(() => _voicePosition = pos);
     });
     _voiceDurationSub = _voicePlayer.durationStream.listen((dur) {
       if (!mounted) return;
-      if (_voicePlayingMessageId == null) return;
+      if (_voicePlayingMessageId == null || dur == _voiceDuration) return;
       setState(() => _voiceDuration = dur);
     });
     _voicePlayerStateSub = _voicePlayer.playerStateStream.listen((st) {
@@ -618,7 +619,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Опрос последних сообщений с сервера — подхватывает то, что не пришло по WebSocket.
   Future<void> _pollForNewMessages() async {
-    if (!mounted || _isLoading) return;
+    if (!mounted || _isLoading || _pollInFlight) return;
+    _pollInFlight = true;
     unawaited(_retryQueuedMessages());
     try {
       final result = await _messagesService.fetchMessagesPaginated(
@@ -645,7 +647,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
       if (fromOthers) NotificationFeedbackService.onNewMessage();
       if (atBottom) _scrollToBottom();
-    } catch (_) {}
+    } catch (_) {
+      // WebSocket remains the primary delivery path; the next fallback poll retries.
+    } finally {
+      _pollInFlight = false;
+    }
   }
 
   Future<void> _loadChatMembers() async {

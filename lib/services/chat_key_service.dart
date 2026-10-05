@@ -22,17 +22,39 @@ class ChatKeyService {
 
   static final AesGcm _aesGcm = AesGcm.with256bits();
   static final Map<String, SecretKey> _memCache = <String, SecretKey>{};
+  static final Map<String, Future<SecretKey?>> _keyRequests =
+      <String, Future<SecretKey?>>{};
 
   static String _cacheKey(String chatId) => '$_keyPrefix$chatId';
 
   /// Получить ключ чата: память → storage → сервер. null при недоступности.
   /// На web не используем flutter_secure_storage: он завязан на WebCrypto и
   /// может зависнуть/кинуть — тогда отправка текста не доходит до POST.
-  static Future<SecretKey?> getChatKey(String chatId) async {
-    try {
-      final cachedMem = _memCache[chatId];
-      if (cachedMem != null) return cachedMem;
+  static Future<SecretKey?> getChatKey(String chatId) {
+    final cachedMem = _memCache[chatId];
+    if (cachedMem != null) return Future.value(cachedMem);
+    final inFlight = _keyRequests[chatId];
+    if (inFlight != null) return inFlight;
+    final request = _loadChatKey(chatId);
+    _keyRequests[chatId] = request;
+    request.then(
+      (_) => _clearInFlightRequest(chatId, request),
+      onError: (_, __) => _clearInFlightRequest(chatId, request),
+    );
+    return request;
+  }
 
+  static void _clearInFlightRequest(
+    String chatId,
+    Future<SecretKey?> request,
+  ) {
+    if (identical(_keyRequests[chatId], request)) {
+      _keyRequests.remove(chatId);
+    }
+  }
+
+  static Future<SecretKey?> _loadChatKey(String chatId) async {
+    try {
       final stored = await _readStoredKey(chatId);
       if (stored != null && stored.isNotEmpty) {
         final key = SecretKey(base64Decode(stored));
@@ -206,6 +228,7 @@ class ChatKeyService {
   /// Очистить кэш ключей (logout / удаление аккаунта).
   static Future<void> clearAll() async {
     _memCache.clear();
+    _keyRequests.clear();
     try {
       if (kIsWeb) {
         final prefs = await SharedPreferences.getInstance();
