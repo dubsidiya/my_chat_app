@@ -61,10 +61,9 @@ class _MentionTextState extends State<MentionText> {
       spans.add(TextSpan(text: text.substring(last), style: widget.style));
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
+    return SelectableText.rich(
+      TextSpan(children: spans),
       textAlign: TextAlign.start,
-      softWrap: true,
     );
   }
 }
