@@ -106,6 +106,12 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
+                    if (message.hasText)
+                      chip(
+                        icon: Icons.copy_rounded,
+                        label: 'Копировать текст',
+                        value: 'copy',
+                      ),
                     chip(
                       icon: Icons.reply_rounded,
                       label: 'Ответить',
@@ -203,7 +209,17 @@ extension _ChatScreenMessageActionsPart on _ChatScreenState {
       },
     );
 
-    if (action == 'reply') {
+    if (action == 'copy') {
+      await Clipboard.setData(ClipboardData(text: message.content));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Текст скопирован'),
+          ),
+        );
+      }
+    } else if (action == 'reply') {
       _setReplyAndScrollToInput(message);
     } else if (action == 'forward') {
       _showForwardDialog(message);

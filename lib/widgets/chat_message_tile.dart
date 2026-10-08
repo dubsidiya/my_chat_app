@@ -39,6 +39,7 @@ class ChatMessageTile extends StatelessWidget {
   final Widget myAvatarPlaceholder;
   final Widget otherAvatarPlaceholder;
   final Map<String, Map<String, String>> memberByHandle;
+
   /// Для E2EE: если передан, изображения сообщения загружаются и при необходимости расшифровываются.
   final String? chatId;
 
@@ -52,7 +53,8 @@ class ChatMessageTile extends StatelessWidget {
   final String Function(String iso) formatDate;
   final Widget buildMessageStatus;
   final VoidCallback onShowReactionPicker;
-  final void Function(String userId, String fallbackLabel) onOpenUserProfileById;
+  final void Function(String userId, String fallbackLabel)
+  onOpenUserProfileById;
 
   const ChatMessageTile({
     super.key,
@@ -105,11 +107,15 @@ class ChatMessageTile extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
-          color: isHighlighted ? accent1.withValues(alpha: 0.08) : Colors.transparent,
+          color: isHighlighted
+              ? accent1.withValues(alpha: 0.08)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
-          mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: isMine
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isMine) ...[
@@ -120,7 +126,9 @@ class ChatMessageTile extends StatelessWidget {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      gradient: (msg.senderAvatarUrl == null || msg.senderAvatarUrl!.trim().isEmpty)
+                      gradient:
+                          (msg.senderAvatarUrl == null ||
+                              msg.senderAvatarUrl!.trim().isEmpty)
                           ? LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -130,14 +138,17 @@ class ChatMessageTile extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: ClipOval(
-                      child: (msg.senderAvatarUrl != null && msg.senderAvatarUrl!.trim().isNotEmpty)
+                      child:
+                          (msg.senderAvatarUrl != null &&
+                              msg.senderAvatarUrl!.trim().isNotEmpty)
                           ? CachedNetworkImage(
                               imageUrl: msg.senderAvatarUrl!,
                               width: 32,
                               height: 32,
                               fit: BoxFit.cover,
                               placeholder: (_, __) => otherAvatarPlaceholder,
-                              errorWidget: (_, __, ___) => otherAvatarPlaceholder,
+                              errorWidget: (_, __, ___) =>
+                                  otherAvatarPlaceholder,
                             )
                           : otherAvatarPlaceholder,
                     ),
@@ -151,8 +162,13 @@ class ChatMessageTile extends StatelessWidget {
               child: GestureDetector(
                 onLongPress: onShowMessageMenu,
                 child: Container(
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     gradient: isMine
                         ? LinearGradient(
@@ -193,14 +209,22 @@ class ChatMessageTile extends StatelessWidget {
                       if (msg.isPinned) ...[
                         Row(
                           children: [
-                            Icon(Icons.push_pin, size: 14, color: isMine ? Colors.white70 : AppColors.warningDark),
+                            Icon(
+                              Icons.push_pin,
+                              size: 14,
+                              color: isMine
+                                  ? Colors.white70
+                                  : AppColors.warningDark,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Закреплено',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontStyle: FontStyle.italic,
-                                color: isMine ? Colors.white70 : AppColors.warningDark,
+                                color: isMine
+                                    ? Colors.white70
+                                    : AppColors.warningDark,
                               ),
                             ),
                           ],
@@ -212,10 +236,15 @@ class ChatMessageTile extends StatelessWidget {
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: isMine ? Colors.white.withValues(alpha: 0.2) : AppColors.primary.withValues(alpha: 0.08),
+                            color: isMine
+                                ? Colors.white.withValues(alpha: 0.2)
+                                : AppColors.primary.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(8),
                             border: Border(
-                              left: BorderSide(color: isMine ? Colors.white : accent1, width: 3),
+                              left: BorderSide(
+                                color: isMine ? Colors.white : accent1,
+                                width: 3,
+                              ),
                             ),
                           ),
                           child: Column(
@@ -226,21 +255,33 @@ class ChatMessageTile extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: isMine ? Colors.white.withValues(alpha: 0.9) : accent1,
+                                  color: isMine
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : accent1,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               if (msg.replyToMessage!.hasFile)
                                 Row(
                                   children: [
-                                    Icon(Icons.insert_drive_file_rounded, size: 14, color: isMine ? Colors.white70 : scheme.outline),
+                                    Icon(
+                                      Icons.insert_drive_file_rounded,
+                                      size: 14,
+                                      color: isMine
+                                          ? Colors.white70
+                                          : scheme.outline,
+                                    ),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
-                                        decodeFileNameForDisplay(msg.replyToMessage!.fileName),
+                                        decodeFileNameForDisplay(
+                                          msg.replyToMessage!.fileName,
+                                        ),
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
+                                          color: isMine
+                                              ? Colors.white70
+                                              : AppColors.onSurfaceVariantDark,
                                           fontStyle: FontStyle.italic,
                                         ),
                                         maxLines: 1,
@@ -252,13 +293,21 @@ class ChatMessageTile extends StatelessWidget {
                               else if (msg.replyToMessage!.hasImage)
                                 Row(
                                   children: [
-                                    Icon(Icons.image, size: 14, color: isMine ? Colors.white70 : scheme.outline),
+                                    Icon(
+                                      Icons.image,
+                                      size: 14,
+                                      color: isMine
+                                          ? Colors.white70
+                                          : scheme.outline,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Фото',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark,
+                                        color: isMine
+                                            ? Colors.white70
+                                            : AppColors.onSurfaceVariantDark,
                                         fontStyle: FontStyle.italic,
                                       ),
                                     ),
@@ -266,8 +315,15 @@ class ChatMessageTile extends StatelessWidget {
                                 )
                               else
                                 Text(
-                                  msg.replyToMessage!.content.length > 50 ? '${msg.replyToMessage!.content.substring(0, 50)}...' : msg.replyToMessage!.content,
-                                  style: TextStyle(fontSize: 12, color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark),
+                                  msg.replyToMessage!.content.length > 50
+                                      ? '${msg.replyToMessage!.content.substring(0, 50)}...'
+                                      : msg.replyToMessage!.content,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isMine
+                                        ? Colors.white70
+                                        : AppColors.onSurfaceVariantDark,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -280,7 +336,11 @@ class ChatMessageTile extends StatelessWidget {
                           onTap: onOpenSenderProfile,
                           child: Text(
                             msg.senderEmail,
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: accent1),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: accent1,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -303,11 +363,14 @@ class ChatMessageTile extends StatelessWidget {
                                   chatId: chatId,
                                   fit: BoxFit.cover,
                                   memCacheWidth: 500,
-                                  placeholder: (context, __) => const SkeletonPlaceholder(
-                                    width: _chatImageBubbleWidth,
-                                    height: _chatImageBubbleHeight,
-                                    borderRadius: BorderRadius.all(Radius.circular(8)),
-                                  ),
+                                  placeholder: (context, __) =>
+                                      const SkeletonPlaceholder(
+                                        width: _chatImageBubbleWidth,
+                                        height: _chatImageBubbleHeight,
+                                        borderRadius: BorderRadius.all(
+                                          Radius.circular(8),
+                                        ),
+                                      ),
                                   errorWidget: (_, __, ___) => ColoredBox(
                                     color: scheme.surfaceContainerHighest,
                                     child: Icon(
@@ -321,7 +384,8 @@ class ChatMessageTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (msg.hasText || msg.hasFile) const SizedBox(height: 8),
+                        if (msg.hasText || msg.hasFile)
+                          const SizedBox(height: 8),
                       ],
                       if (msg.hasFile) ...[
                         if (isVoiceMessage()) ...[
@@ -361,8 +425,12 @@ class ChatMessageTile extends StatelessWidget {
                                                 begin: Alignment.topCenter,
                                                 end: Alignment.bottomCenter,
                                                 colors: [
-                                                  Colors.black.withValues(alpha: 0.1),
-                                                  Colors.black.withValues(alpha: 0.45),
+                                                  Colors.black.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                  Colors.black.withValues(
+                                                    alpha: 0.45,
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -372,8 +440,11 @@ class ChatMessageTile extends StatelessWidget {
                                               width: 44,
                                               height: 44,
                                               decoration: BoxDecoration(
-                                                color: Colors.black.withValues(alpha: 0.45),
-                                                borderRadius: BorderRadius.circular(22),
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.45,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(22),
                                               ),
                                               child: const Icon(
                                                 Icons.play_arrow_rounded,
@@ -388,7 +459,12 @@ class ChatMessageTile extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   Padding(
-                                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      10,
+                                      0,
+                                      10,
+                                      10,
+                                    ),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -418,7 +494,7 @@ class ChatMessageTile extends StatelessWidget {
                                                 color: isMine
                                                     ? Colors.white70
                                                     : AppColors
-                                                        .onSurfaceVariantDark,
+                                                          .onSurfaceVariantDark,
                                               ),
                                             ),
                                             if (msg.fileSize != null) ...[
@@ -430,7 +506,7 @@ class ChatMessageTile extends StatelessWidget {
                                                   color: isMine
                                                       ? Colors.white70
                                                       : AppColors
-                                                          .onSurfaceVariantDark,
+                                                            .onSurfaceVariantDark,
                                                 ),
                                               ),
                                             ],
@@ -450,44 +526,85 @@ class ChatMessageTile extends StatelessWidget {
                               final uri = Uri.tryParse(msg.fileUrl ?? '');
                               if (uri == null) return;
                               if (await canLaunchUrl(uri)) {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
                               } else {
-                                messenger.showSnackBar(const SnackBar(duration: Duration(seconds: 3), content: Text('Не удалось открыть файл')));
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    duration: Duration(seconds: 3),
+                                    content: Text('Не удалось открыть файл'),
+                                  ),
+                                );
                               }
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
-                                color: isMine ? Colors.white.withValues(alpha: 0.18) : AppColors.primary.withValues(alpha: 0.15),
+                                color: isMine
+                                    ? Colors.white.withValues(alpha: 0.18)
+                                    : AppColors.primary.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isMine ? Colors.white.withValues(alpha: 0.25) : AppColors.borderDark),
+                                border: Border.all(
+                                  color: isMine
+                                      ? Colors.white.withValues(alpha: 0.25)
+                                      : AppColors.borderDark,
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.insert_drive_file_rounded, size: 18, color: isMine ? Colors.white : accent2),
+                                  Icon(
+                                    Icons.insert_drive_file_rounded,
+                                    size: 18,
+                                    color: isMine ? Colors.white : accent2,
+                                  ),
                                   const SizedBox(width: 8),
                                   Flexible(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          decodeFileNameForDisplay(msg.fileName),
+                                          decodeFileNameForDisplay(
+                                            msg.fileName,
+                                          ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(color: isMine ? Colors.white : AppColors.onSurfaceDark, fontWeight: FontWeight.w600),
+                                          style: TextStyle(
+                                            color: isMine
+                                                ? Colors.white
+                                                : AppColors.onSurfaceDark,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                         if (msg.fileSize != null)
                                           Text(
                                             formatBytes(msg.fileSize!),
-                                            style: TextStyle(fontSize: 12, color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isMine
+                                                  ? Colors.white70
+                                                  : AppColors
+                                                        .onSurfaceVariantDark,
+                                            ),
                                           ),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  Icon(Icons.open_in_new_rounded, size: 16, color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark),
+                                  Icon(
+                                    Icons.open_in_new_rounded,
+                                    size: 16,
+                                    color: isMine
+                                        ? Colors.white70
+                                        : AppColors.onSurfaceVariantDark,
+                                  ),
                                 ],
                               ),
                             ),
@@ -495,45 +612,64 @@ class ChatMessageTile extends StatelessWidget {
                         ],
                       ],
                       if (msg.hasText) ...[
-                        Builder(builder: (context) {
-                          final baseStyle = TextStyle(
-                            color: isMine ? Colors.white : AppColors.onSurfaceDark,
-                            fontSize: 15,
-                            height: 1.4,
-                          );
-                          final mentionStyle = baseStyle.copyWith(
-                            color: isMine ? Colors.white : AppColors.primaryGlow,
-                            fontWeight: FontWeight.w800,
-                            decoration: TextDecoration.underline,
-                            decorationColor: (isMine ? Colors.white : AppColors.primaryGlow).withValues(alpha: 0.7),
-                          );
-                          return MentionText(
-                            text: msg.content,
-                            style: baseStyle,
-                            mentionStyle: mentionStyle,
-                            onMentionTap: (handle) {
-                              final key = handle.trim().toLowerCase();
-                              final info = memberByHandle[key];
-                              final uid = info?['id'];
-                              if (uid == null || uid.trim().isEmpty) return;
-                              onOpenUserProfileById(uid, '@$handle');
-                            },
-                          );
-                        }),
-                        Builder(builder: (context) {
-                          final url = LinkPreviewService.extractFirstUrl(msg.content);
-                          if (url == null) return const SizedBox.shrink();
-                          return FutureBuilder<LinkPreview?>(
-                            future: LinkPreviewService.instance.get(url),
-                            builder: (context, snap) {
-                              final p = snap.data;
-                              if (p == null) return const SizedBox.shrink();
-                              return LinkPreviewCard(url: url, preview: p, isMine: isMine);
-                            },
-                          );
-                        }),
+                        Builder(
+                          builder: (context) {
+                            final baseStyle = TextStyle(
+                              color: isMine
+                                  ? Colors.white
+                                  : AppColors.onSurfaceDark,
+                              fontSize: 15,
+                              height: 1.4,
+                            );
+                            final mentionStyle = baseStyle.copyWith(
+                              color: isMine
+                                  ? Colors.white
+                                  : AppColors.primaryGlow,
+                              fontWeight: FontWeight.w800,
+                              decoration: TextDecoration.underline,
+                              decorationColor:
+                                  (isMine
+                                          ? Colors.white
+                                          : AppColors.primaryGlow)
+                                      .withValues(alpha: 0.7),
+                            );
+                            return MentionText(
+                              text: msg.content,
+                              style: baseStyle,
+                              mentionStyle: mentionStyle,
+                              onMentionTap: (handle) {
+                                final key = handle.trim().toLowerCase();
+                                final info = memberByHandle[key];
+                                final uid = info?['id'];
+                                if (uid == null || uid.trim().isEmpty) return;
+                                onOpenUserProfileById(uid, '@$handle');
+                              },
+                            );
+                          },
+                        ),
+                        Builder(
+                          builder: (context) {
+                            final url = LinkPreviewService.extractFirstUrl(
+                              msg.content,
+                            );
+                            if (url == null) return const SizedBox.shrink();
+                            return FutureBuilder<LinkPreview?>(
+                              future: LinkPreviewService.instance.get(url),
+                              builder: (context, snap) {
+                                final p = snap.data;
+                                if (p == null) return const SizedBox.shrink();
+                                return LinkPreviewCard(
+                                  url: url,
+                                  preview: p,
+                                  isMine: isMine,
+                                );
+                              },
+                            );
+                          },
+                        ),
                       ],
-                      if (msg.reactions != null && msg.reactions!.isNotEmpty) ...[
+                      if (msg.reactions != null &&
+                          msg.reactions!.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 4,
@@ -542,25 +678,42 @@ class ChatMessageTile extends StatelessWidget {
                             return GestureDetector(
                               onTap: onShowReactionPicker,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: isMine ? Colors.white.withValues(alpha: 0.2) : AppColors.primary.withValues(alpha: 0.18),
+                                  color: isMine
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : AppColors.primary.withValues(
+                                          alpha: 0.18,
+                                        ),
                                   borderRadius: AppRadius.pillAll,
                                   border: Border.all(
                                     color: isMine
                                         ? Colors.white.withValues(alpha: 0.28)
-                                        : AppColors.primaryGlow.withValues(alpha: 0.30),
+                                        : AppColors.primaryGlow.withValues(
+                                            alpha: 0.30,
+                                          ),
                                     width: 1,
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(reaction.reaction, style: const TextStyle(fontSize: 14)),
+                                    Text(
+                                      reaction.reaction,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       '1',
-                                      style: TextStyle(fontSize: 11, color: isMine ? Colors.white70 : AppColors.onSurfaceVariantDark),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isMine
+                                            ? Colors.white70
+                                            : AppColors.onSurfaceVariantDark,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -577,7 +730,9 @@ class ChatMessageTile extends StatelessWidget {
                             formatDate(msg.createdAt),
                             style: TextStyle(
                               fontSize: 11,
-                              color: isMine ? Colors.white.withValues(alpha: 0.8) : scheme.onSurfaceVariant,
+                              color: isMine
+                                  ? Colors.white.withValues(alpha: 0.8)
+                                  : scheme.onSurfaceVariant,
                             ),
                           ),
                           if (isMine) ...[
@@ -591,7 +746,9 @@ class ChatMessageTile extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontStyle: FontStyle.italic,
-                                color: isMine ? Colors.white.withValues(alpha: 0.6) : scheme.onSurfaceVariant,
+                                color: isMine
+                                    ? Colors.white.withValues(alpha: 0.6)
+                                    : scheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -631,4 +788,3 @@ class ChatMessageTile extends StatelessWidget {
     );
   }
 }
-
