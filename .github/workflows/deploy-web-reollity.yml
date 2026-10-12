@@ -40,7 +40,9 @@ jobs:
       - name: Build web
         run: |
           flutter pub get
-          flutter build web --release --no-wasm-dry-run \
+          # Keep the Flutter engine on our server: Google CDN may be unavailable
+          # for users and causes the app to remain on its loading screen.
+          flutter build web --release --no-wasm-dry-run --no-web-resources-cdn \
             --dart-define=API_BASE_URL=https://api.reollity.ru
 
       - name: Setup SSH key
@@ -59,12 +61,16 @@ jobs:
           rsync -az --delete -e "ssh -i ~/.ssh/recovery_key -o BatchMode=yes" \
             build/web/ root@129.101.115.158:/var/www/reollity/
 
-      - name: Smoke check
+      - name: Smoke check on recovery server
         run: |
-          sleep 5
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://reollity.ru/)
-          if [ "$CODE" != "200" ]; then
-            echo "::error::Site returned $CODE after deploy"
-            exit 1
-          fi
-          echo "✅ reollity.ru отвечает 200"
+          # The recovery server is the deployment target. Verify it through the
+          # authenticated SSH connection instead of depending on runner network
+          # reachability to the public Internet.
+          ssh -i ~/.ssh/recovery_key -o BatchMode=yes root@129.101.115.158 '
+            set -e
+            test -s /var/www/reollity/index.html
+            test -s /var/www/reollity/canvaskit/canvaskit.wasm
+            test "$(curl -fsS -o /dev/null -w "%{http_code}" https://reollity.ru/)" = "200"
+            test "$(curl -fsS -o /dev/null -w "%{http_code}" https://api.reollity.ru/healthz)" = "200"
+          '
+          echo "✅ web и API отвечают с recovery-сервера"
