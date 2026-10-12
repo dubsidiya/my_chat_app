@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
+    display_name VARCHAR(255),
+    avatar_url TEXT,
+    token_version INTEGER NOT NULL DEFAULT 0,
     timezone VARCHAR(64) NOT NULL DEFAULT 'Europe/Moscow',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

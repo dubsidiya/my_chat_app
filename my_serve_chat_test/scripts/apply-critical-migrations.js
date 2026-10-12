@@ -17,6 +17,7 @@ dotenv.config({ path: join(rootDir, '.env') });
 /** Order matters when later files depend on earlier objects. */
 const CRITICAL = [
   'migrations/add_fcm_token.sql',
+  'migrations/add_display_name.sql',
   'migrations/add_token_version.sql',
   'migrations/add_avatar_url.sql',
   'migrations/add_chat_shared_key.sql',
