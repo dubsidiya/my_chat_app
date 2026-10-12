@@ -551,11 +551,13 @@ export const sendMessage = async (req, res) => {
   }
 
   const YANDEX_BUCKET = process.env.YANDEX_BUCKET_NAME;
+  const configuredStorageUrl = String(process.env.YANDEX_STORAGE_URL || '').replace(/\/$/, '');
   const allowedUrlPrefixes = YANDEX_BUCKET
     ? [
+        configuredStorageUrl ? `${configuredStorageUrl}/` : null,
         `https://${YANDEX_BUCKET}.storage.yandexcloud.net/`,
         `https://storage.yandexcloud.net/${YANDEX_BUCKET}/`,
-      ]
+      ].filter(Boolean)
     : [];
   let imageRef = inputImageRef;
   let originalImageRef = inputOriginalImageRef;

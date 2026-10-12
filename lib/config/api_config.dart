@@ -3,7 +3,7 @@
 /// Можно переопределить URL при сборке через:
 /// `--dart-define=API_BASE_URL=https://...`
 class ApiConfig {
-  static const String _defaultBaseUrl = 'https://reollity.duckdns.org';
+  static const String _defaultBaseUrl = 'https://api.reollity.ru';
 
   /// Базовый URL API без завершающего `/`.
   static String get baseUrl {

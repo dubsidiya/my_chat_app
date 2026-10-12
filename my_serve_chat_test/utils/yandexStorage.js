@@ -14,15 +14,21 @@ if (!YANDEX_ACCESS_KEY_ID || !YANDEX_SECRET_ACCESS_KEY || !YANDEX_BUCKET_NAME) {
   console.warn('   Без них загрузка изображений не будет работать. См. YANDEX_CLOUD_SETUP.md');
 }
 
-// Конфигурация Яндекс Object Storage
+// Конфигурация S3-совместимого Object Storage.
+// По умолчанию сохраняем Yandex Object Storage для обратной совместимости.
+const S3_ENDPOINT = process.env.S3_ENDPOINT || 'https://storage.yandexcloud.net';
+const S3_REGION = process.env.S3_REGION || 'ru-central1';
+const S3_FORCE_PATH_STYLE = ['1', 'true', 'yes'].includes(
+  String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase(),
+);
 const s3Client = new S3Client({
-  endpoint: 'https://storage.yandexcloud.net',
-  region: 'ru-central1',
+  endpoint: S3_ENDPOINT,
+  region: S3_REGION,
   credentials: {
     accessKeyId: YANDEX_ACCESS_KEY_ID || '',
     secretAccessKey: YANDEX_SECRET_ACCESS_KEY || '',
   },
-  forcePathStyle: false, // Используем виртуальный стиль (bucket.yandexcloud.net)
+  forcePathStyle: S3_FORCE_PATH_STYLE,
 });
 
 const BUCKET_NAME = YANDEX_BUCKET_NAME || 'my-chat-images';
