@@ -33,16 +33,14 @@ const s3Client = new S3Client({
   forcePathStyle: S3_FORCE_PATH_STYLE,
 });
 
-// Конфигурация CORS для Яндекс Object Storage
-// Важно: формат должен соответствовать спецификации S3
+// Minimal S3 CORS shape supported by Timeweb and Yandex Object Storage.
+// OPTIONS is handled by S3 as preflight and must not appear in AllowedMethods.
 const corsConfiguration = {
   CORSRules: [
     {
       AllowedHeaders: ['*'],
-      AllowedMethods: ['GET', 'HEAD', 'OPTIONS'],
-      AllowedOrigins: ['*'],
-      ExposeHeaders: ['ETag', 'Content-Length', 'Content-Type', 'x-amz-request-id'],
-      MaxAgeSeconds: 3600,
+      AllowedMethods: ['GET', 'HEAD'],
+      AllowedOrigins: ['https://reollity.ru', 'https://www.reollity.ru'],
     },
   ],
 };
@@ -50,10 +48,9 @@ const corsConfiguration = {
 export async function setupCors() {
   console.log('🔧 Настройка CORS для бакета:', YANDEX_BUCKET_NAME);
   console.log('📋 Конфигурация CORS:');
-  console.log('   - Разрешенные источники: * (все)');
-  console.log('   - Разрешенные методы: GET, HEAD, OPTIONS');
+  console.log('   - Разрешенные источники: reollity.ru, www.reollity.ru');
+  console.log('   - Разрешенные методы: GET, HEAD');
   console.log('   - Разрешенные заголовки: * (все)');
-  console.log('   - Максимальный возраст: 3600 секунд');
   console.log('');
 
   try {
