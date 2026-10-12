@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -41,35 +41,23 @@ jobs:
         run: |
           flutter pub get
           flutter build web --release --no-wasm-dry-run \
-            --dart-define=API_BASE_URL=https://reollity.ru
+            --dart-define=API_BASE_URL=https://api.reollity.ru
 
-      - name: Setup SSH keys
+      - name: Setup SSH key
         env:
-          JUMP_KEY: ${{ secrets.REOLLITY_JUMP_KEY }}
-          TW_KEY: ${{ secrets.REOLLITY_TW_KEY }}
+          RECOVERY_KEY: ${{ secrets.REOLLITY_RECOVERY_KEY }}
         run: |
           mkdir -p ~/.ssh
-          # Нормализация: убрать \r, гарантировать финальный перенос строки
-          # (без него OpenSSH падает с "error in libcrypto")
-          printf '%s\n' "$JUMP_KEY" | tr -d '\r' > ~/.ssh/jump_key
-          printf '%s\n' "$TW_KEY" | tr -d '\r' > ~/.ssh/tw_key
-          chmod 600 ~/.ssh/jump_key ~/.ssh/tw_key
-          ssh-keyscan -H 93.77.185.6 >> ~/.ssh/known_hosts
-          # Проверка, что ключи валидны, до деплоя
-          ssh-keygen -y -f ~/.ssh/jump_key > /dev/null || { echo "::error::REOLLITY_JUMP_KEY повреждён (проверь вставку в секрет)"; exit 1; }
-          ssh-keygen -y -f ~/.ssh/tw_key > /dev/null || { echo "::error::REOLLITY_TW_KEY повреждён (проверь вставку в секрет)"; exit 1; }
+          printf '%s\n' "$RECOVERY_KEY" | tr -d '\r' > ~/.ssh/recovery_key
+          chmod 600 ~/.ssh/recovery_key
+          ssh-keygen -y -f ~/.ssh/recovery_key > /dev/null || { echo "::error::REOLLITY_RECOVERY_KEY повреждён"; exit 1; }
+          ssh-keyscan -H 129.101.115.158 >> ~/.ssh/known_hosts
 
-      - name: Deploy via jump host
+      - name: Deploy to recovery server
         run: |
-          JUMP="ssh -i ~/.ssh/jump_key -o BatchMode=yes ubuntu@93.77.185.6"
-          # Раскладываем ключ для Timeweb на jump-хосте
-          scp -i ~/.ssh/jump_key -o BatchMode=yes ~/.ssh/tw_key ubuntu@93.77.185.6:/tmp/tw_deploy_key
-          $JUMP "chmod 600 /tmp/tw_deploy_key"
-          $JUMP "mkdir -p /tmp/webapp_ci"
-          rsync -az --delete -e "ssh -i ~/.ssh/jump_key -o BatchMode=yes" \
-            build/web/ ubuntu@93.77.185.6:/tmp/webapp_ci/
-          $JUMP "rsync -az --delete -e 'ssh -i /tmp/tw_deploy_key -o StrictHostKeyChecking=accept-new -o BatchMode=yes' /tmp/webapp_ci/ root@93.183.80.97:/var/www/reollity/"
-          $JUMP "rm -f /tmp/tw_deploy_key /tmp/webapp_ci -r"
+          ssh -i ~/.ssh/recovery_key -o BatchMode=yes root@129.101.115.158 'mkdir -p /var/www/reollity'
+          rsync -az --delete -e "ssh -i ~/.ssh/recovery_key -o BatchMode=yes" \
+            build/web/ root@129.101.115.158:/var/www/reollity/
 
       - name: Smoke check
         run: |
