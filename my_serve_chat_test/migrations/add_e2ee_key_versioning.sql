@@ -26,9 +26,20 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE chat_keys
-ADD CONSTRAINT chat_keys_chat_id_user_id_key_version_key
-UNIQUE (chat_id, user_id, key_version);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.table_constraints
+    WHERE table_schema = 'public'
+      AND table_name = 'chat_keys'
+      AND constraint_name = 'chat_keys_chat_id_user_id_key_version_key'
+  ) THEN
+    ALTER TABLE chat_keys
+      ADD CONSTRAINT chat_keys_chat_id_user_id_key_version_key
+      UNIQUE (chat_id, user_id, key_version);
+  END IF;
+END $$;
 
 -- 5) Helpful indexes for key lookup/versioned history
 CREATE INDEX IF NOT EXISTS idx_chat_keys_chat_version ON chat_keys(chat_id, key_version);
