@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Всё в одном: копирует проект на ВМ, поднимает Node/deps, запускает сервер через pm2.
-# Запуск с Mac: ./scripts/deploy-to-yandex-vm-now.sh
+# LEGACY: старый деплой на Yandex VM. Не использовать для production.
+# Актуальный backend: 129.101.115.158, /opt/reollity/backend, PM2 process reollity-api.
+# Актуальные инструкции: recovered-backup-20261013/server-config/CONNECT_BACKEND.md.
+# Этот скрипт сохранён только для истории.
 # Пароль ВМ запросится 3 раза (rsync, scp, ssh). Чтобы один раз: добавь ключ на ВМ:
 #   ssh-copy-id ubuntu@93.77.185.6
 # (пароль ВМ смотри в консоли Yandex: ВМ → Подключиться → «Указать пароль».)

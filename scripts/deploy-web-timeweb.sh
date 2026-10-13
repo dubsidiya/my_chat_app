@@ -1,21 +1,18 @@
 #!/bin/bash
-# Деплой веб-версии на Timeweb (reollity.ru) через Яндекс-VM (jump host).
+# Деплой Flutter Web на Timeweb (reollity.ru) напрямую.
 #
 # Использование: bash scripts/deploy-web-timeweb.sh
 #
 # Что делает:
-#   1. Собирает Flutter web с API_BASE_URL=https://reollity.ru
-#   2. Заливает через ubuntu@93.77.185.6 (jump) на root@93.183.80.97:/var/www/reollity
-#   3. Проверяет, что сайт поднялся
+#   1. Собирает Flutter web с API_BASE_URL=https://api.reollity.ru
+#   2. Загружает build/web на web-сервер Timeweb в /var/www/reollity
+#   3. Проверяет доступность сайта.
 #
-# Требования: scripts/.deploy_key (Яндекс-VM), root-доступ к Timeweb (пароль
-# хранится в scripts/.timeweb_pass или вводится вручную).
+# Требования: SSH-доступ root к web-серверу; пароль — в scripts/.timeweb_pass
+# или будет запрошен интерактивно.
 set -euo pipefail
 
-API_URL="https://reollity.ru"
-JUMP_USER="ubuntu"
-JUMP_HOST="93.77.185.6"
-JUMP_KEY="scripts/.deploy_key"
+API_URL="https://api.reollity.ru"
 TW_HOST="93.183.80.97"
 TW_USER="root"
 REMOTE_DIR="/var/www/reollity"
@@ -33,22 +30,28 @@ else
   [ -n "$TW_PASS" ] || { echo "Пароль не введён — отмена."; exit 1; }
 fi
 
-SSH_JUMP="ssh -i $JUMP_KEY -o BatchMode=yes -o ConnectTimeout=25 $JUMP_USER@$JUMP_HOST"
+SSH_WEB="ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 $TW_USER@$TW_HOST"
+
+if ! command -v sshpass >/dev/null 2>&1; then
+  echo "Нужен sshpass для передачи пароля. Установите его или настройте SSH-ключ для $TW_USER@$TW_HOST."
+  exit 1
+fi
+
+SSH_PASS=(sshpass -p "$TW_PASS")
 
 echo "🚀 [1/3] Сборка Flutter web (API_BASE_URL=$API_URL)..."
 flutter build web --release --no-wasm-dry-run --dart-define=API_BASE_URL="$API_URL"
 
-echo "📦 [2/3] Заливка через jump host ($JUMP_HOST) → $TW_HOST:/var/www/reollity..."
-$SSH_JUMP "mkdir -p /tmp/webapp"
-rsync -az --delete -e "ssh -i $JUMP_KEY -o BatchMode=yes" build/web/ "$JUMP_USER@$JUMP_HOST:/tmp/webapp/"
-$SSH_JUMP "sshpass -p '$TW_PASS' rsync -az --delete -e 'ssh -o StrictHostKeyChecking=accept-new' /tmp/webapp/ $TW_USER@$TW_HOST:$REMOTE_DIR/"
+echo "📦 [2/3] Загрузка на $TW_HOST:$REMOTE_DIR..."
+"${SSH_PASS[@]}" $SSH_WEB "mkdir -p '$REMOTE_DIR'"
+"${SSH_PASS[@]}" rsync -az --delete -e "ssh -o StrictHostKeyChecking=accept-new" build/web/ "$TW_USER@$TW_HOST:$REMOTE_DIR/"
 
-echo "✅ [3/3] Проверка сайта..."
-HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$API_URL/")
+echo "✅ [3/3] Проверка сайта и API..."
+HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://reollity.ru/")
 API=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/json' -d '{}' "$API_URL/auth/login")
 if [ "$HTTP" = "200" ] && [ "$API" = "400" ]; then
-  echo "✅ Деплой успешен: $API_URL (сайт 200, API отвечает)."
+  echo "✅ Деплой успешен: сайт 200, API отвечает."
 else
-  echo "⚠️  Сайт: $HTTP, API: $API — проверь вручную $API_URL"
+  echo "⚠️  Сайт: $HTTP, API: $API — проверь вручную."
   exit 1
 fi

@@ -50225,7 +50225,7 @@ q=s[1]
 s=s[2]
 p=b[2]
 return A.c([o*m+l*k+j*n,o*r+l*q+j*s,o*p[0]+l*p[1]+j*p[2]],t.n)},
-de(){var s,r="https://api.reollity.ru",q=B.c.T(r)
+de(){var s,r="https://api.reollity.ru",q=B.c.T("https://reollity.ru/api")
 if(q.length===0)return r
 s=A.cav(q)
 return s==null?r:s},
@@ -50876,7 +50876,7 @@ $S:3}
 A.bHs.prototype={
 $1(a){var s=A.h7().b
 s=s==null?null:s.canvasKitBaseUrl
-return(s==null?"canvaskit/":s)+a},
+return(s==null?"https://www.gstatic.com/flutter-canvaskit/1527ae0ec577a4ef50e65f6fefcfc1326707d9bf/":s)+a},
 $S:48}
 A.aby.prototype={
 gv(a){var s=this.a

@@ -35,17 +35,9 @@ npm start
 
 ## ⚠️ ЕДИНСТВЕННОЕ:
 
-**DATABASE_URL** - обычно настраивается на Render.com через переменные окружения.  
-Для локальной разработки добавьте его в `.env` если нужно.
+**DATABASE_URL** — задаётся в production `.env` на backend-сервере. Для локальной разработки добавьте строку подключения в `my_serve_chat_test/.env`.
 
----
-
----
-
-## 🌐 Чтобы сервер на Render не засыпал (free tier)
-
-Включён **GitHub Actions** — раз в 5 минут пингуется `https://my-server-chat.onrender.com/healthz?warm=1`.  
-Если ваш сервис на другом адресе: **GitHub → репозиторий → Settings → Secrets and variables → Actions** → добавьте переменную **`RENDER_SERVICE_URL`** (например `https://ваш-сервис.onrender.com`).
+Production-схема: `reollity.ru` (Flutter Web), `api.reollity.ru` (Node.js API), Timeweb PostgreSQL. Актуальные инструкции подключения хранятся локально в `recovered-backup-20261013/server-config/`.
 
 ---
 
