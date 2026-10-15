@@ -1,14 +1,14 @@
-# Deploy the Node.js backend to the active Reollity recovery server.
+# Deploy the Node.js backend to 129.101.115.158 (backend server).
 # The server runs the application exclusively through systemd:
 # reollity-chat.service. Do not add a PM2 process for this backend.
-name: Deploy backend to reollity.ru
+name: Deploy backend to 129.101.115.158
 
 on:
   push:
     branches: [main]
     paths:
       - "my_serve_chat_test/**"
-      - ".github/workflows/deploy-yandex-vm.yml"
+      - ".github/workflows/deploy-backend-129.yml"
   workflow_dispatch: {}
 
 concurrency:

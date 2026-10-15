@@ -1,4 +1,4 @@
-name: Deploy web to reollity.ru
+name: Deploy web to 93.183.80.97
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "pubspec.yaml"
       - "pubspec.lock"
       - "assets/**"
-      - ".github/workflows/deploy-web-reollity.yml"
+      - ".github/workflows/deploy-web-93.yml"
   workflow_dispatch:
 
 concurrency:
@@ -50,27 +50,23 @@ jobs:
           RECOVERY_KEY: ${{ secrets.REOLLITY_RECOVERY_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$RECOVERY_KEY" | tr -d '\r' > ~/.ssh/recovery_key
-          chmod 600 ~/.ssh/recovery_key
-          ssh-keygen -y -f ~/.ssh/recovery_key > /dev/null || { echo "::error::REOLLITY_RECOVERY_KEY повреждён"; exit 1; }
-          ssh-keyscan -H 129.101.115.158 >> ~/.ssh/known_hosts
+          printf '%s\n' "$RECOVERY_KEY" | tr -d '\r' > ~/.ssh/web_key
+          chmod 600 ~/.ssh/web_key
+          ssh-keygen -y -f ~/.ssh/web_key > /dev/null || { echo "::error::REOLLITY_RECOVERY_KEY повреждён"; exit 1; }
+          ssh-keyscan -H 93.183.80.97 >> ~/.ssh/known_hosts
 
-      - name: Deploy to recovery server
+      - name: Deploy to web server
         run: |
-          ssh -i ~/.ssh/recovery_key -o BatchMode=yes root@129.101.115.158 'mkdir -p /var/www/reollity'
-          rsync -az --delete -e "ssh -i ~/.ssh/recovery_key -o BatchMode=yes" \
-            build/web/ root@129.101.115.158:/var/www/reollity/
+          ssh -i ~/.ssh/web_key -o BatchMode=yes root@93.183.80.97 'mkdir -p /var/www/reollity'
+          rsync -az --delete -e "ssh -i ~/.ssh/web_key -o BatchMode=yes" \
+            build/web/ root@93.183.80.97:/var/www/reollity/
 
-      - name: Smoke check on recovery server
+      - name: Smoke check on web server
         run: |
-          # The recovery server is the deployment target. Verify it through the
-          # authenticated SSH connection instead of depending on runner network
-          # reachability to the public Internet.
-          ssh -i ~/.ssh/recovery_key -o BatchMode=yes root@129.101.115.158 '
+          ssh -i ~/.ssh/web_key -o BatchMode=yes root@93.183.80.97 '
             set -e
             test -s /var/www/reollity/index.html
             test -s /var/www/reollity/canvaskit/canvaskit.wasm
-            test "$(curl -fsS -o /dev/null -w "%{http_code}" https://reollity.ru/)" = "200"
-            test "$(curl -fsS -o /dev/null -w "%{http_code}" https://api.reollity.ru/healthz)" = "200"
+            test "$(curl -fsS -o /dev/null -w "%{http_code}" http://localhost/)" = "200"
           '
-          echo "✅ web и API отвечают с recovery-сервера"
+          echo "✅ web развёрнут на 93.183.80.97"
