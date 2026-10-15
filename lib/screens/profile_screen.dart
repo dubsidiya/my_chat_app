@@ -652,6 +652,12 @@ class _ThemeOptionCard extends StatelessWidget {
           Color(0xFF22D3EE),
           Color(0xFF67E8F9),
         ];
+      case AppThemeVariant.neonSamurai:
+        return const [
+          Color(0xFF0A0D12),
+          Color(0xFF8B5CF6),
+          Color(0xFFA78BFA),
+        ];
     }
   }
 
@@ -663,6 +669,8 @@ class _ThemeOptionCard extends StatelessWidget {
         return const Color(0xFF7B4FCB);
       case AppThemeVariant.oceanPulse:
         return const Color(0xFF22D3EE);
+      case AppThemeVariant.neonSamurai:
+        return const Color(0xFF8B5CF6);
     }
   }
 
@@ -674,6 +682,8 @@ class _ThemeOptionCard extends StatelessWidget {
         return Colors.white;
       case AppThemeVariant.oceanPulse:
         return const Color(0xFF04121C);
+      case AppThemeVariant.neonSamurai:
+        return Colors.white;
     }
   }
 
