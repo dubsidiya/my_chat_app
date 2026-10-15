@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Samurai — Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #0A0D12;
+            color: #D4D8DD;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: linear-gradient(180deg, #0F1419 0%, #0A0D12 100%);
+            border-radius: 40px;
+            box-shadow: 0 0 0 1px #1A1F26, 0 0 40px rgba(139, 92, 246, 0.15), 0 40px 80px -20px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .notch {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 150px; height: 30px; background: #0A0D12;
+            border-radius: 0 0 20px 20px; z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; padding-top: 10px; font-size: 13px; font-weight: 400; color: #6B7280;
+        }
+        
+        .header {
+            padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+        }
+        
+        .back-btn { font-size: 20px; cursor: pointer; color: #8B5CF6; font-weight: 400; }
+        .header-title { font-size: 15px; font-weight: 500; color: #E5E7EB; }
+        .edit-btn { font-size: 14px; color: #8B5CF6; cursor: pointer; font-weight: 400; }
+        
+        .profile-hero {
+            padding: 40px 24px 36px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+            position: relative;
+        }
+        
+        .profile-hero::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 24px;
+            right: 24px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.5), transparent);
+        }
+        
+        .profile-avatar {
+            width: 88px;
+            height: 88px;
+            border-radius: 44px;
+            background: linear-gradient(135deg, #1F2937 0%, #111827 100%);
+            border: 2px solid rgba(139, 92, 246, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            font-weight: 500;
+            color: #A78BFA;
+            margin-bottom: 18px;
+            position: relative;
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.3);
+        }
+        
+        .profile-avatar::after {
+            content: '';
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 12px;
+            height: 12px;
+            background: #8B5CF6;
+            border: 2px solid #0F1419;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.8);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .profile-name {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #E5E7EB;
+        }
+        
+        .profile-username { font-size: 14px; color: #8B5CF6; margin-bottom: 20px; font-weight: 400; }
+        
+        .profile-stats {
+            display: flex;
+            gap: 36px;
+        }
+        
+        .stat-item { text-align: center; }
+        .stat-value { font-size: 18px; font-weight: 600; color: #E5E7EB; margin-bottom: 3px; }
+        .stat-label { font-size: 12px; color: #6B7280; font-weight: 400; }
+        
+        .content-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        
+        .section {
+            margin-bottom: 28px;
+        }
+        
+        .section-title {
+            font-size: 11px;
+            font-weight: 500;
+            color: #8B5CF6;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 14px;
+            padding-left: 2px;
+        }
+        
+        .card {
+            background: rgba(31, 41, 55, 0.3);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .card-item {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .card-item:last-child { border-bottom: none; }
+        .card-item:hover { background: rgba(139, 92, 246, 0.05); }
+        
+        .card-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 17px;
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: #A78BFA;
+        }
+        
+        .card-content { flex: 1; }
+        .card-title { font-size: 15px; font-weight: 500; color: #E5E7EB; margin-bottom: 2px; }
+        .card-subtitle { font-size: 13px; color: #6B7280; font-weight: 400; }
+        .card-arrow { color: #8B5CF6; font-size: 16px; font-weight: 400; }
+        
+        .toggle {
+            width: 42px;
+            height: 22px;
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            border-radius: 11px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0);
+        }
+        
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 16px;
+            height: 16px;
+            background: #8B5CF6;
+            border-radius: 50%;
+            transition: transform 0.2s;
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
+        }
+        
+        .toggle:hover {
+            box-shadow: 0 0 16px rgba(139, 92, 246, 0.3);
+        }
+        
+        .toggle.off { background: rgba(139, 143, 153, 0.05); border-color: rgba(139, 143, 153, 0.1); box-shadow: none; }
+        .toggle.off::after { transform: translateX(-20px); background: #4B5563; box-shadow: none; }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.5); }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        <div class="status-bar"><div class="time">9:41</div><div class="icons"><span>⚡︎</span><span>📶</span><span>🔋</span></div></div>
+        <div class="header">
+            <div class="back-btn">←</div>
+            <div class="header-title">Профиль</div>
+            <div class="edit-btn">Изменить</div>
+        </div>
+        <div class="profile-hero">
+            <div class="profile-avatar">ВХ</div>
+            <div class="profile-name">Влад Харин</div>
+            <div class="profile-username">@vladkharin</div>
+            <div class="profile-stats">
+                <div class="stat-item"><div class="stat-value">156</div><div class="stat-label">Чаты</div></div>
+                <div class="stat-item"><div class="stat-value">2.4k</div><div class="stat-label">Сообщения</div></div>
+                <div class="stat-item"><div class="stat-value">45</div><div class="stat-label">Медиа</div></div>
+            </div>
+        </div>
+        <div class="content-container">
+            <div class="section">
+                <div class="section-title">Информация</div>
+                <div class="card">
+                    <div class="card-item">
+                        <div class="card-icon">📱</div>
+                        <div class="card-content">
+                            <div class="card-title">Телефон</div>
+                            <div class="card-subtitle">+7 (XXX) XXX-XX-XX</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon">✉</div>
+                        <div class="card-content">
+                            <div class="card-title">Email</div>
+                            <div class="card-subtitle">vlad@example.com</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon">@</div>
+                        <div class="card-content">
+                            <div class="card-title">Имя пользователя</div>
+                            <div class="card-subtitle">@vladkharin</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Настройки</div>
+                <div class="card">
+                    <div class="card-item">
+                        <div class="card-icon">•</div>
+                        <div class="card-content">
+                            <div class="card-title">Шифрование</div>
+                            <div class="card-subtitle">Включено</div>
+                        </div>
+                        <div class="toggle"></div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon">◦</div>
+                        <div class="card-content">
+                            <div class="card-title">Уведомления</div>
+                            <div class="card-subtitle">Все чаты</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon">◐</div>
+                        <div class="card-content">
+                            <div class="card-title">Тема</div>
+                            <div class="card-subtitle">Темная</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon">◯</div>
+                        <div class="card-content">
+                            <div class="card-title">Конфиденциальность</div>
+                            <div class="card-subtitle">Кто видит профиль</div>
+                        </div>
+                        <div class="card-arrow">→</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

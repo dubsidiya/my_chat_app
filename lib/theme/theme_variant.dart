@@ -3,10 +3,12 @@
 /// [ultravioletDark] — тёмная готическая ультрафиолетовая палитра (по умолчанию).
 /// [auroraLight] — светлая премиальная палитра «Северное сияние».
 /// [oceanPulse] — тёмная океаническая: navy + бирюза, с мягким «дыханием» UI.
+/// [neonSamurai] — зимняя ночь с фиолетовым неоном: холодные серые + фиолетовый.
 enum AppThemeVariant {
   ultravioletDark,
   auroraLight,
   oceanPulse,
+  neonSamurai,
 }
 
 extension AppThemeVariantX on AppThemeVariant {
@@ -19,6 +21,8 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'aurora_light';
       case AppThemeVariant.oceanPulse:
         return 'ocean_pulse';
+      case AppThemeVariant.neonSamurai:
+        return 'neon_samurai';
     }
   }
 
@@ -31,6 +35,8 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'Аврора (светлая)';
       case AppThemeVariant.oceanPulse:
         return 'Океанский пульс';
+      case AppThemeVariant.neonSamurai:
+        return 'Neon Samurai';
     }
   }
 
@@ -43,6 +49,8 @@ extension AppThemeVariantX on AppThemeVariant {
         return 'Мягкие сиреневые акценты на белом';
       case AppThemeVariant.oceanPulse:
         return 'Navy и бирюза, живое дыхание интерфейса';
+      case AppThemeVariant.neonSamurai:
+        return 'Зимняя ночь с фиолетовым неоном';
     }
   }
 

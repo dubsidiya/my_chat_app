@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Chat — List</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0A0506;
+            color: #F8F5F1;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: linear-gradient(165deg, #1A0B0F 0%, #0F0507 50%, #1A0811 100%);
+            border-radius: 40px;
+            box-shadow: 
+                0 0 0 1px #4A1625,
+                0 0 60px rgba(139, 26, 54, 0.4),
+                0 80px 120px -30px rgba(0, 0, 0, 0.9);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #0A0506;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            padding-top: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #E8D5C4;
+        }
+        
+        .header {
+            padding: 24px 20px 20px;
+            background: linear-gradient(180deg, rgba(139, 26, 54, 0.15) 0%, transparent 100%);
+            border-bottom: 1px solid rgba(139, 26, 54, 0.3);
+            position: relative;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+            opacity: 0.3;
+        }
+        
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 36px;
+            font-weight: 900;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #F8E5D5 0%, #D4AF37 50%, #C9A875 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .new-chat-btn {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 
+                0 0 20px rgba(199, 44, 77, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+        
+        .new-chat-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 
+                0 0 30px rgba(199, 44, 77, 0.7),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        
+        .search-bar {
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.2) 0%, rgba(74, 22, 37, 0.3) 100%);
+            border-radius: 14px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        .search-icon {
+            color: #D4AF37;
+            font-size: 18px;
+        }
+        
+        input {
+            background: none;
+            border: none;
+            color: #F8E5D5;
+            font-size: 15px;
+            flex: 1;
+            outline: none;
+        }
+        
+        input::placeholder {
+            color: #8B6F5C;
+        }
+        
+        .chat-list {
+            height: calc(844px - 44px - 140px);
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+        
+        .chat-item {
+            padding: 18px 20px;
+            margin: 0 12px 8px;
+            border-radius: 16px;
+            display: flex;
+            gap: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.1) 0%, rgba(74, 22, 37, 0.15) 100%);
+            border: 1px solid rgba(139, 26, 54, 0.3);
+        }
+        
+        .chat-item:hover {
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.25) 0%, rgba(74, 22, 37, 0.3) 100%);
+            border-color: rgba(212, 175, 55, 0.4);
+            transform: translateX(4px);
+        }
+        
+        .chat-item.unread {
+            border-left: 3px solid #D4AF37;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.15);
+        }
+        
+        .avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 700;
+            flex-shrink: 0;
+            position: relative;
+            border: 2px solid rgba(212, 175, 55, 0.3);
+            box-shadow: 0 8px 16px rgba(139, 26, 54, 0.4);
+        }
+        
+        .avatar.online::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 16px;
+            height: 16px;
+            background: #D4AF37;
+            border: 2px solid #0F0507;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+        }
+        
+        .chat-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 6px;
+        }
+        
+        .chat-name {
+            font-size: 17px;
+            font-weight: 600;
+            color: #F8E5D5;
+            letter-spacing: 0.3px;
+        }
+        
+        .chat-time {
+            font-size: 12px;
+            color: #C9A875;
+            font-weight: 500;
+        }
+        
+        .chat-preview {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chat-text {
+            font-size: 14px;
+            color: #B89968;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+        }
+        
+        .unread-badge {
+            background: linear-gradient(135deg, #D4AF37 0%, #C9A875 100%);
+            color: #0A0506;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+            min-width: 22px;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.6);
+        }
+        
+        .encrypted-icon {
+            font-size: 13px;
+            filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.5));
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #8B1A36 0%, #6B1228 100%);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        
+        <div class="status-bar">
+            <div class="time">9:41</div>
+            <div class="icons">
+                <span>⚡︎</span>
+                <span>📶</span>
+                <span>🔋</span>
+            </div>
+        </div>
+        
+        <div class="header">
+            <div class="header-top">
+                <h1>Чаты</h1>
+                <div class="new-chat-btn">+</div>
+            </div>
+            <div class="search-bar">
+                <span class="search-icon">🔍</span>
+                <input type="text" placeholder="Поиск чатов...">
+            </div>
+        </div>
+        
+        <div class="chat-list">
+            <div class="chat-item unread">
+                <div class="avatar online">АК</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Анна Кузнецова</span>
+                        <span class="chat-time">Сейчас</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Увидимся завтра вечером 💋</span>
+                        <span class="unread-badge">3</span>
+                        <span class="encrypted-icon">🔐</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar" style="background: linear-gradient(135deg, #6B1228 0%, #8B1A36 100%)">ДК</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Команда дизайнеров</span>
+                        <span class="chat-time">14:30</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Михаил: Премиум-макеты одобрены</span>
+                        <span class="encrypted-icon">🔐</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item unread">
+                <div class="avatar online" style="background: linear-gradient(135deg, #A03855 0%, #C72C4D 100%)">ИП</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Игорь Петров</span>
+                        <span class="chat-time">13:15</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Когда запускаем VIP-версию?</span>
+                        <span class="unread-badge">1</span>
+                        <span class="encrypted-icon">🔐</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar" style="background: linear-gradient(135deg, #7D1935 0%, #A03855 100%)">МС</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Мария Смирнова</span>
+                        <span class="chat-time">Вчера</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Спасибо за эксклюзив ✨</span>
+                        <span class="encrypted-icon">🔐</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar online" style="background: linear-gradient(135deg, #C72C4D 0%, #D4AF37 100%)">РП</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Рабочие проекты</span>
+                        <span class="chat-time">Вчера</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Ты: Luxury концепт готов</span>
+                        <span class="encrypted-icon">🔐</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

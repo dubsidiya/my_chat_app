@@ -191,6 +191,47 @@ const _AppPalette _paletteOceanPulse = _AppPalette(
   ),
 );
 
+// ============================================================================
+// Палитра 4: «Neon Samurai» — зимняя ночь с фиолетовым неоном.
+// Холодные серо-синие тона (#0A0D12, #0F1419) + фиолетовый неон (#8B5CF6).
+// Минималистичный, сдержанный, с точечными неоновыми акцентами.
+// ============================================================================
+const _AppPalette _paletteNeonSamurai = _AppPalette(
+  brightness: Brightness.dark,
+  // Тёмно-синий почти чёрный — ночное небо перед снегом
+  backgroundDark: Color(0xFF0A0D12),
+  surfaceDark: Color(0xFF0F1419),
+  cardDark: Color(0xFF1F2937), // rgba(31, 41, 55, 0.3)
+  cardElevatedDark: Color(0xFF1F2937),
+  // Тонкие границы — деликатность, точность
+  borderDark: Color(0xFF1A1F26), // rgba(139, 143, 153, 0.1)
+  // Фиолетовый неон — единственный тёплый акцент
+  primary: Color(0xFF8B5CF6),
+  primaryGlow: Color(0xFFA78BFA),
+  accent: Color(0xFFA78BFA),
+  primaryDeep: Color(0xFF7C3AED),
+  // Фиолетовый как кибер-акцент
+  cyberAccent: Color(0xFF8B5CF6),
+  // Статус онлайн — фиолетовая точка с glow
+  onlineColor: Color(0xFF8B5CF6),
+  // Холодные серые — металл меча, лёд
+  onSurfaceDark: Color(0xFFE5E7EB),
+  onSurfaceVariantDark: Color(0xFF9CA3AF),
+  errorColor: Color(0xFFDC2626),
+  successColor: Color(0xFF10B981),
+  warningColor: Color(0xFFF59E0B),
+  homeBodyGradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: [0.0, 0.5, 1.0],
+    colors: [
+      Color(0xFF0F1419),
+      Color(0xFF0A0D12),
+      Color(0xFF0F1419),
+    ],
+  ),
+);
+
 /// Глобальные цвета приложения.
 ///
 /// API намеренно сохранён неизменным после введения нескольких тем:
@@ -221,6 +262,8 @@ class AppColors {
         return _paletteAuroraLight;
       case AppThemeVariant.oceanPulse:
         return _paletteOceanPulse;
+      case AppThemeVariant.neonSamurai:
+        return _paletteNeonSamurai;
     }
   }
 

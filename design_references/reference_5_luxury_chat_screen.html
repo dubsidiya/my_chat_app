@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Chat — Conversation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0A0506;
+            color: #F8F5F1;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: linear-gradient(165deg, #1A0B0F 0%, #0F0507 50%, #1A0811 100%);
+            border-radius: 40px;
+            box-shadow: 0 0 0 1px #4A1625, 0 0 60px rgba(139, 26, 54, 0.4), 0 80px 120px -30px rgba(0, 0, 0, 0.9);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #0A0506;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            padding-top: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #E8D5C4;
+        }
+        
+        .chat-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(139, 26, 54, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.15) 0%, transparent 100%);
+        }
+        
+        .back-btn { font-size: 24px; cursor: pointer; color: #D4AF37; }
+        
+        .header-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 13px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            position: relative;
+            border: 2px solid rgba(212, 175, 55, 0.3);
+            box-shadow: 0 4px 12px rgba(139, 26, 54, 0.4);
+        }
+        
+        .header-avatar.online::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            right: -3px;
+            width: 14px;
+            height: 14px;
+            background: #D4AF37;
+            border: 2px solid #0F0507;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+        }
+        
+        .header-info { flex: 1; }
+        .header-name { font-size: 17px; font-weight: 600; color: #F8E5D5; margin-bottom: 2px; }
+        .header-status { font-size: 13px; color: #D4AF37; display: flex; align-items: center; gap: 6px; }
+        
+        .encrypted-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: #D4AF37;
+            background: rgba(212, 175, 55, 0.15);
+            padding: 2px 7px;
+            border-radius: 6px;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+        
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 18px;
+            background: #0A0506;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        
+        .message {
+            display: flex;
+            gap: 10px;
+            max-width: 78%;
+            animation: slideIn 0.4s ease;
+        }
+        
+        @keyframes slideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .message.sent { align-self: flex-end; flex-direction: row-reverse; }
+        
+        .message-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 11px;
+            background: linear-gradient(135deg, #6B1228 0%, #8B1A36 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 700;
+            flex-shrink: 0;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+        }
+        
+        .message.sent .message-avatar {
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            border-color: rgba(212, 175, 55, 0.4);
+        }
+        
+        .message-bubble {
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.25) 0%, rgba(74, 22, 37, 0.3) 100%);
+            padding: 13px 16px;
+            border-radius: 16px;
+            border-bottom-left-radius: 4px;
+            position: relative;
+            border: 1px solid rgba(139, 26, 54, 0.4);
+        }
+        
+        .message.sent .message-bubble {
+            background: linear-gradient(135deg, #8B1A36 0%, #6B1228 100%);
+            border-radius: 16px;
+            border-bottom-right-radius: 4px;
+            border-color: rgba(212, 175, 55, 0.4);
+            box-shadow: 0 0 20px rgba(139, 26, 54, 0.3);
+        }
+        
+        .message-text { font-size: 15px; line-height: 1.45; margin-bottom: 5px; color: #F8E5D5; }
+        .message-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #B89968; }
+        .message.sent .message-meta { color: #E8D5C4; opacity: 0.7; justify-content: flex-end; }
+        .message-status { font-size: 13px; color: #D4AF37; }
+        
+        .input-container {
+            padding: 14px 18px;
+            border-top: 1px solid rgba(139, 26, 54, 0.3);
+            background: linear-gradient(180deg, rgba(139, 26, 54, 0.1) 0%, transparent 100%);
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .attach-btn {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.3) 0%, rgba(74, 22, 37, 0.4) 100%);
+            border-radius: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            flex-shrink: 0;
+            transition: all 0.3s;
+        }
+        
+        .attach-btn:hover { background: linear-gradient(135deg, rgba(139, 26, 54, 0.5) 0%, rgba(74, 22, 37, 0.6) 100%); }
+        
+        .input-wrapper {
+            flex: 1;
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.2) 0%, rgba(74, 22, 37, 0.3) 100%);
+            border-radius: 13px;
+            padding: 11px 15px;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        .message-input {
+            background: none;
+            border: none;
+            color: #F8E5D5;
+            font-size: 15px;
+            width: 100%;
+            outline: none;
+            resize: none;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .message-input::placeholder { color: #8B6F5C; }
+        
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            border-radius: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(199, 44, 77, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+            transition: all 0.3s;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+        
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px rgba(199, 44, 77, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8B1A36 0%, #6B1228 100%); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        <div class="status-bar"><div class="time">9:41</div><div class="icons"><span>⚡︎</span><span>📶</span><span>🔋</span></div></div>
+        <div class="chat-header">
+            <div class="back-btn">←</div>
+            <div class="header-avatar online">АК</div>
+            <div class="header-info">
+                <div class="header-name">Анна Кузнецова</div>
+                <div class="header-status">Онлайн <span class="encrypted-badge">🔐 VIP</span></div>
+            </div>
+            <div style="font-size: 20px; color: #D4AF37; cursor: pointer;">⋮</div>
+        </div>
+        <div class="messages-container">
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Привет! Смотрела новую коллекцию? Невероятная роскошь 💎</div>
+                    <div class="message-meta"><span>14:32</span></div>
+                </div>
+            </div>
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Да, эксклюзив просто огонь! Беру сразу три ✨</div>
+                    <div class="message-meta"><span>14:35</span><span class="message-status">✓✓</span></div>
+                </div>
+            </div>
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">У тебя отличный вкус 🍾</div>
+                    <div class="message-meta"><span>14:36</span></div>
+                </div>
+            </div>
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Спасибо! Жду VIP-презентацию в пятницу 💋</div>
+                    <div class="message-meta"><span>14:38</span><span class="message-status">✓✓</span></div>
+                </div>
+            </div>
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Увидимся завтра вечером 💋</div>
+                    <div class="message-meta"><span>Сейчас</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="input-container">
+            <div class="attach-btn">📎</div>
+            <div class="input-wrapper">
+                <textarea class="message-input" placeholder="Сообщение..." rows="1"></textarea>
+            </div>
+            <div class="send-btn">➤</div>
+        </div>
+    </div>
+</body>
+</html>

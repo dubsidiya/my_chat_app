@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aristocrat Chat — Conversation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #0D0809;
+            color: #E8E3DC;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: #131010;
+            border-radius: 40px;
+            box-shadow: 0 0 0 1px #2A1F1F, 0 40px 80px -20px rgba(0, 0, 0, 0.7);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .notch {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 150px; height: 30px; background: #0D0809;
+            border-radius: 0 0 20px 20px; z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; padding-top: 10px; font-size: 13px; font-weight: 400; color: #A89F94;
+        }
+        
+        .chat-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #221A1A;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        
+        .back-btn { font-size: 22px; cursor: pointer; color: #8B1A36; font-weight: 300; }
+        
+        .header-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #2A1F1F 0%, #1A1515 100%);
+            border: 1px solid #3A2F2F;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 16px;
+            font-weight: 400;
+            color: #8B1A36;
+            position: relative;
+        }
+        
+        .header-avatar.online::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            right: -1px;
+            width: 9px;
+            height: 9px;
+            background: #8B1A36;
+            border: 2px solid #131010;
+            border-radius: 50%;
+        }
+        
+        .header-info { flex: 1; }
+        .header-name { font-size: 16px; font-weight: 400; color: #E8E3DC; margin-bottom: 2px; }
+        .header-status { font-size: 12px; color: #6B5B52; font-weight: 300; }
+        
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            background: #0D0809;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .message {
+            display: flex;
+            gap: 12px;
+            max-width: 75%;
+        }
+        
+        .message.sent { align-self: flex-end; flex-direction: row-reverse; }
+        
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #2A1F1F 0%, #1A1515 100%);
+            border: 1px solid #3A2F2F;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 13px;
+            font-weight: 400;
+            color: #8B1A36;
+            flex-shrink: 0;
+        }
+        
+        .message-bubble {
+            background: transparent;
+            border: 1px solid #221A1A;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border-bottom-left-radius: 2px;
+        }
+        
+        .message.sent .message-bubble {
+            background: rgba(139, 26, 54, 0.08);
+            border: 1px solid rgba(139, 26, 54, 0.2);
+            border-radius: 12px;
+            border-bottom-right-radius: 2px;
+        }
+        
+        .message-text { font-size: 15px; font-weight: 300; line-height: 1.5; margin-bottom: 6px; color: #E8E3DC; }
+        .message-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #6B5B52; font-weight: 300; }
+        .message.sent .message-meta { justify-content: flex-end; }
+        
+        .input-container {
+            padding: 16px 24px;
+            border-top: 1px solid #221A1A;
+            background: #131010;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        
+        .attach-btn {
+            width: 40px;
+            height: 40px;
+            background: transparent;
+            border: 1px solid #221A1A;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #6B5B52;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        
+        .attach-btn:hover { border-color: #8B1A36; color: #8B1A36; }
+        
+        .input-wrapper {
+            flex: 1;
+            background: transparent;
+            border: 1px solid #221A1A;
+            border-radius: 10px;
+            padding: 10px 14px;
+            max-height: 100px;
+            overflow-y: auto;
+            transition: border-color 0.3s;
+        }
+        
+        .input-wrapper:focus-within { border-color: #8B1A36; }
+        
+        .message-input {
+            background: none;
+            border: none;
+            color: #E8E3DC;
+            font-size: 15px;
+            font-weight: 300;
+            width: 100%;
+            outline: none;
+            resize: none;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .message-input::placeholder { color: #6B5B52; }
+        
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            background: transparent;
+            border: 1px solid #8B1A36;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #8B1A36;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.3s;
+        }
+        
+        .send-btn:hover { background: rgba(139, 26, 54, 0.05); }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2A1F1F; border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        <div class="status-bar"><div class="time">9:41</div><div class="icons"><span>⚡︎</span><span>📶</span><span>🔋</span></div></div>
+        <div class="chat-header">
+            <div class="back-btn">←</div>
+            <div class="header-avatar online">АК</div>
+            <div class="header-info">
+                <div class="header-name">Анна Кузнецова</div>
+                <div class="header-status">В сети</div>
+            </div>
+            <div style="font-size: 18px; color: #6B5B52; cursor: pointer;">⋮</div>
+        </div>
+        <div class="messages-container">
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Привет! Как продвигается работа над проектом?</div>
+                    <div class="message-meta"><span>14:32</span></div>
+                </div>
+            </div>
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Привет! Всё отлично, почти закончил дизайн</div>
+                    <div class="message-meta"><span>14:35</span></div>
+                </div>
+            </div>
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Круто! Можешь показать промежуточные результаты?</div>
+                    <div class="message-meta"><span>14:36</span></div>
+                </div>
+            </div>
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Конечно, скину сегодня вечером. Думаю, тебе понравится интерфейс</div>
+                    <div class="message-meta"><span>14:38</span></div>
+                </div>
+            </div>
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Увидимся завтра вечером</div>
+                    <div class="message-meta"><span>Сейчас</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="input-container">
+            <div class="attach-btn">+</div>
+            <div class="input-wrapper">
+                <textarea class="message-input" placeholder="Сообщение" rows="1"></textarea>
+            </div>
+            <div class="send-btn">→</div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aristocrat Chat — List</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #0D0809;
+            color: #E8E3DC;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: #131010;
+            border-radius: 40px;
+            box-shadow: 
+                0 0 0 1px #2A1F1F,
+                0 40px 80px -20px rgba(0, 0, 0, 0.7);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #0D0809;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            padding-top: 10px;
+            font-size: 13px;
+            font-weight: 400;
+            color: #A89F94;
+        }
+        
+        .header {
+            padding: 32px 24px 24px;
+            border-bottom: 1px solid #221A1A;
+        }
+        
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        
+        h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 38px;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+            color: #E8E3DC;
+        }
+        
+        .new-chat-btn {
+            width: 40px;
+            height: 40px;
+            background: transparent;
+            border: 1px solid #8B1A36;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #8B1A36;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .new-chat-btn:hover {
+            background: rgba(139, 26, 54, 0.05);
+            border-color: #A8233F;
+        }
+        
+        .search-bar {
+            background: transparent;
+            border: 1px solid #221A1A;
+            border-radius: 10px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: border-color 0.3s;
+        }
+        
+        .search-bar:focus-within {
+            border-color: #8B1A36;
+        }
+        
+        .search-icon {
+            color: #6B5B52;
+            font-size: 16px;
+        }
+        
+        input {
+            background: none;
+            border: none;
+            color: #E8E3DC;
+            font-size: 15px;
+            font-weight: 300;
+            flex: 1;
+            outline: none;
+        }
+        
+        input::placeholder {
+            color: #6B5B52;
+        }
+        
+        .chat-list {
+            height: calc(844px - 44px - 140px);
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        
+        .chat-item {
+            padding: 20px 24px;
+            display: flex;
+            gap: 16px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            border-bottom: 1px solid #1A1515;
+        }
+        
+        .chat-item:hover {
+            background: rgba(139, 26, 54, 0.03);
+        }
+        
+        .chat-item.unread {
+            position: relative;
+        }
+        
+        .chat-item.unread::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 2px;
+            height: 24px;
+            background: #8B1A36;
+        }
+        
+        .avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            background: linear-gradient(135deg, #2A1F1F 0%, #1A1515 100%);
+            border: 1px solid #3A2F2F;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 20px;
+            font-weight: 400;
+            color: #8B1A36;
+            flex-shrink: 0;
+            position: relative;
+        }
+        
+        .avatar.online::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            background: #8B1A36;
+            border: 2px solid #131010;
+            border-radius: 50%;
+        }
+        
+        .chat-content {
+            flex: 1;
+            min-width: 0;
+            padding-top: 2px;
+        }
+        
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 6px;
+        }
+        
+        .chat-name {
+            font-size: 16px;
+            font-weight: 400;
+            color: #E8E3DC;
+            letter-spacing: 0.2px;
+        }
+        
+        .chat-time {
+            font-size: 12px;
+            color: #6B5B52;
+            font-weight: 300;
+        }
+        
+        .chat-preview {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chat-text {
+            font-size: 14px;
+            font-weight: 300;
+            color: #8B7D72;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+        }
+        
+        .unread-badge {
+            background: #8B1A36;
+            color: #E8E3DC;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 2px 7px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+        }
+        
+        .encrypted-icon {
+            font-size: 11px;
+            color: #6B5B52;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #2A1F1F;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        
+        <div class="status-bar">
+            <div class="time">9:41</div>
+            <div class="icons">
+                <span>⚡︎</span>
+                <span>📶</span>
+                <span>🔋</span>
+            </div>
+        </div>
+        
+        <div class="header">
+            <div class="header-top">
+                <h1>Сообщения</h1>
+                <div class="new-chat-btn">+</div>
+            </div>
+            <div class="search-bar">
+                <span class="search-icon">⌕</span>
+                <input type="text" placeholder="Поиск">
+            </div>
+        </div>
+        
+        <div class="chat-list">
+            <div class="chat-item unread">
+                <div class="avatar online">АК</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Анна Кузнецова</span>
+                        <span class="chat-time">Сейчас</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Увидимся завтра вечером</span>
+                        <span class="unread-badge">3</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar">ДК</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Команда дизайнеров</span>
+                        <span class="chat-time">14:30</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Михаил: Макеты готовы к ревью</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item unread">
+                <div class="avatar online">ИП</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Игорь Петров</span>
+                        <span class="chat-time">13:15</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Посмотри код-ревью когда будет время</span>
+                        <span class="unread-badge">1</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar">МС</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Мария Смирнова</span>
+                        <span class="chat-time">Вчера</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Спасибо за помощь</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar online">РП</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Рабочие проекты</span>
+                        <span class="chat-time">Вчера</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Ты: Документация обновлена</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-item">
+                <div class="avatar">АВ</div>
+                <div class="chat-content">
+                    <div class="chat-header">
+                        <span class="chat-name">Алексей Волков</span>
+                        <span class="chat-time">23 окт</span>
+                    </div>
+                    <div class="chat-preview">
+                        <span class="chat-text">Созвонимся на следующей неделе?</span>
+                        <span class="encrypted-icon">•</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

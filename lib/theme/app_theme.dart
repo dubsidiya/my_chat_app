@@ -88,13 +88,13 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
         ),
         titleLarge: baseText.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
-          fontSize: 22,
+          fontSize: 18,  // было 22 → 17.6 ≈ 18
           height: 1.25,
           letterSpacing: -0.15,
         ),
         titleMedium: baseText.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
-          fontSize: 17,
+          fontSize: 14,  // было 17 → 13.6 ≈ 14
           height: 1.3,
         ),
         titleSmall: baseText.titleSmall?.copyWith(
@@ -103,11 +103,11 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
         ),
         bodyLarge: baseText.bodyLarge?.copyWith(
           height: 1.45,
-          fontSize: 16,
+          fontSize: 13,  // было 16 → 12.8 ≈ 13
         ),
         bodyMedium: baseText.bodyMedium?.copyWith(
           height: 1.4,
-          fontSize: 14,
+          fontSize: 11,  // было 14 → 11.2 ≈ 11
         ),
         bodySmall: baseText.bodySmall?.copyWith(
           height: 1.35,
@@ -158,18 +158,18 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
     listTileTheme: ListTileThemeData(
       iconColor: scheme.onSurface.withValues(alpha: 0.85),
       textColor: scheme.onSurface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),  // было 16/10
       dense: false,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),  // было 14
     ),
     chipTheme: ChipThemeData(
       backgroundColor: AppColors.primary.withValues(alpha: isLight ? 0.10 : 0.14),
       selectedColor: AppColors.primary.withValues(alpha: isLight ? 0.22 : 0.32),
       disabledColor: scheme.onSurface.withValues(alpha: 0.08),
       labelStyle:
-          TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
-      secondaryLabelStyle: TextStyle(color: scheme.onSurface),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600, fontSize: 11),  // добавил fontSize
+      secondaryLabelStyle: TextStyle(color: scheme.onSurface, fontSize: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),  // было 12/8
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(999),
         side: BorderSide(color: outline.withValues(alpha: 0.5)),
@@ -179,9 +179,9 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       labelColor: isLight ? AppColors.primaryDeep : AppColors.accent,
       unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.58),
       indicatorColor: AppColors.primaryGlow,
-      labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+      labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),  // было 14
       unselectedLabelStyle:
-          const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          const TextStyle(fontWeight: FontWeight.w500, fontSize: 11),  // было 14
     ),
     appBarTheme: AppBarTheme(
       elevation: 0,
@@ -193,20 +193,20 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       centerTitle: false,
       systemOverlayStyle: overlay,
       titleTextStyle: TextStyle(
-        fontSize: 19,
+        fontSize: 15,  // было 19
         fontWeight: FontWeight.w700,
         color: scheme.onSurface,
         letterSpacing: -0.1,
       ),
       iconTheme:
-          IconThemeData(color: scheme.onSurface.withValues(alpha: 0.92), size: 24),
+          IconThemeData(color: scheme.onSurface.withValues(alpha: 0.92), size: 19),  // было 24
     ),
     cardTheme: CardThemeData(
       elevation: isLight ? 0 : 0,
       color: card,
       shadowColor: cardShadow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),  // было 18
         side: BorderSide(
           color: outline.withValues(alpha: isLight ? 0.55 : 0.28),
           width: 1,
@@ -219,19 +219,19 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       backgroundColor: card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),  // было 22
         side: BorderSide(
           color: AppColors.primaryGlow.withValues(alpha: isLight ? 0.30 : 0.45),
         ),
       ),
       titleTextStyle: TextStyle(
-        fontSize: 19,
+        fontSize: 15,  // было 19
         fontWeight: FontWeight.w700,
         color: scheme.onSurface,
         letterSpacing: -0.15,
       ),
       contentTextStyle: TextStyle(
-        fontSize: 15,
+        fontSize: 12,  // было 15
         height: 1.4,
         color: scheme.onSurface.withValues(alpha: 0.9),
       ),
@@ -241,7 +241,7 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       surfaceTintColor: Colors.transparent,
       modalBackgroundColor: card,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),  // было 22
         side: BorderSide(color: outline.withValues(alpha: 0.6)),
       ),
       showDragHandle: true,
@@ -252,10 +252,10 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       color: card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(13),  // было 16
         side: BorderSide(color: outline.withValues(alpha: 0.5)),
       ),
-      textStyle: TextStyle(color: scheme.onSurface, fontSize: 15),
+      textStyle: TextStyle(color: scheme.onSurface, fontSize: 12),  // было 15
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -263,11 +263,11 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       backgroundColor: AppColors.cardElevatedDark,
       contentTextStyle: TextStyle(
         color: AppColors.onSurfaceDark,
-        fontSize: 14,
+        fontSize: 11,  // было 14
         fontWeight: FontWeight.w500,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(11),  // было 14
         side: BorderSide(color: outline.withValues(alpha: 0.35)),
       ),
       showCloseIcon: true,
@@ -285,19 +285,19 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
       labelStyle:
           TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(11),  // было 14
         borderSide: BorderSide(color: outline.withValues(alpha: 0.32)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(11),  // было 14
         borderSide: BorderSide(color: outline.withValues(alpha: 0.22)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(11),  // было 14
         borderSide: BorderSide(color: AppColors.cyberAccent, width: 1.6),
       ),
       contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          const EdgeInsets.symmetric(horizontal: 13, vertical: 11),  // было 16/14
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
@@ -306,12 +306,12 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
         backgroundColor: AppColors.primary,
         foregroundColor: onPrimaryColor,
         padding:
-            const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 11),  // было 22/14
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(11),  // было 14
         ),
         textStyle: const TextStyle(
-          fontSize: 15,
+          fontSize: 12,  // было 15
           fontWeight: FontWeight.w700,
           letterSpacing: 0.2,
         ),
@@ -320,9 +320,9 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         padding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),  // было 18/14
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),  // было 14
         side: BorderSide(color: outline.withValues(alpha: 0.65)),
         foregroundColor: scheme.onSurface,
       ),
@@ -330,9 +330,9 @@ ThemeData buildAppTheme(AppThemeVariant variant) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            const EdgeInsets.symmetric(horizontal: 13, vertical: 10),  // было 16/12
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),  // было 12
         ),
         foregroundColor: AppColors.primaryGlow,
       ),

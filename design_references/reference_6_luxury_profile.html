@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Chat — Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0A0506;
+            color: #F8F5F1;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: linear-gradient(165deg, #1A0B0F 0%, #0F0507 50%, #1A0811 100%);
+            border-radius: 40px;
+            box-shadow: 0 0 0 1px #4A1625, 0 0 60px rgba(139, 26, 54, 0.4), 0 80px 120px -30px rgba(0, 0, 0, 0.9);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .notch {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 150px; height: 30px; background: #0A0506;
+            border-radius: 0 0 20px 20px; z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; padding-top: 10px; font-size: 13px; font-weight: 600; color: #E8D5C4;
+        }
+        
+        .header {
+            padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
+        }
+        
+        .back-btn { font-size: 24px; cursor: pointer; color: #D4AF37; }
+        .header-title { font-size: 17px; font-weight: 600; color: #F8E5D5; }
+        .edit-btn { font-size: 15px; color: #D4AF37; cursor: pointer; }
+        
+        .profile-hero {
+            padding: 36px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: linear-gradient(180deg, rgba(139, 26, 54, 0.2) 0%, transparent 100%);
+            border-bottom: 1px solid rgba(139, 26, 54, 0.3);
+            position: relative;
+        }
+        
+        .profile-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 20%;
+            right: 20%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+            opacity: 0.4;
+        }
+        
+        .profile-avatar {
+            width: 130px;
+            height: 130px;
+            border-radius: 34px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 52px;
+            font-weight: 700;
+            margin-bottom: 18px;
+            box-shadow: 
+                0 0 40px rgba(139, 26, 54, 0.6),
+                0 20px 40px rgba(0, 0, 0, 0.5),
+                inset 0 2px 0 rgba(255, 255, 255, 0.15);
+            position: relative;
+            border: 3px solid rgba(212, 175, 55, 0.4);
+        }
+        
+        .profile-avatar::after {
+            content: '';
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            width: 28px;
+            height: 28px;
+            background: #D4AF37;
+            border: 3px solid #0F0507;
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.9);
+        }
+        
+        .profile-name {
+            font-family: 'Playfair Display', serif;
+            font-size: 30px;
+            font-weight: 900;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #F8E5D5 0%, #D4AF37 50%, #C9A875 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .profile-username { font-size: 15px; color: #B89968; margin-bottom: 14px; }
+        
+        .vip-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, #D4AF37 0%, #C9A875 100%);
+            color: #0A0506;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 6px 16px;
+            border-radius: 20px;
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.7);
+            margin-bottom: 18px;
+        }
+        
+        .profile-stats {
+            display: flex;
+            gap: 32px;
+            margin-top: 8px;
+        }
+        
+        .stat-item { text-align: center; }
+        .stat-value { font-size: 22px; font-weight: 700; color: #D4AF37; }
+        .stat-label { font-size: 13px; color: #B89968; margin-top: 3px; }
+        
+        .content-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .section {
+            margin-bottom: 24px;
+        }
+        
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #C9A875;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            padding-left: 4px;
+        }
+        
+        .card {
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.15) 0%, rgba(74, 22, 37, 0.2) 100%);
+            border-radius: 16px;
+            border: 1px solid rgba(139, 26, 54, 0.4);
+            overflow: hidden;
+        }
+        
+        .card-item {
+            padding: 17px;
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            border-bottom: 1px solid rgba(139, 26, 54, 0.3);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .card-item:last-child { border-bottom: none; }
+        .card-item:hover { background: rgba(139, 26, 54, 0.2); }
+        
+        .card-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+        }
+        
+        .icon-gold {
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.25) 0%, rgba(201, 168, 117, 0.3) 100%);
+        }
+        
+        .icon-burgundy {
+            background: linear-gradient(135deg, rgba(139, 26, 54, 0.3) 0%, rgba(107, 18, 40, 0.35) 100%);
+        }
+        
+        .card-content { flex: 1; }
+        .card-title { font-size: 16px; font-weight: 600; color: #F8E5D5; margin-bottom: 2px; }
+        .card-subtitle { font-size: 13px; color: #B89968; }
+        .card-arrow { color: #D4AF37; font-size: 18px; }
+        
+        .toggle {
+            width: 50px;
+            height: 30px;
+            background: linear-gradient(135deg, #8B1A36 0%, #C72C4D 100%);
+            border-radius: 15px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+        
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #D4AF37 0%, #C9A875 100%);
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.6);
+        }
+        
+        .toggle.off { background: rgba(74, 22, 37, 0.4); }
+        .toggle.off::after { transform: translateX(-20px); background: #4A1625; box-shadow: none; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8B1A36 0%, #6B1228 100%); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        <div class="status-bar"><div class="time">9:41</div><div class="icons"><span>⚡︎</span><span>📶</span><span>🔋</span></div></div>
+        <div class="header">
+            <div class="back-btn">←</div>
+            <div class="header-title">Профиль</div>
+            <div class="edit-btn">Изменить</div>
+        </div>
+        <div class="profile-hero">
+            <div class="profile-avatar">ВХ</div>
+            <div class="profile-name">Влад Харин</div>
+            <div class="profile-username">@vladkharin</div>
+            <div class="vip-badge">👑 VIP Member</div>
+            <div class="profile-stats">
+                <div class="stat-item"><div class="stat-value">243</div><div class="stat-label">Чаты</div></div>
+                <div class="stat-item"><div class="stat-value">5.8k</div><div class="stat-label">Сообщений</div></div>
+                <div class="stat-item"><div class="stat-value">127</div><div class="stat-label">Медиа</div></div>
+            </div>
+        </div>
+        <div class="content-container">
+            <div class="section">
+                <div class="section-title">Аккаунт</div>
+                <div class="card">
+                    <div class="card-item">
+                        <div class="card-icon icon-gold">📱</div>
+                        <div class="card-content">
+                            <div class="card-title">Телефон</div>
+                            <div class="card-subtitle">+7 (XXX) XXX-XX-XX</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon icon-burgundy">📧</div>
+                        <div class="card-content">
+                            <div class="card-title">Email</div>
+                            <div class="card-subtitle">vlad@luxury.com</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon icon-gold">👤</div>
+                        <div class="card-content">
+                            <div class="card-title">Имя пользователя</div>
+                            <div class="card-subtitle">@vladkharin</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Настройки</div>
+                <div class="card">
+                    <div class="card-item">
+                        <div class="card-icon icon-gold">🔐</div>
+                        <div class="card-content">
+                            <div class="card-title">VIP Шифрование</div>
+                            <div class="card-subtitle">Максимальная защита</div>
+                        </div>
+                        <div class="toggle"></div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon icon-burgundy">🔔</div>
+                        <div class="card-content">
+                            <div class="card-title">Уведомления</div>
+                            <div class="card-subtitle">Избранные чаты</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon icon-gold">🎨</div>
+                        <div class="card-content">
+                            <div class="card-title">Тема</div>
+                            <div class="card-subtitle">Luxury Burgundy</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                    <div class="card-item">
+                        <div class="card-icon icon-burgundy">💎</div>
+                        <div class="card-content">
+                            <div class="card-title">Премиум функции</div>
+                            <div class="card-subtitle">Эксклюзивный доступ</div>
+                        </div>
+                        <div class="card-arrow">›</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

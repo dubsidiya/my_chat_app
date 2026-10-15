@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат — My Chat App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0B0E14;
+            color: #F8FAFC;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: #0F172A;
+            border-radius: 40px;
+            box-shadow: 
+                0 0 0 12px #1E293B,
+                0 50px 100px -20px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #0B0E14;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+        
+        .status-bar {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            padding-top: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #F8FAFC;
+        }
+        
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #1E293B;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #0F172A;
+        }
+        
+        .back-btn {
+            font-size: 24px;
+            cursor: pointer;
+            color: #38BDF8;
+        }
+        
+        .header-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #4FD1C5 0%, #38BDF8 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 600;
+            position: relative;
+        }
+        
+        .header-avatar.online::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background: #22C55E;
+            border: 2px solid #0F172A;
+            border-radius: 50%;
+        }
+        
+        .header-info {
+            flex: 1;
+        }
+        
+        .header-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        
+        .header-status {
+            font-size: 13px;
+            color: #22C55E;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .encrypted-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: #4FD1C5;
+            background: #4FD1C520;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+        
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #0B0E14;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .message {
+            display: flex;
+            gap: 8px;
+            max-width: 75%;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.sent {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+        
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #F97316 0%, #F59E0B 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        
+        .message.sent .message-avatar {
+            background: linear-gradient(135deg, #38BDF8 0%, #22D3EE 100%);
+        }
+        
+        .message-bubble {
+            background: #1E293B;
+            padding: 12px 16px;
+            border-radius: 16px;
+            border-bottom-left-radius: 4px;
+            position: relative;
+        }
+        
+        .message.sent .message-bubble {
+            background: linear-gradient(135deg, #38BDF8 0%, #22D3EE 100%);
+            border-radius: 16px;
+            border-bottom-right-radius: 4px;
+            color: #0B0E14;
+        }
+        
+        .message-text {
+            font-size: 15px;
+            line-height: 1.4;
+            margin-bottom: 4px;
+        }
+        
+        .message-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #64748B;
+        }
+        
+        .message.sent .message-meta {
+            color: #0B0E14;
+            opacity: 0.6;
+            justify-content: flex-end;
+        }
+        
+        .message-status {
+            font-size: 14px;
+        }
+        
+        .input-container {
+            padding: 12px 16px;
+            border-top: 1px solid #1E293B;
+            background: #0F172A;
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        
+        .attach-btn {
+            width: 40px;
+            height: 40px;
+            background: #1E293B;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            border: 1px solid #334155;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        
+        .attach-btn:hover {
+            background: #334155;
+        }
+        
+        .input-wrapper {
+            flex: 1;
+            background: #1E293B;
+            border-radius: 12px;
+            padding: 10px 14px;
+            border: 1px solid #334155;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        .message-input {
+            background: none;
+            border: none;
+            color: #F8FAFC;
+            font-size: 15px;
+            width: 100%;
+            outline: none;
+            resize: none;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .message-input::placeholder {
+            color: #64748B;
+        }
+        
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #38BDF8 0%, #22D3EE 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(34, 211, 238, 0.3);
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(34, 211, 238, 0.4);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <div class="notch"></div>
+        
+        <div class="status-bar">
+            <div class="time">9:41</div>
+            <div class="icons">
+                <span>⚡︎</span>
+                <span>📶</span>
+                <span>🔋</span>
+            </div>
+        </div>
+        
+        <div class="chat-header">
+            <div class="back-btn">←</div>
+            <div class="header-avatar online">АК</div>
+            <div class="header-info">
+                <div class="header-name">Анна Кузнецова</div>
+                <div class="header-status">
+                    Онлайн
+                    <span class="encrypted-badge">🔒 Зашифровано</span>
+                </div>
+            </div>
+            <div style="font-size: 20px; color: #64748B; cursor: pointer;">⋮</div>
+        </div>
+        
+        <div class="messages-container">
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Привет! Как продвигается работа над проектом?</div>
+                    <div class="message-meta">
+                        <span>14:32</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Привет! Всё отлично, почти закончил дизайн 👍</div>
+                    <div class="message-meta">
+                        <span>14:35</span>
+                        <span class="message-status">✓✓</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Круто! Можешь показать промежуточные результаты?</div>
+                    <div class="message-meta">
+                        <span>14:36</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="message sent">
+                <div class="message-avatar">Я</div>
+                <div class="message-bubble">
+                    <div class="message-text">Конечно, скину сегодня вечером. Думаю, тебе понравится интерфейс</div>
+                    <div class="message-meta">
+                        <span>14:38</span>
+                        <span class="message-status">✓✓</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="message">
+                <div class="message-avatar">АК</div>
+                <div class="message-bubble">
+                    <div class="message-text">Отлично, увидимся завтра! 👋</div>
+                    <div class="message-meta">
+                        <span>Сейчас</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="input-container">
+            <div class="attach-btn">📎</div>
+            <div class="input-wrapper">
+                <textarea class="message-input" placeholder="Сообщение..." rows="1"></textarea>
+            </div>
+            <div class="send-btn">➤</div>
+        </div>
+    </div>
+</body>
+</html>
