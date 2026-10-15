@@ -67,6 +67,8 @@ jobs:
             set -e
             test -s /var/www/reollity/index.html
             test -s /var/www/reollity/canvaskit/canvaskit.wasm
-            test "$(curl -fsS -o /dev/null -w "%{http_code}" http://localhost/)" = "200"
+            # nginx редиректит http -> https (301), это нормально
+            CODE=$(curl -fsS -o /dev/null -w "%{http_code}" http://localhost/ 2>&1)
+            test "$CODE" = "200" -o "$CODE" = "301" -o "$CODE" = "302"
           '
           echo "✅ web развёрнут на 93.183.80.97"
