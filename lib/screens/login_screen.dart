@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 import '../services/auth_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/storage_service.dart';
@@ -105,37 +107,73 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isLight = AppColors.isLight;
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isLight
-                ? [
-                    AppColors.backgroundDark,
-                    AppColors.cardDark,
-                    AppColors.accent.withValues(alpha: 0.35),
-                    AppColors.primary.withValues(alpha: 0.45),
-                  ]
-                : [
-                    AppColors.backgroundDark,
-                    AppColors.surfaceDark,
-                    AppColors.primaryDeep,
-                    AppColors.primary,
-                  ],
-            stops: const [0.0, 0.35, 0.7, 1.0],
-          ),
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    
+    // Mesh gradient background (flutter-taste-skill)
+    final meshGradient = Container(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.topLeft,
+          radius: 1.5,
+          colors: [
+            AppColors.primaryGlow.withValues(alpha: 0.15),
+            Colors.transparent,
+          ],
         ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Логотип/Иконка с анимацией
+      ),
+    );
+    
+    final meshGradient2 = Container(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.bottomRight,
+          radius: 1.2,
+          colors: [
+            AppColors.accent.withValues(alpha: 0.12),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+    
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Base gradient layer
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isLight
+                    ? [
+                        AppColors.backgroundDark,
+                        AppColors.cardDark,
+                        AppColors.accent.withValues(alpha: 0.35),
+                        AppColors.primary.withValues(alpha: 0.45),
+                      ]
+                    : [
+                        const Color(0xFF05070C), // surface0 from design_sense
+                        const Color(0xFF0A0D12), // surface1
+                        const Color(0xFF0F131C), // surface2
+                        AppColors.primaryDeep,
+                      ],
+                stops: const [0.0, 0.35, 0.7, 1.0],
+              ),
+            ),
+          ),
+          // Mesh gradients overlay
+          meshGradient,
+          meshGradient2,
+          // Glassmorphism content container
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Логотип/Иконка с анимацией
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 800),
@@ -233,7 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 50),
 
-                  // Форма входа с анимацией
+                  // Форма входа с glassmorphism
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 700),
@@ -247,187 +285,206 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       );
                     },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: AppColors.cardDark,
-                        border: Border.all(
-                          color: AppColors.primaryGlow.withValues(alpha: 0.35),
-                        ),
-                        boxShadow: AppColors.neonGlowSoft,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Поле логина
-                            TextField(
-                              controller: _usernameController,
-                              keyboardType: TextInputType.text,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: AppColors.onSurfaceDark,
-                              ),
-                              decoration: InputDecoration(
-                                labelText: 'Логин',
-                                prefixIcon: Icon(
-                                  Icons.person_outlined,
-                                  color: AppColors.primaryGlow,
-                                ),
-                                labelStyle: TextStyle(
-                                  color: AppColors.onSurfaceVariantDark,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                filled: true,
-                                fillColor:
-                                    AppColors.primary.withValues(alpha: 0.08),
-                                border: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide:
-                                      BorderSide(color: AppColors.borderDark),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide:
-                                      BorderSide(color: AppColors.borderDark),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide: BorderSide(
-                                    color: AppColors.primaryGlow,
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
+                    child: ClipRRect(
+                      borderRadius: AppRadius.lgAll,
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: AppRadius.lgAll,
+                            color: AppColors.cardDark.withValues(alpha: 0.7),
+                            // 1px inner stroke (flutter-taste-skill критично)
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              width: 1,
                             ),
-                            const SizedBox(height: 20),
-                            // Поле пароля
-                            TextField(
-                              controller: _passwordController,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: AppColors.onSurfaceDark,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
                               ),
-                              decoration: InputDecoration(
-                                labelText: 'Пароль',
-                                prefixIcon: Icon(
-                                  Icons.lock_outlined,
-                                  color: AppColors.primaryGlow,
-                                ),
-                                labelStyle: TextStyle(
-                                  color: AppColors.onSurfaceVariantDark,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                filled: true,
-                                fillColor:
-                                    AppColors.primary.withValues(alpha: 0.08),
-                                border: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide:
-                                      BorderSide(color: AppColors.borderDark),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide:
-                                      BorderSide(color: AppColors.borderDark),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(12)),
-                                  borderSide: BorderSide(
-                                    color: AppColors.primaryGlow,
-                                    width: 2,
-                                  ),
-                                ),
+                              BoxShadow(
+                                color: AppColors.primaryGlow.withValues(alpha: 0.08),
+                                blurRadius: 40,
+                                spreadRadius: -8,
                               ),
-                              obscureText: true,
-                            ),
-                            const SizedBox(height: 28),
-                            if (_errorMessage != null)
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                margin: const EdgeInsets.only(bottom: 20),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.red.withValues(alpha: 0.5),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Поле логина
+                                TextField(
+                                  controller: _usernameController,
+                                  keyboardType: TextInputType.text,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: AppColors.onSurfaceDark,
                                   ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline_rounded,
-                                      color: Colors.red.shade300,
-                                      size: 22,
+                                  decoration: InputDecoration(
+                                    labelText: 'Логин',
+                                    prefixIcon: Icon(
+                                      Icons.person_outlined,
+                                      color: AppColors.primaryGlow,
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        _errorMessage!,
-                                        style: TextStyle(
-                                          color: AppColors.onSurfaceDark,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                                    labelStyle: TextStyle(
+                                      color: AppColors.onSurfaceVariantDark,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    filled: true,
+                                    fillColor:
+                                        AppColors.primary.withValues(alpha: 0.08),
+                                    border: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide:
+                                          BorderSide(color: AppColors.borderDark),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide:
+                                          BorderSide(color: AppColors.borderDark),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide: BorderSide(
+                                        color: AppColors.primaryGlow,
+                                        width: 2,
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            SizedBox(
-                              height: 56,
-                              child: _isLoading
-                                  ? Center(
-                                      child: CircularProgressIndicator(
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          AppColors.primaryGlow,
-                                        ),
+                                const SizedBox(height: 20),
+                                // Поле пароля
+                                TextField(
+                                  controller: _passwordController,
+                                  obscureText: true,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: AppColors.onSurfaceDark,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Пароль',
+                                    prefixIcon: Icon(
+                                      Icons.lock_outlined,
+                                      color: AppColors.primaryGlow,
+                                    ),
+                                    labelStyle: TextStyle(
+                                      color: AppColors.onSurfaceVariantDark,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    filled: true,
+                                    fillColor:
+                                        AppColors.primary.withValues(alpha: 0.08),
+                                    border: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide:
+                                          BorderSide(color: AppColors.borderDark),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide:
+                                          BorderSide(color: AppColors.borderDark),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius:
+                                          const BorderRadius.all(Radius.circular(12)),
+                                      borderSide: BorderSide(
+                                        color: AppColors.primaryGlow,
+                                        width: 2,
                                       ),
-                                    )
-                                  : Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            AppColors.primary,
-                                            AppColors.primaryDeep,
-                                          ],
-                                        ),
-                                        boxShadow: AppColors.neonGlow,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 28),
+                                if (_errorMessage != null)
+                                  Container(
+                                    padding: const EdgeInsets.all(14),
+                                    margin: const EdgeInsets.only(bottom: 20),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.red.withValues(alpha: 0.5),
                                       ),
-                                      child: ElevatedButton(
-                                        onPressed: _login,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.transparent,
-                                          shadowColor: Colors.transparent,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.error_outline_rounded,
+                                          color: Colors.red.shade300,
+                                          size: 22,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _errorMessage!,
+                                            style: TextStyle(
+                                              color: AppColors.onSurfaceDark,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                         ),
-                                        child: Text(
-                                          'Войти',
-                                          style: TextStyle(
-                                            color: isLight
-                                                ? Colors.white
-                                                : AppColors.onSurfaceDark,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: 1,
+                                      ],
+                                    ),
+                                  ),
+                                SizedBox(
+                                  height: 56,
+                                  child: _isLoading
+                                      ? Center(
+                                          child: CircularProgressIndicator(
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              AppColors.primaryGlow,
+                                            ),
+                                          ),
+                                        )
+                                      : Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(12),
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                AppColors.primary,
+                                                AppColors.primaryDeep,
+                                              ],
+                                            ),
+                                            boxShadow: AppColors.neonGlow,
+                                          ),
+                                          child: ElevatedButton(
+                                            onPressed: _login,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.transparent,
+                                              shadowColor: Colors.transparent,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Войти',
+                                              style: TextStyle(
+                                                color: isLight
+                                                    ? Colors.white
+                                                    : AppColors.onSurfaceDark,
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 1,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -449,12 +506,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () {
                         Navigator.push(
                           context,
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    const RegisterScreen(),
-                            transitionsBuilder: (context, animation,
-                                secondaryAnimation, child) {
+                          PageRouteBuilder<dynamic>(
+                            pageBuilder: (context, animation, secondaryAnimation) =>
+                                const RegisterScreen(),
+                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
                               return FadeTransition(
                                 opacity: animation,
                                 child: child,
@@ -514,8 +569,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-          ),
-        ),
+          ),  // closes Center
+        ),  // closes SafeArea
+        ],
       ),
     );
   }

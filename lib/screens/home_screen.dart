@@ -18,9 +18,12 @@ import '../services/messages/messages_decrypt.dart';
 import '../services/chat_key_service.dart';
 import '../services/chat_image_cache.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_design_tokens.dart';
+import '../theme/app_dimens.dart';
 import '../widgets/glow_empty_state.dart';
 import '../widgets/skeleton_placeholder.dart';
 import '../widgets/theme_motion.dart';
+import '../widgets/premium_chat_tile.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'students_screen.dart';
@@ -681,17 +684,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildChatTile(BuildContext context, Chat chat) {
+  // ignore: unused_element
+  Widget _buildChatTile(BuildContext context, Chat chat, int index) {
     final scheme = Theme.of(context).colorScheme;
     final lastTime = _formatLastMessageTime(chat.lastMessageAt);
     final preview = _buildLastMessagePreview(chat);
     final unread = chat.unreadCount;
+    
     return Dismissible(
       key: Key('chat_${chat.id}'),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 22),
+        padding: EdgeInsets.only(right: AppSpacing.xl),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.centerLeft,
@@ -701,10 +706,13 @@ class _HomeScreenState extends State<HomeScreen> {
               AppColors.errorDark.withValues(alpha: 0.85),
             ],
           ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: AppRadius.lgAll,
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
+        margin: EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
+        child: Icon(Icons.delete_rounded, color: Colors.white, size: 24),
       ),
       confirmDismiss: (direction) async {
         final messenger = ScaffoldMessenger.of(context);
@@ -766,36 +774,51 @@ class _HomeScreenState extends State<HomeScreen> {
         // Фоново синхронизируем список с сервером.
         Future.microtask(_loadChats);
       },
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
+      child: Container(
+        margin: EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.lgAll,
+          border: Border.all(
             color: unread > 0
-                ? scheme.primary.withValues(alpha: 0.38)
-                : scheme.outline.withValues(alpha: 0.22),
+                ? scheme.primary.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.08),
             width: 1,
           ),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: unread > 0
+                ? [
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                  ]
+                : [
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                  ],
+          ),
+          boxShadow: unread > 0
+              ? AppDesignTokens.neonGlow(intensity: 0.3)
+              : AppDesignTokens.compoundShadow(scheme),
         ),
-        color: scheme.surfaceContainerHighest.withValues(
-          alpha: unread > 0 ? 0.58 : 0.42,
-        ),
-        clipBehavior: Clip.antiAlias,
-        shadowColor: AppColors.primary.withValues(alpha: 0.07),
-        child: InkWell(
-          onTap: () => _openChat(chat),
-          onLongPress: () => _showChatFolderPicker(chat),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            child: Row(
-              children: [
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _openChat(chat),
+            onLongPress: () => _showChatFolderPicker(chat),
+            borderRadius: AppRadius.lgAll,
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.md + 1),
+              child: Row(
+                children: [
                 GestureDetector(
                   onTap: () => _openChatUserProfile(chat),
                   child: Container(
-                    width: 52,
-                    height: 52,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
                       gradient:
                           (chat.isGroup ||
@@ -806,26 +829,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 AppColors.primary,
-                                AppColors.primaryDeep,
+                                AppColors.cyberAccent,
                               ],
                             )
                           : null,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: AppDesignTokens.neonGlow(intensity: 0.2),
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       child: chat.isGroup
-                          ? const Icon(
+                          ? Icon(
                               Icons.group_rounded,
                               color: Colors.white,
-                              size: 22,
+                              size: 20,
                             )
                           : (chat.otherUserAvatarUrl != null &&
                                 chat.otherUserAvatarUrl!.trim().isNotEmpty)
                           ? CachedNetworkImage(
                               imageUrl: chat.otherUserAvatarUrl!,
-                              width: 52,
-                              height: 52,
+                              width: 48,
+                              height: 48,
                               fit: BoxFit.cover,
                               placeholder: (_, __) =>
                                   _chatAvatarPlaceholder(chat.name),
@@ -836,7 +860,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
+                SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -845,46 +869,49 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         chat.name,
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: unread > 0
                               ? FontWeight.w800
                               : FontWeight.w700,
                           color: scheme.onSurface,
-                          letterSpacing: 0.1,
+                          letterSpacing: -0.1,
+                          height: 1.2,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       if ((chat.folderName ?? '').trim().isNotEmpty) ...[
-                        const SizedBox(height: 2),
+                        SizedBox(height: AppSpacing.xxs),
                         Text(
                           chat.folderName!.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.primary.withValues(alpha: 0.9),
+                            fontSize: 10,
+                            color: AppColors.cyberAccent.withValues(alpha: 0.9),
                             fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       ],
-                      const SizedBox(height: 4),
+                      SizedBox(height: AppSpacing.xxs + 1),
                       Text(
                         preview,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurface.withValues(alpha: 0.65),
+                          fontSize: 12,
+                          color: scheme.onSurface.withValues(alpha: 0.6),
                           fontWeight: unread > 0
                               ? FontWeight.w600
                               : FontWeight.w400,
+                          height: 1.3,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: AppSpacing.sm),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
@@ -892,51 +919,50 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       lastTime,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: unread > 0
-                            ? scheme.primary
+                            ? AppColors.cyberAccent
                             : scheme.onSurface.withValues(alpha: 0.50),
                         fontWeight: unread > 0
                             ? FontWeight.w700
                             : FontWeight.w500,
+                        letterSpacing: 0.2,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: AppSpacing.sm),
                     if (unread > 0)
                       Container(
-                        constraints: const BoxConstraints(minWidth: 22),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 4,
+                        constraints: BoxConstraints(minWidth: 20),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs + 1,
+                          vertical: AppSpacing.xxs + 1,
                         ),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [AppColors.primary, AppColors.primaryGlow],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.cyberAccent,
+                              AppColors.primary,
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primaryGlow.withValues(
-                                alpha: 0.45,
-                              ),
-                              blurRadius: 10,
-                              spreadRadius: -2,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          borderRadius: AppRadius.pillAll,
+                          boxShadow: AppDesignTokens.neonGlow(
+                            color: AppColors.cyberAccent,
+                            intensity: 0.6,
+                          ),
                         ),
                         child: Text(
                           unread > 99 ? '99+' : unread.toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.2,
                           ),
                         ),
-                      )
-                    else
-                      const SizedBox(height: 20),
+                      ),
                   ],
                 ),
               ],
@@ -944,7 +970,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Future<void> _showChatFolderPicker(Chat chat) async {
@@ -2121,41 +2148,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 : Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                          AppSpacing.lg,
+                          AppSpacing.sm,
+                        ),
                         child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.glassOverlay(scheme),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: scheme.primary.withValues(alpha: 0.14),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(
-                                  alpha: 0.06,
-                                ),
-                                blurRadius: 18,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
+                          decoration: AppDesignTokens.glassCard(
+                            scheme,
+                            alpha: AppColors.isLight ? 0.7 : 0.15,
+                            borderAlpha: AppColors.isLight ? 0.2 : 0.1,
                           ),
                           child: TextField(
                             controller: _searchController,
                             onChanged: _onSearchChanged,
                             style: TextStyle(
                               color: scheme.onSurface,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
                             ),
                             decoration: InputDecoration(
                               hintText: 'Поиск по чатам',
                               hintStyle: TextStyle(
-                                color: scheme.onSurface.withValues(alpha: 0.48),
+                                color: scheme.onSurface.withValues(alpha: 0.45),
+                                fontWeight: FontWeight.w500,
                               ),
                               prefixIcon: Icon(
                                 Icons.search_rounded,
-                                color: scheme.primary.withValues(alpha: 0.75),
-                                size: 22,
+                                color: AppColors.cyberAccent.withValues(alpha: 0.8),
+                                size: 20,
                               ),
                               suffixIcon: _query.isEmpty
                                   ? null
@@ -2165,6 +2187,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         color: scheme.onSurface.withValues(
                                           alpha: 0.70,
                                         ),
+                                        size: 20,
                                       ),
                                       onPressed: () {
                                         _searchDebounce?.cancel();
@@ -2176,9 +2199,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                       },
                                     ),
                               border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: AppSpacing.lg,
+                                vertical: AppSpacing.md + 2,
                               ),
                             ),
                           ),
@@ -2321,8 +2344,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 color: AppColors.primary,
                                 child: _query.isEmpty
                                     ? ReorderableListView.builder(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 8,
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: AppSpacing.sm,
                                         ),
                                         buildDefaultDragHandles: true,
                                         onReorder: _onReorderChats,
@@ -2330,39 +2353,121 @@ class _HomeScreenState extends State<HomeScreen> {
                                         cacheExtent: 500,
                                         itemBuilder: (context, index) {
                                           final chat = filteredChats[index];
-                                          // ReorderableListView требует key на ВЕРХНЕМ уровне элемента
                                           return RepaintBoundary(
                                             key: ValueKey(
                                               'chat_tile_${chat.id}',
                                             ),
-                                            child: _buildChatTile(
-                                              context,
-                                              chat,
+                                            child: Dismissible(
+                                              key: Key('dismiss_${chat.id}'),
+                                              direction: DismissDirection.endToStart,
+                                              background: Container(
+                                                alignment: Alignment.centerRight,
+                                                padding: EdgeInsets.only(right: AppSpacing.xl),
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    begin: Alignment.centerLeft,
+                                                    end: Alignment.centerRight,
+                                                    colors: [
+                                                      AppColors.errorDark.withValues(alpha: 0.0),
+                                                      AppColors.errorDark.withValues(alpha: 0.85),
+                                                    ],
+                                                  ),
+                                                  borderRadius: AppRadius.lgAll,
+                                                ),
+                                                margin: EdgeInsets.symmetric(
+                                                  horizontal: AppSpacing.md,
+                                                  vertical: AppSpacing.xs,
+                                                ),
+                                                child: Icon(Icons.delete_rounded, color: Colors.white, size: 24),
+                                              ),
+                                              confirmDismiss: (direction) async {
+                                                final confirmed = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (ctx) => AlertDialog(
+                                                    title: const Text('Удалить чат?'),
+                                                    content: Text(
+                                                      'Вы уверены, что хотите удалить чат "${chat.name}"? Это действие нельзя отменить.',
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () => Navigator.pop(ctx, false),
+                                                        child: const Text('Отмена'),
+                                                      ),
+                                                      ElevatedButton(
+                                                        onPressed: () => Navigator.pop(ctx, true),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: AppColors.errorDark,
+                                                          foregroundColor: Colors.white,
+                                                        ),
+                                                        child: const Text('Удалить'),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                                if (confirmed != true) return false;
+                                                try {
+                                                  await _chatsService.deleteChat(chat.id, widget.userId);
+                                                  await LocalMessagesService.clearChat(chat.id);
+                                                  return true;
+                                                } catch (e) {
+                                                  if (kDebugMode) print('Ошибка удаления чата: $e');
+                                                  if (!mounted) return false;
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Ошибка при удалении чата: ${e.toString().replaceFirst('Exception: ', '')}',
+                                                      ),
+                                                      duration: const Duration(seconds: 3),
+                                                    ),
+                                                  );
+                                                  return false;
+                                                }
+                                              },
+                                              onDismissed: (direction) {
+                                                if (!mounted) return;
+                                                setState(() {
+                                                  _chats = _chats.where((c) => c.id != chat.id).toList();
+                                                  _chatOrder = _chatOrder.where((id) => id != chat.id).toList();
+                                                });
+                                                StorageService.saveChatOrder(widget.userId, _chatOrder);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text('Чат "${chat.name}" удален'),
+                                                    duration: const Duration(seconds: 2),
+                                                  ),
+                                                );
+                                                Future.microtask(_loadChats);
+                                              },
+                                              child: PremiumChatTile(
+                                                chat: chat,
+                                                index: index,
+                                                onTap: () => _openChat(chat),
+                                                onLongPress: () => _showChatFolderPicker(chat),
+                                                onAvatarTap: () => _openChatUserProfile(chat),
+                                              ),
                                             ),
                                           );
                                         },
                                       )
                                     : ListView.builder(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 8,
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: AppSpacing.sm,
                                         ),
                                         itemCount: filteredChats.length,
                                         cacheExtent: 500,
                                         itemBuilder: (context, index) {
                                           final chat = filteredChats[index];
-                                          return RepaintBoundary(
-                                            key: ValueKey(
-                                              'chat_tile_${chat.id}',
-                                            ),
-                                            child: _buildChatTile(
-                                              context,
-                                              chat,
-                                            ),
+                                          return PremiumChatTile(
+                                            chat: chat,
+                                            index: index,
+                                            onTap: () => _openChat(chat),
+                                            onLongPress: () => _showChatFolderPicker(chat),
+                                            onAvatarTap: () => _openChatUserProfile(chat),
                                           );
                                         },
                                       ),
+                                ),
                               ),
-                      ),
                     ],
                   ),
           ),

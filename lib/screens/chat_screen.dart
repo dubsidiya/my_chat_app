@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart';
@@ -44,7 +45,7 @@ import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/web_chat_composer.dart';
-import '../widgets/chat_message_tile.dart';
+import '../widgets/premium_chat_message_tile.dart';
 import '../widgets/fade_scale_in.dart';
 import '../widgets/typing_dots.dart';
 import 'add_members_dialog.dart';
@@ -893,29 +894,44 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
-        backgroundColor: AppColors.backgroundDark,
+        backgroundColor: AppColors.backgroundDark.withValues(alpha: 0.8),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
         titleSpacing: 0,
         title: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [_accent1, AppColors.primaryDeep],
                 ),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: _accent2.withValues(alpha: 0.30),
-                    blurRadius: 10,
-                    spreadRadius: -2,
-                    offset: const Offset(0, 3),
+                    color: _accent2.withValues(alpha: 0.40),
+                    blurRadius: 16,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: _accent1.withValues(alpha: 0.20),
+                    blurRadius: 24,
+                    spreadRadius: 2,
                   ),
                 ],
               ),
@@ -1372,7 +1388,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                       ],
                                                     )
                                                   : null,
-                                              child: ChatMessageTile(
+                                              child: PremiumChatMessageTile(
                                                 key: ValueKey('tile_${msg.id}'),
                                                 msg: msg,
                                                 isMine: isMine,
@@ -1424,6 +1440,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                           uid,
                                                           fallbackLabel: label,
                                                         ),
+                                                index: index,
                                               ),
                                             );
                                             if (!_shouldFadeInMessage(msg.id)) {

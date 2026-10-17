@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 class FadeScaleIn extends StatefulWidget {
   final Widget child;
   final Duration duration;
+  final Duration delay;
   final Curve curve;
   final VoidCallback? onComplete;
 
@@ -12,6 +13,7 @@ class FadeScaleIn extends StatefulWidget {
     super.key,
     required this.child,
     this.duration = const Duration(milliseconds: 260),
+    this.delay = Duration.zero,
     this.curve = Curves.easeOut,
     this.onComplete,
   });
@@ -47,7 +49,14 @@ class _FadeScaleInState extends State<FadeScaleIn>
         }
       });
     }
-    _controller.forward();
+    // Staggered entrance: запускаем анимацию после задержки
+    if (widget.delay > Duration.zero) {
+      Future.delayed(widget.delay, () {
+        if (mounted) _controller.forward();
+      });
+    } else {
+      _controller.forward();
+    }
   }
 
   @override

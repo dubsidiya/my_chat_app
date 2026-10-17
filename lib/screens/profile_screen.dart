@@ -181,10 +181,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         title: const Text('Профиль'),
         centerTitle: true,
+        backgroundColor: AppColors.backgroundDark.withValues(alpha: 0.85),
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
@@ -196,35 +198,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SizedBox(height: 24),
-            // Аватар
+            const SizedBox(height: 32),
+            // Аватар с премиум глубиной
             GestureDetector(
               onTap: _isLoadingAvatar ? null : _pickAndUploadAvatar,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
+                  // Внешнее неоновое свечение
                   Container(
-                    width: 120,
-                    height: 120,
+                    width: 136,
+                    height: 136,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      boxShadow: AppColors.neonGlowSoft,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.cyberAccent.withValues(alpha: 0.4),
+                          blurRadius: 32,
+                          spreadRadius: 4,
+                        ),
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                          blurRadius: 48,
+                          spreadRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Основной контейнер
+                  Container(
+                    width: 128,
+                    height: 128,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primary,
+                          AppColors.cyberAccent,
+                        ],
+                      ),
                       border: Border.all(
-                        color: AppColors.primaryGlow.withValues(alpha: 0.6),
+                        color: Colors.white.withValues(alpha: 0.12),
                         width: 2,
                       ),
                     ),
                     child: ClipOval(
-                      child: _avatarUrl != null && _avatarUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: _avatarUrl!,
-                              fit: BoxFit.cover,
-                              width: 120,
-                              height: 120,
-                              placeholder: (_, __) => _avatarPlaceholder(),
-                              errorWidget: (_, __, ___) => _avatarPlaceholder(),
-                            )
-                          : _avatarPlaceholder(),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.surfaceDark,
+                              AppColors.backgroundDark,
+                            ],
+                          ),
+                        ),
+                        child: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: _avatarUrl!,
+                                fit: BoxFit.cover,
+                                width: 128,
+                                height: 128,
+                                placeholder: (_, __) => _avatarPlaceholder(),
+                                errorWidget: (_, __, ___) => _avatarPlaceholder(),
+                              )
+                            : _avatarPlaceholder(),
+                      ),
                     ),
                   ),
                   if (_isLoadingAvatar)
@@ -250,13 +292,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppColors.primary,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.cyberAccent,
+                              AppColors.primary,
+                            ],
+                          ),
                           shape: BoxShape.circle,
-                          boxShadow: AppColors.neonGlowSoft,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.cyberAccent.withValues(alpha: 0.5),
+                              blurRadius: 16,
+                              spreadRadius: 0,
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 20),
+                        child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 22),
                       ),
                     ),
                 ],

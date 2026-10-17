@@ -7,39 +7,44 @@ import 'package:flutter/widgets.dart';
 /// общего набора. Это часть дизайн-системы (см. `app_colors.dart`,
 /// `app_theme.dart`).
 
-/// Сетка отступов 4 / 8 / 12 / 16 / 24 / 32.
-/// Для темы Neon Samurai уменьшена на ~20% для более компактного вида.
+/// Сетка отступов — уменьшена на ~20% для более компактного современного вида
+/// Применяется ко всем экранам для единого ритма
 class AppSpacing {
   AppSpacing._();
 
-  static const double xxs = 2;  // было 2
-  static const double xs = 3;   // было 4 → 3.2 ≈ 3
-  static const double sm = 6;   // было 8 → 6.4 ≈ 6
-  static const double md = 10;  // было 12 → 9.6 ≈ 10
-  static const double lg = 13;  // было 16 → 12.8 ≈ 13
-  static const double xl = 19;  // было 24 → 19.2 ≈ 19
-  static const double xxl = 26; // было 32 → 25.6 ≈ 26
-  static const double huge = 38;// было 48 → 38.4 ≈ 38
+  static const double xxs = 2;  // минимальный отступ
+  static const double xs = 4;   // 5 → 4
+  static const double sm = 6;   // 8 → 6
+  static const double md = 10;  // 12 → 10
+  static const double lg = 13;  // 16 → 13
+  static const double xl = 19;  // 24 → 19
+  static const double xxl = 26; // 32 → 26
+  static const double huge = 38;// 48 → 38
 
+  static const EdgeInsets allXs = EdgeInsets.all(xs);
   static const EdgeInsets allSm = EdgeInsets.all(sm);
   static const EdgeInsets allMd = EdgeInsets.all(md);
   static const EdgeInsets allLg = EdgeInsets.all(lg);
+  static const EdgeInsets allXl = EdgeInsets.all(xl);
 
-  /// Горизонтальный паддинг контента экрана по умолчанию.
+  /// Горизонтальный паддинг контента экрана по умолчанию
   static const EdgeInsets screenH = EdgeInsets.symmetric(horizontal: lg);
+  
+  /// Вертикальный паддинг секций
+  static const EdgeInsets sectionV = EdgeInsets.symmetric(vertical: md);
 }
 
-/// Шкала скруглений. `pill` — для капсул/чипов, `xl` — для модальных листов.
-/// Для Neon Samurai уменьшена на ~20% для более острых углов.
+/// Шкала скруглений для премиум feel
+/// Применяется единообразно для создания визуального ритма
 class AppRadius {
   AppRadius._();
 
-  static const double xs = 6;   // было 8 → 6.4 ≈ 6
-  static const double sm = 8;   // было 10 → 8
-  static const double md = 11;  // было 14 → 11.2 ≈ 11
-  static const double lg = 16;  // было 20 → 16
-  static const double xl = 22;  // было 28 → 22.4 ≈ 22
-  static const double pill = 999;
+  static const double xs = 6;   // минимальное скругление
+  static const double sm = 8;   // chip, small card
+  static const double md = 11;  // standard card
+  static const double lg = 16;  // large card, dialog
+  static const double xl = 22;  // bottom sheet, modal
+  static const double pill = 999; // pills, chips, badges
 
   static BorderRadius get xsAll => BorderRadius.circular(xs);
   static BorderRadius get smAll => BorderRadius.circular(sm);
@@ -48,19 +53,36 @@ class AppRadius {
   static BorderRadius get xlAll => BorderRadius.circular(xl);
   static BorderRadius get pillAll => BorderRadius.circular(pill);
 
-  /// Верхнее скругление для bottom sheet.
+  /// Верхнее скругление для bottom sheet
   static BorderRadius get sheetTop =>
       const BorderRadius.vertical(top: Radius.circular(xl));
+  
+  /// Bento-стиль: разное скругление для разнообразия
+  static BorderRadius bentoVariant(int index) {
+    final radii = [md, lg, md, sm, lg];
+    return BorderRadius.circular(radii[index % radii.length]);
+  }
 }
 
-/// Длительности анимаций: короткие переходы ощущаются «отзывчиво».
+/// Длительности анимаций с spring-based feel
+/// Следует принципам Material 3 Expressive
 class AppMotion {
   AppMotion._();
 
+  // Базовые длительности
+  static const Duration instant = Duration(milliseconds: 100);
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration medium = Duration(milliseconds: 220);
   static const Duration slow = Duration(milliseconds: 320);
+  static const Duration xslow = Duration(milliseconds: 450);
 
+  // Кривые для различных типов движения
   static const Curve curve = Curves.easeOutCubic;
   static const Curve emphasized = Curves.easeOutBack;
+  static const Curve spring = Curves.easeOutExpo; // имитация spring
+  
+  /// Staggered entrance: index * delay
+  static Duration stagger(int index, {Duration base = fast}) {
+    return Duration(milliseconds: base.inMilliseconds + (index * 50));
+  }
 }
