@@ -9,6 +9,7 @@ import '../utils/network_error_helper.dart';
 import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'register_screen.dart';
+import '../widgets/web_build_caption.dart';
 import 'legal_document_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -566,6 +567,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   const LegalLinks(),
+                  const WebBuildCaption(),
                 ],
               ),
             ),

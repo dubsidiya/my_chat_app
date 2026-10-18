@@ -7,6 +7,7 @@ import '../theme/theme_variant.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../utils/read_file_bytes.dart';
+import '../widgets/web_build_caption.dart';
 import 'legal_document_screen.dart';
 
 /// Экран профиля в стиле Telegram: аватар, имя, настройки.
@@ -454,6 +455,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: 'Выйти',
               onTap: () => _logout(context),
             ),
+            const WebBuildCaption(),
             const SizedBox(height: 32),
           ],
         ),

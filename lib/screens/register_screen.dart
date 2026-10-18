@@ -6,6 +6,7 @@ import '../utils/network_error_helper.dart';
 import 'eula_consent_screen.dart';
 import 'main_tabs_screen.dart';
 import 'login_screen.dart';
+import '../widgets/web_build_caption.dart';
 import 'legal_document_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -518,6 +519,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 16),
                   const LegalLinks(),
+                  const WebBuildCaption(),
                 ],
               ),
             ),
