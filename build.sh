@@ -43,10 +43,11 @@ flutter pub get || {
 
 # Собираем веб-версию
 echo "🔨 Сборка веб-версии..."
-flutter build web --release --no-wasm-dry-run || {
+flutter build web --release --no-wasm-dry-run --pwa-strategy=none || {
   echo "Ошибка при сборке"
   exit 1
 }
+bash scripts/stamp-web-build.sh build/web
 
 echo "✅ Сборка завершена!"
 ls -la build/web/ || echo "Папка build/web не найдена"

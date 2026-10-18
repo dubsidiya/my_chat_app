@@ -10,7 +10,13 @@ on:
       - "pubspec.lock"
       - "assets/**"
       - ".github/workflows/deploy-web-93.yml"
+      - "scripts/stamp-web-build.sh"
   workflow_dispatch:
+    inputs:
+      reason:
+        description: Запустить деплой вручную
+        required: false
+        default: manual
 
 concurrency:
   group: deploy-web-reollity
@@ -43,7 +49,9 @@ jobs:
           # Keep the Flutter engine on our server: Google CDN may be unavailable
           # for users and causes the app to remain on its loading screen.
           flutter build web --release --no-wasm-dry-run --no-web-resources-cdn \
+            --pwa-strategy=none \
             --dart-define=API_BASE_URL=https://api.reollity.ru
+          bash scripts/stamp-web-build.sh build/web
 
       - name: Setup SSH key
         env:

@@ -34,6 +34,26 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Старый service worker Flutter держит предыдущую сборку. Снимаем его до загрузки приложения.
+    (function () {
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (reg) { reg.unregister(); });
+          });
+        }
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (key) { caches.delete(key); });
+          });
+        }
+      } catch (e) {}
+    })();
+    var bootstrap = document.createElement('script');
+    bootstrap.async = true;
+    bootstrap.src = 'flutter_bootstrap.js?v=FLUTTER_BUILD_ID';
+    document.body.appendChild(bootstrap);
+  </script>
 </body>
 </html>

@@ -40,7 +40,9 @@ fi
 SSH_PASS=(sshpass -p "$TW_PASS")
 
 echo "🚀 [1/3] Сборка Flutter web (API_BASE_URL=$API_URL)..."
-flutter build web --release --no-wasm-dry-run --dart-define=API_BASE_URL="$API_URL"
+flutter build web --release --no-wasm-dry-run --no-web-resources-cdn --pwa-strategy=none \
+  --dart-define=API_BASE_URL="$API_URL"
+bash scripts/stamp-web-build.sh build/web
 
 echo "📦 [2/3] Загрузка на $TW_HOST:$REMOTE_DIR..."
 "${SSH_PASS[@]}" $SSH_WEB "mkdir -p '$REMOTE_DIR'"
