@@ -43,12 +43,7 @@ unregister = """  <script>
       try {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistrations().then(function (regs) {
-            regs.forEach(function (reg) { reg.unregister(); });
-          });
-        }
-        if (window.caches && caches.keys) {
-          caches.keys().then(function (keys) {
-            keys.forEach(function (key) { caches.delete(key); });
+            return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
           });
         }
       } catch (e) {}
@@ -85,31 +80,42 @@ bootstrap = re.sub(
     f'serviceWorkerVersion: "{build_id}"',
     bootstrap,
 )
+def bust_engine_assets(text: str) -> str:
+    # CanvasKit лежит по постоянному пути. Версия в query не даёт браузеру
+    # смешать wasm прошлой сборки с новым main.dart.js.
+    text = re.sub(
+        r"canvaskit\.js(?:\?v=[A-Za-z0-9]*)?",
+        f"canvaskit.js?v={build_id}",
+        text,
+    )
+    return re.sub(
+        r"canvaskit\.wasm(?:\?v=[A-Za-z0-9]*)?",
+        f"canvaskit.wasm?v={build_id}",
+        text,
+    )
+
+bootstrap = bust_engine_assets(bootstrap)
 bootstrap_path.write_text(bootstrap)
 
-killer = """/* Сбрасывает кеш старого Flutter service worker и снимает регистрацию. */
+flutter_js_path = web_dir / "flutter.js"
+if flutter_js_path.exists():
+    flutter_js_path.write_text(bust_engine_assets(flutter_js_path.read_text()))
+
+killer = """/* Снимает старый Flutter service worker. Запросы не перехватывает и вкладку не перезагружает. */
 self.addEventListener('install', function (event) {
-  event.waitUntil(self.skipWaiting());
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', function (event) {
   event.waitUntil((async function () {
-    var keys = await caches.keys();
-    await Promise.all(keys.map(function (key) { return caches.delete(key); }));
-    await self.clients.claim();
-    var windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    await Promise.all(windows.map(function (client) {
-      var url = new URL(client.url);
-      if (url.searchParams.get('fresh') === '1') return null;
-      url.searchParams.set('fresh', '1');
-      return client.navigate(url.toString());
-    }));
-    await self.registration.unregister();
+    try {
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function (key) { return caches.delete(key); }));
+    } catch (e) {}
+    try {
+      await self.registration.unregister();
+    } catch (e) {}
   })());
-});
-
-self.addEventListener('fetch', function (event) {
-  event.respondWith(fetch(event.request));
 });
 """
 (web_dir / "flutter_service_worker.js").write_text(killer)

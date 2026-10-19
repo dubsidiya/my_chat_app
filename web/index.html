@@ -35,26 +35,72 @@
 </head>
 <body>
   <script>
-    // Старый service worker Flutter держит предыдущую сборку. Снимаем его до загрузки приложения.
+    // Старый service worker Flutter перехватывает запросы и может отдать смесь
+    // файлов разных сборок. Снимаем его и чистим Cache API до bootstrap.
+    // Если worker ещё управляет вкладкой, перезагружаем страницу один раз.
     (function () {
+      var BUILD_ID = 'FLUTTER_BUILD_ID';
+      window.__REOLLITY_BUILD__ = BUILD_ID;
+      var resetKey = 'reollity_sw_reset';
+
+      function loadBootstrap() {
+        if (window.__REOLLITY_BOOTSTRAPPED__) return;
+        window.__REOLLITY_BOOTSTRAPPED__ = true;
+        var bootstrap = document.createElement('script');
+        bootstrap.async = true;
+        bootstrap.src = 'flutter_bootstrap.js?v=' + BUILD_ID;
+        document.body.appendChild(bootstrap);
+      }
+
+      function withTimeout(promise, ms) {
+        return new Promise(function (resolve) {
+          var done = false;
+          function finish() {
+            if (done) return;
+            done = true;
+            resolve();
+          }
+          setTimeout(finish, ms);
+          Promise.resolve(promise).then(finish, finish);
+        });
+      }
+
+      var preparing = Promise.resolve();
       try {
+        var tasks = [];
         if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function (regs) {
-            regs.forEach(function (reg) { reg.unregister(); });
-          });
+          tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+          }));
         }
         if (window.caches && caches.keys) {
-          caches.keys().then(function (keys) {
-            keys.forEach(function (key) { caches.delete(key); });
-          });
+          tasks.push(caches.keys().then(function (keys) {
+            return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+          }));
         }
+        preparing = Promise.all(tasks);
       } catch (e) {}
+
+      withTimeout(preparing, 2500).then(function () {
+        var controlled = false;
+        try {
+          controlled = 'serviceWorker' in navigator && !!navigator.serviceWorker.controller;
+        } catch (e) {}
+        var alreadyReloaded = false;
+        try {
+          alreadyReloaded = sessionStorage.getItem(resetKey) === '1';
+        } catch (e) {}
+        if (controlled && !alreadyReloaded) {
+          try { sessionStorage.setItem(resetKey, '1'); } catch (e) {}
+          window.location.reload();
+          return;
+        }
+        if (!controlled) {
+          try { sessionStorage.removeItem(resetKey); } catch (e) {}
+        }
+        loadBootstrap();
+      });
     })();
-    window.__REOLLITY_BUILD__ = 'FLUTTER_BUILD_ID';
-    var bootstrap = document.createElement('script');
-    bootstrap.async = true;
-    bootstrap.src = 'flutter_bootstrap.js?v=FLUTTER_BUILD_ID';
-    document.body.appendChild(bootstrap);
   </script>
 </body>
 </html>

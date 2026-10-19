@@ -91,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _useManualChatOrder =
       false; // true после ручной сортировки, сбрасывается при новом сообщении
   bool _isLoading = false;
+  int _chatsLoadGen = 0;
   String? _loadError; // ошибка загрузки чатов для показа кнопки «Повторить»
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
@@ -172,7 +173,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final type = chat.lastMessageType ?? 'text';
     final hasImage = (chat.lastMessageImageUrl ?? '').isNotEmpty;
     final hasFile = (chat.lastMessageFileUrl ?? '').isNotEmpty;
-    final text = (chat.lastMessageText ?? '').trim();
+    final raw = (chat.lastMessageText ?? '').trim();
+    final text = ChatKeyService.isEncryptedText(raw) ? '' : raw;
     if (type == 'image' || (hasImage && text.isEmpty)) return 'Фото';
     if (type == 'file' || (hasFile && text.isEmpty)) return 'Файл';
     if (type == 'text_file' && hasFile) {
@@ -423,59 +425,133 @@ class _HomeScreenState extends State<HomeScreen> {
     return list;
   }
 
+  bool _chatIsNewer(Chat candidate, Chat baseline) {
+    final byTime = (candidate.lastMessageAt ?? '').compareTo(
+      baseline.lastMessageAt ?? '',
+    );
+    if (byTime != 0) return byTime > 0;
+    return (candidate.lastMessageId ?? '').compareTo(
+          baseline.lastMessageId ?? '',
+        ) >
+        0;
+  }
+
+  Chat _chatWithLastText(Chat chat, String? text) {
+    return Chat(
+      id: chat.id,
+      name: chat.name,
+      isGroup: chat.isGroup,
+      folderId: chat.folderId,
+      folderName: chat.folderName,
+      otherUserId: chat.otherUserId,
+      otherUserAvatarUrl: chat.otherUserAvatarUrl,
+      lastMessageId: chat.lastMessageId,
+      lastMessageText: text,
+      lastMessageType: chat.lastMessageType,
+      lastMessageImageUrl: chat.lastMessageImageUrl,
+      lastMessageFileUrl: chat.lastMessageFileUrl,
+      lastMessageFileName: chat.lastMessageFileName,
+      lastMessageFileSize: chat.lastMessageFileSize,
+      lastMessageFileMime: chat.lastMessageFileMime,
+      lastMessageAt: chat.lastMessageAt,
+      lastSenderEmail: chat.lastSenderEmail,
+      unreadCount: chat.unreadCount,
+    );
+  }
+
+  List<Chat> _mergeFresherChats(List<Chat> incoming) {
+    final currentById = {for (final chat in _chats) chat.id: chat};
+    return [
+      for (final chat in incoming)
+        if (currentById[chat.id] case final current?)
+          if (_chatIsNewer(current, chat)) current else chat
+        else
+          chat,
+    ];
+  }
+
+  Future<Chat> _decryptChatPreview(Chat chat) async {
+    final text = chat.lastMessageText;
+    if (text == null || text.isEmpty || !ChatKeyService.isEncryptedText(text)) {
+      return chat;
+    }
+    final plain = await MessagesDecrypt.displayText(chat.id, text);
+    if (plain == text) return chat;
+    return _chatWithLastText(chat, plain);
+  }
+
+  /// Расшифровка превью пачками, чтобы не занимать все соединения браузера.
+  /// В список пишем только текст того же сообщения: более новое локальное
+  /// превью не затираем.
+  Future<void> _decryptChatPreviews(List<Chat> chats, int generation) async {
+    const batchSize = 4;
+    for (var start = 0; start < chats.length; start += batchSize) {
+      if (!mounted || generation != _chatsLoadGen) return;
+      final end = start + batchSize < chats.length
+          ? start + batchSize
+          : chats.length;
+      final slice = await Future.wait(
+        chats.sublist(start, end).map(_decryptChatPreview),
+      );
+      if (!mounted || generation != _chatsLoadGen) return;
+      final byId = {for (final chat in slice) chat.id: chat};
+      var changed = false;
+      final next = <Chat>[];
+      for (final chat in _chats) {
+        final update = byId[chat.id];
+        if (update == null ||
+            chat.lastMessageId != update.lastMessageId ||
+            chat.lastMessageText == update.lastMessageText) {
+          next.add(chat);
+          continue;
+        }
+        final currentText = chat.lastMessageText ?? '';
+        final nextText = update.lastMessageText ?? '';
+        if (ChatKeyService.isEncryptedText(nextText) &&
+            !ChatKeyService.isEncryptedText(currentText) &&
+            currentText.isNotEmpty) {
+          next.add(chat);
+          continue;
+        }
+        changed = true;
+        next.add(_chatWithLastText(chat, update.lastMessageText));
+      }
+      if (!changed || !mounted || generation != _chatsLoadGen) continue;
+      setState(() {
+        _chats = next;
+        _invalidateFilteredChatsCache();
+      });
+    }
+  }
+
   Future<void> _loadChats() async {
     if (!mounted) return;
+    final generation = ++_chatsLoadGen;
+    final showSkeleton = _chats.isEmpty;
     setState(() {
-      _isLoading = true;
       _loadError = null;
+      if (showSkeleton) _isLoading = true;
     });
     try {
-      var chats = await _chatsService.fetchChats(widget.userId);
-      // Расшифровываем превью последнего сообщения общим ключом чата.
-      // displayText вернёт открытый текст как есть, расшифрует шифротекст или
-      // подставит заглушку для нечитаемых legacy-сообщений.
-      chats = await Future.wait(
-        chats.map((c) async {
-          final text = c.lastMessageText;
-          if (text == null || text.isEmpty) return c;
-          final plain = await MessagesDecrypt.displayText(c.id, text);
-          if (plain == text) return c;
-          return Chat(
-            id: c.id,
-            name: c.name,
-            isGroup: c.isGroup,
-            folderId: c.folderId,
-            folderName: c.folderName,
-            otherUserId: c.otherUserId,
-            otherUserAvatarUrl: c.otherUserAvatarUrl,
-            lastMessageId: c.lastMessageId,
-            lastMessageText: plain,
-            lastMessageType: c.lastMessageType,
-            lastMessageImageUrl: c.lastMessageImageUrl,
-            lastMessageFileUrl: c.lastMessageFileUrl,
-            lastMessageFileName: c.lastMessageFileName,
-            lastMessageFileSize: c.lastMessageFileSize,
-            lastMessageFileMime: c.lastMessageFileMime,
-            lastMessageAt: c.lastMessageAt,
-            lastSenderEmail: c.lastSenderEmail,
-            unreadCount: c.unreadCount,
-          );
-        }),
-      );
-      final order = await StorageService.getChatOrder(widget.userId);
-      if (mounted) {
-        setState(() {
-          _chats = chats;
-          _chatOrder = order;
-          _loadError = null;
-          _invalidateFilteredChatsCache();
-          if (_chatOrder.isEmpty && _chats.isNotEmpty) {
-            _chatOrder = _chats.map((c) => c.id).toList();
-          }
-        });
-      }
+      final chatsFuture = _chatsService.fetchChats(widget.userId);
+      final orderFuture = StorageService.getChatOrder(widget.userId);
+      final chats = await chatsFuture;
+      if (!mounted || generation != _chatsLoadGen) return;
+      final order = await orderFuture;
+      if (!mounted || generation != _chatsLoadGen) return;
+      setState(() {
+        _chats = _mergeFresherChats(chats);
+        _chatOrder = order;
+        _loadError = null;
+        _isLoading = false;
+        _invalidateFilteredChatsCache();
+        if (_chatOrder.isEmpty && _chats.isNotEmpty) {
+          _chatOrder = _chats.map((c) => c.id).toList();
+        }
+      });
+      await _decryptChatPreviews(chats, generation);
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _chatsLoadGen) {
         setState(
           () => _loadError = e.toString().replaceFirst('Exception: ', ''),
         );
@@ -487,7 +563,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _chatsLoadGen && _isLoading) {
         setState(() => _isLoading = false);
       }
     }
@@ -566,6 +642,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final createdAt =
         event['created_at']?.toString() ??
         DateTime.now().toUtc().toIso8601String();
+    final rawText = event['content']?.toString();
 
     final updated = Chat(
       id: old.id,
@@ -576,7 +653,7 @@ class _HomeScreenState extends State<HomeScreen> {
       otherUserId: old.otherUserId,
       otherUserAvatarUrl: old.otherUserAvatarUrl,
       lastMessageId: messageId,
-      lastMessageText: event['content']?.toString(),
+      lastMessageText: rawText,
       lastMessageType: event['message_type']?.toString() ?? 'text',
       lastMessageImageUrl: event['image_url']?.toString(),
       lastMessageFileUrl: event['file_url']?.toString(),
@@ -593,6 +670,30 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() {
       _chats = [..._chats.sublist(0, idx), updated, ..._chats.sublist(idx + 1)];
+      _invalidateFilteredChatsCache();
+    });
+    if (rawText != null && ChatKeyService.isEncryptedText(rawText)) {
+      unawaited(_decryptIncomingPreview(chatId, messageId, rawText));
+    }
+  }
+
+  Future<void> _decryptIncomingPreview(
+    String chatId,
+    String messageId,
+    String raw,
+  ) async {
+    final plain = await MessagesDecrypt.displayText(chatId, raw);
+    if (!mounted) return;
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx < 0) return;
+    final current = _chats[idx];
+    if (current.lastMessageId != messageId || current.lastMessageText == plain) {
+      return;
+    }
+    setState(() {
+      final next = List<Chat>.from(_chats);
+      next[idx] = _chatWithLastText(current, plain);
+      _chats = next;
       _invalidateFilteredChatsCache();
     });
   }

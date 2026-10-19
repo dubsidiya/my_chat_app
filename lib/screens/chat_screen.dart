@@ -231,6 +231,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Timer?
   _pollTimer; // резервный опрос новых сообщений при проблемах с WebSocket
   bool _pollInFlight = false;
+  int _pollConnectedSkips = 0;
   late String _chatTitle;
 
   // ✅ Mentions (@handle)
@@ -599,9 +600,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _loadPinnedMessages(); // ✅ Загружаем закрепленные сообщения
     _loadChatMembers(); // ✅ Для presence/typing отображения
 
-    // Резервный опрос новых сообщений (если WebSocket не доставил)
+    // Резервный опрос. Пока сокет жив, хватает раза в ~32 с, иначе — каждые 8 с.
     _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (mounted) _pollForNewMessages();
+      if (!mounted) return;
+      if (WebSocketService.instance.isConnected) {
+        final skip = _pollConnectedSkips;
+        _pollConnectedSkips = (skip + 1) % 4;
+        if (skip != 0) return;
+      } else {
+        _pollConnectedSkips = 0;
+      }
+      _pollForNewMessages();
     });
 
     // ✅ Отмечаем все сообщения как прочитанные при открытии чата

@@ -104,6 +104,7 @@ class ChatKeyService {
       final resp = await timedGet(
         Uri.parse('${ApiConfig.baseUrl}/chats/$chatId/key'),
         headers: {'Authorization': 'Bearer $token'},
+        timeout: const Duration(seconds: 12),
       );
       if (resp.statusCode != 200) return null;
       final data = jsonDecode(resp.body);
