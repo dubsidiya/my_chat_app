@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/message.dart';
-import '../theme/app_dimens.dart';
 import 'chat_message_tile.dart';
 
-/// Премиальная обёртка над ChatMessageTile с улучшениями по flutter-taste-skill:
-/// - Staggered entrance animation (index * 50ms delay)
-/// - Spring scale на long press
-/// - Glassmorphism улучшения
-class PremiumChatMessageTile extends StatefulWidget {
+/// Обёртка над [ChatMessageTile].
+///
+/// История не анимируется: при прокрутке строка создаётся заново
+/// (`addAutomaticKeepAlives: false`), и входная анимация прятала уже
+/// прочитанные сообщения. Новое сообщение анимирует вызывающий код.
+class PremiumChatMessageTile extends StatelessWidget {
   final Message msg;
   final bool isMine;
   final bool isHighlighted;
@@ -34,7 +34,6 @@ class PremiumChatMessageTile extends StatefulWidget {
   final Widget buildMessageStatus;
   final VoidCallback onShowReactionPicker;
   final void Function(String, String) onOpenUserProfileById;
-  final int index;
 
   const PremiumChatMessageTile({
     super.key,
@@ -64,86 +63,37 @@ class PremiumChatMessageTile extends StatefulWidget {
     required this.buildMessageStatus,
     required this.onShowReactionPicker,
     required this.onOpenUserProfileById,
-    this.index = 0,
   });
 
   @override
-  State<PremiumChatMessageTile> createState() => _PremiumChatMessageTileState();
-}
-
-class _PremiumChatMessageTileState extends State<PremiumChatMessageTile>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _entranceController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-  bool _hasAnimated = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _entranceController = AnimationController(
-      vsync: this,
-      duration: AppMotion.medium,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: Offset(widget.isMine ? 0.1 : -0.1, 0.0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entranceController, curve: Curves.easeOut));
-
-    // Staggered entrance: index * 50ms delay
-    Future.delayed(Duration(milliseconds: widget.index * 50), () {
-      if (mounted && !_hasAnimated) {
-        _entranceController.forward();
-        _hasAnimated = true;
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _entranceController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: ChatMessageTile(
-          key: widget.key,
-          msg: widget.msg,
-          isMine: widget.isMine,
-          isHighlighted: widget.isHighlighted,
-          isFirstInGroup: widget.isFirstInGroup,
-          isLastInGroup: widget.isLastInGroup,
-          scheme: widget.scheme,
-          accent1: widget.accent1,
-          accent2: widget.accent2,
-          accent3: widget.accent3,
-          myUserId: widget.myUserId,
-          myAvatarUrl: widget.myAvatarUrl,
-          chatId: widget.chatId,
-          myAvatarPlaceholder: widget.myAvatarPlaceholder,
-          otherAvatarPlaceholder: widget.otherAvatarPlaceholder,
-          memberByHandle: widget.memberByHandle,
-          onOpenSenderProfile: widget.onOpenSenderProfile,
-          onShowMessageMenu: widget.onShowMessageMenu,
-          onOpenImage: widget.onOpenImage ?? () {},
-          onOpenVideo: widget.onOpenVideo ?? () {},
-          buildVoiceBubble: widget.buildVoiceBubble,
-          isVoiceMessage: widget.isVoiceMessage,
-          formatBytes: widget.formatBytes,
-          formatDate: widget.formatDate,
-          buildMessageStatus: widget.buildMessageStatus,
-          onShowReactionPicker: widget.onShowReactionPicker,
-          onOpenUserProfileById: widget.onOpenUserProfileById,
-        ),
-      ),
+    return ChatMessageTile(
+      msg: msg,
+      isMine: isMine,
+      isHighlighted: isHighlighted,
+      isFirstInGroup: isFirstInGroup,
+      isLastInGroup: isLastInGroup,
+      scheme: scheme,
+      accent1: accent1,
+      accent2: accent2,
+      accent3: accent3,
+      myUserId: myUserId,
+      myAvatarUrl: myAvatarUrl,
+      chatId: chatId,
+      myAvatarPlaceholder: myAvatarPlaceholder,
+      otherAvatarPlaceholder: otherAvatarPlaceholder,
+      memberByHandle: memberByHandle,
+      onOpenSenderProfile: onOpenSenderProfile,
+      onShowMessageMenu: onShowMessageMenu,
+      onOpenImage: onOpenImage ?? () {},
+      onOpenVideo: onOpenVideo ?? () {},
+      buildVoiceBubble: buildVoiceBubble,
+      isVoiceMessage: isVoiceMessage,
+      formatBytes: formatBytes,
+      formatDate: formatDate,
+      buildMessageStatus: buildMessageStatus,
+      onShowReactionPicker: onShowReactionPicker,
+      onOpenUserProfileById: onOpenUserProfileById,
     );
   }
 }

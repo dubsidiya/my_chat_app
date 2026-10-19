@@ -18,6 +18,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:http/http.dart' show ClientException;
 
+import '../features/chat/message_open_preview.dart';
 import '../models/message.dart';
 import '../services/messages_service.dart';
 import '../services/messages/messages_decrypt.dart';
@@ -40,6 +41,7 @@ import '../utils/download_text_file.dart';
 import '../utils/voice_message_utils.dart';
 import '../utils/microphone_permission.dart';
 import '../widgets/chat_date_header.dart';
+import '../widgets/live_voice_bubble.dart';
 import '../widgets/chat_empty_messages.dart';
 import '../widgets/chat_load_more_button.dart';
 import '../widgets/chat_loading_row.dart';
@@ -54,7 +56,6 @@ import 'chat_gallery_screen.dart';
 import 'video_player_screen.dart';
 import 'user_profile_screen.dart';
 import '../widgets/chat_fullscreen_image_viewer.dart';
-import '../widgets/chat_voice_bubble.dart';
 import '../features/chat/chat_scroll_policy.dart';
 import '../features/chat/chat_sync_policy.dart';
 import '../features/chat/message_cache_merge.dart';
@@ -172,6 +173,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<Message> _messages = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  int _messagesLoadGen = 0;
+  int _cacheDecryptGen = 0;
   // Чат — это ListView(reverse: true): низ (новые сообщения) = смещение 0.
   // «Прилипание» к низу обеспечивается самим reverse, отдельный флаг не нужен.
   bool _initialOpenComplete = false;
@@ -212,6 +215,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Duration _voicePosition = Duration.zero;
   Duration? _voiceDuration;
   bool _voiceIsPlaying = false;
+  final VoicePlaybackSignal _voicePlayback = VoicePlaybackSignal();
   ProcessingState _voiceProcessingState = ProcessingState.idle;
   StreamSubscription<Duration>? _voicePositionSub;
   StreamSubscription<Duration?>? _voiceDurationSub;
@@ -566,22 +570,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _voicePositionSub = _voicePlayer.positionStream.listen((pos) {
       if (!mounted) return;
       if (_voicePlayingMessageId == null || pos == _voicePosition) return;
-      setState(() => _voicePosition = pos);
+      _voicePosition = pos;
+      _publishVoice();
     });
     _voiceDurationSub = _voicePlayer.durationStream.listen((dur) {
       if (!mounted) return;
       if (_voicePlayingMessageId == null || dur == _voiceDuration) return;
-      setState(() => _voiceDuration = dur);
+      _voiceDuration = dur;
+      _publishVoice();
     });
     _voicePlayerStateSub = _voicePlayer.playerStateStream.listen((st) {
       if (!mounted) return;
-      setState(() {
-        _voiceIsPlaying = st.playing;
-        _voiceProcessingState = st.processingState;
-        if (st.processingState == ProcessingState.completed) {
-          _voicePosition = Duration.zero;
-        }
-      });
+      _voiceIsPlaying = st.playing;
+      _voiceProcessingState = st.processingState;
+      if (st.processingState == ProcessingState.completed) {
+        _voicePosition = Duration.zero;
+      }
+      _publishVoice();
       if (st.processingState == ProcessingState.completed) {
         _voicePlayer.seek(Duration.zero);
         _voicePlayer.pause();
@@ -866,6 +871,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _voicePositionSub?.cancel();
     _voiceDurationSub?.cancel();
     _voicePlayerStateSub?.cancel();
+    _voicePlayback.dispose();
     _voicePlayer.dispose();
     _voiceRecorder.dispose();
     // best-effort: остановим typing и отпишемся
@@ -1449,7 +1455,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                           uid,
                                                           fallbackLabel: label,
                                                         ),
-                                                index: index,
                                               ),
                                             );
                                             if (!_shouldFadeInMessage(msg.id)) {

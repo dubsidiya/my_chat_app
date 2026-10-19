@@ -7,9 +7,13 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     if (!mounted) return;
     // Были ли мы у низа до перезагрузки — чтобы решить, возвращать ли к низу.
     final wasAtBottom = _isAtBottom();
+    final loadGen = ++_messagesLoadGen;
+    final decryptGen = loadGen;
+    _cacheDecryptGen = decryptGen;
+    final keepVisible = _messages.isNotEmpty;
 
     setState(() {
-      _isLoading = true;
+      if (!keepVisible) _isLoading = true;
       _hasMoreMessages = true;
       _oldestMessageId = null;
     });
@@ -17,7 +21,7 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
     // Восстанавливаем отложенные вложения/голосовые, пережившие перезапуск приложения.
     await _restorePendingUploadDrafts();
 
-    // ✅ Сначала загружаем из кэша для быстрого отображения
+    // Кэш показываем сразу. Расшифровка идёт следом и не держит спиннер.
     final existingTempMessages = _messages
         .where(
           (m) =>
@@ -29,26 +33,30 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
       final cachedMessages = await LocalMessagesService.getMessages(
         widget.chatId,
       );
-      final decryptedCached = await MessagesDecrypt.decryptMessages(
-        widget.chatId,
-        cachedMessages,
-      );
-      final visibleCached = decryptedCached
+      final visibleCached = cachedMessages
           .where((m) => !BlockedUsersCache.isBlocked(m.userId))
+          .map(messageForImmediateDisplay)
           .toList();
-      if (visibleCached.isNotEmpty && mounted) {
+      if (visibleCached.isNotEmpty && mounted && loadGen == _messagesLoadGen) {
         setState(() {
-          // ✅ Сохраняем временные сообщения при загрузке из кэша
           final cachedIds = visibleCached.map((m) => m.id).toSet();
           final uniqueTempMessages = existingTempMessages
               .where((m) => !cachedIds.contains(m.id))
               .toList();
-          // старые сверху, временные (новые) в конце
           _messages = [...visibleCached, ...uniqueTempMessages];
+          _isLoading = false;
           _markMessagesSeen(_messages.map((m) => m.id));
         });
+        unawaited(
+          _decryptCachedMessages(
+            cachedMessages
+                .where((m) => !BlockedUsersCache.isBlocked(m.userId))
+                .toList(),
+            decryptGen,
+          ),
+        );
         if (kDebugMode) {
-          print('✅ Загружено ${visibleCached.length} сообщений из кэша');
+          print('✅ Показано ${visibleCached.length} сообщений из кэша');
         }
       }
     } catch (e) {
@@ -64,7 +72,8 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         useCache: true,
       );
 
-      if (mounted) {
+      if (mounted && loadGen == _messagesLoadGen) {
+        if (_cacheDecryptGen == decryptGen) _cacheDecryptGen++;
         setState(() {
           final currentTempMessages = _messages
               .where(
@@ -120,16 +129,35 @@ extension _ChatScreenMessagesSyncPart on _ChatScreenState {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (mounted && loadGen == _messagesLoadGen) {
+        if (_isLoading) {
+          setState(() => _isLoading = false);
+        }
         // reverse:true → чат открывается у низа сам, прокрутка не нужна.
         // При pull-to-refresh: если были у низа — останемся у низа; при чтении
         // истории позиция сохраняется reverse-списком.
         if (wasAtBottom) _scrollToBottom(animated: false);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _markInitialOpenComplete();
+          if (mounted && loadGen == _messagesLoadGen) _markInitialOpenComplete();
         });
       }
+    }
+  }
+
+  Future<void> _decryptCachedMessages(List<Message> raw, int decryptGen) async {
+    const batchSize = 4;
+    for (var start = 0; start < raw.length; start += batchSize) {
+      if (!mounted || decryptGen != _cacheDecryptGen) return;
+      final end = start + batchSize < raw.length ? start + batchSize : raw.length;
+      final decrypted = await Future.wait(
+        raw.sublist(start, end).map(
+          (message) => MessagesDecrypt.decryptOne(widget.chatId, message),
+        ),
+      );
+      if (!mounted || decryptGen != _cacheDecryptGen) return;
+      final patched = patchDecryptedPreviews(_messages, decrypted);
+      if (patched == null) continue;
+      setState(() => _messages = patched);
     }
   }
 

@@ -102,27 +102,37 @@ class _BootstrapAppState extends State<_BootstrapApp> {
     _initFuture = _initializeApp();
   }
 
+  Future<void> _step(String label, Future<void> future) async {
+    try {
+      await future;
+    } catch (e) {
+      if (kDebugMode) print('$label: $e');
+    }
+  }
+
   Future<void> _initializeApp() async {
-    try {
-      await initializeDateFormatting('ru').timeout(const Duration(seconds: 8));
-      await initializeDateFormatting(
-        'en_US',
-      ).timeout(const Duration(seconds: 8));
-    } catch (e) {
-      if (kDebugMode) print('date formatting init: $e');
-    }
-    try {
-      await LocalMessagesService.init().timeout(const Duration(seconds: 10));
-    } catch (e) {
-      if (kDebugMode) print('LocalMessagesService.init: $e');
-    }
-    try {
-      await ThemeController.instance.loadFromStorage().timeout(
-        const Duration(seconds: 5),
-      );
-    } catch (e) {
-      if (kDebugMode) print('ThemeController.loadFromStorage: $e');
-    }
+    // Локали, база сообщений и тема не зависят друг от друга.
+    // Последовательно это складывало паузу до первого экрана.
+    await Future.wait([
+      _step(
+        'date formatting ru',
+        initializeDateFormatting('ru').timeout(const Duration(seconds: 8)),
+      ),
+      _step(
+        'date formatting en',
+        initializeDateFormatting('en_US').timeout(const Duration(seconds: 8)),
+      ),
+      _step(
+        'LocalMessagesService.init',
+        LocalMessagesService.init().timeout(const Duration(seconds: 10)),
+      ),
+      _step(
+        'ThemeController.loadFromStorage',
+        ThemeController.instance.loadFromStorage().timeout(
+          const Duration(seconds: 5),
+        ),
+      ),
+    ]);
   }
 
   @override

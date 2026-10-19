@@ -623,22 +623,20 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
       }
 
       if (!same) {
-        setState(() {
-          _voicePlayingMessageId = msg.id;
-          _voicePosition = Duration.zero;
-          _voiceDuration = null;
-        });
+        _voicePlayingMessageId = msg.id;
+        _voicePosition = Duration.zero;
+        _voiceDuration = null;
+        _publishVoice();
         await _voicePlayer.setUrl(url);
       }
 
       await _voicePlayer.play();
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _voicePlayingMessageId = null;
-        _voicePosition = Duration.zero;
-        _voiceDuration = null;
-      });
+      _voicePlayingMessageId = null;
+      _voicePosition = Duration.zero;
+      _voiceDuration = null;
+      _publishVoice();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
@@ -650,38 +648,32 @@ extension _ChatScreenMediaVoicePart on _ChatScreenState {
     }
   }
 
-  Widget _buildVoiceBubble(Message msg, {required bool isMine}) {
-    final isCurrent = _voicePlayingMessageId == msg.id;
-    final dur = isCurrent ? (_voiceDuration ?? Duration.zero) : Duration.zero;
-    final pos = isCurrent ? _voicePosition : Duration.zero;
-    final isBusy =
-        isCurrent &&
-        (_voiceProcessingState == ProcessingState.loading ||
-            _voiceProcessingState == ProcessingState.buffering);
-    final showPlaying = isCurrent && _voiceIsPlaying;
+  void _publishVoice() {
+    _voicePlayback.sync(
+      messageId: _voicePlayingMessageId,
+      position: _voicePosition,
+      duration: _voiceDuration,
+      playing: _voiceIsPlaying,
+      processing: _voiceProcessingState,
+    );
+  }
 
-    return ChatVoiceBubble(
+  Widget _buildVoiceBubble(Message msg, {required bool isMine}) {
+    return LiveVoiceBubble(
+      signal: _voicePlayback,
+      messageId: msg.id,
       isMine: isMine,
-      isBusy: isBusy,
-      showPlaying: showPlaying,
-      position: pos,
-      totalDuration: dur,
       seed: msg.id.hashCode,
       onPlayPause: () => _toggleVoicePlayback(msg),
-      onPositionDrag: isCurrent
-          ? (v) {
-              setState(() {
-                _voicePosition = Duration(milliseconds: v.toInt());
-              });
-            }
-          : null,
-      onSeekEnd: isCurrent
-          ? (v) async {
-              try {
-                await _voicePlayer.seek(Duration(milliseconds: v.toInt()));
-              } catch (_) {}
-            }
-          : null,
+      onPreviewPosition: (millis) {
+        _voicePosition = Duration(milliseconds: millis);
+        _publishVoice();
+      },
+      onSeekEnd: (millis) async {
+        try {
+          await _voicePlayer.seek(Duration(milliseconds: millis));
+        } catch (_) {}
+      },
     );
   }
 }
